@@ -1,0 +1,261 @@
+<!doctype html>
+<head>
+	<meta charset="utf-8">
+	<title>EMA/NMA PR Template v2</title>
+	<meta name="description" content="Pull Request Template">
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+
+	<!-- Latest compiled and minified CSS -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css" integrity="sha512-dTfge/zgoMYpP7QbHy4gWMEGsbsdZeCXz7irItjcC3sPUFtf0kuFbDz/ixG7ArTxmDjLXDmezHubeNikyKGVyQ==" crossorigin="anonymous">
+
+	<!-- Optional theme -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap-theme.min.css" integrity="sha384-aUGj/X2zp5rLCbBxumKTCw2Z50WgIr1vs/PFN4praOTvYXWlVyh2UtNUU0KAUhAX" crossorigin="anonymous">
+
+	<!-- Latest compiled and minified JavaScript -->
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js" integrity="sha512-K1qjQ+NcF2TYO/eI3M6v8EiNYZfA95pQumfvcVrTHtwQVDG+aHRqLi/ETn2uB+1JqwYqVG3LIvdm9lj6imS/pQ==" crossorigin="anonymous"></script>
+	<script>
+
+	var referencesCount = 1;
+	var referencesCountLimit = 5;
+
+	function incrementReferences()
+	{
+		if (referencesCount < referencesCountLimit) {
+			referencesCount += 1;
+			refreshBody();
+		}
+	}
+
+	function decrementReferences()
+	{
+		if (referencesCount > 1) {
+			referencesCount -= 1;
+			refreshBody();
+		}
+	}
+
+	function refreshBody()
+	{
+		buildReferenceInputs();
+	}
+
+	function buildReferenceInputs()
+	{
+		var pr_references_list = document.getElementById('pr-references-list');
+
+		var storedReferences = [];
+
+		// store the references before to re-build the list of references
+		var reference_inputs = pr_references_list.children;
+		for (var i = 0; i < reference_inputs.length; i++) {
+			var reference = reference_inputs[i].value;
+			if (reference && reference.length) {
+				storedReferences.push(reference);
+			}
+		}
+
+		// generate the references inputs
+		var references_list = "";
+		for (var i = 0; i < referencesCount; i++) {
+
+			if (references_list.length) {
+				references_list += "<br>";
+			}
+
+			references_list += '<input type="text" class="form-control" id="pr-reference-' + i + '" placeholder="FRI-XXXX (just the ticket number, not a link)">';
+		}
+		pr_references_list.innerHTML = references_list;
+
+		// populate the inputs with the previous data
+		for (var i = 0; i < referencesCount; i++) {
+			var pr_reference_input = document.getElementById("pr-reference-" + i);
+			var storedValue = storedReferences[i];
+			pr_reference_input.value = storedValue && storedValue.length ? storedValue : "";
+		}
+
+		// focus the last one
+		if (referencesCount > 1) {
+			var last_reference_input = pr_references_list.lastChild;
+			last_reference_input.focus();
+		}
+	}
+
+	function generateMarkdown()
+	{
+		var markdown_container = document.getElementById('pr-markdown-container');
+		var textarea = document.getElementById('pr-markdown');
+		textarea.value = "";
+
+		var not_populated = "none";
+
+		// what this PR includes
+		textarea.value += "## This Pull Request includes:\n";
+
+		var is_bugfix = document.getElementById("is-bugfix").checked;
+		if (is_bugfix) {
+			textarea.value += "- [" + (is_bugfix ? "X" : " ") + "] Bugfix\n";
+		}
+
+		var is_feature = document.getElementById("is-feature").checked;
+		if (is_feature) {
+			textarea.value += "- [" + (is_feature ? "X" : " ") + "] New feature\n";
+		}
+
+		var is_refactor = document.getElementById("is-refactor").checked;
+		if (is_refactor) {
+			textarea.value += "- [" + (is_refactor ? "X" : " ") + "] Refactoring\n";
+		}
+
+		var is_analytics = document.getElementById("is-analytics").checked;
+		if (is_analytics) {
+			textarea.value += "- [" + (is_analytics ? "X" : " ") + "] Analytics\n";
+		}
+
+		var is_content = document.getElementById("is-content").checked;
+		if (is_content) {
+			textarea.value += "- [" + (is_content ? "X" : " ") + "] Content Update(s)\n";
+		}
+
+		var is_other = document.getElementById("is-other").checked;
+		if (is_other) {
+			textarea.value += "- [" + (is_other ? "X" : " ") + "] Other\n";
+		}
+
+		if (!is_bugfix && !is_feature && !is_refactor && !is_analytics && !is_content && !is_other) {
+			textarea.value += "none selected\n"
+		}
+
+		textarea.value += "\n";
+
+		// summary
+		textarea.value += "## Summary of Changes\n";
+		var pr_summary = document.getElementById("pr-summary").value;
+		if (pr_summary != "") {
+			textarea.value += pr_summary;
+		} else {
+			textarea.value += not_populated;
+		}
+		textarea.value += "\n\n";
+
+		// references
+		textarea.value += "## Ticket Number(s)\n";
+
+		var references = "";
+		for (var i = 0; i < referencesCount; i++) {
+
+			var pr_reference = document.getElementById("pr-reference-" + i).value;
+			if (pr_reference != "") {
+
+				if (references.length) {
+					references += "\n";
+				}
+
+				references += "[" + pr_reference + "](https://jira.ehi.com/browse/" + pr_reference + ")";
+			}
+		}
+		textarea.value += references.length ? references : not_populated;
+		textarea.value += "\n\n";
+
+		// screenshots/video
+		textarea.value += "## Screenshots/Video Captures\n";
+		textarea.value += "no screenshots or video (please add in Bitbucket if needed)\n";
+
+		markdown_container.style.display = "block";
+		markdown_container.scrollIntoView();
+	}
+
+	function copyToClipboard()
+	{
+  		let textarea = document.getElementById("pr-markdown");
+  		textarea.select();
+  		document.execCommand("copy");
+	}
+
+	function onInput()
+	{
+		let pr_summary = document.getElementById("pr-summary").value;
+		let markdown_btn = document.getElementById('generate_markdown_btn');
+		markdown_btn.disabled = pr_summary == "";
+	}
+
+	</script>
+</script>
+</head>
+<body onload="refreshBody()">
+</br>
+<div style="width:50%; margin-left: auto; margin-right: auto;">
+
+	<h3>EMA/NMA PR Template</h3>
+
+	</br>
+
+	<form id="frm">
+
+		<div class="form-group">
+			<label>This Pull Request includes:</label>
+    		<div class="checkbox">
+      			<label><input type="checkbox" id="is-bugfix" value="">Bugfix</label>
+    		</div>
+    		<div class="checkbox">
+      			<label><input type="checkbox" id="is-feature" value="">New feature</label>
+    		</div>
+			<div class="checkbox">
+      			<label><input type="checkbox" id="is-refactor" value="">Refactoring</label>
+    		</div>
+    		<div class="checkbox">
+      			<label><input type="checkbox" id="is-analytics" value="">Analytics</label>
+    		</div>
+    		<div class="checkbox">
+      			<label><input type="checkbox" id="is-content" value="">Content Update(s)</label>
+    		</div>
+    		<div class="checkbox">
+      			<label><input type="checkbox" id="is-other" value="">Other</label>
+    		</div>
+		</div>
+
+		</br>
+
+		<div class="form-group">
+			<label for="inputText">Summary of Changes</label>
+			<textarea class="form-control" rows="3" id="pr-summary" placeholder="Summarize the changes that are included in this pull request" oninput="onInput()"></textarea>
+		</div>
+
+		</br>
+
+		<div class="form-group" id="pr-references">
+			<label for="inputText">Ticket Number(s)</label>
+			<div id="pr-references-list"></div>
+		</div>
+
+		<div class="form-group" align="right">
+			<button type="button" id="button-references-plus" class="btn btn-primary" onclick="incrementReferences()">+</button>
+			<button type="button" id="button-references-minus" class="btn btn-primary" onclick="decrementReferences()">-</button>
+		</div>
+
+		</br>
+
+		<div class="form-group" style="display:none;">
+			<label for="inputText">Screenshots/Video Captures</label>
+			<textarea class="form-control" rows="3" id="screenshots-video" placeholder="Attach Screenshots in Bitbucket"></textarea>
+		</div>
+
+		</br>
+
+		<div align="center">
+			<button type="button" class="btn btn-primary" id="generate_markdown_btn" onclick="generateMarkdown()" disabled>Generate Markdown</button>
+		</div>
+
+	</form>
+
+	</br></br>
+
+	<div class="form-group" id="pr-markdown-container" style="display: none">
+		<textarea class="form-control" rows="22" id="pr-markdown" placeholder="This is where you gonna copy the text."></textarea>
+		<div align="right"><button type="button" class="btn btn-secondary" onclick="copyToClipboard()">Copy to Clipboard</button></div>
+	</div>
+
+	</br>
+
+</div>
+</body>
+</html>
