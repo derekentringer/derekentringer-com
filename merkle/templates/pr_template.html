@@ -89,7 +89,7 @@
 		var not_populated = "none";
 
 		// what this PR includes
-		textarea.value += "## This Pull Request includes:\n";
+		textarea.value += "### This Pull Request includes:\n";
 
 		var is_bugfix = document.getElementById("is-bugfix").checked;
 		if (is_bugfix) {
@@ -128,7 +128,7 @@
 		textarea.value += "\n";
 
 		// summary
-		textarea.value += "## Summary of Changes\n";
+		textarea.value += "### Summary of Changes\n";
 		var pr_summary = document.getElementById("pr-summary").value;
 		if (pr_summary != "") {
 			textarea.value += pr_summary;
@@ -138,7 +138,7 @@
 		textarea.value += "\n\n";
 
 		// references
-		textarea.value += "## Ticket Number(s)\n";
+		textarea.value += "### Ticket Number(s)\n";
 
 		var references = "";
 		for (var i = 0; i < referencesCount; i++) {
@@ -157,7 +157,7 @@
 		textarea.value += "\n\n";
 
 		// screenshots/video
-		textarea.value += "## Screenshots/Video Captures\n";
+		textarea.value += "### Screenshots/Video Captures\n";
 		textarea.value += "no screenshots or video (please add in Bitbucket if needed)\n";
 
 		markdown_container.style.display = "block";
