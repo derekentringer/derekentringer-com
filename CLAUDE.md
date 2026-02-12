@@ -15,12 +15,27 @@ npx turbo run build  # Build all packages
 npx turbo run type-check  # Type-check all packages
 ```
 
+## Git Workflow
+
+This project uses **gitflow**:
+
+- `main` — production releases, auto-deployed to Railway
+- `develop` — integration branch
+- `feature/*` — feature branches off `develop`
+- All changes go through PRs: `feature/*` → `develop` → `main`
+- Tag releases on `main` (e.g., `v1.0.5`)
+
 ## Deployment
 
-- **Platform**: Railway (Docker-based)
-- **Web**: `packages/web/Dockerfile` — multi-stage build → nginx on port 8080
-- **API**: `packages/api/Dockerfile` — multi-stage build → Node on port 3001
-- **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs
+- **Platform**: Railway (Railpack builder, not Docker)
+- **Web**: Railpack auto-detects Node workspace; start command is `npm run start --workspace=@derekentringer/web` (configured in Railway dashboard)
+- **Web production server**: `serve` static file server bound to `0.0.0.0:$PORT` with SPA fallback (`-s` flag)
+- **API**: `packages/api/Dockerfile` — multi-stage Node build on port 3001
+- **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs and pushes to main
+- **DNS**: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME)
+- **www redirect**: Client-side redirect in `App.tsx` from `www.derekentringer.com` → `derekentringer.com`
+
+Note: Railway skips Dockerfiles not at the repo root. The web Dockerfile exists for local Docker testing but Railway uses Railpack in production.
 
 ## Architecture
 
@@ -34,12 +49,15 @@ packages/
 
 ### Web (`packages/web/`)
 
+- `src/App.tsx` — Routes + www redirect + analytics tracking
 - `src/pages/PortfolioPage.tsx` — Main landing page (centered name/title/link)
 - `src/pages/PrivacyPage.tsx` — Privacy policy
 - `src/pages/NotFoundPage.tsx` — 404 page
 - `src/styles/global.css` — Dark theme base styles
 - `src/utils/analytics.ts` — Google Analytics pageview tracking
+- `src/utils/useDocumentHead.ts` — Lightweight document head management (title, meta, link tags)
 - CSS Modules (`*.module.css`) for component-scoped styles
+- `public/robots.txt` — Allows only homepage indexing, blocks all other paths
 
 ### API (`packages/api/`)
 
