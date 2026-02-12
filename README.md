@@ -26,6 +26,12 @@ Web app runs at `http://localhost:3000`, API at `http://localhost:3001`.
 npx turbo run build
 ```
 
+## Git Workflow
+
+Uses gitflow: `feature/*` → `develop` → `main`. Releases are tagged on `main`.
+
 ## Deployment
 
-Docker-based deployment via Railway. Each package has its own `Dockerfile`.
+Railway auto-deploys from `main` using Railpack. The web service start command is configured in Railway's dashboard as `npm run start --workspace=@derekentringer/web`.
+
+DNS: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME). `www.derekentringer.com` redirects to `derekentringer.com` client-side.
