@@ -5,7 +5,18 @@ import { PrivacyPage } from "./pages/PrivacyPage.tsx";
 import { NotFoundPage } from "./pages/NotFoundPage.tsx";
 import { trackPageview } from "./utils/analytics.ts";
 
+function useWwwRedirect() {
+  useEffect(() => {
+    if (window.location.hostname.startsWith("www.")) {
+      window.location.replace(
+        window.location.href.replace("://www.", "://"),
+      );
+    }
+  }, []);
+}
+
 export function App() {
+  useWwwRedirect();
   const location = useLocation();
 
   useEffect(() => {
