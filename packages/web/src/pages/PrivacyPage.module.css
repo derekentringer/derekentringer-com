@@ -1,0 +1,44 @@
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  font-family: "Roboto", sans-serif;
+  line-height: 1.6;
+}
+
+.container h1 {
+  font-size: 32px;
+  margin-bottom: 24px;
+  font-weight: 400;
+}
+
+.container h2 {
+  font-size: 20px;
+  margin-top: 32px;
+  margin-bottom: 12px;
+  color: #5bc2e7;
+  font-weight: 400;
+}
+
+.container p {
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #ccc;
+}
+
+.container ul {
+  margin-left: 24px;
+  margin-bottom: 16px;
+}
+
+.container li {
+  font-size: 14px;
+  color: #ccc;
+  margin-bottom: 8px;
+}
+
+.lastUpdated {
+  margin-top: 32px;
+  font-style: italic;
+  color: #888 !important;
+}
