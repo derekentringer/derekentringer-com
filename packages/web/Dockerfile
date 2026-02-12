@@ -7,8 +7,6 @@ COPY packages/web ./packages/web
 RUN npm run build --workspace=@derekentringer/web
 
 FROM nginx:alpine
-COPY packages/web/nginx.conf /etc/nginx/templates/default.conf.template
+COPY packages/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/packages/web/dist /usr/share/nginx/html
-ENV PORT=8080
-EXPOSE 8080
-CMD ["nginx", "-g", "daemon off;"]
+CMD sh -c "sed -i s/PORT_PLACEHOLDER/${PORT:-8080}/g /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
