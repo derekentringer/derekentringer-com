@@ -1,0 +1,75 @@
+# Personal Finance Tool — Progress Tracker
+
+## Tech Stack
+
+| Layer | Choice | Notes |
+|-------|--------|-------|
+| Backend | Node.js + Fastify | Fast, built-in schema validation |
+| Database | PostgreSQL | Relational data ideal for financial records |
+| ORM | Prisma | Type-safe, generates migrations |
+| Web Frontend | React + Vite | Shares types/logic with mobile |
+| Mobile | React Native | Android-focused, cross-platform ready |
+| Charts | Recharts or Victory | Victory has React Native support (TBD) |
+| Language | TypeScript | Everywhere — API, web, mobile, shared |
+| Monorepo | Turborepo | Shared builds across packages |
+| Hosting | Railway | API + web + Postgres in one platform |
+| Encryption | AES-256-GCM | Application-level field encryption |
+| Auth | JWT + bcrypt | Single-user gated access |
+
+## Architecture Decisions
+
+- **Monorepo** — `packages/api`, `packages/web`, `packages/mobile`, `packages/shared`
+- **No Plaid** — CSV import from banks instead (Chase, Amex); Plaid too expensive for single-user tool
+- **Railway hosting** — API as Node.js service, web as static/Node service, Postgres via Railway plugin
+- **Field-level encryption** — sensitive fields (account numbers, balances) encrypted with AES-256-GCM before storing in Postgres; master key stored as Railway env var
+- **Custom domain** — `derekentringer.com/personal-finance` (existing portfolio site coexists)
+
+## Phases
+
+### Phase 1: Foundation — High Priority
+
+- [ ] [00 — Project Scaffolding](feature_planning/00-project-scaffolding.md)
+- [ ] [01 — Auth & Security](feature_planning/01-auth-and-security.md)
+- [ ] [02 — Database & Encryption](feature_planning/02-database-and-encryption.md)
+- [ ] [03 — Account Management](feature_planning/03-account-management.md)
+
+### Phase 2: Data Import — High Priority
+
+- [ ] [04 — CSV Import System](feature_planning/04-csv-import-system.md)
+- [ ] [05 — Category Rule Engine](feature_planning/05-category-rule-engine.md)
+
+### Phase 3: Dashboard & Tracking — High Priority
+
+- [ ] [06 — Net Worth Tracking](feature_planning/06-net-worth-tracking.md)
+- [ ] [07 — Budgeting & Expense Tracking](feature_planning/07-budgeting-expense-tracking.md)
+- [ ] [08 — Bill Management](feature_planning/08-bill-management.md)
+
+### Phase 4: Projections & Planning — Medium Priority
+
+- [ ] [09 — Net Income Projections](feature_planning/09-net-income-projections.md)
+- [ ] [10 — Savings Projections](feature_planning/10-savings-projections.md)
+- [ ] [11 — Debt Payoff Planning](feature_planning/11-debt-payoff-planning.md)
+- [ ] [12 — Financial Goal Planning](feature_planning/12-financial-goal-planning.md)
+
+### Phase 5: Advanced Features — Medium Priority
+
+- [ ] [13 — Investment Portfolio Analysis](feature_planning/13-investment-portfolio-analysis.md)
+- [ ] [14 — Financial Decision Tools](feature_planning/14-financial-decision-tools.md)
+- [ ] [15 — AI Financial Advice](feature_planning/15-ai-financial-advice.md)
+
+### Phase 6: Mobile & PWA — Low Priority
+
+- [ ] [16 — PWA Support](feature_planning/16-pwa-support.md)
+- [ ] [17 — React Native Mobile App](feature_planning/17-react-native-mobile-app.md)
+
+## Status Key
+
+- `[ ]` Not Started
+- `[~]` In Progress
+- `[x]` Complete
+
+## Workflow
+
+1. Feature docs live in `docs/feature_planning/` while in backlog or in-progress
+2. When a feature is fully implemented, move its doc to `docs/features/`
+3. Update the checkbox and link path in this file
