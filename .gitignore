@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .turbo/
+.vite/
 .env
 .env.*
 !.env.example
