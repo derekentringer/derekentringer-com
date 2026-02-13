@@ -1,4 +1,3 @@
-# Allow indexing of the main portfolio page only
 User-agent: *
 Allow: /$
 Disallow: /
