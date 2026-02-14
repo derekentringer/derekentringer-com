@@ -57,6 +57,17 @@ Single-user JWT authentication for the personal finance app. All API routes are 
 | `PIN_HASH` | No | bcrypt hash of PIN (omit to disable) |
 | `CORS_ORIGIN` | No (default: `http://localhost:3003`) | Allowed CORS origin |
 
+### Local Development Setup
+
+1. Copy `.env.example` to `.env` in `packages/finance-api/`
+2. Generate a bcrypt hash for your password: `node -e "require('bcryptjs').hash('yourpassword', 12).then(h => console.log(h))"`
+3. Set `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH` in `.env`
+4. The dev script (`npm run dev`) automatically loads `.env` via `--env-file`
+
+### Production
+
+Set environment variables directly in Railway (or your hosting platform). The `.env` file is gitignored and never committed.
+
 ## Resolved Open Questions
 
 - **Auth approach**: Simple bcrypt + JWT (no Auth.js/Passport.js needed for single user)
