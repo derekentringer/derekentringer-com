@@ -1,12 +1,28 @@
 import { Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext.tsx";
+import { PinProvider } from "./context/PinContext.tsx";
+import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
 import { DashboardPage } from "./pages/DashboardPage.tsx";
+import { LoginPage } from "./pages/LoginPage.tsx";
 import { NotFoundPage } from "./pages/NotFoundPage.tsx";
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/" element={<DashboardPage />} />
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    <AuthProvider>
+      <PinProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </PinProvider>
+    </AuthProvider>
   );
 }

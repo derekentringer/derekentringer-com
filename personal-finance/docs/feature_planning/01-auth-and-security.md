@@ -1,6 +1,6 @@
 # 01 — Auth & Security
 
-**Status:** Not Started
+**Status:** Complete (see [features/01-auth-and-security.md](../features/01-auth-and-security.md))
 **Phase:** 1 — Foundation
 **Priority:** High
 
@@ -36,9 +36,9 @@ Implement single-user gated access so only one authorized user can access the fi
 
 - [00 — Project Scaffolding](00-project-scaffolding.md) — needs API package set up
 
-## Open Questions
+## Open Questions (Resolved)
 
-- Final decision: bcrypt+JWT vs. Auth.js/Passport.js with allowlist?
-- Should the hashed password be stored in the database or as an env var?
-- Refresh token rotation strategy — rotate on every use or fixed expiry?
-- PIN/passphrase implementation — separate from login password or derived from it?
+- **Auth approach**: Simple bcrypt + JWT (no Auth.js/Passport.js needed for single user)
+- **Password storage**: Environment variable (no database dependency yet)
+- **Refresh rotation**: Rotate on every use for maximum security
+- **PIN implementation**: Separate from login password, separate short-lived JWT
