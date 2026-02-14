@@ -18,6 +18,37 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  token: string;
+  accessToken: string;
+  expiresIn: number;
   user: User;
+}
+
+export interface RefreshResponse {
+  accessToken: string;
+  expiresIn: number;
+}
+
+export interface PinVerifyRequest {
+  pin: string;
+}
+
+export interface PinVerifyResponse {
+  pinToken: string;
+  expiresIn: number;
+}
+
+export interface PinJwtPayload {
+  sub: string;
+  type: "pin";
+  iat: number;
+  exp: number;
+}
+
+export interface LogoutResponse {
+  message: string;
+}
+
+export interface AuthPluginOptions {
+  jwtSecret: string;
+  accessTokenExpiry?: string;
 }

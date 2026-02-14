@@ -9,6 +9,12 @@ export type {
   JwtPayload,
   LoginRequest,
   LoginResponse,
+  RefreshResponse,
+  PinVerifyRequest,
+  PinVerifyResponse,
+  PinJwtPayload,
+  LogoutResponse,
+  AuthPluginOptions,
 } from "./types/auth.js";
 
 export { encrypt, decrypt } from "./crypto/index.js";
