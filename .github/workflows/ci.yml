@@ -22,3 +22,7 @@ jobs:
       - run: npx turbo run type-check
 
       - run: npx turbo run build
+
+      - run: npx turbo run lint
+
+      - run: npx turbo run test
