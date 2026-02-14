@@ -1,12 +1,12 @@
 {
-  "name": "@derekentringer/web",
+  "name": "@derekentringer/finance-web",
   "version": "0.0.1",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite --port 3000",
-    "start": "serve dist -s -l tcp://0.0.0.0:${PORT:-3000}",
+    "dev": "vite --port 3003",
+    "start": "serve dist -s -l tcp://0.0.0.0:${PORT:-3003}",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "lint": "eslint src/",
