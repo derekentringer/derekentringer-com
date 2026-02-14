@@ -1,6 +1,6 @@
 # 00 — Project Scaffolding
 
-**Status:** Not Started
+**Status:** Complete (see [features/00-project-scaffolding.md](../features/00-project-scaffolding.md))
 **Phase:** 1 — Foundation
 **Priority:** High
 

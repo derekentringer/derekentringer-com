@@ -28,8 +28,8 @@
 
 ### Phase 1: Foundation — High Priority
 
-- [ ] [00 — Project Scaffolding](feature_planning/00-project-scaffolding.md)
-- [ ] [01 — Auth & Security](feature_planning/01-auth-and-security.md)
+- [x] [00 — Project Scaffolding](features/00-project-scaffolding.md)
+- [x] [01 — Auth & Security](features/01-auth-and-security.md)
 - [ ] [02 — Database & Encryption](feature_planning/02-database-and-encryption.md)
 - [ ] [03 — Account Management](feature_planning/03-account-management.md)
 
