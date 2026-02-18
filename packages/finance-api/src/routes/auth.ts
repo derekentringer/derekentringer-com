@@ -59,7 +59,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({
           statusCode: 401,
           error: "Unauthorized",
-          message: "Invalid credentials",
+          message: "Invalid username",
         });
       }
 
@@ -68,7 +68,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({
           statusCode: 401,
           error: "Unauthorized",
-          message: "Invalid credentials",
+          message: "Invalid password",
         });
       }
 
