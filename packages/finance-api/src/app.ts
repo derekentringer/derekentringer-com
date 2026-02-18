@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -41,6 +41,27 @@ export function buildApp(opts?: BuildAppOptions) {
   }
   app.register(authPlugin, {
     jwtSecret: config.jwtSecret,
+  });
+
+  // Global error handler — never leak internal details to clients
+  app.setErrorHandler((error: FastifyError, request, reply) => {
+    request.log.error(error);
+    const statusCode = error.statusCode ?? 500;
+
+    if (statusCode >= 500) {
+      return reply.status(statusCode).send({
+        statusCode,
+        error: "Internal Server Error",
+        message: "An unexpected error occurred",
+      });
+    }
+
+    // 4xx errors from schema validation etc. are safe to return
+    return reply.status(statusCode).send({
+      statusCode,
+      error: error.name,
+      message: error.message,
+    });
   });
 
   app.register(authRoutes, { prefix: "/auth" });

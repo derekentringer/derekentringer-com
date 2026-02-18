@@ -13,7 +13,7 @@ export function getPrisma(): PrismaClient {
     const adapter = new PrismaPg({
       connectionString,
       max: 10,
-      ...(isProduction ? { ssl: { rejectUnauthorized: true } } : {}),
+      ...(isProduction ? { ssl: { rejectUnauthorized: false } } : {}),
     });
     prisma = new PrismaClient({ adapter });
   }
