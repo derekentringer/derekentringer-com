@@ -4,6 +4,8 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import authPlugin from "@derekentringer/shared/auth";
 import { loadConfig } from "./config.js";
+import { initEncryptionKey } from "./lib/encryption.js";
+import { getPrisma } from "./lib/prisma.js";
 import authRoutes from "./routes/auth.js";
 
 export interface BuildAppOptions {
@@ -13,6 +15,10 @@ export interface BuildAppOptions {
 export function buildApp(opts?: BuildAppOptions) {
   const config = loadConfig();
   const app = Fastify({ logger: true });
+
+  if (config.encryptionKey) {
+    initEncryptionKey(config.encryptionKey);
+  }
 
   app.register(cookie);
   app.register(cors, {
@@ -33,6 +39,10 @@ export function buildApp(opts?: BuildAppOptions) {
 
   app.get("/health", async () => {
     return { status: "ok" };
+  });
+
+  app.addHook("onClose", async () => {
+    await getPrisma().$disconnect();
   });
 
   return app;

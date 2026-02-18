@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { createMockPrisma } from "./helpers/mockPrisma.js";
 import {
   storeRefreshToken,
   lookupRefreshToken,
@@ -8,66 +9,109 @@ import {
 } from "../store/refreshTokenStore.js";
 
 describe("refreshTokenStore", () => {
+  let mockPrisma: ReturnType<typeof createMockPrisma>;
+
   beforeEach(() => {
-    clearStore();
+    mockPrisma = createMockPrisma();
+    vi.clearAllMocks();
   });
 
-  it("stores and looks up a token", () => {
-    storeRefreshToken("token-abc", "user-1");
-    const result = lookupRefreshToken("token-abc");
+  it("stores a refresh token", async () => {
+    const rt = mockPrisma.refreshToken as any;
+    rt.create.mockResolvedValue({});
+
+    await storeRefreshToken("token-abc", "user-1");
+
+    expect(rt.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        token: "token-abc",
+        userId: "user-1",
+        expiresAt: expect.any(Date),
+      }),
+    });
+  });
+
+  it("looks up a valid token", async () => {
+    const rt = mockPrisma.refreshToken as any;
+    rt.findUnique.mockResolvedValue({
+      id: "id-1",
+      token: "token-abc",
+      userId: "user-1",
+      expiresAt: new Date(Date.now() + 60000),
+    });
+
+    const result = await lookupRefreshToken("token-abc");
+
     expect(result).toEqual({ userId: "user-1" });
+    expect(rt.findUnique).toHaveBeenCalledWith({
+      where: { token: "token-abc" },
+    });
   });
 
-  it("returns undefined for an unknown token", () => {
-    const result = lookupRefreshToken("nonexistent");
+  it("returns undefined for an unknown token", async () => {
+    const rt = mockPrisma.refreshToken as any;
+    rt.findUnique.mockResolvedValue(null);
+
+    const result = await lookupRefreshToken("nonexistent");
+
     expect(result).toBeUndefined();
   });
 
-  it("revokes a token", () => {
-    storeRefreshToken("token-abc", "user-1");
-    const revoked = revokeRefreshToken("token-abc");
-    expect(revoked).toBe(true);
-    expect(lookupRefreshToken("token-abc")).toBeUndefined();
+  it("deletes and returns undefined for an expired token", async () => {
+    const rt = mockPrisma.refreshToken as any;
+    rt.findUnique.mockResolvedValue({
+      id: "id-1",
+      token: "token-exp",
+      userId: "user-1",
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    rt.delete.mockResolvedValue({});
+
+    const result = await lookupRefreshToken("token-exp");
+
+    expect(result).toBeUndefined();
+    expect(rt.delete).toHaveBeenCalledWith({ where: { id: "id-1" } });
   });
 
-  it("returns false when revoking a nonexistent token", () => {
-    const revoked = revokeRefreshToken("nonexistent");
+  it("revokes a token", async () => {
+    const rt = mockPrisma.refreshToken as any;
+    rt.delete.mockResolvedValue({});
+
+    const revoked = await revokeRefreshToken("token-abc");
+
+    expect(revoked).toBe(true);
+    expect(rt.delete).toHaveBeenCalledWith({
+      where: { token: "token-abc" },
+    });
+  });
+
+  it("returns false when revoking a nonexistent token", async () => {
+    const rt = mockPrisma.refreshToken as any;
+    rt.delete.mockRejectedValue(new Error("Record not found"));
+
+    const revoked = await revokeRefreshToken("nonexistent");
+
     expect(revoked).toBe(false);
   });
 
-  it("revokes all tokens for a user", () => {
-    storeRefreshToken("token-1", "user-1");
-    storeRefreshToken("token-2", "user-1");
-    storeRefreshToken("token-3", "user-2");
+  it("revokes all tokens for a user", async () => {
+    const rt = mockPrisma.refreshToken as any;
+    rt.deleteMany.mockResolvedValue({ count: 2 });
 
-    const count = revokeAllRefreshTokens("user-1");
+    const count = await revokeAllRefreshTokens("user-1");
+
     expect(count).toBe(2);
-    expect(lookupRefreshToken("token-1")).toBeUndefined();
-    expect(lookupRefreshToken("token-2")).toBeUndefined();
-    expect(lookupRefreshToken("token-3")).toEqual({ userId: "user-2" });
+    expect(rt.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+    });
   });
 
-  it("returns undefined for an expired token on lookup", () => {
-    // Store with a very short TTL (1ms)
-    storeRefreshToken("token-exp", "user-1", 1);
+  it("clears all tokens with clearStore", async () => {
+    const rt = mockPrisma.refreshToken as any;
+    rt.deleteMany.mockResolvedValue({ count: 0 });
 
-    // Wait a bit to ensure expiry
-    const start = Date.now();
-    while (Date.now() - start < 5) {
-      // busy wait
-    }
+    await clearStore();
 
-    const result = lookupRefreshToken("token-exp");
-    expect(result).toBeUndefined();
-  });
-
-  it("clears all tokens with clearStore", () => {
-    storeRefreshToken("token-1", "user-1");
-    storeRefreshToken("token-2", "user-2");
-
-    clearStore();
-
-    expect(lookupRefreshToken("token-1")).toBeUndefined();
-    expect(lookupRefreshToken("token-2")).toBeUndefined();
+    expect(rt.deleteMany).toHaveBeenCalled();
   });
 });

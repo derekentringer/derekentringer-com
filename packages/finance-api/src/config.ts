@@ -3,7 +3,13 @@ export function loadConfig() {
   const isProduction = nodeEnv === "production";
 
   if (isProduction) {
-    const required = ["ADMIN_PASSWORD_HASH", "JWT_SECRET"];
+    const required = [
+      "ADMIN_PASSWORD_HASH",
+      "JWT_SECRET",
+      "REFRESH_TOKEN_SECRET",
+      "DATABASE_URL",
+      "ENCRYPTION_KEY",
+    ];
     for (const name of required) {
       if (!process.env[name]) {
         throw new Error(`Missing required environment variable: ${name}`);
@@ -23,6 +29,8 @@ export function loadConfig() {
     corsOrigin: process.env.CORS_ORIGIN || "http://localhost:3003",
     port: Number(process.env.PORT) || 3002,
     nodeEnv,
+    databaseUrl: process.env.DATABASE_URL || "",
+    encryptionKey: process.env.ENCRYPTION_KEY || "",
   };
 }
 
