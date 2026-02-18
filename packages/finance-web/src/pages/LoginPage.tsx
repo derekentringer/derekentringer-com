@@ -31,7 +31,7 @@ export function LoginPage() {
   return (
     <div className={styles.container}>
       <form className={styles.form} onSubmit={handleSubmit}>
-        <h1 className={styles.title}>Personal Finance</h1>
+        <h1 className={styles.title}>fin</h1>
         <input
           className={styles.input}
           type="text"
