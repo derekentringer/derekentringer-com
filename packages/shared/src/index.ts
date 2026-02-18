@@ -24,4 +24,8 @@ export type {
   Account,
   Transaction,
   Balance,
+  CreateAccountRequest,
+  UpdateAccountRequest,
+  AccountListResponse,
+  AccountResponse,
 } from "./finance/types.js";

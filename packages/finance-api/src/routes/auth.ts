@@ -99,46 +99,57 @@ export default async function authRoutes(fastify: FastifyInstance) {
   );
 
   // POST /refresh
-  fastify.post("/refresh", async (request: FastifyRequest, reply: FastifyReply) => {
-    const token = request.cookies?.refreshToken;
+  fastify.post(
+    "/refresh",
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "15 minutes",
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const token = request.cookies?.refreshToken;
 
-    if (!token) {
-      return reply.status(401).send({
-        statusCode: 401,
-        error: "Unauthorized",
-        message: "No refresh token provided",
+      if (!token) {
+        return reply.status(401).send({
+          statusCode: 401,
+          error: "Unauthorized",
+          message: "No refresh token provided",
+        });
+      }
+
+      const stored = await lookupRefreshToken(token);
+      if (!stored) {
+        return reply.status(401).send({
+          statusCode: 401,
+          error: "Unauthorized",
+          message: "Invalid or expired refresh token",
+        });
+      }
+
+      // Rotate: revoke old, create new
+      await revokeRefreshToken(token);
+
+      const newRefreshToken = crypto.randomBytes(32).toString("hex");
+      await storeRefreshToken(newRefreshToken, stored.userId);
+
+      const accessToken = fastify.jwt.sign({
+        sub: stored.userId,
+        username: stored.userId === ADMIN_USER_ID ? config.adminUsername : stored.userId,
       });
-    }
 
-    const stored = await lookupRefreshToken(token);
-    if (!stored) {
-      return reply.status(401).send({
-        statusCode: 401,
-        error: "Unauthorized",
-        message: "Invalid or expired refresh token",
-      });
-    }
+      reply.setCookie("refreshToken", newRefreshToken, refreshCookieOptions(config.nodeEnv));
 
-    // Rotate: revoke old, create new
-    await revokeRefreshToken(token);
+      const response: RefreshResponse = {
+        accessToken,
+        expiresIn: 900,
+      };
 
-    const newRefreshToken = crypto.randomBytes(32).toString("hex");
-    await storeRefreshToken(newRefreshToken, stored.userId);
-
-    const accessToken = fastify.jwt.sign({
-      sub: stored.userId,
-      username: config.adminUsername,
-    });
-
-    reply.setCookie("refreshToken", newRefreshToken, refreshCookieOptions(config.nodeEnv));
-
-    const response: RefreshResponse = {
-      accessToken,
-      expiresIn: 900,
-    };
-
-    return reply.send(response);
-  });
+      return reply.send(response);
+    },
+  );
 
   // POST /logout
   fastify.post(
@@ -201,7 +212,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         const user = request.user;
         const pinToken = jwt.sign(
           { sub: user.sub, type: "pin" },
-          config.refreshTokenSecret,
+          config.pinTokenSecret,
           { expiresIn: 300 },
         );
 
