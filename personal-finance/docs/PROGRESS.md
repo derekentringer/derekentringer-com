@@ -22,7 +22,7 @@
 - **No Plaid** — CSV import from banks instead (Chase, Amex); Plaid too expensive for single-user tool
 - **Railway hosting** — API as Node.js service, web as static/Node service, Postgres via Railway plugin
 - **Field-level encryption** — sensitive fields (account numbers, balances) encrypted with AES-256-GCM before storing in Postgres; master key stored as Railway env var
-- **Custom domain** — `derekentringer.com/personal-finance` (existing portfolio site coexists)
+- **Custom domains** — `fin.derekentringer.com` (web) + `fin-api.derekentringer.com` (API); subdomain approach avoids routing conflicts with portfolio site
 
 ## Phases
 
