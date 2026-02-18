@@ -25,11 +25,15 @@ model Account {
   institution    String
   accountNumber  String?
   currentBalance String
+  interestRate   String?
+  csvParserId    String?
+  isActive       Boolean       @default(true)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   transactions   Transaction[]
   balances       Balance[]
 
+  @@index([isActive])
   @@map("accounts")
 }
 
@@ -55,6 +59,8 @@ model Balance {
   accountId String
   balance   String
   date      DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([accountId])

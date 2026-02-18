@@ -16,6 +16,10 @@
     "./auth/pinVerify": {
       "types": "./src/auth/pinVerify.ts",
       "default": "./dist/auth/pinVerify.js"
+    },
+    "./finance": {
+      "types": "./src/finance/types.ts",
+      "default": "./dist/finance/types.js"
     }
   },
   "scripts": {
@@ -26,14 +30,12 @@
   },
   "dependencies": {
     "@fastify/jwt": "^9.0.0",
-    "fastify-plugin": "^5.0.0",
-    "jsonwebtoken": "^9.0.0"
+    "fastify-plugin": "^5.0.0"
   },
   "peerDependencies": {
     "fastify": "^5.0.0"
   },
   "devDependencies": {
-    "@types/jsonwebtoken": "^9.0.0",
     "fastify": "^5.2.0",
     "typescript": "^5.7.0"
   }

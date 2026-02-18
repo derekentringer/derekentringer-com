@@ -34,7 +34,11 @@ export function createMockPrisma() {
       deleteMany: vi.fn(),
     },
     $disconnect: vi.fn(),
+    $transaction: vi.fn(),
   } as unknown as PrismaClient;
+
+  // Interactive transaction: pass mock itself as the tx client
+  (mock as any).$transaction.mockImplementation(async (fn: any) => fn(mock));
 
   setPrisma(mock);
   return mock;

@@ -3,6 +3,7 @@ import { initEncryptionKey, encryptNumber, encryptField, encryptOptionalField } 
 import {
   decryptAccount,
   encryptAccountForCreate,
+  encryptAccountForUpdate,
   decryptTransaction,
   encryptTransactionForCreate,
   decryptBalance,
@@ -25,16 +26,21 @@ describe("Account mappers", () => {
       institution: "Chase",
       accountNumber: "1234",
       currentBalance: 5000.5,
+      interestRate: 4.5,
+      isActive: true,
     };
 
     const encrypted = encryptAccountForCreate(input);
 
-    expect(encrypted.name).toBe("Checking");
+    expect(encrypted.name).not.toBe("Checking");
     expect(encrypted.type).toBe("checking");
-    expect(encrypted.institution).toBe("Chase");
+    expect(encrypted.institution).not.toBe("Chase");
     expect(encrypted.accountNumber).not.toBe("1234");
     expect(encrypted.accountNumber).not.toBeNull();
     expect(encrypted.currentBalance).not.toBe("5000.5");
+    expect(encrypted.interestRate).not.toBe("4.5");
+    expect(encrypted.interestRate).not.toBeNull();
+    expect(encrypted.isActive).toBe(true);
   });
 
   it("encryptAccountForCreate handles null accountNumber", () => {
@@ -48,6 +54,10 @@ describe("Account mappers", () => {
 
     const encrypted = encryptAccountForCreate(input);
     expect(encrypted.accountNumber).toBeNull();
+    expect(encrypted.interestRate).toBeNull();
+    expect(encrypted.csvParserId).toBeNull();
+    // isActive omitted — Prisma @default(true) applies
+    expect(encrypted.isActive).toBeUndefined();
   });
 
   it("decryptAccount round-trips with encryptAccountForCreate", () => {
@@ -57,6 +67,9 @@ describe("Account mappers", () => {
       institution: "Chase",
       accountNumber: "1234",
       currentBalance: 5000.5,
+      interestRate: 4.5,
+      csvParserId: "chase-checking",
+      isActive: true,
     };
 
     const encrypted = encryptAccountForCreate(input);
@@ -65,6 +78,7 @@ describe("Account mappers", () => {
     const row = {
       id: "cuid-123",
       ...encrypted,
+      isActive: encrypted.isActive ?? true,
       createdAt: now,
       updatedAt: now,
     };
@@ -77,8 +91,64 @@ describe("Account mappers", () => {
     expect(decrypted.institution).toBe("Chase");
     expect(decrypted.accountNumber).toBe("1234");
     expect(decrypted.currentBalance).toBe(5000.5);
+    expect(decrypted.interestRate).toBe(4.5);
+    expect(decrypted.csvParserId).toBe("chase-checking");
+    expect(decrypted.isActive).toBe(true);
     expect(decrypted.createdAt).toBe(now.toISOString());
     expect(decrypted.updatedAt).toBe(now.toISOString());
+  });
+
+  it("decryptAccount handles null optional fields", () => {
+    const input = {
+      name: "Savings",
+      type: AccountType.Savings,
+      institution: "Bank",
+      currentBalance: 100,
+    };
+
+    const encrypted = encryptAccountForCreate(input);
+    const now = new Date();
+
+    const row = {
+      id: "cuid-456",
+      ...encrypted,
+      isActive: true, // Prisma @default(true) provides this
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const decrypted = decryptAccount(row);
+
+    expect(decrypted.interestRate).toBeUndefined();
+    expect(decrypted.csvParserId).toBeUndefined();
+    expect(decrypted.isActive).toBe(true);
+  });
+
+  it("encryptAccountForUpdate only includes provided fields", () => {
+    const data = encryptAccountForUpdate({
+      name: "Updated Name",
+      currentBalance: 9999,
+    });
+
+    expect(data.name).toBeDefined();
+    expect(data.name).not.toBe("Updated Name");
+    expect(data.currentBalance).toBeDefined();
+    expect(data.type).toBeUndefined();
+    expect(data.institution).toBeUndefined();
+    expect(data.accountNumber).toBeUndefined();
+    expect(data.interestRate).toBeUndefined();
+  });
+
+  it("encryptAccountForUpdate handles null values for optional fields", () => {
+    const data = encryptAccountForUpdate({
+      accountNumber: null,
+      interestRate: null,
+      csvParserId: null,
+    });
+
+    expect(data.accountNumber).toBeNull();
+    expect(data.interestRate).toBeNull();
+    expect(data.csvParserId).toBeNull();
   });
 });
 
@@ -98,7 +168,7 @@ describe("Transaction mappers", () => {
 
     expect(encrypted.accountId).toBe("acc-1");
     expect(encrypted.date).toBe(date);
-    expect(encrypted.description).toBe("Coffee");
+    expect(encrypted.description).not.toBe("Coffee");
     expect(encrypted.amount).not.toBe("-4.5");
     expect(encrypted.category).toBe("Food");
     expect(encrypted.notes).toBeNull();
@@ -162,9 +232,12 @@ describe("Balance mappers", () => {
 
     const encrypted = encryptBalanceForCreate(input);
 
+    const now = new Date();
     const row = {
       id: "bal-123",
       ...encrypted,
+      createdAt: now,
+      updatedAt: now,
     };
 
     const decrypted = decryptBalance(row);

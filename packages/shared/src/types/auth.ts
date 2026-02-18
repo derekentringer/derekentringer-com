@@ -48,6 +48,11 @@ export interface LogoutResponse {
   message: string;
 }
 
+export interface RevokeAllSessionsResponse {
+  revokedCount: number;
+  message: string;
+}
+
 export interface AuthPluginOptions {
   jwtSecret: string;
   accessTokenExpiry?: string;
