@@ -89,29 +89,38 @@ export default async function authRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const now = new Date().toISOString();
-      const accessToken = fastify.jwt.sign({
-        sub: ADMIN_USER_ID,
-        username: config.adminUsername,
-      });
-
-      const refreshToken = crypto.randomBytes(32).toString("hex");
-      await storeRefreshToken(refreshToken, ADMIN_USER_ID);
-
-      reply.setCookie("refreshToken", refreshToken, refreshCookieOptions(config.nodeEnv));
-
-      const response: LoginResponse = {
-        accessToken,
-        expiresIn: 900,
-        user: {
-          id: ADMIN_USER_ID,
+      try {
+        const now = new Date().toISOString();
+        const accessToken = fastify.jwt.sign({
+          sub: ADMIN_USER_ID,
           username: config.adminUsername,
-          createdAt: now,
-          updatedAt: now,
-        },
-      };
+        });
 
-      return reply.send(response);
+        const refreshToken = crypto.randomBytes(32).toString("hex");
+        await storeRefreshToken(refreshToken, ADMIN_USER_ID);
+
+        reply.setCookie("refreshToken", refreshToken, refreshCookieOptions(config.nodeEnv));
+
+        const response: LoginResponse = {
+          accessToken,
+          expiresIn: 900,
+          user: {
+            id: ADMIN_USER_ID,
+            username: config.adminUsername,
+            createdAt: now,
+            updatedAt: now,
+          },
+        };
+
+        return reply.send(response);
+      } catch (e) {
+        request.log.error(e, "Failed to complete login");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to complete login",
+        });
+      }
     },
   );
 
@@ -137,34 +146,43 @@ export default async function authRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const stored = await lookupRefreshToken(token);
-      if (!stored) {
-        return reply.status(401).send({
-          statusCode: 401,
-          error: "Unauthorized",
-          message: "Invalid or expired refresh token",
+      try {
+        const stored = await lookupRefreshToken(token);
+        if (!stored) {
+          return reply.status(401).send({
+            statusCode: 401,
+            error: "Unauthorized",
+            message: "Invalid or expired refresh token",
+          });
+        }
+
+        // Rotate: revoke old, create new
+        await revokeRefreshToken(token);
+
+        const newRefreshToken = crypto.randomBytes(32).toString("hex");
+        await storeRefreshToken(newRefreshToken, stored.userId);
+
+        const accessToken = fastify.jwt.sign({
+          sub: stored.userId,
+          username: stored.userId === ADMIN_USER_ID ? config.adminUsername : stored.userId,
+        });
+
+        reply.setCookie("refreshToken", newRefreshToken, refreshCookieOptions(config.nodeEnv));
+
+        const response: RefreshResponse = {
+          accessToken,
+          expiresIn: 900,
+        };
+
+        return reply.send(response);
+      } catch (e) {
+        request.log.error(e, "Failed to refresh token");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to refresh token",
         });
       }
-
-      // Rotate: revoke old, create new
-      await revokeRefreshToken(token);
-
-      const newRefreshToken = crypto.randomBytes(32).toString("hex");
-      await storeRefreshToken(newRefreshToken, stored.userId);
-
-      const accessToken = fastify.jwt.sign({
-        sub: stored.userId,
-        username: stored.userId === ADMIN_USER_ID ? config.adminUsername : stored.userId,
-      });
-
-      reply.setCookie("refreshToken", newRefreshToken, refreshCookieOptions(config.nodeEnv));
-
-      const response: RefreshResponse = {
-        accessToken,
-        expiresIn: 900,
-      };
-
-      return reply.send(response);
     },
   );
 
@@ -173,20 +191,29 @@ export default async function authRoutes(fastify: FastifyInstance) {
     "/logout",
     { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const token = request.cookies?.refreshToken;
-      if (token) {
-        await revokeRefreshToken(token);
+      try {
+        const token = request.cookies?.refreshToken;
+        if (token) {
+          await revokeRefreshToken(token);
+        }
+
+        reply.clearCookie("refreshToken", {
+          path: "/auth/refresh",
+        });
+
+        const response: LogoutResponse = {
+          message: "Logged out successfully",
+        };
+
+        return reply.send(response);
+      } catch (e) {
+        request.log.error(e, "Failed to logout");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to logout",
+        });
       }
-
-      reply.clearCookie("refreshToken", {
-        path: "/auth/refresh",
-      });
-
-      const response: LogoutResponse = {
-        message: "Logged out successfully",
-      };
-
-      return reply.send(response);
     },
   );
 
