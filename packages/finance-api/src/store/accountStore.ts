@@ -48,11 +48,10 @@ export async function listAccounts(filter?: {
   if (filter?.isActive !== undefined) {
     where.isActive = filter.isActive;
   }
-  const rows = await prisma.account.findMany({
-    where,
-    orderBy: { name: "asc" },
-  });
-  return rows.map(decryptAccount);
+  const rows = await prisma.account.findMany({ where });
+  const accounts = rows.map(decryptAccount);
+  accounts.sort((a, b) => a.name.localeCompare(b.name));
+  return accounts;
 }
 
 export async function updateAccount(

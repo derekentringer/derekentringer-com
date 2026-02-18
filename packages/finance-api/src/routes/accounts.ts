@@ -14,6 +14,7 @@ import {
 
 const VALID_ACCOUNT_TYPES = Object.values(AccountType) as string[];
 const MAX_STRING_LENGTH = 255;
+const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
 
 function isValidNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -23,20 +24,41 @@ function isStringTooLong(value: unknown): boolean {
   return typeof value === "string" && value.length > MAX_STRING_LENGTH;
 }
 
-const UPDATE_FIELDS = new Set([
-  "name",
-  "type",
-  "institution",
-  "currentBalance",
-  "accountNumber",
-  "interestRate",
-  "csvParserId",
-  "isActive",
-]);
+const createAccountSchema = {
+  body: {
+    type: "object" as const,
+    required: ["name", "type", "institution", "currentBalance"],
+    additionalProperties: false,
+    properties: {
+      name: { type: "string" },
+      type: { type: "string" },
+      institution: { type: "string" },
+      currentBalance: { type: "number" },
+      accountNumber: { type: ["string", "null"] },
+      interestRate: { type: ["number", "null"] },
+      csvParserId: { type: ["string", "null"] },
+      isActive: { type: "boolean" },
+    },
+  },
+};
 
-function hasRecognizedFields(body: Record<string, unknown>): boolean {
-  return Object.keys(body).some((key) => UPDATE_FIELDS.has(key));
-}
+const updateAccountSchema = {
+  body: {
+    type: "object" as const,
+    additionalProperties: false,
+    minProperties: 1,
+    properties: {
+      name: { type: "string" },
+      type: { type: "string" },
+      institution: { type: "string" },
+      currentBalance: { type: "number" },
+      accountNumber: { type: ["string", "null"] },
+      interestRate: { type: ["number", "null"] },
+      csvParserId: { type: ["string", "null"] },
+      isActive: { type: "boolean" },
+    },
+  },
+};
 
 export default async function accountRoutes(fastify: FastifyInstance) {
   // All routes require auth
@@ -75,6 +97,14 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      if (!CUID_PATTERN.test(request.params.id)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid account ID format",
+        });
+      }
+
       try {
         const account = await getAccount(request.params.id);
         if (!account) {
@@ -99,21 +129,13 @@ export default async function accountRoutes(fastify: FastifyInstance) {
   // POST / — create account
   fastify.post<{ Body: CreateAccountRequest }>(
     "/",
+    { schema: createAccountSchema },
     async (
       request: FastifyRequest<{ Body: CreateAccountRequest }>,
       reply: FastifyReply,
     ) => {
       const { name, type, institution, currentBalance, interestRate } =
-        request.body || {};
-
-      if (!name || !type || !institution || currentBalance === undefined) {
-        return reply.status(400).send({
-          statusCode: 400,
-          error: "Bad Request",
-          message:
-            "name, type, institution, and currentBalance are required",
-        });
-      }
+        request.body;
 
       if (!isValidNumber(currentBalance)) {
         return reply.status(400).send({
@@ -169,6 +191,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
   // PATCH /:id — partial update account
   fastify.patch<{ Params: { id: string }; Body: UpdateAccountRequest }>(
     "/:id",
+    { schema: updateAccountSchema },
     async (
       request: FastifyRequest<{
         Params: { id: string };
@@ -176,16 +199,16 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
-      const body = request.body || {};
-      const { type, currentBalance, interestRate } = body;
-
-      if (!hasRecognizedFields(body as Record<string, unknown>)) {
+      if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
           error: "Bad Request",
-          message: "Request body must contain at least one recognized field",
+          message: "Invalid account ID format",
         });
       }
+
+      const body = request.body;
+      const { type, currentBalance, interestRate } = body;
 
       if (type !== undefined && !VALID_ACCOUNT_TYPES.includes(type)) {
         return reply.status(400).send({
@@ -252,6 +275,14 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      if (!CUID_PATTERN.test(request.params.id)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid account ID format",
+        });
+      }
+
       try {
         const deleted = await deleteAccount(request.params.id);
         if (!deleted) {

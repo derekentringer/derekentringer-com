@@ -14,6 +14,7 @@ export type {
   PinVerifyResponse,
   PinJwtPayload,
   LogoutResponse,
+  RevokeAllSessionsResponse,
   AuthPluginOptions,
 } from "./types/auth.js";
 

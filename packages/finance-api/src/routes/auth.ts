@@ -1,12 +1,12 @@
 import crypto from "crypto";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import { loadConfig } from "../config.js";
 import {
   storeRefreshToken,
   lookupRefreshToken,
   revokeRefreshToken,
+  revokeAllRefreshTokens,
 } from "../store/refreshTokenStore.js";
 import type {
   LoginRequest,
@@ -15,6 +15,7 @@ import type {
   PinVerifyRequest,
   PinVerifyResponse,
   LogoutResponse,
+  RevokeAllSessionsResponse,
 } from "@derekentringer/shared";
 
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
@@ -30,6 +31,29 @@ function refreshCookieOptions(nodeEnv: string) {
   };
 }
 
+const loginSchema = {
+  body: {
+    type: "object" as const,
+    required: ["username", "password"],
+    additionalProperties: false,
+    properties: {
+      username: { type: "string" },
+      password: { type: "string" },
+    },
+  },
+};
+
+const pinVerifySchema = {
+  body: {
+    type: "object" as const,
+    required: ["pin"],
+    additionalProperties: false,
+    properties: {
+      pin: { type: "string" },
+    },
+  },
+};
+
 export default async function authRoutes(fastify: FastifyInstance) {
   const config = loadConfig();
 
@@ -37,6 +61,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: LoginRequest }>(
     "/login",
     {
+      schema: loginSchema,
       config: {
         rateLimit: {
           max: 5,
@@ -45,15 +70,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Body: LoginRequest }>, reply: FastifyReply) => {
-      const { username, password } = request.body || {};
-
-      if (!username || !password) {
-        return reply.status(400).send({
-          statusCode: 400,
-          error: "Bad Request",
-          message: "Username and password are required",
-        });
-      }
+      const { username, password } = request.body;
 
       if (username !== config.adminUsername) {
         return reply.status(401).send({
@@ -173,11 +190,41 @@ export default async function authRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // POST /sessions/revoke-all — revoke all refresh tokens for current user
+  fastify.post(
+    "/sessions/revoke-all",
+    { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const revokedCount = await revokeAllRefreshTokens(request.user.sub);
+
+        reply.clearCookie("refreshToken", {
+          path: "/auth/refresh",
+        });
+
+        const response: RevokeAllSessionsResponse = {
+          revokedCount,
+          message: `Revoked ${revokedCount} session(s)`,
+        };
+
+        return reply.send(response);
+      } catch (e) {
+        request.log.error(e, "Failed to revoke all sessions");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to revoke sessions",
+        });
+      }
+    },
+  );
+
   // POST /pin/verify — only if PIN_HASH is configured
   if (config.pinHash) {
     fastify.post<{ Body: PinVerifyRequest }>(
       "/pin/verify",
       {
+        schema: pinVerifySchema,
         onRequest: [fastify.authenticate],
         config: {
           rateLimit: {
@@ -190,15 +237,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         request: FastifyRequest<{ Body: PinVerifyRequest }>,
         reply: FastifyReply,
       ) => {
-        const { pin } = request.body || {};
-
-        if (!pin) {
-          return reply.status(400).send({
-            statusCode: 400,
-            error: "Bad Request",
-            message: "PIN is required",
-          });
-        }
+        const { pin } = request.body;
 
         const valid = await bcrypt.compare(pin, config.pinHash!);
         if (!valid) {
@@ -210,10 +249,10 @@ export default async function authRoutes(fastify: FastifyInstance) {
         }
 
         const user = request.user;
-        const pinToken = jwt.sign(
-          { sub: user.sub, type: "pin" },
-          config.pinTokenSecret,
-          { expiresIn: 300 },
+        // Pin tokens use a different payload shape than access tokens
+        const pinToken = fastify.jwt.sign(
+          { sub: user.sub, type: "pin" } as any,
+          { key: config.pinTokenSecret, expiresIn: 300 },
         );
 
         const response: PinVerifyResponse = {

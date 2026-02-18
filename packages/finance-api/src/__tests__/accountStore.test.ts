@@ -101,19 +101,36 @@ describe("accountStore", () => {
   });
 
   describe("listAccounts", () => {
-    it("returns all accounts ordered by name", async () => {
+    it("returns all accounts sorted by name after decryption", async () => {
       const acct = mockPrisma.account as any;
+      const rowB = makeMockRow({ id: "acc-b" });
+      const rowA = makeMockRow({ id: "acc-a" });
+      // Override names so we can verify sort order
+      const encA = encryptAccountForCreate({
+        name: "Alpha",
+        type: AccountType.Checking,
+        institution: "Bank",
+        currentBalance: 100,
+      });
+      const encZ = encryptAccountForCreate({
+        name: "Zulu",
+        type: AccountType.Checking,
+        institution: "Bank",
+        currentBalance: 200,
+      });
+      // Return in reverse order from DB
       acct.findMany.mockResolvedValue([
-        makeMockRow({ id: "acc-1" }),
-        makeMockRow({ id: "acc-2" }),
+        { ...rowB, ...encZ, id: "acc-z" },
+        { ...rowA, ...encA, id: "acc-a" },
       ]);
 
       const result = await listAccounts();
 
       expect(result).toHaveLength(2);
-      expect(acct.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ orderBy: { name: "asc" } }),
-      );
+      expect(result[0].name).toBe("Alpha");
+      expect(result[1].name).toBe("Zulu");
+      // Should NOT use orderBy since names are encrypted
+      expect(acct.findMany).toHaveBeenCalledWith({ where: {} });
     });
 
     it("filters by isActive", async () => {

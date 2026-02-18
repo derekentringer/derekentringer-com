@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
 const TEST_PASSWORD = "testpassword123";
+const VALID_CUID = "cm1a2b3c4d5e6f7g8h9i0j";
+const VALID_CUID_2 = "cm9z8y7x6w5v4u3t2s1r0q";
 
 process.env.ADMIN_USERNAME = "admin";
 process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
@@ -57,7 +59,7 @@ describe("Account routes", () => {
     });
 
     return {
-      id: "acc-123",
+      id: VALID_CUID,
       ...encrypted,
       isActive: true,
       createdAt: new Date(),
@@ -151,7 +153,6 @@ describe("Account routes", () => {
       });
 
       expect(res.statusCode).toBe(400);
-      expect(res.json().message).toContain("currentBalance must be a finite number");
     });
 
     it("returns 400 with non-numeric interestRate", async () => {
@@ -171,7 +172,6 @@ describe("Account routes", () => {
       });
 
       expect(res.statusCode).toBe(400);
-      expect(res.json().message).toContain("interestRate must be a finite number");
     });
 
     it("returns 400 with string fields exceeding max length", async () => {
@@ -216,8 +216,8 @@ describe("Account routes", () => {
       const token = await getAccessToken();
       const acct = mockPrisma.account as any;
       acct.findMany.mockResolvedValue([
-        makeMockAccountRow({ id: "acc-1" }),
-        makeMockAccountRow({ id: "acc-2" }),
+        makeMockAccountRow({ id: VALID_CUID }),
+        makeMockAccountRow({ id: VALID_CUID_2 }),
       ]);
 
       const res = await app.inject({
@@ -260,13 +260,13 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "GET",
-        url: "/accounts/acc-123",
+        url: `/accounts/${VALID_CUID}`,
         headers: { authorization: `Bearer ${token}` },
       });
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.account.id).toBe("acc-123");
+      expect(body.account.id).toBe(VALID_CUID);
       expect(body.account.name).toBe("Test Account");
     });
 
@@ -277,7 +277,7 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "GET",
-        url: "/accounts/nonexistent",
+        url: `/accounts/${VALID_CUID_2}`,
         headers: { authorization: `Bearer ${token}` },
       });
 
@@ -301,7 +301,7 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "PATCH",
-        url: "/accounts/acc-123",
+        url: `/accounts/${VALID_CUID}`,
         headers: { authorization: `Bearer ${token}` },
         payload: { name: "Updated Name" },
       });
@@ -320,7 +320,7 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "PATCH",
-        url: "/accounts/nonexistent",
+        url: `/accounts/${VALID_CUID_2}`,
         headers: { authorization: `Bearer ${token}` },
         payload: { name: "Nope" },
       });
@@ -343,14 +343,14 @@ describe("Account routes", () => {
 
       await app.inject({
         method: "PATCH",
-        url: "/accounts/acc-123",
+        url: `/accounts/${VALID_CUID}`,
         headers: { authorization: `Bearer ${token}` },
         payload: { currentBalance: 9999 },
       });
 
       expect(bal.create).toHaveBeenCalledTimes(1);
       const balData = bal.create.mock.calls[0][0].data;
-      expect(balData.accountId).toBe("acc-123");
+      expect(balData.accountId).toBe(VALID_CUID);
       expect(balData.balance).toBeDefined();
       expect(balData.date).toBeDefined();
     });
@@ -360,7 +360,7 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "PATCH",
-        url: "/accounts/acc-123",
+        url: `/accounts/${VALID_CUID}`,
         headers: { authorization: `Bearer ${token}` },
         payload: { type: "bad_type" },
       });
@@ -373,13 +373,12 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "PATCH",
-        url: "/accounts/acc-123",
+        url: `/accounts/${VALID_CUID}`,
         headers: { authorization: `Bearer ${token}` },
         payload: {},
       });
 
       expect(res.statusCode).toBe(400);
-      expect(res.json().message).toContain("at least one recognized field");
     });
 
     it("returns 400 with non-numeric currentBalance", async () => {
@@ -387,13 +386,12 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "PATCH",
-        url: "/accounts/acc-123",
+        url: `/accounts/${VALID_CUID}`,
         headers: { authorization: `Bearer ${token}` },
         payload: { currentBalance: "bad" },
       });
 
       expect(res.statusCode).toBe(400);
-      expect(res.json().message).toContain("currentBalance must be a finite number");
     });
 
     it("returns 400 with string fields exceeding max length", async () => {
@@ -401,7 +399,7 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "PATCH",
-        url: "/accounts/acc-123",
+        url: `/accounts/${VALID_CUID}`,
         headers: { authorization: `Bearer ${token}` },
         payload: { name: "A".repeat(256) },
       });
@@ -421,7 +419,7 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "DELETE",
-        url: "/accounts/acc-123",
+        url: `/accounts/${VALID_CUID}`,
         headers: { authorization: `Bearer ${token}` },
       });
 
@@ -437,11 +435,55 @@ describe("Account routes", () => {
 
       const res = await app.inject({
         method: "DELETE",
-        url: "/accounts/nonexistent",
+        url: `/accounts/${VALID_CUID_2}`,
         headers: { authorization: `Bearer ${token}` },
       });
 
       expect(res.statusCode).toBe(404);
+    });
+  });
+
+  // --- CUID validation ---
+
+  describe("CUID ID format validation", () => {
+    it("GET /:id returns 400 for invalid ID format", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/accounts/invalid-id",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toBe("Invalid account ID format");
+    });
+
+    it("PATCH /:id returns 400 for invalid ID format", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/accounts/invalid-id",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: "Test" },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toBe("Invalid account ID format");
+    });
+
+    it("DELETE /:id returns 400 for invalid ID format", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/accounts/invalid-id",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toBe("Invalid account ID format");
     });
   });
 });

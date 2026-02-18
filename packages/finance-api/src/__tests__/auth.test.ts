@@ -112,7 +112,7 @@ describe("Auth routes", () => {
 
       expect(res.statusCode).toBe(400);
       const body = res.json();
-      expect(body.message).toBe("Username and password are required");
+      expect(body.message).toContain("required");
     });
   });
 
@@ -215,6 +215,68 @@ describe("Auth routes", () => {
       });
 
       expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- Revoke All Sessions ---
+
+  describe("POST /auth/sessions/revoke-all", () => {
+    it("revokes all sessions and returns count", async () => {
+      setupTokenMocks();
+      const rt = mockPrisma.refreshToken as any;
+      rt.deleteMany.mockResolvedValue({ count: 3 });
+
+      const loginRes = await app.inject({
+        method: "POST",
+        url: "/auth/login",
+        payload: { username: "admin", password: TEST_PASSWORD },
+      });
+
+      const { accessToken } = loginRes.json();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/auth/sessions/revoke-all",
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.revokedCount).toBe(3);
+      expect(body.message).toContain("3");
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/auth/sessions/revoke-all",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it("returns count 0 when no sessions exist", async () => {
+      setupTokenMocks();
+      const rt = mockPrisma.refreshToken as any;
+      rt.deleteMany.mockResolvedValue({ count: 0 });
+
+      const loginRes = await app.inject({
+        method: "POST",
+        url: "/auth/login",
+        payload: { username: "admin", password: TEST_PASSWORD },
+      });
+
+      const { accessToken } = loginRes.json();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/auth/sessions/revoke-all",
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.revokedCount).toBe(0);
     });
   });
 

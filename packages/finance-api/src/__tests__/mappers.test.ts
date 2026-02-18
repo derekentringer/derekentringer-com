@@ -32,9 +32,9 @@ describe("Account mappers", () => {
 
     const encrypted = encryptAccountForCreate(input);
 
-    expect(encrypted.name).toBe("Checking");
+    expect(encrypted.name).not.toBe("Checking");
     expect(encrypted.type).toBe("checking");
-    expect(encrypted.institution).toBe("Chase");
+    expect(encrypted.institution).not.toBe("Chase");
     expect(encrypted.accountNumber).not.toBe("1234");
     expect(encrypted.accountNumber).not.toBeNull();
     expect(encrypted.currentBalance).not.toBe("5000.5");
@@ -130,7 +130,8 @@ describe("Account mappers", () => {
       currentBalance: 9999,
     });
 
-    expect(data.name).toBe("Updated Name");
+    expect(data.name).toBeDefined();
+    expect(data.name).not.toBe("Updated Name");
     expect(data.currentBalance).toBeDefined();
     expect(data.type).toBeUndefined();
     expect(data.institution).toBeUndefined();
@@ -167,7 +168,7 @@ describe("Transaction mappers", () => {
 
     expect(encrypted.accountId).toBe("acc-1");
     expect(encrypted.date).toBe(date);
-    expect(encrypted.description).toBe("Coffee");
+    expect(encrypted.description).not.toBe("Coffee");
     expect(encrypted.amount).not.toBe("-4.5");
     expect(encrypted.category).toBe("Food");
     expect(encrypted.notes).toBeNull();

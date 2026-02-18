@@ -25,9 +25,9 @@ import {
 export function decryptAccount(row: PrismaAccount): Account {
   return {
     id: row.id,
-    name: row.name,
+    name: decryptField(row.name),
     type: row.type as AccountType,
-    institution: row.institution,
+    institution: decryptField(row.institution),
     accountNumber: decryptOptionalField(row.accountNumber),
     currentBalance: decryptNumber(row.currentBalance),
     interestRate: decryptOptionalNumber(row.interestRate),
@@ -60,9 +60,9 @@ export function encryptAccountForCreate(input: {
   isActive?: boolean;
 }): EncryptedAccountCreate {
   const data: EncryptedAccountCreate = {
-    name: input.name,
+    name: encryptField(input.name),
     type: input.type,
-    institution: input.institution,
+    institution: encryptField(input.institution),
     accountNumber: encryptOptionalField(input.accountNumber),
     currentBalance: encryptNumber(input.currentBalance),
     interestRate: encryptOptionalNumber(input.interestRate),
@@ -96,9 +96,10 @@ export function encryptAccountForUpdate(input: {
 }): EncryptedAccountUpdate {
   const data: EncryptedAccountUpdate = {};
 
-  if (input.name !== undefined) data.name = input.name;
+  if (input.name !== undefined) data.name = encryptField(input.name);
   if (input.type !== undefined) data.type = input.type;
-  if (input.institution !== undefined) data.institution = input.institution;
+  if (input.institution !== undefined)
+    data.institution = encryptField(input.institution);
   if (input.accountNumber !== undefined)
     data.accountNumber = encryptOptionalField(input.accountNumber);
   if (input.currentBalance !== undefined)
@@ -119,10 +120,10 @@ export function decryptTransaction(row: PrismaTransaction): Transaction {
     id: row.id,
     accountId: row.accountId,
     date: row.date.toISOString(),
-    description: row.description,
+    description: decryptField(row.description),
     amount: decryptNumber(row.amount),
     category: row.category ?? undefined,
-    notes: row.notes ?? undefined,
+    notes: decryptOptionalField(row.notes),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -146,10 +147,10 @@ export function encryptTransactionForCreate(input: {
   return {
     accountId: input.accountId,
     date: input.date,
-    description: input.description,
+    description: encryptField(input.description),
     amount: encryptNumber(input.amount),
     category: input.category ?? null,
-    notes: input.notes ?? null,
+    notes: encryptOptionalField(input.notes),
   };
 }
 
