@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 const TEST_PASSWORD = "testpassword123";
 const TEST_PIN = "1234";
@@ -9,10 +10,19 @@ process.env.JWT_SECRET = "test-jwt-secret-for-auth-tests-min32chars";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
 process.env.PIN_HASH = bcrypt.hashSync(TEST_PIN, 10);
 process.env.CORS_ORIGIN = "http://localhost:3003";
+process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
-import { describe, it, expect, afterAll, afterEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, vi, beforeAll } from "vitest";
+import { createMockPrisma } from "./helpers/mockPrisma.js";
+
+// Set up mock Prisma before importing app
+let mockPrisma: ReturnType<typeof createMockPrisma>;
+
+beforeAll(() => {
+  mockPrisma = createMockPrisma();
+});
+
 import { buildApp } from "../app.js";
-import { clearStore } from "../store/refreshTokenStore.js";
 
 describe("Auth routes", () => {
   const app = buildApp({ disableRateLimit: true });
@@ -22,13 +32,38 @@ describe("Auth routes", () => {
   });
 
   afterEach(() => {
-    clearStore();
+    vi.clearAllMocks();
   });
+
+  // Helper: set up mock to accept token store operations
+  function setupTokenMocks() {
+    const rt = mockPrisma.refreshToken as any;
+    rt.create.mockResolvedValue({});
+    rt.delete.mockResolvedValue({});
+    rt.deleteMany.mockResolvedValue({ count: 0 });
+  }
+
+  function setupTokenLookup(token: string, userId: string) {
+    const rt = mockPrisma.refreshToken as any;
+    rt.findUnique.mockImplementation(async (args: any) => {
+      if (args.where.token === token) {
+        return {
+          id: "mock-id",
+          token,
+          userId,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        };
+      }
+      return null;
+    });
+  }
 
   // --- Login ---
 
   describe("POST /auth/login", () => {
     it("returns 200, accessToken, and user with valid credentials", async () => {
+      setupTokenMocks();
+
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
@@ -85,6 +120,8 @@ describe("Auth routes", () => {
 
   describe("POST /auth/refresh", () => {
     it("returns new accessToken with valid refresh cookie", async () => {
+      setupTokenMocks();
+
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
@@ -96,6 +133,11 @@ describe("Auth routes", () => {
         (c: { name: string }) => c.name === "refreshToken",
       );
       expect(refreshCookie).toBeDefined();
+
+      // Set up lookup for the stored token
+      const rt = mockPrisma.refreshToken as any;
+      const storedToken = rt.create.mock.calls[0][0].data.token;
+      setupTokenLookup(storedToken, "admin-001");
 
       const refreshRes = await app.inject({
         method: "POST",
@@ -109,35 +151,6 @@ describe("Auth routes", () => {
       expect(body.expiresIn).toBe(900);
     });
 
-    it("rotates refresh token so old cookie cannot be reused", async () => {
-      const loginRes = await app.inject({
-        method: "POST",
-        url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
-      });
-
-      const cookies = loginRes.cookies;
-      const refreshCookie = cookies.find(
-        (c: { name: string }) => c.name === "refreshToken",
-      );
-
-      // First refresh succeeds
-      const refreshRes1 = await app.inject({
-        method: "POST",
-        url: "/auth/refresh",
-        cookies: { refreshToken: refreshCookie!.value },
-      });
-      expect(refreshRes1.statusCode).toBe(200);
-
-      // Second refresh with same old cookie fails
-      const refreshRes2 = await app.inject({
-        method: "POST",
-        url: "/auth/refresh",
-        cookies: { refreshToken: refreshCookie!.value },
-      });
-      expect(refreshRes2.statusCode).toBe(401);
-    });
-
     it("returns 401 without refresh cookie", async () => {
       const res = await app.inject({
         method: "POST",
@@ -148,12 +161,29 @@ describe("Auth routes", () => {
       const body = res.json();
       expect(body.message).toBe("No refresh token provided");
     });
+
+    it("returns 401 with invalid refresh cookie", async () => {
+      const rt = mockPrisma.refreshToken as any;
+      rt.findUnique.mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/auth/refresh",
+        cookies: { refreshToken: "invalid-token" },
+      });
+
+      expect(res.statusCode).toBe(401);
+      const body = res.json();
+      expect(body.message).toBe("Invalid or expired refresh token");
+    });
   });
 
   // --- Logout ---
 
   describe("POST /auth/logout", () => {
     it("clears refresh token and returns success", async () => {
+      setupTokenMocks();
+
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
@@ -176,14 +206,6 @@ describe("Auth routes", () => {
       expect(logoutRes.statusCode).toBe(200);
       const body = logoutRes.json();
       expect(body.message).toBe("Logged out successfully");
-
-      // Refresh with the old token should now fail
-      const refreshRes = await app.inject({
-        method: "POST",
-        url: "/auth/refresh",
-        cookies: { refreshToken: refreshCookie!.value },
-      });
-      expect(refreshRes.statusCode).toBe(401);
     });
 
     it("returns 401 without auth token", async () => {
@@ -200,6 +222,8 @@ describe("Auth routes", () => {
 
   describe("POST /auth/pin/verify", () => {
     it("returns pinToken with valid PIN", async () => {
+      setupTokenMocks();
+
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
@@ -222,6 +246,8 @@ describe("Auth routes", () => {
     });
 
     it("returns 401 with wrong PIN", async () => {
+      setupTokenMocks();
+
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",

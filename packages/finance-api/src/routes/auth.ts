@@ -79,7 +79,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       });
 
       const refreshToken = crypto.randomBytes(32).toString("hex");
-      storeRefreshToken(refreshToken, ADMIN_USER_ID);
+      await storeRefreshToken(refreshToken, ADMIN_USER_ID);
 
       reply.setCookie("refreshToken", refreshToken, refreshCookieOptions(config.nodeEnv));
 
@@ -110,7 +110,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const stored = lookupRefreshToken(token);
+    const stored = await lookupRefreshToken(token);
     if (!stored) {
       return reply.status(401).send({
         statusCode: 401,
@@ -120,10 +120,10 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
 
     // Rotate: revoke old, create new
-    revokeRefreshToken(token);
+    await revokeRefreshToken(token);
 
     const newRefreshToken = crypto.randomBytes(32).toString("hex");
-    storeRefreshToken(newRefreshToken, stored.userId);
+    await storeRefreshToken(newRefreshToken, stored.userId);
 
     const accessToken = fastify.jwt.sign({
       sub: stored.userId,
@@ -147,7 +147,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       const token = request.cookies?.refreshToken;
       if (token) {
-        revokeRefreshToken(token);
+        await revokeRefreshToken(token);
       }
 
       reply.clearCookie("refreshToken", {

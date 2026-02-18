@@ -1,4 +1,10 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
+import { createMockPrisma } from "./helpers/mockPrisma.js";
+
+beforeAll(() => {
+  createMockPrisma();
+});
+
 import { buildApp } from "../app.js";
 
 describe("GET /health", () => {

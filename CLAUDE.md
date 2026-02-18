@@ -32,7 +32,7 @@ This project uses **gitflow**:
 - **Web production server**: `serve` static file server bound to `0.0.0.0:$PORT` with SPA fallback (`-s` flag)
 - **API**: `packages/api/Dockerfile` — multi-stage Node build on port 3001
 - **Finance Web**: Railpack; start command `npm run start --workspace=@derekentringer/finance-web`; `serve` static file server with SPA fallback; custom domain `fin.derekentringer.com`; env: `VITE_API_URL=https://fin-api.derekentringer.com` (build-time)
-- **Finance API**: Railpack; start command `npm run start --workspace=@derekentringer/finance-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`
+- **Finance API**: Railpack; start command `npx prisma migrate deploy --schema=packages/finance-api/prisma/schema.prisma && npm run start --workspace=@derekentringer/finance-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `ENCRYPTION_KEY` (64-char hex)
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs and pushes to main
 - **DNS**: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME)
 - **www redirect**: Client-side redirect in `App.tsx` from `www.derekentringer.com` → `derekentringer.com`
@@ -84,6 +84,20 @@ packages/
 - `src/plugins/auth.ts` — JWT verification, cookie handling
 - Passwords/PINs verified via bcrypt hashes from env vars
 - Production domain: `fin-api.derekentringer.com`
+- **Database**: PostgreSQL via Prisma ORM (v7)
+  - `prisma/schema.prisma` — Database schema (RefreshToken, Account, Transaction, Balance)
+  - `prisma.config.ts` — Prisma CLI config (datasource URL, migrations path)
+  - `src/generated/prisma/` — Generated Prisma client (gitignored)
+  - `src/lib/prisma.ts` — PrismaClient singleton with `@prisma/adapter-pg`
+  - `src/lib/encryption.ts` — AES-256-GCM field-level encryption (wraps shared crypto)
+  - `src/lib/mappers.ts` — Prisma row ↔ API type mappers with encrypt/decrypt
+- **Prisma commands** (run from `packages/finance-api/`):
+  - `npm run db:migrate:dev` — Create/apply dev migration
+  - `npm run db:migrate:deploy` — Apply migrations in production
+  - `npm run db:seed` — Run seed script
+  - `npm run db:studio` — Open Prisma Studio
+- **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ENCRYPTION_KEY` (64-char hex, 32 bytes for AES-256-GCM)
+- **Railway start command**: `npx prisma migrate deploy --schema=packages/finance-api/prisma/schema.prisma && npm run start --workspace=@derekentringer/finance-api`
 
 ## External Services
 

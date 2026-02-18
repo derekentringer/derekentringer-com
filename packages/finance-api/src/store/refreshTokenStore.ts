@@ -1,50 +1,59 @@
-interface StoredToken {
-  userId: string;
-  expiresAt: number;
-}
+import { getPrisma } from "../lib/prisma.js";
 
-const store = new Map<string, StoredToken>();
-
-export function storeRefreshToken(
+export async function storeRefreshToken(
   token: string,
   userId: string,
   ttlMs: number = 7 * 24 * 60 * 60 * 1000,
-): void {
-  store.set(token, {
-    userId,
-    expiresAt: Date.now() + ttlMs,
+): Promise<void> {
+  const prisma = getPrisma();
+  await prisma.refreshToken.create({
+    data: {
+      token,
+      userId,
+      expiresAt: new Date(Date.now() + ttlMs),
+    },
   });
 }
 
-export function lookupRefreshToken(
+export async function lookupRefreshToken(
   token: string,
-): { userId: string } | undefined {
-  const entry = store.get(token);
+): Promise<{ userId: string } | undefined> {
+  const prisma = getPrisma();
+  const entry = await prisma.refreshToken.findUnique({
+    where: { token },
+  });
+
   if (!entry) return undefined;
 
-  if (Date.now() > entry.expiresAt) {
-    store.delete(token);
+  if (new Date() > entry.expiresAt) {
+    await prisma.refreshToken.delete({ where: { id: entry.id } });
     return undefined;
   }
 
   return { userId: entry.userId };
 }
 
-export function revokeRefreshToken(token: string): boolean {
-  return store.delete(token);
-}
-
-export function revokeAllRefreshTokens(userId: string): number {
-  let count = 0;
-  for (const [token, entry] of store.entries()) {
-    if (entry.userId === userId) {
-      store.delete(token);
-      count++;
-    }
+export async function revokeRefreshToken(token: string): Promise<boolean> {
+  const prisma = getPrisma();
+  try {
+    await prisma.refreshToken.delete({ where: { token } });
+    return true;
+  } catch {
+    return false;
   }
-  return count;
 }
 
-export function clearStore(): void {
-  store.clear();
+export async function revokeAllRefreshTokens(
+  userId: string,
+): Promise<number> {
+  const prisma = getPrisma();
+  const result = await prisma.refreshToken.deleteMany({
+    where: { userId },
+  });
+  return result.count;
+}
+
+export async function clearStore(): Promise<void> {
+  const prisma = getPrisma();
+  await prisma.refreshToken.deleteMany();
 }
