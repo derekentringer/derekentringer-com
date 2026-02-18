@@ -14,6 +14,7 @@ export type {
   PinVerifyResponse,
   PinJwtPayload,
   LogoutResponse,
+  RevokeAllSessionsResponse,
   AuthPluginOptions,
 } from "./types/auth.js";
 
@@ -24,4 +25,8 @@ export type {
   Account,
   Transaction,
   Balance,
+  CreateAccountRequest,
+  UpdateAccountRequest,
+  AccountListResponse,
+  AccountResponse,
 } from "./finance/types.js";

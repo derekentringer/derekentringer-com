@@ -1,12 +1,18 @@
-export function loadConfig() {
-  const nodeEnv = process.env.NODE_ENV || "development";
+let cachedConfig: Config | null = null;
+
+export function loadConfig(): Config {
+  if (cachedConfig) return cachedConfig;
+
+  const nodeEnv = (process.env.NODE_ENV || "development").toLowerCase().trim();
   const isProduction = nodeEnv === "production";
 
   if (isProduction) {
     const required = [
+      "ADMIN_USERNAME",
       "ADMIN_PASSWORD_HASH",
       "JWT_SECRET",
       "REFRESH_TOKEN_SECRET",
+      "CORS_ORIGIN",
       "DATABASE_URL",
       "ENCRYPTION_KEY",
     ];
@@ -17,7 +23,7 @@ export function loadConfig() {
     }
   }
 
-  return {
+  cachedConfig = {
     adminUsername: process.env.ADMIN_USERNAME || "admin",
     adminPasswordHash: process.env.ADMIN_PASSWORD_HASH || "",
     jwtSecret:
@@ -25,13 +31,38 @@ export function loadConfig() {
     refreshTokenSecret:
       process.env.REFRESH_TOKEN_SECRET ||
       "dev-refresh-secret-do-not-use-in-prod",
+    pinTokenSecret:
+      process.env.PIN_TOKEN_SECRET ||
+      process.env.REFRESH_TOKEN_SECRET ||
+      "dev-pin-secret-do-not-use-in-prod",
     pinHash: process.env.PIN_HASH || null,
     corsOrigin: process.env.CORS_ORIGIN || "http://localhost:3003",
     port: Number(process.env.PORT) || 3002,
     nodeEnv,
+    isProduction,
     databaseUrl: process.env.DATABASE_URL || "",
     encryptionKey: process.env.ENCRYPTION_KEY || "",
   };
+
+  return cachedConfig;
 }
 
-export type Config = ReturnType<typeof loadConfig>;
+export interface Config {
+  adminUsername: string;
+  adminPasswordHash: string;
+  jwtSecret: string;
+  refreshTokenSecret: string;
+  pinTokenSecret: string;
+  pinHash: string | null;
+  corsOrigin: string;
+  port: number;
+  nodeEnv: string;
+  isProduction: boolean;
+  databaseUrl: string;
+  encryptionKey: string;
+}
+
+/** Reset cached config (for testing only) */
+export function resetConfig(): void {
+  cachedConfig = null;
+}

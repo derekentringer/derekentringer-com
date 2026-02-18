@@ -1,4 +1,9 @@
+import crypto from "crypto";
 import { getPrisma } from "../lib/prisma.js";
+
+function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
 
 export async function storeRefreshToken(
   token: string,
@@ -8,7 +13,7 @@ export async function storeRefreshToken(
   const prisma = getPrisma();
   await prisma.refreshToken.create({
     data: {
-      token,
+      token: hashToken(token),
       userId,
       expiresAt: new Date(Date.now() + ttlMs),
     },
@@ -19,8 +24,9 @@ export async function lookupRefreshToken(
   token: string,
 ): Promise<{ userId: string } | undefined> {
   const prisma = getPrisma();
+  const hashed = hashToken(token);
   const entry = await prisma.refreshToken.findUnique({
-    where: { token },
+    where: { token: hashed },
   });
 
   if (!entry) return undefined;
@@ -36,7 +42,7 @@ export async function lookupRefreshToken(
 export async function revokeRefreshToken(token: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
-    await prisma.refreshToken.delete({ where: { token } });
+    await prisma.refreshToken.delete({ where: { token: hashToken(token) } });
     return true;
   } catch {
     return false;
@@ -49,6 +55,14 @@ export async function revokeAllRefreshTokens(
   const prisma = getPrisma();
   const result = await prisma.refreshToken.deleteMany({
     where: { userId },
+  });
+  return result.count;
+}
+
+export async function cleanupExpiredTokens(): Promise<number> {
+  const prisma = getPrisma();
+  const result = await prisma.refreshToken.deleteMany({
+    where: { expiresAt: { lt: new Date() } },
   });
   return result.count;
 }

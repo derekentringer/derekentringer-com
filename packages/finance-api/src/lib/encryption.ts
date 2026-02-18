@@ -34,7 +34,11 @@ export function encryptNumber(value: number): string {
 }
 
 export function decryptNumber(ciphertext: string): number {
-  return Number(decryptField(ciphertext));
+  const n = Number(decryptField(ciphertext));
+  if (!Number.isFinite(n)) {
+    throw new Error("Decrypted value is not a valid number");
+  }
+  return n;
 }
 
 export function encryptOptionalField(
@@ -49,4 +53,18 @@ export function decryptOptionalField(
 ): string | undefined {
   if (ciphertext == null) return undefined;
   return decryptField(ciphertext);
+}
+
+export function encryptOptionalNumber(
+  value: number | null | undefined,
+): string | null {
+  if (value == null) return null;
+  return encryptNumber(value);
+}
+
+export function decryptOptionalNumber(
+  ciphertext: string | null | undefined,
+): number | undefined {
+  if (ciphertext == null) return undefined;
+  return decryptNumber(ciphertext);
 }
