@@ -37,7 +37,7 @@ This project uses **gitflow**:
 - **DNS**: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME)
 - **www redirect**: Client-side redirect in `App.tsx` from `www.derekentringer.com` → `derekentringer.com`
 
-Note: Railway skips Dockerfiles not at the repo root. The web Dockerfile exists for local Docker testing but Railway uses Railpack in production.
+Note: Railway skips Dockerfiles not at the repo root. The web Dockerfile exists for local Docker testing but Railway uses Railpack in production. Do not set watch paths on Railway services — cross-package dependencies (e.g., shared → finance-api) cause deploys to be silently skipped when changes land outside the watched paths.
 
 ## Architecture
 
