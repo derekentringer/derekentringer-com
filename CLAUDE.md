@@ -10,7 +10,7 @@ Personal portfolio and tools monorepo for Derek Entringer (derekentringer.com). 
 
 ```bash
 npm install          # Install all workspace dependencies
-npx turbo run dev    # Start all dev servers (web on :3000, api on :3001)
+npx turbo run dev    # Start all dev servers (web :3000, api :3001, finance-api :3002, finance-web :3003)
 npx turbo run build  # Build all packages
 npx turbo run type-check  # Type-check all packages
 ```
@@ -31,6 +31,8 @@ This project uses **gitflow**:
 - **Web**: Railpack auto-detects Node workspace; start command is `npm run start --workspace=@derekentringer/web` (configured in Railway dashboard)
 - **Web production server**: `serve` static file server bound to `0.0.0.0:$PORT` with SPA fallback (`-s` flag)
 - **API**: `packages/api/Dockerfile` — multi-stage Node build on port 3001
+- **Finance Web**: Railpack; start command `npm run start --workspace=@derekentringer/finance-web`; `serve` static file server with SPA fallback; custom domain `fin.derekentringer.com`; env: `VITE_API_URL=https://fin-api.derekentringer.com` (build-time)
+- **Finance API**: Railpack; start command `npm run start --workspace=@derekentringer/finance-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs and pushes to main
 - **DNS**: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME)
 - **www redirect**: Client-side redirect in `App.tsx` from `www.derekentringer.com` → `derekentringer.com`
@@ -41,10 +43,12 @@ Note: Railway skips Dockerfiles not at the repo root. The web Dockerfile exists 
 
 ```
 packages/
-  web/      — React + Vite + React Router SPA (portfolio site)
-  api/      — Fastify API server (health-check stub, future personal finance API)
-  shared/   — Shared TypeScript types and utilities
-  mobile/   — React Native app (deferred to Phase 6)
+  web/          — React + Vite + React Router SPA (portfolio site)
+  api/          — Fastify API server (health-check stub)
+  finance-web/  — React + Vite SPA (personal finance dashboard)
+  finance-api/  — Fastify API server (personal finance backend)
+  shared/       — Shared TypeScript types and utilities
+  mobile/       — React Native app (deferred to Phase 6)
 ```
 
 ### Web (`packages/web/`)
@@ -62,6 +66,24 @@ packages/
 ### API (`packages/api/`)
 
 - `src/index.ts` — Fastify server with `GET /health` endpoint
+
+### Finance Web (`packages/finance-web/`)
+
+- React + Vite SPA for personal finance dashboard
+- `src/App.tsx` — Routes + auth-gated layout
+- `src/pages/LoginPage.tsx` — Login form with PIN support
+- `src/contexts/AuthContext.tsx` — JWT auth state management
+- API URL configured via `VITE_API_URL` env var (build-time)
+- Production domain: `fin.derekentringer.com`
+
+### Finance API (`packages/finance-api/`)
+
+- Fastify server with JWT auth (access + refresh tokens)
+- `src/index.ts` — Server entry, CORS via `CORS_ORIGIN` env var
+- `src/routes/auth.ts` — Login, refresh, logout endpoints
+- `src/plugins/auth.ts` — JWT verification, cookie handling
+- Passwords/PINs verified via bcrypt hashes from env vars
+- Production domain: `fin-api.derekentringer.com`
 
 ## External Services
 
