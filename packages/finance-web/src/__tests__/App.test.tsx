@@ -27,7 +27,7 @@ describe("App", () => {
     );
 
     // Wait for auth check to complete
-    await screen.findByText("Personal Finance");
+    await screen.findByText("fin");
     expect(screen.getByPlaceholderText("Username")).toBeInTheDocument();
   });
 
@@ -38,7 +38,7 @@ describe("App", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("Personal Finance");
+    await screen.findByText("fin");
     expect(screen.getByText("Sign in")).toBeInTheDocument();
   });
 
