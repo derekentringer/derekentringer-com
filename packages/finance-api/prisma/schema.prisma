@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Account {
+  id             String        @id @default(cuid())
+  name           String
+  type           String
+  institution    String
+  accountNumber  String?
+  currentBalance String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  transactions   Transaction[]
+  balances       Balance[]
+
+  @@map("accounts")
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  accountId   String
+  date        DateTime
+  description String
+  amount      String
+  category    String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([date])
+  @@map("transactions")
+}
+
+model Balance {
+  id        String   @id @default(cuid())
+  accountId String
+  balance   String
+  date      DateTime
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([date])
+  @@map("balances")
+}
