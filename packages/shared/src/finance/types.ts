@@ -8,6 +8,8 @@ export enum AccountType {
   Other = "other",
 }
 
+export type LoanType = "fixed" | "variable" | "fixed-mortgage" | "variable-mortgage";
+
 export interface Account {
   id: string;
   name: string;
@@ -17,6 +19,11 @@ export interface Account {
   currentBalance: number;
   interestRate?: number;
   csvParserId?: string;
+  originalBalance?: number;
+  originationDate?: string;
+  maturityDate?: string;
+  loanType?: LoanType;
+  employerName?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -34,10 +41,56 @@ export interface Transaction {
   updatedAt: string;
 }
 
+export interface LoanProfileData {
+  periodStart?: string;
+  periodEnd?: string;
+  interestRate?: number;
+  monthlyPayment?: number;
+  principalPaid?: number;
+  interestPaid?: number;
+  escrowAmount?: number;
+  nextPaymentDate?: string;
+  remainingTermMonths?: number;
+}
+
+export interface LoanStaticData {
+  originalBalance?: number;
+  originationDate?: string;
+  maturityDate?: string;
+  loanType?: LoanType;
+}
+
+export interface InvestmentProfileData {
+  periodStart?: string;
+  periodEnd?: string;
+  rateOfReturn?: number;
+  ytdReturn?: number;
+  totalGainLoss?: number;
+  contributions?: number;
+  employerMatch?: number;
+  vestingPct?: number;
+  fees?: number;
+  expenseRatio?: number;
+  dividends?: number;
+  capitalGains?: number;
+  numHoldings?: number;
+}
+
+export interface SavingsProfileData {
+  periodStart?: string;
+  periodEnd?: string;
+  apy?: number;
+  interestEarned?: number;
+  interestEarnedYtd?: number;
+}
+
 export interface Balance {
   accountId: string;
   balance: number;
   date: string;
+  loanProfile?: LoanProfileData;
+  investmentProfile?: InvestmentProfileData;
+  savingsProfile?: SavingsProfileData;
 }
 
 // --- Account request/response types ---
@@ -45,8 +98,8 @@ export interface Balance {
 export interface CreateAccountRequest {
   name: string;
   type: AccountType;
-  institution: string;
-  currentBalance: number;
+  institution?: string;
+  currentBalance?: number;
   accountNumber?: string;
   interestRate?: number;
   csvParserId?: string;
@@ -74,18 +127,20 @@ export interface AccountResponse {
 
 // --- CSV Parser types ---
 
-export type CsvParserId = "chase-checking" | "chase-credit" | "amex-hys";
+export type CsvParserId = "chase-checking" | "chase-credit" | "amex-hys" | "fidelity-401k";
 
 export const CSV_PARSER_IDS: CsvParserId[] = [
   "chase-checking",
   "chase-credit",
   "amex-hys",
+  "fidelity-401k",
 ];
 
 export const CSV_PARSER_LABELS: Record<CsvParserId, string> = {
   "chase-checking": "Chase Checking",
   "chase-credit": "Chase Credit Card",
   "amex-hys": "Amex High Yield Savings",
+  "fidelity-401k": "Fidelity 401(k)",
 };
 
 // --- Category types ---
@@ -186,6 +241,43 @@ export interface CsvImportConfirmRequest {
 export interface CsvImportConfirmResponse {
   imported: number;
   skipped: number;
+}
+
+// --- PDF Import types ---
+
+export interface PdfImportPreviewResponse {
+  accountId: string;
+  accountName: string;
+  accountType: AccountType;
+  balance: number;
+  date: string;
+  rawExtraction: { balanceText: string; dateText: string };
+  existingBalance: number | null;
+  existingBalanceOnDate: number | null;
+  loanProfile?: LoanProfileData;
+  loanStatic?: LoanStaticData;
+  investmentProfile?: InvestmentProfileData;
+  savingsProfile?: SavingsProfileData;
+  rawProfileExtraction?: Record<string, string>;
+}
+
+export interface PdfImportConfirmRequest {
+  accountId: string;
+  balance: number;
+  date: string;
+  updateCurrentBalance: boolean;
+  updateInterestRate?: boolean;
+  loanProfile?: LoanProfileData;
+  loanStatic?: LoanStaticData;
+  investmentProfile?: InvestmentProfileData;
+  savingsProfile?: SavingsProfileData;
+}
+
+export interface PdfImportConfirmResponse {
+  balance: number;
+  date: string;
+  accountUpdated: boolean;
+  interestRateUpdated?: boolean;
 }
 
 // --- Transaction request/response types ---

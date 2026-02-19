@@ -13,6 +13,7 @@ import {
 } from "../api/accounts.ts";
 import { AccountForm } from "../components/AccountForm.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
+import { PdfImportDialog } from "../components/PdfImportDialog.tsx";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Plus } from "lucide-react";
+import { Plus, FileUp } from "lucide-react";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   [AccountType.Checking]: "Checking",
@@ -51,6 +52,7 @@ export function AccountsPage() {
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Account | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showPdfImport, setShowPdfImport] = useState(false);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -109,10 +111,20 @@ export function AccountsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <h1 className="font-thin text-3xl">Accounts</h1>
-            <Button size="sm" onClick={() => setShowForm(true)}>
-              <Plus className="h-4 w-4" />
-              Add Account
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setShowPdfImport(true)}
+              >
+                <FileUp className="h-4 w-4" />
+                Import Statement
+              </Button>
+              <Button size="sm" onClick={() => setShowForm(true)}>
+                <Plus className="h-4 w-4" />
+                Add Account
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -192,6 +204,16 @@ export function AccountsPage() {
           account={editAccount}
           onSubmit={handleUpdate}
           onClose={() => setEditAccount(null)}
+        />
+      )}
+
+      {showPdfImport && (
+        <PdfImportDialog
+          onClose={() => setShowPdfImport(false)}
+          onImported={() => {
+            setShowPdfImport(false);
+            loadAccounts();
+          }}
         />
       )}
 

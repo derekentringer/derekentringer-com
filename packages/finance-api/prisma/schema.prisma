@@ -19,19 +19,24 @@ model RefreshToken {
 }
 
 model Account {
-  id             String        @id @default(cuid())
-  name           String
-  type           String
-  institution    String
-  accountNumber  String?
-  currentBalance String
-  interestRate   String?
-  csvParserId    String?
-  isActive       Boolean       @default(true)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  transactions   Transaction[]
-  balances       Balance[]
+  id              String        @id @default(cuid())
+  name            String
+  type            String
+  institution     String
+  accountNumber   String?
+  currentBalance  String
+  interestRate    String?
+  csvParserId     String?
+  originalBalance String?
+  originationDate String?
+  maturityDate    String?
+  loanType        String?
+  employerName    String?
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  transactions    Transaction[]
+  balances        Balance[]
 
   @@index([isActive])
   @@map("accounts")
@@ -82,15 +87,76 @@ model CategoryRule {
 }
 
 model Balance {
-  id        String   @id @default(cuid())
-  accountId String
-  balance   String
-  date      DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id                String              @id @default(cuid())
+  accountId         String
+  balance           String
+  date              DateTime
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  account           Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  loanProfile       LoanProfile?
+  investmentProfile InvestmentProfile?
+  savingsProfile    SavingsProfile?
 
+  @@index([accountId, date])
   @@index([accountId])
   @@index([date])
   @@map("balances")
+}
+
+model LoanProfile {
+  id                  String   @id @default(cuid())
+  balanceId           String   @unique
+  periodStart         String?
+  periodEnd           String?
+  interestRate        String?
+  monthlyPayment      String?
+  principalPaid       String?
+  interestPaid        String?
+  escrowAmount        String?
+  nextPaymentDate     String?
+  remainingTermMonths String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  balance             Balance  @relation(fields: [balanceId], references: [id], onDelete: Cascade)
+
+  @@map("loan_profiles")
+}
+
+model InvestmentProfile {
+  id            String   @id @default(cuid())
+  balanceId     String   @unique
+  periodStart   String?
+  periodEnd     String?
+  rateOfReturn  String?
+  ytdReturn     String?
+  totalGainLoss String?
+  contributions String?
+  employerMatch String?
+  vestingPct    String?
+  fees          String?
+  expenseRatio  String?
+  dividends     String?
+  capitalGains  String?
+  numHoldings   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  balance       Balance  @relation(fields: [balanceId], references: [id], onDelete: Cascade)
+
+  @@map("investment_profiles")
+}
+
+model SavingsProfile {
+  id                String   @id @default(cuid())
+  balanceId         String   @unique
+  periodStart       String?
+  periodEnd         String?
+  apy               String?
+  interestEarned    String?
+  interestEarnedYtd String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  balance           Balance  @relation(fields: [balanceId], references: [id], onDelete: Cascade)
+
+  @@map("savings_profiles")
 }

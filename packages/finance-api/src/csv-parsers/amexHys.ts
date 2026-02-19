@@ -1,21 +1,26 @@
 import type { CsvParser, RawParsedRow } from "./types.js";
-import { parseCsvLines, parseMMDDYYYY } from "./csvUtils.js";
+import { parseCsvLines } from "./csvUtils.js";
 
-// Amex HYS CSV format (placeholder):
-// Date,Description,Amount,Balance
+// Amex HYS CSV format (no header row):
+// 2026-01-26,"Interest Payment",430.74
+
+function parseYYYYMMDD(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
 
 const amexHysParser: CsvParser = {
   id: "amex-hys",
   parse(csvContent: string): RawParsedRow[] {
     const lines = parseCsvLines(csvContent);
-    if (lines.length < 2) return [];
+    if (lines.length < 1) return [];
 
     const rows: RawParsedRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = 0; i < lines.length; i++) {
       const fields = lines[i];
       if (fields.length < 3) continue;
 
-      const date = parseMMDDYYYY(fields[0]);
+      const date = parseYYYYMMDD(fields[0]);
       if (isNaN(date.getTime())) continue;
 
       const amount = parseFloat(fields[2]);

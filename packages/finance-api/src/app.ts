@@ -15,6 +15,7 @@ import accountRoutes from "./routes/accounts.js";
 import categoryRoutes from "./routes/categories.js";
 import categoryRuleRoutes from "./routes/categoryRules.js";
 import transactionRoutes from "./routes/transactions.js";
+import balanceRoutes from "./routes/balances.js";
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -81,6 +82,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(categoryRoutes, { prefix: "/categories" });
   app.register(categoryRuleRoutes, { prefix: "/category-rules" });
   app.register(transactionRoutes, { prefix: "/transactions" });
+  app.register(balanceRoutes, { prefix: "/balances" });
 
   app.get("/health", async () => {
     return { status: "ok" };
