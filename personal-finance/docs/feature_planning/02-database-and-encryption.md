@@ -1,8 +1,11 @@
 # 02 — Database & Encryption
 
-**Status:** Not Started
+**Status:** Complete
 **Phase:** 1 — Foundation
 **Priority:** High
+**Completed:** v1.3.0
+
+> **Implementation details:** [features/02-database-and-encryption.md](../features/02-database-and-encryption.md)
 
 ## Summary
 
@@ -41,9 +44,9 @@ Set up PostgreSQL with Prisma ORM and implement application-level field encrypti
 
 - [00 — Project Scaffolding](00-project-scaffolding.md) — needs monorepo and API package
 
-## Open Questions
+## Resolved Open Questions
 
-- Which fields exactly need encryption vs. which can remain plaintext?
-- Should transaction amounts be encrypted (prevents sum queries) or left plaintext?
-- Backup strategy for the database — Railway automatic backups sufficient?
-- Key rotation strategy — how to re-encrypt data if the master key is compromised?
+- **Which fields need encryption**: Account name, institution, accountNumber, currentBalance, interestRate, transaction description, amount, notes, and balance amount
+- **Transaction amounts**: Encrypted (security prioritized over SQL query convenience; aggregation done in application layer)
+- **Backup strategy**: Railway automatic daily backups
+- **Key rotation**: Not yet implemented; would require a data migration script to re-encrypt all fields
