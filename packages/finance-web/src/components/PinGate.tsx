@@ -35,7 +35,7 @@ export function PinGate({ children }: { children: React.ReactNode }) {
       <Card className="w-full max-w-[360px] mx-4">
         <CardContent className="p-8">
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            <h2 className="font-thin text-2xl text-center">Enter PIN</h2>
+            <h2 className="font-thin text-2xl text-foreground text-center">Enter PIN</h2>
             <p className="text-sm text-center text-foreground/60">
               A PIN is required to access this section
             </p>

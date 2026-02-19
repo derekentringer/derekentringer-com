@@ -48,9 +48,9 @@
 
 ### Phase 4: Dashboard & Tracking — High Priority
 
-- [ ] [06 — Net Worth Tracking](feature_planning/06-net-worth-tracking.md)
-- [ ] [07 — Budgeting & Expense Tracking](feature_planning/07-budgeting-expense-tracking.md)
-- [ ] [08 — Bill Management](feature_planning/08-bill-management.md)
+- [x] [06 — Net Worth Tracking](features/06-net-worth-tracking.md)
+- [x] [07 — Budgeting & Expense Tracking](features/07-budgeting-expense-tracking.md)
+- [x] [08 — Bill Management](features/08-bill-management.md)
 
 ### Phase 5: Projections & Planning — Medium Priority
 

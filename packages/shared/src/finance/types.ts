@@ -5,6 +5,7 @@ export enum AccountType {
   Credit = "credit",
   Investment = "investment",
   Loan = "loan",
+  RealEstate = "real_estate",
   Other = "other",
 }
 
@@ -17,6 +18,7 @@ export interface Account {
   institution: string;
   accountNumber?: string;
   currentBalance: number;
+  estimatedValue?: number;
   interestRate?: number;
   csvParserId?: string;
   originalBalance?: number;
@@ -100,6 +102,7 @@ export interface CreateAccountRequest {
   type: AccountType;
   institution?: string;
   currentBalance?: number;
+  estimatedValue?: number;
   accountNumber?: string;
   interestRate?: number;
   csvParserId?: string;
@@ -111,6 +114,7 @@ export interface UpdateAccountRequest {
   type?: AccountType;
   institution?: string;
   currentBalance?: number;
+  estimatedValue?: number | null;
   accountNumber?: string | null;
   interestRate?: number | null;
   csvParserId?: string | null;
@@ -294,4 +298,212 @@ export interface TransactionListResponse {
 
 export interface TransactionResponse {
   transaction: Transaction;
+}
+
+// ─── Phase 4: Dashboard & Tracking ──────────────────────────────────────────
+
+// Account classification
+export const ASSET_ACCOUNT_TYPES: readonly AccountType[] = [
+  AccountType.Checking,
+  AccountType.Savings,
+  AccountType.HighYieldSavings,
+  AccountType.Investment,
+  AccountType.RealEstate,
+] as const;
+
+export const LIABILITY_ACCOUNT_TYPES: readonly AccountType[] = [
+  AccountType.Credit,
+  AccountType.Loan,
+] as const;
+
+export function classifyAccountType(
+  type: AccountType,
+): "asset" | "liability" | "other" {
+  if ((ASSET_ACCOUNT_TYPES as readonly string[]).includes(type)) return "asset";
+  if ((LIABILITY_ACCOUNT_TYPES as readonly string[]).includes(type)) return "liability";
+  return "other";
+}
+
+// Bill frequency
+export type BillFrequency =
+  | "monthly"
+  | "quarterly"
+  | "yearly"
+  | "weekly"
+  | "biweekly";
+
+export const BILL_FREQUENCIES: BillFrequency[] = [
+  "monthly",
+  "quarterly",
+  "yearly",
+  "weekly",
+  "biweekly",
+];
+
+export const BILL_FREQUENCY_LABELS: Record<BillFrequency, string> = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  yearly: "Yearly",
+  weekly: "Weekly",
+  biweekly: "Biweekly",
+};
+
+// Bill types
+export interface Bill {
+  id: string;
+  name: string;
+  amount: number;
+  frequency: BillFrequency;
+  dueDay: number;
+  dueMonth?: number;
+  dueWeekday?: number;
+  category?: string;
+  accountId?: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateBillRequest {
+  name: string;
+  amount: number;
+  frequency: BillFrequency;
+  dueDay: number;
+  dueMonth?: number;
+  dueWeekday?: number;
+  category?: string;
+  accountId?: string;
+  notes?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateBillRequest {
+  name?: string;
+  amount?: number;
+  frequency?: BillFrequency;
+  dueDay?: number;
+  dueMonth?: number | null;
+  dueWeekday?: number | null;
+  category?: string | null;
+  accountId?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+}
+
+export interface BillListResponse {
+  bills: Bill[];
+}
+
+export interface BillResponse {
+  bill: Bill;
+}
+
+export interface BillPayment {
+  id: string;
+  billId: string;
+  dueDate: string;
+  paidDate: string;
+  amount: number;
+}
+
+export interface UpcomingBillInstance {
+  billId: string;
+  billName: string;
+  amount: number;
+  dueDate: string;
+  isPaid: boolean;
+  isOverdue: boolean;
+  category?: string;
+  paymentId?: string;
+}
+
+// Budget types
+export interface Budget {
+  id: string;
+  category: string;
+  amount: number;
+  effectiveFrom: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateBudgetRequest {
+  category: string;
+  amount: number;
+  effectiveFrom: string;
+  notes?: string;
+}
+
+export interface UpdateBudgetRequest {
+  amount?: number;
+  notes?: string | null;
+}
+
+export interface BudgetListResponse {
+  budgets: Budget[];
+}
+
+export interface BudgetResponse {
+  budget: Budget;
+}
+
+export interface CategoryBudgetSummary {
+  category: string;
+  budgeted: number;
+  actual: number;
+  remaining: number;
+  effectiveFrom: string;
+}
+
+export interface MonthlyBudgetSummaryResponse {
+  month: string;
+  categories: CategoryBudgetSummary[];
+  totalBudgeted: number;
+  totalActual: number;
+  totalRemaining: number;
+}
+
+// Dashboard types
+export interface NetWorthSummary {
+  totalAssets: number;
+  totalLiabilities: number;
+  netWorth: number;
+  accounts: Array<{
+    id: string;
+    name: string;
+    type: AccountType;
+    balance: number;
+    previousBalance?: number;
+    classification: "asset" | "liability" | "other";
+  }>;
+}
+
+export interface NetWorthHistoryPoint {
+  month: string;
+  assets: number;
+  liabilities: number;
+  netWorth: number;
+}
+
+export interface NetWorthResponse {
+  summary: NetWorthSummary;
+  history: NetWorthHistoryPoint[];
+}
+
+export interface SpendingSummary {
+  month: string;
+  categories: Array<{
+    category: string;
+    amount: number;
+    percentage: number;
+  }>;
+  total: number;
+}
+
+export interface DashboardUpcomingBillsResponse {
+  bills: UpcomingBillInstance[];
+  totalDue: number;
+  overdueCount: number;
 }

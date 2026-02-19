@@ -25,6 +25,7 @@ model Account {
   institution     String
   accountNumber   String?
   currentBalance  String
+  estimatedValue  String?
   interestRate    String?
   csvParserId     String?
   originalBalance String?
@@ -37,6 +38,7 @@ model Account {
   updatedAt       DateTime      @updatedAt
   transactions    Transaction[]
   balances        Balance[]
+  bills           Bill[]
 
   @@index([isActive])
   @@map("accounts")
@@ -159,4 +161,53 @@ model SavingsProfile {
   balance           Balance  @relation(fields: [balanceId], references: [id], onDelete: Cascade)
 
   @@map("savings_profiles")
+}
+
+model Budget {
+  id            String   @id @default(cuid())
+  category      String
+  amount        String
+  effectiveFrom String
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([category, effectiveFrom])
+  @@index([category, effectiveFrom])
+  @@map("budgets")
+}
+
+model Bill {
+  id         String        @id @default(cuid())
+  name       String
+  amount     String
+  frequency  String
+  dueDay     Int
+  dueMonth   Int?
+  dueWeekday Int?
+  category   String?
+  accountId  String?
+  notes      String?
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  account    Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  payments   BillPayment[]
+
+  @@index([isActive])
+  @@map("bills")
+}
+
+model BillPayment {
+  id       String   @id @default(cuid())
+  billId   String
+  dueDate  DateTime
+  paidDate DateTime @default(now())
+  amount   String
+  bill     Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@unique([billId, dueDate])
+  @@index([billId])
+  @@index([dueDate])
+  @@map("bill_payments")
 }
