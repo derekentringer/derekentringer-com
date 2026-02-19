@@ -4,6 +4,8 @@ import {
   LayoutDashboard,
   Wallet,
   ArrowLeftRight,
+  PiggyBank,
+  Receipt,
   BarChart3,
   Settings,
   ChevronsLeft,
@@ -20,14 +22,23 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 
-const NAV_ITEMS = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/accounts", icon: Wallet, label: "Accounts" },
-  { to: "/transactions", icon: ArrowLeftRight, label: "Transactions" },
-  { to: "/reports", icon: BarChart3, label: "Reports" },
-  { to: "/settings", icon: Settings, label: "Settings" },
+type NavEntry =
+  | { type: "link"; to: string; icon: typeof LayoutDashboard; label: string }
+  | { type: "separator" };
+
+const NAV_ITEMS: NavEntry[] = [
+  { type: "link", to: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { type: "link", to: "/accounts", icon: Wallet, label: "Accounts" },
+  { type: "link", to: "/transactions", icon: ArrowLeftRight, label: "Transactions" },
+  { type: "separator" },
+  { type: "link", to: "/budgets", icon: PiggyBank, label: "Budgets" },
+  { type: "link", to: "/bills", icon: Receipt, label: "Bills" },
+  { type: "separator" },
+  { type: "link", to: "/reports", icon: BarChart3, label: "Reports" },
+  { type: "link", to: "/settings", icon: Settings, label: "Settings" },
 ];
 
 interface SidebarProps {
@@ -46,7 +57,13 @@ function NavItems({
 }) {
   return (
     <nav className="flex flex-col gap-1 px-3">
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS.map((item, index) => {
+        if (item.type === "separator") {
+          return (
+            <Separator key={`sep-${index}`} className="my-2" />
+          );
+        }
+
         const Icon = item.icon;
         const link = (
           <NavLink
@@ -58,7 +75,7 @@ function NavItems({
               cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors no-underline hover:no-underline",
                 isActive
-                  ? "bg-primary/10 text-primary"
+                  ? "bg-accent text-foreground font-bold"
                   : "text-muted hover:bg-accent hover:text-foreground",
                 isCollapsed && "justify-center px-2",
               )

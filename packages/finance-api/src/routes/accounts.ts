@@ -34,6 +34,7 @@ const createAccountSchema = {
       type: { type: "string" },
       institution: { type: "string" },
       currentBalance: { type: "number" },
+      estimatedValue: { type: ["number", "null"] },
       accountNumber: { type: ["string", "null"] },
       interestRate: { type: ["number", "null"] },
       csvParserId: { type: ["string", "null"] },
@@ -52,6 +53,7 @@ const updateAccountSchema = {
       type: { type: "string" },
       institution: { type: "string" },
       currentBalance: { type: "number" },
+      estimatedValue: { type: ["number", "null"] },
       accountNumber: { type: ["string", "null"] },
       interestRate: { type: ["number", "null"] },
       csvParserId: { type: ["string", "null"] },
@@ -134,7 +136,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateAccountRequest }>,
       reply: FastifyReply,
     ) => {
-      const { name, type, institution, currentBalance, interestRate } =
+      const { name, type, institution, currentBalance, estimatedValue, interestRate } =
         request.body;
 
       if (!isValidNumber(currentBalance)) {
@@ -142,6 +144,14 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           statusCode: 400,
           error: "Bad Request",
           message: "currentBalance must be a finite number",
+        });
+      }
+
+      if (estimatedValue !== undefined && estimatedValue !== null && !isValidNumber(estimatedValue)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "estimatedValue must be a finite number",
         });
       }
 
@@ -208,7 +218,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }
 
       const body = request.body;
-      const { type, currentBalance, interestRate } = body;
+      const { type, currentBalance, estimatedValue, interestRate } = body;
 
       if (type !== undefined && !VALID_ACCOUNT_TYPES.includes(type)) {
         return reply.status(400).send({
@@ -223,6 +233,14 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           statusCode: 400,
           error: "Bad Request",
           message: "currentBalance must be a finite number",
+        });
+      }
+
+      if (estimatedValue !== undefined && estimatedValue !== null && !isValidNumber(estimatedValue)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "estimatedValue must be a finite number",
         });
       }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { FormEvent } from "react";
 import type {
   Category,
@@ -39,7 +39,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus } from "lucide-react";
+import { Plus, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<"categories" | "rules">(
@@ -70,6 +70,10 @@ export function SettingsPage() {
   );
 }
 
+type CatSortField = "name" | "type";
+type RuleSortField = "pattern" | "matchType" | "category" | "priority";
+type SortDir = "asc" | "desc";
+
 function CategoriesSection() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -78,6 +82,8 @@ function CategoriesSection() {
   const [editTarget, setEditTarget] = useState<Category | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [sortField, setSortField] = useState<CatSortField | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const loadCategories = useCallback(async () => {
     try {
@@ -111,6 +117,36 @@ function CategoriesSection() {
     }
   }
 
+  function handleSort(field: CatSortField) {
+    if (sortField === field) {
+      if (sortDir === "asc") {
+        setSortDir("desc");
+      } else {
+        setSortField(null);
+        setSortDir("asc");
+      }
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  }
+
+  const sortedCategories = useMemo(() => {
+    if (!sortField) return categories;
+    return [...categories].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "name":
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case "type":
+          cmp = Number(b.isDefault) - Number(a.isDefault);
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [categories, sortField, sortDir]);
+
   if (isLoading) {
     return <p className="text-center text-muted py-8">Loading...</p>;
   }
@@ -119,7 +155,7 @@ function CategoriesSection() {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <h2 className="font-thin text-2xl">Categories</h2>
+          <h2 className="text-2xl text-foreground">Categories</h2>
           <Button size="sm" onClick={() => setShowAdd(true)}>
             <Plus className="h-4 w-4" />
             Add Category
@@ -136,14 +172,14 @@ function CategoriesSection() {
         ) : (
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
+              <TableRow className="hover:bg-transparent">
+                <SortableTableHead<CatSortField> field="name" label="Name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortableTableHead<CatSortField> field="type" label="Type" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {categories.map((cat) => (
+              {sortedCategories.map((cat) => (
                 <TableRow key={cat.id}>
                   <TableCell>{cat.name}</TableCell>
                   <TableCell>
@@ -290,6 +326,8 @@ function RulesSection() {
   const [editTarget, setEditTarget] = useState<CategoryRule | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CategoryRule | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [sortField, setSortField] = useState<RuleSortField | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const loadData = useCallback(async () => {
     try {
@@ -325,6 +363,42 @@ function RulesSection() {
     }
   }
 
+  function handleSort(field: RuleSortField) {
+    if (sortField === field) {
+      if (sortDir === "asc") {
+        setSortDir("desc");
+      } else {
+        setSortField(null);
+        setSortDir("asc");
+      }
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  }
+
+  const sortedRules = useMemo(() => {
+    if (!sortField) return rules;
+    return [...rules].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "pattern":
+          cmp = a.pattern.localeCompare(b.pattern);
+          break;
+        case "matchType":
+          cmp = a.matchType.localeCompare(b.matchType);
+          break;
+        case "category":
+          cmp = a.category.localeCompare(b.category);
+          break;
+        case "priority":
+          cmp = a.priority - b.priority;
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [rules, sortField, sortDir]);
+
   if (isLoading) {
     return <p className="text-center text-muted py-8">Loading...</p>;
   }
@@ -333,7 +407,7 @@ function RulesSection() {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <h2 className="font-thin text-2xl">Category Rules</h2>
+          <h2 className="text-2xl text-foreground">Category Rules</h2>
           <Button size="sm" onClick={() => setShowAdd(true)}>
             <Plus className="h-4 w-4" />
             Add Rule
@@ -351,20 +425,16 @@ function RulesSection() {
         ) : (
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Pattern</TableHead>
-                <TableHead className="hidden sm:table-cell">
-                  Match Type
-                </TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="hidden md:table-cell">
-                  Priority
-                </TableHead>
+              <TableRow className="hover:bg-transparent">
+                <SortableTableHead<RuleSortField> field="pattern" label="Pattern" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortableTableHead<RuleSortField> field="matchType" label="Match Type" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="hidden sm:table-cell" />
+                <SortableTableHead<RuleSortField> field="category" label="Category" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortableTableHead<RuleSortField> field="priority" label="Priority" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="hidden md:table-cell" />
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rules.map((rule) => (
+              {sortedRules.map((rule) => (
                 <TableRow key={rule.id}>
                   <TableCell className="font-mono text-sm">
                     {rule.pattern}
@@ -444,5 +514,39 @@ function RulesSection() {
         />
       )}
     </Card>
+  );
+}
+
+function SortableTableHead<T extends string>({
+  field,
+  label,
+  sortField,
+  sortDir,
+  onSort,
+  className = "",
+}: {
+  field: T;
+  label: string;
+  sortField: T | null;
+  sortDir: SortDir;
+  onSort: (field: T) => void;
+  className?: string;
+}) {
+  const isActive = sortField === field;
+  const Icon = isActive
+    ? sortDir === "asc" ? ArrowUp : ArrowDown
+    : ArrowUpDown;
+
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${isActive ? "text-foreground" : ""}`}
+        onClick={() => onSort(field)}
+      >
+        {label}
+        <Icon className={`h-3.5 w-3.5 ${isActive ? "" : "opacity-40"}`} />
+      </button>
+    </TableHead>
   );
 }
