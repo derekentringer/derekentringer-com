@@ -6,7 +6,23 @@ import {
   type CreateAccountRequest,
   type UpdateAccountRequest,
 } from "@derekentringer/shared/finance";
-import styles from "./AccountForm.module.css";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   [AccountType.Checking]: "Checking",
@@ -53,12 +69,10 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+    if (!INTEREST_RATE_TYPES.has(type)) {
+      setInterestRate("");
     }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [type]);
 
   const showInterestRate = INTEREST_RATE_TYPES.has(type);
 
@@ -106,119 +120,120 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
   }
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <h2 className={styles.title}>
-          {isEdit ? "Edit Account" : "Add Account"}
-        </h2>
-        <form className={styles.form} onSubmit={handleSubmit}>
-          <label className={styles.label}>
-            Name
-            <input
-              className={styles.input}
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Edit Account" : "Add Account"}</DialogTitle>
+        </DialogHeader>
+        <form className="flex flex-col gap-3.5" onSubmit={handleSubmit}>
+          <div className="flex flex-col gap-1">
+            <Label>Name</Label>
+            <Input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
               autoFocus
             />
-          </label>
-          <label className={styles.label}>
-            Type
-            <select
-              className={styles.input}
-              value={type}
-              onChange={(e) => setType(e.target.value as AccountType)}
-            >
-              {Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className={styles.label}>
-            Institution
-            <input
-              className={styles.input}
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label>Type</Label>
+            <Select value={type} onValueChange={(v) => setType(v as AccountType)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label>Institution</Label>
+            <Input
               type="text"
               value={institution}
               onChange={(e) => setInstitution(e.target.value)}
               required
             />
-          </label>
-          <label className={styles.label}>
-            Balance
-            <input
-              className={styles.input}
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label>Balance</Label>
+            <Input
               type="number"
               step="0.01"
               value={currentBalance}
               onChange={(e) => setCurrentBalance(e.target.value)}
               required
             />
-          </label>
-          <label className={styles.label}>
-            Account Number
-            <input
-              className={styles.input}
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label>Account Number</Label>
+            <Input
               type="text"
               value={accountNumber}
               onChange={(e) => setAccountNumber(e.target.value)}
               placeholder="Optional"
             />
-          </label>
+          </div>
           {showInterestRate && (
-            <label className={styles.label}>
-              Interest Rate (%)
-              <input
-                className={styles.input}
+            <div className="flex flex-col gap-1">
+              <Label>Interest Rate (%)</Label>
+              <Input
                 type="number"
                 step="0.01"
                 value={interestRate}
                 onChange={(e) => setInterestRate(e.target.value)}
                 placeholder="Optional"
               />
-            </label>
+            </div>
           )}
-          <label className={styles.label}>
-            CSV Parser ID
-            <input
-              className={styles.input}
+          <div className="flex flex-col gap-1">
+            <Label>CSV Parser ID</Label>
+            <Input
               type="text"
               value={csvParserId}
               onChange={(e) => setCsvParserId(e.target.value)}
               placeholder="Optional"
             />
-          </label>
-          <label className={styles.checkboxLabel}>
-            <input
-              type="checkbox"
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="isActive"
               checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
+              onCheckedChange={(checked) => setIsActive(checked === true)}
             />
-            Active
-          </label>
-          {error && <p className={styles.error}>{error}</p>}
-          <div className={styles.actions}>
-            <button
+            <label
+              htmlFor="isActive"
+              className="text-sm text-foreground cursor-pointer"
+            >
+              Active
+            </label>
+          </div>
+          {error && (
+            <p className="text-sm text-error text-center">{error}</p>
+          )}
+          <div className="flex gap-3 justify-end mt-2">
+            <Button
               type="button"
-              className={styles.cancelButton}
+              variant="secondary"
               onClick={onClose}
               disabled={isSubmitting}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className={styles.submitButton}
               disabled={isSubmitting || !name || !institution || !currentBalance}
             >
               {isSubmitting ? "Saving..." : isEdit ? "Save" : "Create"}
-            </button>
+            </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

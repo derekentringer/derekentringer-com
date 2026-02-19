@@ -1,4 +1,13 @@
-import styles from "./ConfirmDialog.module.css";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 
 interface ConfirmDialogProps {
   title: string;
@@ -20,27 +29,21 @@ export function ConfirmDialog({
   isLoading = false,
 }: ConfirmDialogProps) {
   return (
-    <div className={styles.overlay} onClick={onCancel}>
-      <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-        <h2 className={styles.title}>{title}</h2>
-        <p className={styles.message}>{message}</p>
-        <div className={styles.actions}>
-          <button
-            className={styles.cancelButton}
-            onClick={onCancel}
-            disabled={isLoading}
-          >
+    <AlertDialog open onOpenChange={(open) => !open && onCancel()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{message}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={onCancel} disabled={isLoading}>
             {cancelLabel}
-          </button>
-          <button
-            className={styles.confirmButton}
-            onClick={onConfirm}
-            disabled={isLoading}
-          >
+          </AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm} disabled={isLoading}>
             {isLoading ? "Deleting..." : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
