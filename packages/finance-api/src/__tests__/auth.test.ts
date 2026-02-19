@@ -14,9 +14,10 @@ process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
 import { describe, it, expect, afterAll, afterEach, vi, beforeAll } from "vitest";
 import { createMockPrisma } from "./helpers/mockPrisma.js";
+import type { MockPrisma } from "./helpers/mockPrisma.js";
 
 // Set up mock Prisma before importing app
-let mockPrisma: ReturnType<typeof createMockPrisma>;
+let mockPrisma: MockPrisma;
 
 beforeAll(() => {
   mockPrisma = createMockPrisma();
@@ -37,25 +38,25 @@ describe("Auth routes", () => {
 
   // Helper: set up mock to accept token store operations
   function setupTokenMocks() {
-    const rt = mockPrisma.refreshToken as any;
-    rt.create.mockResolvedValue({});
-    rt.delete.mockResolvedValue({});
-    rt.deleteMany.mockResolvedValue({ count: 0 });
+    mockPrisma.refreshToken.create.mockResolvedValue({});
+    mockPrisma.refreshToken.delete.mockResolvedValue({});
+    mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
   }
 
   function setupTokenLookup(token: string, userId: string) {
-    const rt = mockPrisma.refreshToken as any;
-    rt.findUnique.mockImplementation(async (args: any) => {
-      if (args.where.token === token) {
-        return {
-          id: "mock-id",
-          token,
-          userId,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        };
-      }
-      return null;
-    });
+    mockPrisma.refreshToken.findUnique.mockImplementation(
+      async (args: { where: { token: string } }) => {
+        if (args.where.token === token) {
+          return {
+            id: "mock-id",
+            token,
+            userId,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          };
+        }
+        return null;
+      },
+    );
   }
 
   // --- Login ---
@@ -135,8 +136,7 @@ describe("Auth routes", () => {
       expect(refreshCookie).toBeDefined();
 
       // Set up lookup for the stored token
-      const rt = mockPrisma.refreshToken as any;
-      const storedToken = rt.create.mock.calls[0][0].data.token;
+      const storedToken = mockPrisma.refreshToken.create.mock.calls[0][0].data.token;
       setupTokenLookup(storedToken, "admin-001");
 
       const refreshRes = await app.inject({
@@ -163,8 +163,7 @@ describe("Auth routes", () => {
     });
 
     it("returns 401 with invalid refresh cookie", async () => {
-      const rt = mockPrisma.refreshToken as any;
-      rt.findUnique.mockResolvedValue(null);
+      mockPrisma.refreshToken.findUnique.mockResolvedValue(null);
 
       const res = await app.inject({
         method: "POST",
@@ -223,8 +222,7 @@ describe("Auth routes", () => {
   describe("POST /auth/sessions/revoke-all", () => {
     it("revokes all sessions and returns count", async () => {
       setupTokenMocks();
-      const rt = mockPrisma.refreshToken as any;
-      rt.deleteMany.mockResolvedValue({ count: 3 });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 3 });
 
       const loginRes = await app.inject({
         method: "POST",
@@ -257,8 +255,7 @@ describe("Auth routes", () => {
 
     it("returns count 0 when no sessions exist", async () => {
       setupTokenMocks();
-      const rt = mockPrisma.refreshToken as any;
-      rt.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
 
       const loginRes = await app.inject({
         method: "POST",

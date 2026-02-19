@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { initEncryptionKey, encryptNumber, encryptField, encryptOptionalField } from "../lib/encryption.js";
+import { initEncryptionKey } from "../lib/encryption.js";
 import {
   decryptAccount,
   encryptAccountForCreate,
