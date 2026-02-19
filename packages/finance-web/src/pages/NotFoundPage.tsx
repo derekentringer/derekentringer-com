@@ -1,10 +1,8 @@
-import styles from "./NotFoundPage.module.css";
-
 export function NotFoundPage() {
   return (
-    <div className={styles.container}>
-      <h1 className={styles.title}>404</h1>
-      <p className={styles.subtitle}>Page not found</p>
+    <div className="flex flex-col items-center justify-center h-full">
+      <h1 className="font-thin text-6xl mb-2">404</h1>
+      <p className="text-base opacity-60">Page not found</p>
     </div>
   );
 }

@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.tsx";
-import styles from "./LoginPage.module.css";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export function LoginPage() {
   const { isAuthenticated, isLoading, login } = useAuth();
@@ -29,11 +30,13 @@ export function LoginPage() {
   }
 
   return (
-    <div className={styles.container}>
-      <form className={styles.form} onSubmit={handleSubmit}>
-        <h1 className={styles.title}>fin</h1>
-        <input
-          className={styles.input}
+    <div className="flex items-center justify-center h-full">
+      <form
+        className="flex flex-col gap-4 w-full max-w-[360px] px-4"
+        onSubmit={handleSubmit}
+      >
+        <h1 className="font-thin text-3xl text-center mb-2">fin</h1>
+        <Input
           type="text"
           placeholder="Username"
           value={username}
@@ -41,22 +44,23 @@ export function LoginPage() {
           autoComplete="username"
           autoFocus
         />
-        <input
-          className={styles.input}
+        <Input
           type="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
         />
-        {error && <p className={styles.error}>{error}</p>}
-        <button
-          className={styles.button}
+        {error && (
+          <p className="text-sm text-error text-center">{error}</p>
+        )}
+        <Button
           type="submit"
           disabled={isSubmitting || !username || !password}
+          className="w-full"
         >
           {isSubmitting ? "Signing in..." : "Sign in"}
-        </button>
+        </Button>
       </form>
     </div>
   );

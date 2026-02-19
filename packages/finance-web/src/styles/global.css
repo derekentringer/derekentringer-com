@@ -1,29 +1,62 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0f1117;
+  --color-foreground: #ececec;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-destructive: #dc2626;
+  --color-destructive-hover: #b91c1c;
+  --color-muted: #999999;
+  --color-muted-foreground: #666666;
+  --color-border: #1e2028;
+  --color-input: #1a1c24;
+  --color-card: #12141b;
+  --color-card-foreground: #ececec;
+  --color-sidebar: #13151c;
+  --color-popover: #1a1c24;
+  --color-popover-foreground: #ececec;
+  --color-accent: rgba(255, 255, 255, 0.03);
+  --color-ring: #2563eb;
+  --color-error: #ef4444;
+  --color-success: #22c55e;
+
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 64px;
+
+  --radius: 0.5rem;
 }
 
-html,
-body,
-#root {
-  height: 100%;
-}
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--color-border);
+  }
 
-body {
-  background-color: #000;
-  font-family: "Roboto", "Tahoma", Verdana, sans-serif;
-  color: #ececec;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-a:link,
-a:visited {
-  color: #ececec;
-  text-decoration: none;
-}
+  body {
+    background-color: var(--color-background);
+    font-family: "Roboto", "Tahoma", Verdana, sans-serif;
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-a:hover,
-a:active {
-  color: #ececec;
-  text-decoration: underline;
+  a:link,
+  a:visited {
+    color: var(--color-foreground);
+    text-decoration: none;
+  }
+
+  a:hover,
+  a:active {
+    color: var(--color-foreground);
+    text-decoration: underline;
+  }
 }
