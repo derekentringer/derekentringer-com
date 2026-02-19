@@ -278,7 +278,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         const user = request.user;
         // Pin tokens use a different payload shape than access tokens
         const pinToken = fastify.jwt.sign(
-          { sub: user.sub, type: "pin" } as any,
+          { sub: user.sub, type: "pin" } as unknown as { sub: string; username: string },
           { key: config.pinTokenSecret, expiresIn: 300 },
         );
 

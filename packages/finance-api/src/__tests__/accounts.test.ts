@@ -14,16 +14,21 @@ process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
 import { describe, it, expect, afterAll, afterEach, vi, beforeAll } from "vitest";
 import { createMockPrisma } from "./helpers/mockPrisma.js";
+import type { MockPrisma } from "./helpers/mockPrisma.js";
 import { encryptAccountForCreate } from "../lib/mappers.js";
 import { AccountType } from "@derekentringer/shared";
 
-let mockPrisma: ReturnType<typeof createMockPrisma>;
+let mockPrisma: MockPrisma;
 
 beforeAll(() => {
   mockPrisma = createMockPrisma();
 });
 
 import { buildApp } from "../app.js";
+
+interface P2025Error extends Error {
+  code: string;
+}
 
 describe("Account routes", () => {
   const app = buildApp({ disableRateLimit: true });
@@ -35,12 +40,13 @@ describe("Account routes", () => {
   afterEach(() => {
     vi.clearAllMocks();
     // Re-setup $transaction after clearAllMocks
-    (mockPrisma as any).$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
+    mockPrisma.$transaction.mockImplementation(
+      async (fn: (client: MockPrisma) => Promise<unknown>) => fn(mockPrisma),
+    );
   });
 
   async function getAccessToken(): Promise<string> {
-    const rt = mockPrisma.refreshToken as any;
-    rt.create.mockResolvedValue({});
+    mockPrisma.refreshToken.create.mockResolvedValue({});
 
     const res = await app.inject({
       method: "POST",
@@ -73,14 +79,15 @@ describe("Account routes", () => {
   describe("POST /accounts", () => {
     it("creates an account with valid data (201)", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      acct.create.mockImplementation(async (args: any) => ({
-        id: "acc-new",
-        ...args.data,
-        isActive: args.data.isActive ?? true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
+      mockPrisma.account.create.mockImplementation(
+        async (args: { data: Record<string, unknown> }) => ({
+          id: "acc-new",
+          ...args.data,
+          isActive: args.data.isActive ?? true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
 
       const res = await app.inject({
         method: "POST",
@@ -214,8 +221,7 @@ describe("Account routes", () => {
   describe("GET /accounts", () => {
     it("returns list of accounts (200)", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      acct.findMany.mockResolvedValue([
+      mockPrisma.account.findMany.mockResolvedValue([
         makeMockAccountRow({ id: VALID_CUID }),
         makeMockAccountRow({ id: VALID_CUID_2 }),
       ]);
@@ -233,8 +239,7 @@ describe("Account routes", () => {
 
     it("filters by active status", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      acct.findMany.mockResolvedValue([makeMockAccountRow()]);
+      mockPrisma.account.findMany.mockResolvedValue([makeMockAccountRow()]);
 
       await app.inject({
         method: "GET",
@@ -242,7 +247,7 @@ describe("Account routes", () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      expect(acct.findMany).toHaveBeenCalledWith(
+      expect(mockPrisma.account.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { isActive: true },
         }),
@@ -255,8 +260,7 @@ describe("Account routes", () => {
   describe("GET /accounts/:id", () => {
     it("returns account if found (200)", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      acct.findUnique.mockResolvedValue(makeMockAccountRow());
+      mockPrisma.account.findUnique.mockResolvedValue(makeMockAccountRow());
 
       const res = await app.inject({
         method: "GET",
@@ -272,8 +276,7 @@ describe("Account routes", () => {
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      acct.findUnique.mockResolvedValue(null);
+      mockPrisma.account.findUnique.mockResolvedValue(null);
 
       const res = await app.inject({
         method: "GET",
@@ -291,13 +294,14 @@ describe("Account routes", () => {
   describe("PATCH /accounts/:id", () => {
     it("updates account fields (200)", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
       const row = makeMockAccountRow();
-      acct.update.mockImplementation(async (args: any) => ({
-        ...row,
-        ...args.data,
-        updatedAt: new Date(),
-      }));
+      mockPrisma.account.update.mockImplementation(
+        async (args: { data: Record<string, unknown> }) => ({
+          ...row,
+          ...args.data,
+          updatedAt: new Date(),
+        }),
+      );
 
       const res = await app.inject({
         method: "PATCH",
@@ -313,10 +317,9 @@ describe("Account routes", () => {
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      const notFoundError = new Error("Not found") as any;
+      const notFoundError = new Error("Not found") as P2025Error;
       notFoundError.code = "P2025";
-      acct.update.mockRejectedValue(notFoundError);
+      mockPrisma.account.update.mockRejectedValue(notFoundError);
 
       const res = await app.inject({
         method: "PATCH",
@@ -330,16 +333,16 @@ describe("Account routes", () => {
 
     it("creates Balance snapshot when currentBalance changes", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      const bal = mockPrisma.balance as any;
       const row = makeMockAccountRow(); // currentBalance encrypted from 1000
-      acct.findUnique.mockResolvedValue({ currentBalance: row.currentBalance });
-      acct.update.mockImplementation(async (args: any) => ({
-        ...row,
-        ...args.data,
-        updatedAt: new Date(),
-      }));
-      bal.create.mockResolvedValue({});
+      mockPrisma.account.findUnique.mockResolvedValue({ currentBalance: row.currentBalance });
+      mockPrisma.account.update.mockImplementation(
+        async (args: { data: Record<string, unknown> }) => ({
+          ...row,
+          ...args.data,
+          updatedAt: new Date(),
+        }),
+      );
+      mockPrisma.balance.create.mockResolvedValue({});
 
       await app.inject({
         method: "PATCH",
@@ -348,8 +351,8 @@ describe("Account routes", () => {
         payload: { currentBalance: 9999 },
       });
 
-      expect(bal.create).toHaveBeenCalledTimes(1);
-      const balData = bal.create.mock.calls[0][0].data;
+      expect(mockPrisma.balance.create).toHaveBeenCalledTimes(1);
+      const balData = mockPrisma.balance.create.mock.calls[0][0].data;
       expect(balData.accountId).toBe(VALID_CUID);
       expect(balData.balance).toBeDefined();
       expect(balData.date).toBeDefined();
@@ -414,8 +417,7 @@ describe("Account routes", () => {
   describe("DELETE /accounts/:id", () => {
     it("deletes account (204)", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      acct.delete.mockResolvedValue({});
+      mockPrisma.account.delete.mockResolvedValue({});
 
       const res = await app.inject({
         method: "DELETE",
@@ -428,10 +430,9 @@ describe("Account routes", () => {
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const acct = mockPrisma.account as any;
-      const notFoundError = new Error("Not found") as any;
+      const notFoundError = new Error("Not found") as P2025Error;
       notFoundError.code = "P2025";
-      acct.delete.mockRejectedValue(notFoundError);
+      mockPrisma.account.delete.mockRejectedValue(notFoundError);
 
       const res = await app.inject({
         method: "DELETE",
