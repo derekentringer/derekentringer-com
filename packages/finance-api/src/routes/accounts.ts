@@ -27,7 +27,7 @@ function isStringTooLong(value: unknown): boolean {
 const createAccountSchema = {
   body: {
     type: "object" as const,
-    required: ["name", "type", "institution", "currentBalance"],
+    required: ["name", "type"],
     additionalProperties: false,
     properties: {
       name: { type: "string" },

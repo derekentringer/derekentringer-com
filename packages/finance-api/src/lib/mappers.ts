@@ -2,11 +2,19 @@ import type {
   Account as PrismaAccount,
   Transaction as PrismaTransaction,
   Balance as PrismaBalance,
+  LoanProfile as PrismaLoanProfile,
+  InvestmentProfile as PrismaInvestmentProfile,
+  SavingsProfile as PrismaSavingsProfile,
 } from "../generated/prisma/client.js";
 import type {
   Account,
   Transaction,
   Balance,
+  LoanProfileData,
+  InvestmentProfileData,
+  SavingsProfileData,
+  LoanStaticData,
+  LoanType,
 } from "@derekentringer/shared";
 import { AccountType } from "@derekentringer/shared";
 import {
@@ -32,6 +40,11 @@ export function decryptAccount(row: PrismaAccount): Account {
     currentBalance: decryptNumber(row.currentBalance),
     interestRate: decryptOptionalNumber(row.interestRate),
     csvParserId: row.csvParserId ?? undefined,
+    originalBalance: decryptOptionalNumber(row.originalBalance),
+    originationDate: decryptOptionalField(row.originationDate),
+    maturityDate: decryptOptionalField(row.maturityDate),
+    loanType: decryptOptionalField(row.loanType) as LoanType | undefined,
+    employerName: decryptOptionalField(row.employerName),
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -46,27 +59,42 @@ interface EncryptedAccountCreate {
   currentBalance: string;
   interestRate: string | null;
   csvParserId: string | null;
+  originalBalance: string | null;
+  originationDate: string | null;
+  maturityDate: string | null;
+  loanType: string | null;
+  employerName: string | null;
   isActive?: boolean;
 }
 
 export function encryptAccountForCreate(input: {
   name: string;
   type: AccountType;
-  institution: string;
+  institution?: string;
   accountNumber?: string | null;
-  currentBalance: number;
+  currentBalance?: number;
   interestRate?: number | null;
   csvParserId?: string | null;
+  originalBalance?: number | null;
+  originationDate?: string | null;
+  maturityDate?: string | null;
+  loanType?: string | null;
+  employerName?: string | null;
   isActive?: boolean;
 }): EncryptedAccountCreate {
   const data: EncryptedAccountCreate = {
     name: encryptField(input.name),
     type: input.type,
-    institution: encryptField(input.institution),
+    institution: encryptField(input.institution ?? ""),
     accountNumber: encryptOptionalField(input.accountNumber),
-    currentBalance: encryptNumber(input.currentBalance),
+    currentBalance: encryptNumber(input.currentBalance ?? 0),
     interestRate: encryptOptionalNumber(input.interestRate),
     csvParserId: input.csvParserId ?? null,
+    originalBalance: encryptOptionalNumber(input.originalBalance),
+    originationDate: encryptOptionalField(input.originationDate),
+    maturityDate: encryptOptionalField(input.maturityDate),
+    loanType: encryptOptionalField(input.loanType),
+    employerName: encryptOptionalField(input.employerName),
   };
   // Only set isActive when explicitly provided; otherwise Prisma @default(true) applies
   if (input.isActive !== undefined) data.isActive = input.isActive;
@@ -81,6 +109,11 @@ export interface EncryptedAccountUpdate {
   currentBalance?: string;
   interestRate?: string | null;
   csvParserId?: string | null;
+  originalBalance?: string | null;
+  originationDate?: string | null;
+  maturityDate?: string | null;
+  loanType?: string | null;
+  employerName?: string | null;
   isActive?: boolean;
 }
 
@@ -92,6 +125,11 @@ export function encryptAccountForUpdate(input: {
   currentBalance?: number;
   interestRate?: number | null;
   csvParserId?: string | null;
+  originalBalance?: number | null;
+  originationDate?: string | null;
+  maturityDate?: string | null;
+  loanType?: string | null;
+  employerName?: string | null;
   isActive?: boolean;
 }): EncryptedAccountUpdate {
   const data: EncryptedAccountUpdate = {};
@@ -108,6 +146,16 @@ export function encryptAccountForUpdate(input: {
     data.interestRate = encryptOptionalNumber(input.interestRate);
   if (input.csvParserId !== undefined)
     data.csvParserId = input.csvParserId;
+  if (input.originalBalance !== undefined)
+    data.originalBalance = encryptOptionalNumber(input.originalBalance);
+  if (input.originationDate !== undefined)
+    data.originationDate = encryptOptionalField(input.originationDate);
+  if (input.maturityDate !== undefined)
+    data.maturityDate = encryptOptionalField(input.maturityDate);
+  if (input.loanType !== undefined)
+    data.loanType = encryptOptionalField(input.loanType);
+  if (input.employerName !== undefined)
+    data.employerName = encryptOptionalField(input.employerName);
   if (input.isActive !== undefined) data.isActive = input.isActive;
 
   return data;
@@ -173,12 +221,30 @@ export function encryptTransactionForUpdate(input: {
 
 // --- Balance ---
 
-export function decryptBalance(row: PrismaBalance): Balance {
-  return {
+type PrismaBalanceWithProfiles = PrismaBalance & {
+  loanProfile?: PrismaLoanProfile | null;
+  investmentProfile?: PrismaInvestmentProfile | null;
+  savingsProfile?: PrismaSavingsProfile | null;
+};
+
+export function decryptBalance(row: PrismaBalanceWithProfiles): Balance {
+  const result: Balance = {
     accountId: row.accountId,
     balance: decryptNumber(row.balance),
     date: row.date.toISOString(),
   };
+
+  if (row.loanProfile) {
+    result.loanProfile = decryptLoanProfile(row.loanProfile);
+  }
+  if (row.investmentProfile) {
+    result.investmentProfile = decryptInvestmentProfile(row.investmentProfile);
+  }
+  if (row.savingsProfile) {
+    result.savingsProfile = decryptSavingsProfile(row.savingsProfile);
+  }
+
+  return result;
 }
 
 export function encryptBalanceForCreate(input: {
@@ -195,4 +261,158 @@ export function encryptBalanceForCreate(input: {
     balance: encryptNumber(input.balance),
     date: input.date,
   };
+}
+
+// --- Loan Profile ---
+
+export function encryptLoanProfileForCreate(
+  balanceId: string,
+  data: LoanProfileData,
+): {
+  balanceId: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  interestRate: string | null;
+  monthlyPayment: string | null;
+  principalPaid: string | null;
+  interestPaid: string | null;
+  escrowAmount: string | null;
+  nextPaymentDate: string | null;
+  remainingTermMonths: string | null;
+} {
+  return {
+    balanceId,
+    periodStart: encryptOptionalField(data.periodStart) ?? null,
+    periodEnd: encryptOptionalField(data.periodEnd) ?? null,
+    interestRate: encryptOptionalNumber(data.interestRate) ?? null,
+    monthlyPayment: encryptOptionalNumber(data.monthlyPayment) ?? null,
+    principalPaid: encryptOptionalNumber(data.principalPaid) ?? null,
+    interestPaid: encryptOptionalNumber(data.interestPaid) ?? null,
+    escrowAmount: encryptOptionalNumber(data.escrowAmount) ?? null,
+    nextPaymentDate: encryptOptionalField(data.nextPaymentDate) ?? null,
+    remainingTermMonths: encryptOptionalNumber(data.remainingTermMonths) ?? null,
+  };
+}
+
+export function decryptLoanProfile(row: PrismaLoanProfile): LoanProfileData {
+  return {
+    periodStart: decryptOptionalField(row.periodStart),
+    periodEnd: decryptOptionalField(row.periodEnd),
+    interestRate: decryptOptionalNumber(row.interestRate),
+    monthlyPayment: decryptOptionalNumber(row.monthlyPayment),
+    principalPaid: decryptOptionalNumber(row.principalPaid),
+    interestPaid: decryptOptionalNumber(row.interestPaid),
+    escrowAmount: decryptOptionalNumber(row.escrowAmount),
+    nextPaymentDate: decryptOptionalField(row.nextPaymentDate),
+    remainingTermMonths: decryptOptionalNumber(row.remainingTermMonths),
+  };
+}
+
+// --- Investment Profile ---
+
+export function encryptInvestmentProfileForCreate(
+  balanceId: string,
+  data: InvestmentProfileData,
+): {
+  balanceId: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  rateOfReturn: string | null;
+  ytdReturn: string | null;
+  totalGainLoss: string | null;
+  contributions: string | null;
+  employerMatch: string | null;
+  vestingPct: string | null;
+  fees: string | null;
+  expenseRatio: string | null;
+  dividends: string | null;
+  capitalGains: string | null;
+  numHoldings: string | null;
+} {
+  return {
+    balanceId,
+    periodStart: encryptOptionalField(data.periodStart) ?? null,
+    periodEnd: encryptOptionalField(data.periodEnd) ?? null,
+    rateOfReturn: encryptOptionalNumber(data.rateOfReturn) ?? null,
+    ytdReturn: encryptOptionalNumber(data.ytdReturn) ?? null,
+    totalGainLoss: encryptOptionalNumber(data.totalGainLoss) ?? null,
+    contributions: encryptOptionalNumber(data.contributions) ?? null,
+    employerMatch: encryptOptionalNumber(data.employerMatch) ?? null,
+    vestingPct: encryptOptionalNumber(data.vestingPct) ?? null,
+    fees: encryptOptionalNumber(data.fees) ?? null,
+    expenseRatio: encryptOptionalNumber(data.expenseRatio) ?? null,
+    dividends: encryptOptionalNumber(data.dividends) ?? null,
+    capitalGains: encryptOptionalNumber(data.capitalGains) ?? null,
+    numHoldings: encryptOptionalNumber(data.numHoldings) ?? null,
+  };
+}
+
+export function decryptInvestmentProfile(
+  row: PrismaInvestmentProfile,
+): InvestmentProfileData {
+  return {
+    periodStart: decryptOptionalField(row.periodStart),
+    periodEnd: decryptOptionalField(row.periodEnd),
+    rateOfReturn: decryptOptionalNumber(row.rateOfReturn),
+    ytdReturn: decryptOptionalNumber(row.ytdReturn),
+    totalGainLoss: decryptOptionalNumber(row.totalGainLoss),
+    contributions: decryptOptionalNumber(row.contributions),
+    employerMatch: decryptOptionalNumber(row.employerMatch),
+    vestingPct: decryptOptionalNumber(row.vestingPct),
+    fees: decryptOptionalNumber(row.fees),
+    expenseRatio: decryptOptionalNumber(row.expenseRatio),
+    dividends: decryptOptionalNumber(row.dividends),
+    capitalGains: decryptOptionalNumber(row.capitalGains),
+    numHoldings: decryptOptionalNumber(row.numHoldings),
+  };
+}
+
+// --- Savings Profile ---
+
+export function encryptSavingsProfileForCreate(
+  balanceId: string,
+  data: SavingsProfileData,
+): {
+  balanceId: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  apy: string | null;
+  interestEarned: string | null;
+  interestEarnedYtd: string | null;
+} {
+  return {
+    balanceId,
+    periodStart: encryptOptionalField(data.periodStart) ?? null,
+    periodEnd: encryptOptionalField(data.periodEnd) ?? null,
+    apy: encryptOptionalNumber(data.apy) ?? null,
+    interestEarned: encryptOptionalNumber(data.interestEarned) ?? null,
+    interestEarnedYtd: encryptOptionalNumber(data.interestEarnedYtd) ?? null,
+  };
+}
+
+export function decryptSavingsProfile(
+  row: PrismaSavingsProfile,
+): SavingsProfileData {
+  return {
+    periodStart: decryptOptionalField(row.periodStart),
+    periodEnd: decryptOptionalField(row.periodEnd),
+    apy: decryptOptionalNumber(row.apy),
+    interestEarned: decryptOptionalNumber(row.interestEarned),
+    interestEarnedYtd: decryptOptionalNumber(row.interestEarnedYtd),
+  };
+}
+
+// --- Loan Static Data ---
+
+export function encryptLoanStaticForUpdate(data: LoanStaticData): EncryptedAccountUpdate {
+  const result: EncryptedAccountUpdate = {};
+  if (data.originalBalance !== undefined)
+    result.originalBalance = encryptOptionalNumber(data.originalBalance);
+  if (data.originationDate !== undefined)
+    result.originationDate = encryptOptionalField(data.originationDate);
+  if (data.maturityDate !== undefined)
+    result.maturityDate = encryptOptionalField(data.maturityDate);
+  if (data.loanType !== undefined)
+    result.loanType = encryptOptionalField(data.loanType);
+  return result;
 }
