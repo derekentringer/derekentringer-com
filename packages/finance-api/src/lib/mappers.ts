@@ -5,6 +5,9 @@ import type {
   LoanProfile as PrismaLoanProfile,
   InvestmentProfile as PrismaInvestmentProfile,
   SavingsProfile as PrismaSavingsProfile,
+  Budget as PrismaBudget,
+  Bill as PrismaBill,
+  BillPayment as PrismaBillPayment,
 } from "../generated/prisma/client.js";
 import type {
   Account,
@@ -15,6 +18,10 @@ import type {
   SavingsProfileData,
   LoanStaticData,
   LoanType,
+  Budget,
+  Bill,
+  BillPayment,
+  BillFrequency,
 } from "@derekentringer/shared";
 import { AccountType } from "@derekentringer/shared";
 import {
@@ -38,6 +45,7 @@ export function decryptAccount(row: PrismaAccount): Account {
     institution: decryptField(row.institution),
     accountNumber: decryptOptionalField(row.accountNumber),
     currentBalance: decryptNumber(row.currentBalance),
+    estimatedValue: decryptOptionalNumber(row.estimatedValue),
     interestRate: decryptOptionalNumber(row.interestRate),
     csvParserId: row.csvParserId ?? undefined,
     originalBalance: decryptOptionalNumber(row.originalBalance),
@@ -57,6 +65,7 @@ interface EncryptedAccountCreate {
   institution: string;
   accountNumber: string | null;
   currentBalance: string;
+  estimatedValue: string | null;
   interestRate: string | null;
   csvParserId: string | null;
   originalBalance: string | null;
@@ -73,6 +82,7 @@ export function encryptAccountForCreate(input: {
   institution?: string;
   accountNumber?: string | null;
   currentBalance?: number;
+  estimatedValue?: number | null;
   interestRate?: number | null;
   csvParserId?: string | null;
   originalBalance?: number | null;
@@ -88,6 +98,7 @@ export function encryptAccountForCreate(input: {
     institution: encryptField(input.institution ?? ""),
     accountNumber: encryptOptionalField(input.accountNumber),
     currentBalance: encryptNumber(input.currentBalance ?? 0),
+    estimatedValue: encryptOptionalNumber(input.estimatedValue),
     interestRate: encryptOptionalNumber(input.interestRate),
     csvParserId: input.csvParserId ?? null,
     originalBalance: encryptOptionalNumber(input.originalBalance),
@@ -107,6 +118,7 @@ export interface EncryptedAccountUpdate {
   institution?: string;
   accountNumber?: string | null;
   currentBalance?: string;
+  estimatedValue?: string | null;
   interestRate?: string | null;
   csvParserId?: string | null;
   originalBalance?: string | null;
@@ -123,6 +135,7 @@ export function encryptAccountForUpdate(input: {
   institution?: string;
   accountNumber?: string | null;
   currentBalance?: number;
+  estimatedValue?: number | null;
   interestRate?: number | null;
   csvParserId?: string | null;
   originalBalance?: number | null;
@@ -142,6 +155,8 @@ export function encryptAccountForUpdate(input: {
     data.accountNumber = encryptOptionalField(input.accountNumber);
   if (input.currentBalance !== undefined)
     data.currentBalance = encryptNumber(input.currentBalance);
+  if (input.estimatedValue !== undefined)
+    data.estimatedValue = encryptOptionalNumber(input.estimatedValue);
   if (input.interestRate !== undefined)
     data.interestRate = encryptOptionalNumber(input.interestRate);
   if (input.csvParserId !== undefined)
@@ -415,4 +430,201 @@ export function encryptLoanStaticForUpdate(data: LoanStaticData): EncryptedAccou
   if (data.loanType !== undefined)
     result.loanType = encryptOptionalField(data.loanType);
   return result;
+}
+
+// --- Budget ---
+
+export function decryptBudget(row: PrismaBudget): Budget {
+  return {
+    id: row.id,
+    category: row.category,
+    amount: decryptNumber(row.amount),
+    effectiveFrom: row.effectiveFrom,
+    notes: decryptOptionalField(row.notes),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function encryptBudgetForCreate(input: {
+  category: string;
+  amount: number;
+  effectiveFrom: string;
+  notes?: string | null;
+}): {
+  category: string;
+  amount: string;
+  effectiveFrom: string;
+  notes: string | null;
+} {
+  return {
+    category: input.category,
+    amount: encryptNumber(input.amount),
+    effectiveFrom: input.effectiveFrom,
+    notes: encryptOptionalField(input.notes),
+  };
+}
+
+export function encryptBudgetForUpdate(input: {
+  amount?: number;
+  notes?: string | null;
+}): {
+  amount?: string;
+  notes?: string | null;
+} {
+  const data: { amount?: string; notes?: string | null } = {};
+  if (input.amount !== undefined) data.amount = encryptNumber(input.amount);
+  if (input.notes !== undefined)
+    data.notes = encryptOptionalField(input.notes);
+  return data;
+}
+
+// --- Bill ---
+
+export function decryptBill(row: PrismaBill): Bill {
+  return {
+    id: row.id,
+    name: decryptField(row.name),
+    amount: decryptNumber(row.amount),
+    frequency: row.frequency as BillFrequency,
+    dueDay: row.dueDay,
+    dueMonth: row.dueMonth ?? undefined,
+    dueWeekday: row.dueWeekday ?? undefined,
+    category: row.category ?? undefined,
+    accountId: row.accountId ?? undefined,
+    notes: decryptOptionalField(row.notes),
+    isActive: row.isActive,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function encryptBillForCreate(input: {
+  name: string;
+  amount: number;
+  frequency: string;
+  dueDay: number;
+  dueMonth?: number | null;
+  dueWeekday?: number | null;
+  category?: string | null;
+  accountId?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+}): {
+  name: string;
+  amount: string;
+  frequency: string;
+  dueDay: number;
+  dueMonth: number | null;
+  dueWeekday: number | null;
+  category: string | null;
+  accountId: string | null;
+  notes: string | null;
+  isActive?: boolean;
+} {
+  const data: {
+    name: string;
+    amount: string;
+    frequency: string;
+    dueDay: number;
+    dueMonth: number | null;
+    dueWeekday: number | null;
+    category: string | null;
+    accountId: string | null;
+    notes: string | null;
+    isActive?: boolean;
+  } = {
+    name: encryptField(input.name),
+    amount: encryptNumber(input.amount),
+    frequency: input.frequency,
+    dueDay: input.dueDay,
+    dueMonth: input.dueMonth ?? null,
+    dueWeekday: input.dueWeekday ?? null,
+    category: input.category ?? null,
+    accountId: input.accountId ?? null,
+    notes: encryptOptionalField(input.notes),
+  };
+  if (input.isActive !== undefined) data.isActive = input.isActive;
+  return data;
+}
+
+export function encryptBillForUpdate(input: {
+  name?: string;
+  amount?: number;
+  frequency?: string;
+  dueDay?: number;
+  dueMonth?: number | null;
+  dueWeekday?: number | null;
+  category?: string | null;
+  accountId?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+}): {
+  name?: string;
+  amount?: string;
+  frequency?: string;
+  dueDay?: number;
+  dueMonth?: number | null;
+  dueWeekday?: number | null;
+  category?: string | null;
+  accountId?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+} {
+  const data: {
+    name?: string;
+    amount?: string;
+    frequency?: string;
+    dueDay?: number;
+    dueMonth?: number | null;
+    dueWeekday?: number | null;
+    category?: string | null;
+    accountId?: string | null;
+    notes?: string | null;
+    isActive?: boolean;
+  } = {};
+
+  if (input.name !== undefined) data.name = encryptField(input.name);
+  if (input.amount !== undefined) data.amount = encryptNumber(input.amount);
+  if (input.frequency !== undefined) data.frequency = input.frequency;
+  if (input.dueDay !== undefined) data.dueDay = input.dueDay;
+  if (input.dueMonth !== undefined) data.dueMonth = input.dueMonth;
+  if (input.dueWeekday !== undefined) data.dueWeekday = input.dueWeekday;
+  if (input.category !== undefined) data.category = input.category;
+  if (input.accountId !== undefined) data.accountId = input.accountId;
+  if (input.notes !== undefined)
+    data.notes = encryptOptionalField(input.notes);
+  if (input.isActive !== undefined) data.isActive = input.isActive;
+
+  return data;
+}
+
+// --- Bill Payment ---
+
+export function decryptBillPayment(row: PrismaBillPayment): BillPayment {
+  return {
+    id: row.id,
+    billId: row.billId,
+    dueDate: row.dueDate.toISOString(),
+    paidDate: row.paidDate.toISOString(),
+    amount: decryptNumber(row.amount),
+  };
+}
+
+export function encryptBillPaymentForCreate(input: {
+  billId: string;
+  dueDate: Date;
+  amount: number;
+}): {
+  billId: string;
+  dueDate: Date;
+  paidDate: Date;
+  amount: string;
+} {
+  return {
+    billId: input.billId,
+    dueDate: input.dueDate,
+    paidDate: new Date(),
+    amount: encryptNumber(input.amount),
+  };
 }

@@ -35,7 +35,7 @@ export function LoginPage() {
         className="flex flex-col gap-4 w-full max-w-[360px] px-4"
         onSubmit={handleSubmit}
       >
-        <h1 className="font-thin text-3xl text-center mb-2">fin</h1>
+        <h1 className="font-thin text-3xl text-foreground text-center mb-2">fin</h1>
         <Input
           type="text"
           placeholder="Username"

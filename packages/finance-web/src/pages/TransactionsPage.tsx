@@ -182,7 +182,7 @@ export function TransactionsPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <h1 className="font-thin text-3xl">Transactions</h1>
+            <h1 className="text-3xl text-foreground">Transactions</h1>
             <Button size="sm" onClick={() => setShowImport(true)}>
               <Upload className="h-4 w-4" />
               Import CSV
@@ -264,7 +264,7 @@ export function TransactionsPage() {
             <>
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="hover:bg-transparent">
                     <SortableTableHead field="date" label="Date" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortableTableHead field="description" label="Description" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortableTableHead field="amount" label="Amount" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="text-right" />

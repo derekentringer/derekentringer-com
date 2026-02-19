@@ -20,7 +20,16 @@ export type {
 
 export { encrypt, decrypt } from "./crypto/index.js";
 
-export { AccountType, CSV_PARSER_IDS, CSV_PARSER_LABELS } from "./finance/types.js";
+export {
+  AccountType,
+  CSV_PARSER_IDS,
+  CSV_PARSER_LABELS,
+  ASSET_ACCOUNT_TYPES,
+  LIABILITY_ACCOUNT_TYPES,
+  classifyAccountType,
+  BILL_FREQUENCIES,
+  BILL_FREQUENCY_LABELS,
+} from "./finance/types.js";
 export type {
   Account,
   Transaction,
@@ -56,4 +65,24 @@ export type {
   UpdateTransactionRequest,
   TransactionListResponse,
   TransactionResponse,
+  BillFrequency,
+  Bill,
+  CreateBillRequest,
+  UpdateBillRequest,
+  BillListResponse,
+  BillResponse,
+  BillPayment,
+  UpcomingBillInstance,
+  Budget,
+  CreateBudgetRequest,
+  UpdateBudgetRequest,
+  BudgetListResponse,
+  BudgetResponse,
+  CategoryBudgetSummary,
+  MonthlyBudgetSummaryResponse,
+  NetWorthSummary,
+  NetWorthHistoryPoint,
+  NetWorthResponse,
+  SpendingSummary,
+  DashboardUpcomingBillsResponse,
 } from "./finance/types.js";

@@ -34,6 +34,7 @@ const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   [AccountType.Credit]: "Credit",
   [AccountType.Investment]: "Investment",
   [AccountType.Loan]: "Loan",
+  [AccountType.RealEstate]: "Real Estate",
   [AccountType.Other]: "Other",
 };
 
@@ -63,6 +64,9 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
   const [accountNumber, setAccountNumber] = useState(
     account?.accountNumber ?? "",
   );
+  const [estimatedValue, setEstimatedValue] = useState(
+    account?.estimatedValue?.toString() ?? "",
+  );
   const [interestRate, setInterestRate] = useState(
     account?.interestRate?.toString() ?? "",
   );
@@ -75,9 +79,13 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
     if (!INTEREST_RATE_TYPES.has(type)) {
       setInterestRate("");
     }
+    if (type !== AccountType.RealEstate) {
+      setEstimatedValue("");
+    }
   }, [type]);
 
   const showInterestRate = INTEREST_RATE_TYPES.has(type);
+  const isRealEstate = type === AccountType.RealEstate;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -92,6 +100,9 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
         if (institution !== account!.institution) data.institution = institution;
         const balNum = currentBalance ? parseFloat(currentBalance) : 0;
         if (balNum !== account!.currentBalance) data.currentBalance = balNum;
+        const estVal = estimatedValue ? parseFloat(estimatedValue) : null;
+        if (estVal !== (account!.estimatedValue ?? null))
+          data.estimatedValue = estVal;
         const acctNum = accountNumber || null;
         if (acctNum !== (account!.accountNumber ?? null))
           data.accountNumber = acctNum;
@@ -109,6 +120,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
           institution,
           currentBalance: currentBalance ? parseFloat(currentBalance) : 0,
         };
+        if (estimatedValue) data.estimatedValue = parseFloat(estimatedValue);
         if (accountNumber) data.accountNumber = accountNumber;
         if (interestRate) data.interestRate = parseFloat(interestRate);
         if (csvParserId) data.csvParserId = csvParserId;
@@ -164,7 +176,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label>Balance</Label>
+            <Label>{isRealEstate ? "Amount Owed" : "Balance"}</Label>
             <Input
               type="number"
               step="0.01"
@@ -173,6 +185,18 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
               placeholder="0.00"
             />
           </div>
+          {isRealEstate && (
+            <div className="flex flex-col gap-1">
+              <Label>Estimated Market Value</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={estimatedValue}
+                onChange={(e) => setEstimatedValue(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <Label>Account Number</Label>
             <Input
