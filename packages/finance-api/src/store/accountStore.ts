@@ -1,11 +1,12 @@
-import type { Account, AccountType } from "@derekentringer/shared";
+import type { Account, AccountType, LoanStaticData } from "@derekentringer/shared";
 import { getPrisma } from "../lib/prisma.js";
-import { decryptNumber } from "../lib/encryption.js";
+import { decryptNumber, encryptNumber, encryptOptionalField } from "../lib/encryption.js";
 import {
   decryptAccount,
   encryptAccountForCreate,
   encryptAccountForUpdate,
   encryptBalanceForCreate,
+  encryptLoanStaticForUpdate,
 } from "../lib/mappers.js";
 
 function isNotFoundError(e: unknown): boolean {
@@ -20,8 +21,8 @@ function isNotFoundError(e: unknown): boolean {
 export async function createAccount(data: {
   name: string;
   type: AccountType;
-  institution: string;
-  currentBalance: number;
+  institution?: string;
+  currentBalance?: number;
   accountNumber?: string | null;
   interestRate?: number | null;
   csvParserId?: string | null;
@@ -106,6 +107,89 @@ export async function updateAccount(
     if (isNotFoundError(e)) return null;
     throw e;
   }
+}
+
+// #3: Update only currentBalance without creating a Balance record.
+// Used by PDF import confirm to avoid the auto-Balance side effect in updateAccount.
+export async function updateAccountBalanceOnly(
+  id: string,
+  balance: number,
+): Promise<boolean> {
+  const prisma = getPrisma();
+  const existing = await prisma.account.findUnique({
+    where: { id },
+    select: { currentBalance: true },
+  });
+  if (!existing) return false;
+
+  const oldBalance = decryptNumber(existing.currentBalance);
+  if (oldBalance === balance) return false;
+
+  await prisma.account.update({
+    where: { id },
+    data: { currentBalance: encryptNumber(balance) },
+  });
+  return true;
+}
+
+// Update only interest rate without creating a Balance record.
+export async function updateAccountInterestRateOnly(
+  id: string,
+  rate: number,
+): Promise<boolean> {
+  const prisma = getPrisma();
+  const existing = await prisma.account.findUnique({
+    where: { id },
+    select: { interestRate: true },
+  });
+  if (!existing) return false;
+
+  await prisma.account.update({
+    where: { id },
+    data: { interestRate: encryptNumber(rate) },
+  });
+  return true;
+}
+
+// Update static loan fields on an Account
+export async function updateAccountLoanStatic(
+  id: string,
+  data: LoanStaticData,
+): Promise<boolean> {
+  const prisma = getPrisma();
+  const existing = await prisma.account.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!existing) return false;
+
+  const encrypted = encryptLoanStaticForUpdate(data);
+  if (Object.keys(encrypted).length === 0) return false;
+
+  await prisma.account.update({
+    where: { id },
+    data: encrypted,
+  });
+  return true;
+}
+
+// Update employer name for 401k/investment accounts
+export async function updateAccountEmployerName(
+  id: string,
+  name: string,
+): Promise<boolean> {
+  const prisma = getPrisma();
+  const existing = await prisma.account.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!existing) return false;
+
+  await prisma.account.update({
+    where: { id },
+    data: { employerName: encryptOptionalField(name) },
+  });
+  return true;
 }
 
 export async function deleteAccount(id: string): Promise<boolean> {

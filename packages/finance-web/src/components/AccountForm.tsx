@@ -160,7 +160,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
               type="text"
               value={institution}
               onChange={(e) => setInstitution(e.target.value)}
-              required
+              placeholder="Optional"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -195,7 +195,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
             </div>
           )}
           <div className="flex flex-col gap-1">
-            <Label>CSV Parser</Label>
+            <Label>Import Parser</Label>
             <Select
               value={csvParserId || "__none__"}
               onValueChange={(v) => setCsvParserId(v === "__none__" ? "" : v)}
@@ -205,6 +205,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">None</SelectItem>
+                <SelectItem value="pdf">PDF (AI Statement)</SelectItem>
                 {CSV_PARSER_IDS.map((id) => (
                   <SelectItem key={id} value={id}>
                     {CSV_PARSER_LABELS[id as CsvParserId]}
@@ -240,7 +241,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || !name || !institution}
+              disabled={isSubmitting || !name}
             >
               {isSubmitting ? "Saving..." : isEdit ? "Save" : "Create"}
             </Button>

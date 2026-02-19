@@ -42,6 +42,7 @@ export function loadConfig(): Config {
     isProduction,
     databaseUrl: process.env.DATABASE_URL || "",
     encryptionKey: process.env.ENCRYPTION_KEY || "",
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
   };
 
   return cachedConfig;
@@ -60,6 +61,7 @@ export interface Config {
   isProduction: boolean;
   databaseUrl: string;
   encryptionKey: string;
+  anthropicApiKey: string;
 }
 
 /** Reset cached config (for testing only) */
