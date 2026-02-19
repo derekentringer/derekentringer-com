@@ -1,7 +1,7 @@
 # 11 — Debt Payoff Planning
 
 **Status:** Not Started
-**Phase:** 4 — Projections & Planning
+**Phase:** 5 — Projections & Planning
 **Priority:** Medium
 
 ## Summary

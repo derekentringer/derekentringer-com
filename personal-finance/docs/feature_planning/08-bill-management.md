@@ -1,7 +1,7 @@
 # 08 — Bill Management
 
 **Status:** Not Started
-**Phase:** 3 — Dashboard & Tracking
+**Phase:** 4 — Dashboard & Tracking
 **Priority:** High
 
 ## Summary

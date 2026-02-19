@@ -1,7 +1,7 @@
 # 13 — Investment Portfolio Analysis
 
 **Status:** Not Started
-**Phase:** 5 — Advanced Features
+**Phase:** 6 — Advanced Features
 **Priority:** Medium
 
 ## Summary

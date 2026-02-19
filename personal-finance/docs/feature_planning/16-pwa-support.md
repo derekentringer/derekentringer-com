@@ -1,7 +1,7 @@
 # 16 — PWA Support
 
 **Status:** Not Started
-**Phase:** 6 — Mobile & PWA
+**Phase:** 7 — Mobile & PWA
 **Priority:** Low
 
 ## Summary
