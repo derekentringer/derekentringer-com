@@ -13,7 +13,18 @@ import {
 } from "../api/accounts.ts";
 import { AccountForm } from "../components/AccountForm.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
-import styles from "./AccountsPage.module.css";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Plus } from "lucide-react";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   [AccountType.Checking]: "Checking",
@@ -86,79 +97,88 @@ export function AccountsPage() {
 
   if (isLoading) {
     return (
-      <div className={styles.container}>
-        <p className={styles.loading}>Loading...</p>
+      <div className="p-4 md:p-8">
+        <p className="text-center text-muted py-8">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Accounts</h1>
-        <button
-          className={styles.addButton}
-          onClick={() => setShowForm(true)}
-        >
-          Add Account
-        </button>
-      </div>
+    <div className="p-4 md:p-8">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <h1 className="font-thin text-3xl">Accounts</h1>
+            <Button size="sm" onClick={() => setShowForm(true)}>
+              <Plus className="h-4 w-4" />
+              Add Account
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {error && <p className="text-sm text-error mb-4">{error}</p>}
 
-      {error && <p className={styles.error}>{error}</p>}
-
-      {accounts.length === 0 ? (
-        <p className={styles.empty}>No accounts yet. Add one to get started.</p>
-      ) : (
-        <div className={styles.tableWrapper}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Institution</th>
-                <th className={styles.alignRight}>Balance</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {accounts.map((account) => (
-                <tr key={account.id}>
-                  <td>{account.name}</td>
-                  <td>{ACCOUNT_TYPE_LABELS[account.type] ?? account.type}</td>
-                  <td>{account.institution}</td>
-                  <td className={styles.alignRight}>
-                    {formatCurrency(account.currentBalance)}
-                  </td>
-                  <td>
-                    <span
-                      className={
-                        account.isActive ? styles.active : styles.inactive
-                      }
-                    >
-                      {account.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td className={styles.actions}>
-                    <button
-                      className={styles.actionButton}
-                      onClick={() => setEditAccount(account)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className={styles.deleteButton}
-                      onClick={() => setDeleteTarget(account)}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+          {accounts.length === 0 ? (
+            <p className="text-center text-muted-foreground py-12">
+              No accounts yet. Add one to get started.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="hidden sm:table-cell">Type</TableHead>
+                  <TableHead className="hidden md:table-cell">Institution</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {accounts.map((account) => (
+                  <TableRow key={account.id}>
+                    <TableCell className="font-normal">{account.name}</TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {account.institution}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(account.currentBalance)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={account.isActive ? "success" : "muted"}>
+                        {account.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-primary hover:text-primary-hover"
+                          onClick={() => setEditAccount(account)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-error hover:text-destructive-hover"
+                          onClick={() => setDeleteTarget(account)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {showForm && (
         <AccountForm
