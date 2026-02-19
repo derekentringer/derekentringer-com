@@ -20,7 +20,7 @@ export type {
 
 export { encrypt, decrypt } from "./crypto/index.js";
 
-export { AccountType } from "./finance/types.js";
+export { AccountType, CSV_PARSER_IDS, CSV_PARSER_LABELS } from "./finance/types.js";
 export type {
   Account,
   Transaction,
@@ -29,4 +29,23 @@ export type {
   UpdateAccountRequest,
   AccountListResponse,
   AccountResponse,
+  CsvParserId,
+  Category,
+  CreateCategoryRequest,
+  UpdateCategoryRequest,
+  CategoryListResponse,
+  CategoryResponse,
+  RuleMatchType,
+  CategoryRule,
+  CreateCategoryRuleRequest,
+  UpdateCategoryRuleRequest,
+  CategoryRuleListResponse,
+  CategoryRuleResponse,
+  ParsedTransaction,
+  CsvImportPreviewResponse,
+  CsvImportConfirmRequest,
+  CsvImportConfirmResponse,
+  UpdateTransactionRequest,
+  TransactionListResponse,
+  TransactionResponse,
 } from "./finance/types.js";

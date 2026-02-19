@@ -45,13 +45,40 @@ model Transaction {
   amount      String
   category    String?
   notes       String?
+  dedupeHash  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
+  @@unique([accountId, dedupeHash])
   @@index([accountId])
   @@index([date])
   @@map("transactions")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isDefault Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+model CategoryRule {
+  id        String   @id @default(cuid())
+  pattern   String
+  matchType String
+  category  String
+  priority  Int      @default(100)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([priority])
+  @@map("category_rules")
 }
 
 model Balance {

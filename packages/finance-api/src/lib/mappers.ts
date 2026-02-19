@@ -136,6 +136,7 @@ export function encryptTransactionForCreate(input: {
   amount: number;
   category?: string | null;
   notes?: string | null;
+  dedupeHash?: string | null;
 }): {
   accountId: string;
   date: Date;
@@ -143,6 +144,7 @@ export function encryptTransactionForCreate(input: {
   amount: string;
   category: string | null;
   notes: string | null;
+  dedupeHash: string | null;
 } {
   return {
     accountId: input.accountId,
@@ -151,7 +153,22 @@ export function encryptTransactionForCreate(input: {
     amount: encryptNumber(input.amount),
     category: input.category ?? null,
     notes: encryptOptionalField(input.notes),
+    dedupeHash: input.dedupeHash ?? null,
   };
+}
+
+export function encryptTransactionForUpdate(input: {
+  category?: string | null;
+  notes?: string | null;
+}): {
+  category?: string | null;
+  notes?: string | null;
+} {
+  const data: { category?: string | null; notes?: string | null } = {};
+  if (input.category !== undefined) data.category = input.category;
+  if (input.notes !== undefined)
+    data.notes = encryptOptionalField(input.notes);
+  return data;
 }
 
 // --- Balance ---
