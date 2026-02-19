@@ -1,7 +1,7 @@
 # 15 — AI Financial Advice
 
 **Status:** Not Started
-**Phase:** 5 — Advanced Features
+**Phase:** 6 — Advanced Features
 **Priority:** Medium
 
 ## Summary
