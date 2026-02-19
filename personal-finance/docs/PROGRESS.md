@@ -35,8 +35,8 @@
 
 ### Phase 2: Data Import — High Priority
 
-- [ ] [04 — CSV Import System](feature_planning/04-csv-import-system.md)
-- [ ] [05 — Category Rule Engine](feature_planning/05-category-rule-engine.md)
+- [x] [04 — CSV Import System](features/04-csv-import-system.md)
+- [x] [05 — Category Rule Engine](features/05-category-rule-engine.md)
 
 ### Phase 3: Dashboard & Tracking — High Priority
 

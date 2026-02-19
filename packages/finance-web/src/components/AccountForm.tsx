@@ -2,9 +2,12 @@ import { useState, useEffect } from "react";
 import type { FormEvent } from "react";
 import {
   AccountType,
+  CSV_PARSER_IDS,
+  CSV_PARSER_LABELS,
   type Account,
   type CreateAccountRequest,
   type UpdateAccountRequest,
+  type CsvParserId,
 } from "@derekentringer/shared/finance";
 import {
   Dialog,
@@ -87,7 +90,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
         if (name !== account!.name) data.name = name;
         if (type !== account!.type) data.type = type;
         if (institution !== account!.institution) data.institution = institution;
-        const balNum = parseFloat(currentBalance);
+        const balNum = currentBalance ? parseFloat(currentBalance) : 0;
         if (balNum !== account!.currentBalance) data.currentBalance = balNum;
         const acctNum = accountNumber || null;
         if (acctNum !== (account!.accountNumber ?? null))
@@ -104,7 +107,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
           name,
           type,
           institution,
-          currentBalance: parseFloat(currentBalance),
+          currentBalance: currentBalance ? parseFloat(currentBalance) : 0,
         };
         if (accountNumber) data.accountNumber = accountNumber;
         if (interestRate) data.interestRate = parseFloat(interestRate);
@@ -167,7 +170,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
               step="0.01"
               value={currentBalance}
               onChange={(e) => setCurrentBalance(e.target.value)}
-              required
+              placeholder="0.00"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -192,13 +195,23 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
             </div>
           )}
           <div className="flex flex-col gap-1">
-            <Label>CSV Parser ID</Label>
-            <Input
-              type="text"
-              value={csvParserId}
-              onChange={(e) => setCsvParserId(e.target.value)}
-              placeholder="Optional"
-            />
+            <Label>CSV Parser</Label>
+            <Select
+              value={csvParserId || "__none__"}
+              onValueChange={(v) => setCsvParserId(v === "__none__" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">None</SelectItem>
+                {CSV_PARSER_IDS.map((id) => (
+                  <SelectItem key={id} value={id}>
+                    {CSV_PARSER_LABELS[id as CsvParserId]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center gap-2">
             <Checkbox
@@ -227,7 +240,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || !name || !institution || !currentBalance}
+              disabled={isSubmitting || !name || !institution}
             >
               {isSubmitting ? "Saving..." : isEdit ? "Save" : "Create"}
             </Button>
