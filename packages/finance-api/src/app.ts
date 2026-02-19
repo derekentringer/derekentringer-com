@@ -3,13 +3,18 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import multipart from "@fastify/multipart";
 import authPlugin from "@derekentringer/shared/auth";
 import { loadConfig } from "./config.js";
 import { initEncryptionKey } from "./lib/encryption.js";
 import { getPrisma } from "./lib/prisma.js";
 import { cleanupExpiredTokens } from "./store/refreshTokenStore.js";
+import { seedDefaultCategories } from "./store/categoryStore.js";
 import authRoutes from "./routes/auth.js";
 import accountRoutes from "./routes/accounts.js";
+import categoryRoutes from "./routes/categories.js";
+import categoryRuleRoutes from "./routes/categoryRules.js";
+import transactionRoutes from "./routes/transactions.js";
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -29,6 +34,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(cors, {
     origin: config.corsOrigin,
     credentials: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
   app.register(helmet, {
     contentSecurityPolicy: config.isProduction,
@@ -39,6 +45,12 @@ export function buildApp(opts?: BuildAppOptions) {
       timeWindow: "1 minute",
     });
   }
+  app.register(multipart, {
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5MB
+      files: 1,
+    },
+  });
   app.register(authPlugin, {
     jwtSecret: config.jwtSecret,
   });
@@ -66,6 +78,9 @@ export function buildApp(opts?: BuildAppOptions) {
 
   app.register(authRoutes, { prefix: "/auth" });
   app.register(accountRoutes, { prefix: "/accounts" });
+  app.register(categoryRoutes, { prefix: "/categories" });
+  app.register(categoryRuleRoutes, { prefix: "/category-rules" });
+  app.register(transactionRoutes, { prefix: "/transactions" });
 
   app.get("/health", async () => {
     return { status: "ok" };
@@ -76,6 +91,7 @@ export function buildApp(opts?: BuildAppOptions) {
 
   app.addHook("onReady", async () => {
     cleanupExpiredTokens().catch(() => {});
+    seedDefaultCategories().catch(() => {});
     cleanupTimer = setInterval(() => {
       cleanupExpiredTokens().catch(() => {});
     }, TOKEN_CLEANUP_INTERVAL_MS);
