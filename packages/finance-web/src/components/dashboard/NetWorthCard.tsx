@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
@@ -10,26 +10,60 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import type { NetWorthResponse } from "@derekentringer/shared/finance";
+import type {
+  NetWorthResponse,
+  NetWorthHistoryPoint,
+  ChartTimeRange,
+  ChartGranularity,
+} from "@derekentringer/shared/finance";
 import { CHART_COLORS, formatCurrency } from "@/lib/chartTheme";
+import { fetchNetWorth } from "@/api/dashboard";
+import { TimeRangeSelector } from "./TimeRangeSelector";
 
 interface NetWorthCardProps {
   data: NetWorthResponse;
 }
 
+function formatLabel(date: string, granularity: ChartGranularity): string {
+  if (granularity === "weekly") {
+    return new Date(date + "T00:00:00").toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+  }
+  return new Date(date + "-15").toLocaleDateString("en-US", {
+    month: "short",
+    year: "2-digit",
+  });
+}
+
+function formatTooltipLabel(date: string, granularity: ChartGranularity): string {
+  if (granularity === "weekly") {
+    return new Date(date + "T00:00:00").toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+  return new Date(date + "-15").toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function CustomTooltip({
   active,
   payload,
-  label,
 }: {
   active?: boolean;
-  payload?: Array<{ value: number; name: string; color: string }>;
+  payload?: Array<{ value: number; name: string; color: string; payload?: Record<string, unknown> }>;
   label?: string;
 }) {
   if (!active || !payload?.length) return null;
+  const tooltipLabel = (payload[0]?.payload?.tooltipLabel as string) ?? "";
   return (
     <div className="rounded-lg border bg-card p-3 text-sm shadow-md">
-      <p className="font-medium mb-1">{label}</p>
+      <p className="font-medium mb-1">{tooltipLabel}</p>
       {payload.map((entry) => (
         <p key={entry.name} style={{ color: entry.color }}>
           {entry.name}: {formatCurrency(entry.value)}
@@ -40,13 +74,42 @@ function CustomTooltip({
 }
 
 export function NetWorthCard({ data }: NetWorthCardProps) {
-  const chartData = data.history.map((point) => ({
-    ...point,
-    month: new Date(point.month + "-15").toLocaleDateString("en-US", {
-      month: "short",
-      year: "2-digit",
-    }),
-  }));
+  const [range, setRange] = useState<ChartTimeRange>("all");
+  const [granularity, setGranularity] = useState<ChartGranularity>("monthly");
+  const [history, setHistory] = useState<NetWorthHistoryPoint[]>(data.history);
+  const [loading, setLoading] = useState(false);
+
+  const refetchHistory = useCallback(async (r: ChartTimeRange, g: ChartGranularity) => {
+    setLoading(true);
+    try {
+      const result = await fetchNetWorth(r, g);
+      setHistory(result.history);
+    } catch {
+      // keep existing data on error
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Re-fetch when range or granularity changes (skip initial render — data already loaded)
+  const [initialized, setInitialized] = useState(false);
+  useEffect(() => {
+    if (!initialized) {
+      setInitialized(true);
+      return;
+    }
+    refetchHistory(range, granularity);
+  }, [range, granularity, refetchHistory, initialized]);
+
+  const chartData = useMemo(
+    () =>
+      history.map((point) => ({
+        ...point,
+        label: formatLabel(point.date, granularity),
+        tooltipLabel: formatTooltipLabel(point.date, granularity),
+      })),
+    [history, granularity],
+  );
 
   const assetAccounts = data.summary.accounts
     .filter((a) => a.classification === "asset")
@@ -101,52 +164,63 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
   return (
     <Card>
       <CardHeader>
-        <h2 className="text-xl text-foreground">Net Worth</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl text-foreground">Net Worth</h2>
+          <TimeRangeSelector
+            range={range}
+            granularity={granularity}
+            onRangeChange={setRange}
+            onGranularityChange={setGranularity}
+          />
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={chartData}>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke={CHART_COLORS.grid}
-            />
-            <XAxis
-              dataKey="month"
-              stroke={CHART_COLORS.text}
-              fontSize={12}
-            />
-            <YAxis
-              stroke={CHART_COLORS.text}
-              fontSize={12}
-              tickFormatter={(v) => formatCurrency(v)}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Area
-              type="monotone"
-              dataKey="assets"
-              name="Assets"
-              stroke={CHART_COLORS.assets}
-              fill={CHART_COLORS.assets}
-              fillOpacity={0.1}
-            />
-            <Area
-              type="monotone"
-              dataKey="liabilities"
-              name="Liabilities"
-              stroke={CHART_COLORS.liabilities}
-              fill={CHART_COLORS.liabilities}
-              fillOpacity={0.1}
-            />
-            <Area
-              type="monotone"
-              dataKey="netWorth"
-              name="Net Worth"
-              stroke={CHART_COLORS.netWorth}
-              fill={CHART_COLORS.netWorth}
-              fillOpacity={0.15}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div className={cn("transition-opacity", loading && "opacity-40")}>
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData}>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke={CHART_COLORS.grid}
+              />
+              <XAxis
+                dataKey="label"
+                stroke={CHART_COLORS.text}
+                fontSize={12}
+                interval="equidistantPreserveStart"
+              />
+              <YAxis
+                stroke={CHART_COLORS.text}
+                fontSize={12}
+                tickFormatter={(v) => formatCurrency(v)}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="assets"
+                name="Assets"
+                stroke={CHART_COLORS.assets}
+                fill={CHART_COLORS.assets}
+                fillOpacity={0.1}
+              />
+              <Area
+                type="monotone"
+                dataKey="liabilities"
+                name="Liabilities"
+                stroke={CHART_COLORS.liabilities}
+                fill={CHART_COLORS.liabilities}
+                fillOpacity={0.1}
+              />
+              <Area
+                type="monotone"
+                dataKey="netWorth"
+                name="Net Worth"
+                stroke={CHART_COLORS.netWorth}
+                fill={CHART_COLORS.netWorth}
+                fillOpacity={0.15}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {assetAccounts.length > 0 && (

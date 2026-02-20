@@ -8,6 +8,7 @@ import type {
 import { fetchNetWorth, fetchSpendingSummary, fetchUpcomingBills } from "@/api/dashboard";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { NetWorthCard } from "@/components/dashboard/NetWorthCard";
+import { CheckingBalanceCard } from "@/components/dashboard/CheckingBalanceCard";
 import { SpendingCard } from "@/components/dashboard/SpendingCard";
 import { UpcomingBillsCard } from "@/components/dashboard/UpcomingBillsCard";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,8 +20,8 @@ function SkeletonCard({ className }: { className?: string }) {
     <Card className={className}>
       <CardContent className="p-4">
         <div className="animate-pulse space-y-3">
-          <div className="h-3 bg-muted rounded w-24" />
-          <div className="h-7 bg-muted rounded w-32" />
+          <div className="h-3 bg-skeleton rounded w-24" />
+          <div className="h-7 bg-skeleton rounded w-32" />
         </div>
       </CardContent>
     </Card>
@@ -32,8 +33,8 @@ function SkeletonChartCard({ height = "h-[350px]" }: { height?: string }) {
     <Card>
       <CardContent className="p-6">
         <div className="animate-pulse space-y-4">
-          <div className="h-4 bg-muted rounded w-32" />
-          <div className={`bg-muted rounded ${height}`} />
+          <div className="h-4 bg-skeleton rounded w-32" />
+          <div className={`bg-skeleton rounded ${height}`} />
         </div>
       </CardContent>
     </Card>
@@ -157,6 +158,12 @@ export function DashboardPage() {
     };
   }, [spending, prevSpending]);
 
+  // Find checking account ID once netWorth loads
+  const checkingAccountId = useMemo(() => {
+    if (!netWorth) return undefined;
+    return netWorth.summary.accounts.find((a) => a.type === "checking")?.id;
+  }, [netWorth]);
+
   // Empty state: no accounts
   if (
     !netWorthLoading &&
@@ -168,7 +175,6 @@ export function DashboardPage() {
       <div className="p-4 md:p-8">
         <Card>
           <CardContent className="py-16 text-center">
-            <h2 className="font-thin text-2xl text-foreground mb-2">Welcome to Finance</h2>
             <p className="text-muted-foreground mb-4">
               Add your first account to get started.
             </p>
@@ -229,6 +235,11 @@ export function DashboardPage() {
       ) : netWorth ? (
         <NetWorthCard data={netWorth} />
       ) : null}
+
+      {/* Checking balance chart - full width (self-managed data) */}
+      {checkingAccountId && (
+        <CheckingBalanceCard accountId={checkingAccountId} />
+      )}
 
       {/* Bottom row: Spending + Upcoming Bills */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -9,7 +9,7 @@
 | ORM | Prisma | Type-safe, generates migrations |
 | Web Frontend | React + Vite | Shares types/logic with mobile |
 | Mobile | React Native | Android-focused, cross-platform ready |
-| Charts | Recharts or Victory | Victory has React Native support (TBD) |
+| Charts | Recharts | Area charts, pie charts; per-chart time range/granularity controls |
 | Language | TypeScript | Everywhere — API, web, mobile, shared |
 | Monorepo | Turborepo | Shared builds across packages |
 | Hosting | Railway | API + web + Postgres in one platform |
@@ -48,7 +48,7 @@
 
 ### Phase 4: Dashboard & Tracking — High Priority
 
-- [x] [06 — Net Worth Tracking](features/06-net-worth-tracking.md)
+- [x] [06 — Net Worth Tracking](features/06-net-worth-tracking.md) — includes checking account balance history chart, configurable time range (1M/3M/6M/YTD/All) and granularity (weekly/monthly) per chart
 - [x] [07 — Budgeting & Expense Tracking](features/07-budgeting-expense-tracking.md)
 - [x] [08 — Bill Management](features/08-bill-management.md)
 

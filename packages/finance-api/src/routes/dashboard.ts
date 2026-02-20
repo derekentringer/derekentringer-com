@@ -3,22 +3,53 @@ import {
   computeNetWorthSummary,
   computeNetWorthHistory,
   computeSpendingSummary,
+  computeAccountBalanceHistory,
 } from "../store/dashboardStore.js";
 import { listBills, getPaymentsInRange, computeUpcomingInstances } from "../store/billStore.js";
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
+const VALID_RANGES = ["1m", "3m", "6m", "ytd", "all"];
+const VALID_GRANULARITIES = ["weekly", "monthly"];
+
+function computeStartDate(range: string): Date | undefined {
+  const now = new Date();
+  switch (range) {
+    case "1m":
+      return new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    case "3m":
+      return new Date(now.getFullYear(), now.getMonth() - 3, 1);
+    case "6m":
+      return new Date(now.getFullYear(), now.getMonth() - 6, 1);
+    case "ytd":
+      return new Date(now.getFullYear(), 0, 1);
+    case "all":
+      return undefined;
+    default:
+      return undefined;
+  }
+}
 
 export default async function dashboardRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  // GET /net-worth — current summary + 12-month history
-  fastify.get(
+  // GET /net-worth?range=all&granularity=monthly — current summary + history
+  fastify.get<{ Querystring: { range?: string; granularity?: string } }>(
     "/net-worth",
-    async (request: FastifyRequest, reply: FastifyReply) => {
+    async (
+      request: FastifyRequest<{ Querystring: { range?: string; granularity?: string } }>,
+      reply: FastifyReply,
+    ) => {
       try {
+        const range = VALID_RANGES.includes(request.query.range || "") ? request.query.range! : "all";
+        const granularity = VALID_GRANULARITIES.includes(request.query.granularity || "")
+          ? (request.query.granularity as "weekly" | "monthly")
+          : "monthly";
+        const startDate = computeStartDate(range);
+
         const [summary, history] = await Promise.all([
           computeNetWorthSummary(),
-          computeNetWorthHistory(12),
+          computeNetWorthHistory(granularity, startDate),
         ]);
         return reply.send({ summary, history });
       } catch (e) {
@@ -60,6 +91,51 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           statusCode: 500,
           error: "Internal Server Error",
           message: "Failed to compute spending summary",
+        });
+      }
+    },
+  );
+
+  // GET /account-history?accountId=xxx&range=all&granularity=weekly
+  fastify.get<{ Querystring: { accountId?: string; range?: string; granularity?: string } }>(
+    "/account-history",
+    async (
+      request: FastifyRequest<{ Querystring: { accountId?: string; range?: string; granularity?: string } }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const { accountId } = request.query;
+
+        if (!accountId || !CUID_PATTERN.test(accountId)) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: "accountId is required and must be a valid CUID",
+          });
+        }
+
+        const range = VALID_RANGES.includes(request.query.range || "") ? request.query.range! : "all";
+        const granularity = VALID_GRANULARITIES.includes(request.query.granularity || "")
+          ? (request.query.granularity as "weekly" | "monthly")
+          : "weekly";
+        const startDate = computeStartDate(range);
+
+        const result = await computeAccountBalanceHistory(accountId, granularity, startDate);
+        if (!result) {
+          return reply.status(404).send({
+            statusCode: 404,
+            error: "Not Found",
+            message: "Account not found",
+          });
+        }
+
+        return reply.send(result);
+      } catch (e) {
+        request.log.error(e, "Failed to compute account balance history");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to compute account balance history",
         });
       }
     },

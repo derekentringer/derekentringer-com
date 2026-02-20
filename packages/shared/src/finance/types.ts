@@ -324,13 +324,19 @@ export function classifyAccountType(
   return "other";
 }
 
-// Bill frequency
-export type BillFrequency =
-  | "monthly"
-  | "quarterly"
-  | "yearly"
-  | "weekly"
-  | "biweekly";
+// Shared frequency type used by bills and income sources
+export type Frequency = "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+
+export const FREQUENCY_LABELS: Record<Frequency, string> = {
+  weekly: "Weekly",
+  biweekly: "Biweekly",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  yearly: "Yearly",
+};
+
+// Bill frequency (alias for backward compatibility)
+export type BillFrequency = Frequency;
 
 export const BILL_FREQUENCIES: BillFrequency[] = [
   "monthly",
@@ -340,13 +346,7 @@ export const BILL_FREQUENCIES: BillFrequency[] = [
   "biweekly",
 ];
 
-export const BILL_FREQUENCY_LABELS: Record<BillFrequency, string> = {
-  monthly: "Monthly",
-  quarterly: "Quarterly",
-  yearly: "Yearly",
-  weekly: "Weekly",
-  biweekly: "Biweekly",
-};
+export const BILL_FREQUENCY_LABELS: Record<BillFrequency, string> = FREQUENCY_LABELS;
 
 // Bill types
 export interface Bill {
@@ -480,8 +480,11 @@ export interface NetWorthSummary {
   }>;
 }
 
+export type ChartTimeRange = "1m" | "3m" | "6m" | "ytd" | "all";
+export type ChartGranularity = "weekly" | "monthly";
+
 export interface NetWorthHistoryPoint {
-  month: string;
+  date: string;
   assets: number;
   liabilities: number;
   netWorth: number;
@@ -506,4 +509,137 @@ export interface DashboardUpcomingBillsResponse {
   bills: UpcomingBillInstance[];
   totalDue: number;
   overdueCount: number;
+}
+
+export interface AccountBalanceHistoryPoint {
+  date: string;
+  balance: number;
+}
+
+export interface AccountBalanceHistoryResponse {
+  accountId: string;
+  accountName: string;
+  currentBalance: number;
+  history: AccountBalanceHistoryPoint[];
+}
+
+// ─── Phase 5: Projections ──────────────────────────────────────────────────
+
+// Income source frequency (alias for backward compatibility)
+export type IncomeSourceFrequency = Frequency;
+
+export const INCOME_SOURCE_FREQUENCIES: IncomeSourceFrequency[] = [
+  "weekly",
+  "biweekly",
+  "monthly",
+  "quarterly",
+  "yearly",
+];
+
+export const INCOME_SOURCE_FREQUENCY_LABELS: Record<IncomeSourceFrequency, string> = FREQUENCY_LABELS;
+
+// Income Source CRUD types
+export interface IncomeSource {
+  id: string;
+  name: string;
+  amount: number;
+  frequency: IncomeSourceFrequency;
+  isActive: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateIncomeSourceRequest {
+  name: string;
+  amount: number;
+  frequency: IncomeSourceFrequency;
+  isActive?: boolean;
+  notes?: string;
+}
+
+export interface UpdateIncomeSourceRequest {
+  name?: string;
+  amount?: number;
+  frequency?: IncomeSourceFrequency;
+  isActive?: boolean;
+  notes?: string | null;
+}
+
+export interface IncomeSourceListResponse {
+  incomeSources: IncomeSource[];
+}
+
+export interface IncomeSourceResponse {
+  incomeSource: IncomeSource;
+}
+
+// Auto-detected income from transaction history
+export interface DetectedIncomePattern {
+  description: string;
+  averageAmount: number;
+  frequency: IncomeSourceFrequency;
+  monthlyEquivalent: number;
+  occurrences: number;
+  lastSeen: string;
+}
+
+// Net Income Projection
+export interface NetIncomeProjectionPoint {
+  month: string;
+  income: number;
+  expenses: number;
+  netIncome: number;
+}
+
+export interface NetIncomeProjectionResponse {
+  detectedIncome: DetectedIncomePattern[];
+  manualIncome: IncomeSource[];
+  monthlyIncome: number;
+  monthlyExpenses: number;
+  monthlyBillTotal: number;
+  projection: NetIncomeProjectionPoint[];
+}
+
+// Per-Account Balance Projections
+export interface AccountProjectionPoint {
+  month: string;
+  balance: number;
+}
+
+export interface AccountProjectionLine {
+  accountId: string;
+  accountName: string;
+  accountType: AccountType;
+  currentBalance: number;
+  monthlyChange: number;
+  projection: AccountProjectionPoint[];
+}
+
+export interface AccountProjectionsResponse {
+  accounts: AccountProjectionLine[];
+  overall: AccountProjectionPoint[];
+}
+
+// Savings Projection
+export interface SavingsProjectionPoint {
+  month: string;
+  balance: number;
+  principal: number;
+  interest: number;
+}
+
+export interface SavingsAccountSummary {
+  accountId: string;
+  accountName: string;
+  accountType: AccountType;
+  currentBalance: number;
+  apy: number;
+  estimatedMonthlyContribution: number;
+}
+
+export interface SavingsProjectionResponse {
+  account: SavingsAccountSummary;
+  projection: SavingsProjectionPoint[];
+  milestones: Array<{ targetAmount: number; targetDate: string | null }>;
 }
