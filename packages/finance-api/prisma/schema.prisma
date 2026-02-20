@@ -35,6 +35,7 @@ model Account {
   employerName    String?
   isActive        Boolean       @default(true)
   isFavorite      Boolean       @default(false)
+  sortOrder       Int           @default(0)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   transactions    Transaction[]
@@ -42,6 +43,7 @@ model Account {
   bills           Bill[]
 
   @@index([isActive])
+  @@index([sortOrder])
   @@map("accounts")
 }
 

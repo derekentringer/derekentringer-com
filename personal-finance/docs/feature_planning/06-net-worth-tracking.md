@@ -15,7 +15,7 @@ Aggregate all account balances into a net worth dashboard with historical tracki
   - Current net worth (large, prominent number)
   - Breakdown by account type (assets vs. liabilities)
   - Individual account balances
-  - Net worth trend chart over time (area chart)
+  - Net worth trend chart over time (area chart) with view toggle: Overview (3-line), Assets (per-account), Liabilities (per-account)
   - Per-account balance history chart (e.g., checking account balance over time)
 - Historical tracking:
   - Net worth history reconstructed from Balance table records (PDF statement snapshots)

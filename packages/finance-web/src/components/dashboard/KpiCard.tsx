@@ -8,11 +8,19 @@ interface KpiCardProps {
     direction: "up" | "down" | "neutral";
     value: string;
     label?: string;
+    invertColor?: boolean;
   };
   className?: string;
 }
 
 export function KpiCard({ title, value, trend, className }: KpiCardProps) {
+  const isPositive = trend?.invertColor
+    ? trend.direction === "down"
+    : trend?.direction === "up";
+  const isNegative = trend?.invertColor
+    ? trend.direction === "up"
+    : trend?.direction === "down";
+
   return (
     <Card className={cn("", className)}>
       <CardContent className="p-4">
@@ -23,9 +31,9 @@ export function KpiCard({ title, value, trend, className }: KpiCardProps) {
             <span
               className={cn(
                 "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                trend.direction === "up"
+                isPositive
                   ? "bg-success/10 text-success"
-                  : trend.direction === "down"
+                  : isNegative
                     ? "bg-destructive/10 text-destructive"
                     : "bg-white/10 text-foreground/70",
               )}

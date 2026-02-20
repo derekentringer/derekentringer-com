@@ -80,6 +80,7 @@ describe("Account mappers", () => {
       ...encrypted,
       isActive: encrypted.isActive ?? true,
       isFavorite: encrypted.isFavorite ?? false,
+      sortOrder: 0,
       createdAt: now,
       updatedAt: now,
     };
@@ -95,6 +96,7 @@ describe("Account mappers", () => {
     expect(decrypted.interestRate).toBe(4.5);
     expect(decrypted.csvParserId).toBe("chase-checking");
     expect(decrypted.isActive).toBe(true);
+    expect(decrypted.sortOrder).toBe(0);
     expect(decrypted.createdAt).toBe(now.toISOString());
     expect(decrypted.updatedAt).toBe(now.toISOString());
   });
@@ -115,6 +117,7 @@ describe("Account mappers", () => {
       ...encrypted,
       isActive: true, // Prisma @default(true) provides this
       isFavorite: false,
+      sortOrder: 0,
       createdAt: now,
       updatedAt: now,
     };

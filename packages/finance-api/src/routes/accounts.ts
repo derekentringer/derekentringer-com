@@ -10,6 +10,7 @@ import {
   listAccounts,
   updateAccount,
   deleteAccount,
+  reorderAccounts,
 } from "../store/accountStore.js";
 
 const VALID_ACCOUNT_TYPES = Object.values(AccountType) as string[];
@@ -89,6 +90,56 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           statusCode: 500,
           error: "Internal Server Error",
           message: "Failed to list accounts",
+        });
+      }
+    },
+  );
+
+  // PUT /reorder — bulk reorder accounts
+  fastify.put<{ Body: { order: Array<{ id: string; sortOrder: number }> } }>(
+    "/reorder",
+    async (
+      request: FastifyRequest<{
+        Body: { order: Array<{ id: string; sortOrder: number }> };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { order } = request.body;
+
+      if (!Array.isArray(order) || order.length === 0) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "order must be a non-empty array",
+        });
+      }
+
+      for (const item of order) {
+        if (!item.id || !CUID_PATTERN.test(item.id)) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: `Invalid account ID format: ${item.id}`,
+          });
+        }
+        if (typeof item.sortOrder !== "number" || !Number.isInteger(item.sortOrder)) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: "sortOrder must be an integer",
+          });
+        }
+      }
+
+      try {
+        await reorderAccounts(order);
+        return reply.status(204).send();
+      } catch (e) {
+        request.log.error(e, "Failed to reorder accounts");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to reorder accounts",
         });
       }
     },

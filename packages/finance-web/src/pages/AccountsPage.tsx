@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   Account,
   CreateAccountRequest,
@@ -10,6 +10,7 @@ import {
   createAccount,
   updateAccount,
   deleteAccount,
+  reorderAccounts,
 } from "../api/accounts.ts";
 import { AccountForm } from "../components/AccountForm.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
@@ -25,8 +26,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Plus, FileUp, ArrowUp, ArrowDown, ArrowUpDown, Star } from "lucide-react";
+import { Plus, FileUp, ArrowUp, ArrowDown, ArrowUpDown, Star, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   [AccountType.Checking]: "Checking",
@@ -61,10 +79,19 @@ export function AccountsPage() {
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
+  // Keep a ref to the server-side order for reverting on failure
+  const serverAccountsRef = useRef<Account[]>([]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  );
+
   const loadAccounts = useCallback(async () => {
     try {
       const { accounts } = await fetchAccounts();
       setAccounts(accounts);
+      serverAccountsRef.current = accounts;
       setError("");
     } catch {
       setError("Failed to load accounts");
@@ -133,6 +160,29 @@ export function AccountsPage() {
       : account.currentBalance;
   }
 
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = accounts.findIndex((a) => a.id === active.id);
+    const newIndex = accounts.findIndex((a) => a.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(accounts, oldIndex, newIndex);
+    // Optimistic update
+    setAccounts(reordered);
+
+    const order = reordered.map((a, i) => ({ id: a.id, sortOrder: i }));
+    try {
+      await reorderAccounts(order);
+      serverAccountsRef.current = reordered;
+    } catch {
+      // Revert on failure
+      setAccounts(serverAccountsRef.current);
+      setError("Failed to reorder accounts");
+    }
+  }
+
   const sortedAccounts = useMemo(() => {
     if (!sortField) return accounts;
     return [...accounts].sort((a, b) => {
@@ -159,6 +209,8 @@ export function AccountsPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [accounts, sortField, sortDir]);
+
+  const isDndEnabled = sortField === null;
 
   if (isLoading) {
     return (
@@ -201,6 +253,7 @@ export function AccountsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
+                  {isDndEnabled && <TableHead className="w-8" />}
                   <SortableTableHead field="name" label="Name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                   <SortableTableHead field="type" label="Type" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="hidden sm:table-cell" />
                   <SortableTableHead field="institution" label="Institution" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="hidden md:table-cell" />
@@ -209,57 +262,83 @@ export function AccountsPage() {
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {sortedAccounts.map((account) => (
-                  <TableRow key={account.id}>
-                    <TableCell className="font-normal">{account.name}</TableCell>
-                    <TableCell className="hidden sm:table-cell">
-                      {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      {account.institution}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {account.type === AccountType.RealEstate && account.estimatedValue != null
-                        ? formatCurrency(account.estimatedValue - account.currentBalance)
-                        : formatCurrency(account.currentBalance)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={account.isActive ? "success" : "muted"}>
-                        {account.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex gap-2 justify-end">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="p-1"
-                          onClick={() => handleToggleFavorite(account)}
-                        >
-                          <Star className={cn("h-4 w-4", account.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground")} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-primary hover:text-primary-hover"
-                          onClick={() => setEditAccount(account)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-error hover:text-destructive-hover"
-                          onClick={() => setDeleteTarget(account)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
+              {isDndEnabled ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                  modifiers={[restrictToVerticalAxis]}
+                >
+                  <SortableContext
+                    items={sortedAccounts.map((a) => a.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <TableBody>
+                      {sortedAccounts.map((account) => (
+                        <SortableRow
+                          key={account.id}
+                          account={account}
+                          onEdit={setEditAccount}
+                          onDelete={setDeleteTarget}
+                          onToggleFavorite={handleToggleFavorite}
+                        />
+                      ))}
+                    </TableBody>
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                <TableBody>
+                  {sortedAccounts.map((account) => (
+                    <TableRow key={account.id}>
+                      <TableCell className="font-normal">{account.name}</TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {account.institution}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {account.type === AccountType.RealEstate && account.estimatedValue != null
+                          ? formatCurrency(account.estimatedValue - account.currentBalance)
+                          : formatCurrency(account.currentBalance)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={account.isActive ? "success" : "muted"}>
+                          {account.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex gap-2 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="p-1"
+                            onClick={() => handleToggleFavorite(account)}
+                          >
+                            <Star className={cn("h-4 w-4", account.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground")} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-primary hover:text-primary-hover"
+                            onClick={() => setEditAccount(account)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-error hover:text-destructive-hover"
+                            onClick={() => setDeleteTarget(account)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              )}
             </Table>
           )}
         </CardContent>
@@ -300,6 +379,93 @@ export function AccountsPage() {
         />
       )}
     </div>
+  );
+}
+
+function SortableRow({
+  account,
+  onEdit,
+  onDelete,
+  onToggleFavorite,
+}: {
+  account: Account;
+  onEdit: (account: Account) => void;
+  onDelete: (account: Account) => void;
+  onToggleFavorite: (account: Account) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: account.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell className="w-8 px-2">
+        <button
+          type="button"
+          className="cursor-grab touch-none text-muted-foreground hover:text-foreground"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      </TableCell>
+      <TableCell className="font-normal">{account.name}</TableCell>
+      <TableCell className="hidden sm:table-cell">
+        {ACCOUNT_TYPE_LABELS[account.type] ?? account.type}
+      </TableCell>
+      <TableCell className="hidden md:table-cell">
+        {account.institution}
+      </TableCell>
+      <TableCell className="text-right">
+        {account.type === AccountType.RealEstate && account.estimatedValue != null
+          ? formatCurrency(account.estimatedValue - account.currentBalance)
+          : formatCurrency(account.currentBalance)}
+      </TableCell>
+      <TableCell>
+        <Badge variant={account.isActive ? "success" : "muted"}>
+          {account.isActive ? "Active" : "Inactive"}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex gap-2 justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="p-1"
+            onClick={() => onToggleFavorite(account)}
+          >
+            <Star className={cn("h-4 w-4", account.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground")} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-primary hover:text-primary-hover"
+            onClick={() => onEdit(account)}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-error hover:text-destructive-hover"
+            onClick={() => onDelete(account)}
+          >
+            Delete
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 

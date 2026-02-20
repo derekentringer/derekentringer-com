@@ -61,7 +61,7 @@ Account list view:
 
 Per-account projection card with:
 - **KPI row**: Current balance, APY, estimated monthly contribution
-- **Stacked area chart**: Principal (violet) vs. Interest (green) over time
+- **Stacked area chart**: Principal (violet) vs. Interest (green) over time (strokeWidth 1.5, fillOpacity 0.6 for stacked visibility)
 - **Time range selector**: 1yr / 2yr / 5yr / 10yr
 - **Adjustable parameters**:
   - Monthly contribution slider + input (range 0 to max(5000, 2× current))
