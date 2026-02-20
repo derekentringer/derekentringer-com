@@ -17,7 +17,7 @@ Dashboard with net worth calculation, historical trend chart with view toggle (O
   - `LIABILITY_ACCOUNT_TYPES`: Credit, Loan
   - `classifyAccountType(type)` — returns `"asset" | "liability" | "other"`
 - Chart control types:
-  - `ChartTimeRange` — `"1m" | "3m" | "6m" | "ytd" | "all"`
+  - `ChartTimeRange` — `"1m" | "3m" | "6m" | "12m" | "ytd" | "all"`
   - `ChartGranularity` — `"weekly" | "monthly"`
 - Dashboard types:
   - `NetWorthSummary` — totalAssets, totalLiabilities, netWorth, accounts array (with id, name, type, balance, previousBalance, classification)
@@ -58,7 +58,7 @@ All routes require JWT authentication.
 Route helpers:
 - `computeStartDate(range)` — converts range string to Date or undefined (for "all")
 - `CUID_PATTERN` — validates accountId format
-- Range validated against `["1m", "3m", "6m", "ytd", "all"]`; defaults to "all"
+- Range validated against `["1m", "3m", "6m", "12m", "ytd", "all"]`; defaults to "all"
 - Granularity validated against `["weekly", "monthly"]`; defaults to "monthly" for net-worth, "weekly" for account-history
 
 #### App Registration (`src/app.ts`)
@@ -104,7 +104,7 @@ Three-section layout with independent loading/error/retry states:
 **TimeRangeSelector.tsx:**
 - Reusable pill-style toggle component with two button groups
 - Granularity toggle: W (weekly) / M (monthly) — bordered pill group
-- Range pills: 1M / 3M / 6M / YTD / All — bordered pill group
+- Range pills: 1M / 3M / 6M / 12M / YTD / All — bordered pill group
 - Active pill uses `bg-foreground/15 text-foreground`; inactive uses `text-muted-foreground` with hover effect
 - Used by both NetWorthCard and CheckingBalanceCard independently
 
@@ -119,14 +119,14 @@ Three-section layout with independent loading/error/retry states:
   - **Overview** (default): Recharts AreaChart with 3 series (assets, liabilities, netWorth)
   - **Assets**: One area per asset account, colored from `CATEGORY_COLORS` palette
   - **Liabilities**: One area per liability account (absolute values), colored from `CATEGORY_COLORS` palette
-- Internal state for `range` (default: "all"), `granularity` (default: "weekly"), and `view` (default: "overview")
+- Internal state for `range` (default: "12m"), `granularity` (default: "weekly"), and `view` (default: "overview")
 - `accountHistory` state updated alongside `history` on refetch — provides per-account balances for Assets/Liabilities views
 - TimeRangeSelector in card header (right-aligned)
 - Re-fetches history from API when range/granularity changes (skips initial render to avoid double-fetch)
 - Loading opacity transition on chart area during re-fetch
 - Custom tooltip with full date including year (e.g., "February 2026" or "February 17, 2026")
 - Axis labels: compact format ("Feb '26" monthly, "Feb 17" weekly) with `interval="equidistantPreserveStart"`
-- Assets and Liabilities sections below chart in 2-column grid (top 5 each)
+- Assets and Liabilities sections below chart in 2-column grid (top 5 each); account names in white (`text-foreground`), asset values in green (`text-success`), liability values in red (`text-destructive`)
 - Overall assets/liabilities trends computed from summary data (`totalAssets`/`totalLiabilities` vs sum of `previousBalance` values) for consistent month-over-month comparison with per-account trends
 - Per-account trend badges use `invertColor` for liabilities (increase = red, decrease = green; arrow direction always factual)
 - `trendColorClass()` helper centralizes color logic for all trend badges
@@ -215,7 +215,7 @@ The dashboard now shows per-account balance history charts for all **favorited**
 - **Investment accounts**: Show current balance (market value) as reported by institution
 - **Accounts added mid-history**: Carry-forward logic fills gaps; accounts without prior Balance records show neutral trend tickers
 - **Chart library**: Recharts (React-only; Victory deferred to mobile phase)
-- **Time range**: User-selectable (1M, 3M, 6M, YTD, All) with per-chart pill-style controls; each chart manages its own range independently
+- **Time range**: User-selectable (1M, 3M, 6M, 12M, YTD, All) with per-chart pill-style controls; each chart manages its own range independently; Net Worth chart defaults to 12M
 - **Granularity**: User-selectable (weekly/monthly) with per-chart toggle; weekly uses ISO week start (Monday), monthly uses YYYY-MM
 - **Trend indicators**: Month-over-month percentage change with three states (up/down/neutral); `invertColor` pattern used for liabilities and spending (arrows always point in the factual direction; colors inverted so increase = red, decrease = green); overall assets/liabilities trends computed from summary `previousBalance` data (not chart history points) for consistency with per-account trends; checking balance adapts between week-over-week and month-over-month based on granularity
 - **Net worth history data source**: Balance table records (PDF statement snapshots) with carry-forward for gaps; does not use transactions

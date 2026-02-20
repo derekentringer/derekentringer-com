@@ -50,7 +50,7 @@
 
 ### Phase 4: Dashboard & Tracking — High Priority
 
-- [x] [06 — Net Worth Tracking](features/06-net-worth-tracking.md) — net worth chart with view toggle (Overview/Assets/Liabilities), per-account balance history charts, configurable time range (1M/3M/6M/YTD/All) and granularity (weekly/monthly) per chart, consistent chart styling (strokeWidth 1.5, gradient fills)
+- [x] [06 — Net Worth Tracking](features/06-net-worth-tracking.md) — net worth chart with view toggle (Overview/Assets/Liabilities), per-account balance history charts, configurable time range (1M/3M/6M/12M/YTD/All) and granularity (weekly/monthly) per chart, 12M default for net worth, consistent chart styling (strokeWidth 1.5, gradient fills)
 - [x] [07 — Budgeting & Expense Tracking](features/07-budgeting-expense-tracking.md)
 - [x] [08 — Bill Management](features/08-bill-management.md)
 

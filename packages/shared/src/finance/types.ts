@@ -492,7 +492,7 @@ export interface NetWorthSummary {
   }>;
 }
 
-export type ChartTimeRange = "1m" | "3m" | "6m" | "ytd" | "all";
+export type ChartTimeRange = "1m" | "3m" | "6m" | "12m" | "ytd" | "all";
 export type ChartGranularity = "weekly" | "monthly";
 
 export interface NetWorthHistoryPoint {
