@@ -75,7 +75,7 @@ function CustomTooltip({
 
 export function NetWorthCard({ data }: NetWorthCardProps) {
   const [range, setRange] = useState<ChartTimeRange>("all");
-  const [granularity, setGranularity] = useState<ChartGranularity>("monthly");
+  const [granularity, setGranularity] = useState<ChartGranularity>("weekly");
   const [history, setHistory] = useState<NetWorthHistoryPoint[]>(data.history);
   const [loading, setLoading] = useState(false);
 

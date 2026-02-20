@@ -57,6 +57,7 @@ export function decryptAccount(row: PrismaAccount): Account {
     loanType: decryptOptionalField(row.loanType) as LoanType | undefined,
     employerName: decryptOptionalField(row.employerName),
     isActive: row.isActive,
+    isFavorite: row.isFavorite,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -77,6 +78,7 @@ interface EncryptedAccountCreate {
   loanType: string | null;
   employerName: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }
 
 export function encryptAccountForCreate(input: {
@@ -94,6 +96,7 @@ export function encryptAccountForCreate(input: {
   loanType?: string | null;
   employerName?: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }): EncryptedAccountCreate {
   const data: EncryptedAccountCreate = {
     name: encryptField(input.name),
@@ -112,6 +115,7 @@ export function encryptAccountForCreate(input: {
   };
   // Only set isActive when explicitly provided; otherwise Prisma @default(true) applies
   if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.isFavorite !== undefined) data.isFavorite = input.isFavorite;
   return data;
 }
 
@@ -130,6 +134,7 @@ export interface EncryptedAccountUpdate {
   loanType?: string | null;
   employerName?: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }
 
 export function encryptAccountForUpdate(input: {
@@ -147,6 +152,7 @@ export function encryptAccountForUpdate(input: {
   loanType?: string | null;
   employerName?: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }): EncryptedAccountUpdate {
   const data: EncryptedAccountUpdate = {};
 
@@ -175,6 +181,7 @@ export function encryptAccountForUpdate(input: {
   if (input.employerName !== undefined)
     data.employerName = encryptOptionalField(input.employerName);
   if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.isFavorite !== undefined) data.isFavorite = input.isFavorite;
 
   return data;
 }

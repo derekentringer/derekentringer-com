@@ -11,6 +11,7 @@ import {
   updateIncomeSource,
   deleteIncomeSource,
 } from "../store/incomeSourceStore.js";
+import { detectIncomePatterns } from "../store/projectionsStore.js";
 
 const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
 
@@ -72,6 +73,24 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
           statusCode: 500,
           error: "Internal Server Error",
           message: "Failed to list income sources",
+        });
+      }
+    },
+  );
+
+  // GET /detected — auto-detected income patterns from transactions
+  fastify.get(
+    "/detected",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const patterns = await detectIncomePatterns();
+        return reply.send({ patterns });
+      } catch (e) {
+        request.log.error(e, "Failed to detect income patterns");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to detect income patterns",
         });
       }
     },

@@ -34,6 +34,7 @@ model Account {
   loanType        String?
   employerName    String?
   isActive        Boolean       @default(true)
+  isFavorite      Boolean       @default(false)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   transactions    Transaction[]

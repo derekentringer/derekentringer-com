@@ -200,6 +200,40 @@ Multi-step dialog (upload → preview → result):
 - Added "Import PDF Statement" button to `AccountsPage.tsx`
 - `PdfImportDialog` integrated into the accounts management workflow
 
+## Phase 5 Enhancements
+
+### Multi-File PDF Import
+
+The PDF import dialog now accepts multiple files, processing them sequentially with error recovery.
+
+- **File input**: `multiple` attribute added; per-file 5MB size validation
+- **State**: `files: File[]`, `currentFileIndex`, `completedResults`, `skippedFiles`
+- **Progress indicator**: Title shows "Statement X of Y" when importing multiple files
+- **Sequential processing**: After confirming one file → `advanceToNextFile()` resets preview state and auto-uploads the next file
+- **Error recovery**: When AI extraction fails for a file:
+  - Loading state guard: `!preview && isLoading` shows "Analyzing statement with AI" message (prevents false error flash)
+  - `!preview && !isLoading` shows retry/skip dialog with Back, Retry, and Skip & Next buttons
+- **Combined result summary**:
+  - Single file: shows balance, date, and update flags (same as before)
+  - Multiple files: shows table of all imported balances with per-row "(replaced)" indicator
+  - Failed files: yellow warning box listing skipped file names
+  - All failed: yellow warning box with "All X statements failed to extract"
+  - Title: "Import Complete — N Failed" when failures occurred
+
+### Upsert Behavior (Duplicate Replacement)
+
+PDF import now replaces existing balances on the same date instead of creating duplicates.
+
+**API Changes** (`src/routes/balances.ts`):
+- Confirm endpoint checks for existing balance on the same account+date within a Prisma transaction
+- If found: deletes existing balance (profiles cascade-delete via Prisma), then creates new balance+profiles
+- Returns `replaced: true` when a replacement occurred
+
+**UI Changes**:
+- `PdfPreviewBase`: Warning text changed from "create an additional record" to "replace the existing record"
+- Result screen: shows "(replaced)" indicator on result rows when a balance was replaced
+- `PdfImportConfirmResponse.replaced?: boolean` added to shared types
+
 ## Security Design
 
 - **PIN verification**: Required for both preview and confirm endpoints

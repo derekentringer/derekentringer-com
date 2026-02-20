@@ -27,6 +27,7 @@ export interface Account {
   loanType?: LoanType;
   employerName?: string;
   isActive: boolean;
+  isFavorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -107,6 +108,7 @@ export interface CreateAccountRequest {
   interestRate?: number;
   csvParserId?: string;
   isActive?: boolean;
+  isFavorite?: boolean;
 }
 
 export interface UpdateAccountRequest {
@@ -119,6 +121,7 @@ export interface UpdateAccountRequest {
   interestRate?: number | null;
   csvParserId?: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }
 
 export interface AccountListResponse {
@@ -131,13 +134,14 @@ export interface AccountResponse {
 
 // --- CSV Parser types ---
 
-export type CsvParserId = "chase-checking" | "chase-credit" | "amex-hys" | "fidelity-401k";
+export type CsvParserId = "chase-checking" | "chase-credit" | "amex-hys" | "fidelity-401k" | "robinhood";
 
 export const CSV_PARSER_IDS: CsvParserId[] = [
   "chase-checking",
   "chase-credit",
   "amex-hys",
   "fidelity-401k",
+  "robinhood",
 ];
 
 export const CSV_PARSER_LABELS: Record<CsvParserId, string> = {
@@ -145,6 +149,7 @@ export const CSV_PARSER_LABELS: Record<CsvParserId, string> = {
   "chase-credit": "Chase Credit Card",
   "amex-hys": "Amex High Yield Savings",
   "fidelity-401k": "Fidelity 401(k)",
+  "robinhood": "Robinhood",
 };
 
 // --- Category types ---
@@ -282,6 +287,7 @@ export interface PdfImportConfirmResponse {
   date: string;
   accountUpdated: boolean;
   interestRateUpdated?: boolean;
+  replaced?: boolean;
 }
 
 // --- Transaction request/response types ---
@@ -477,6 +483,7 @@ export interface NetWorthSummary {
     balance: number;
     previousBalance?: number;
     classification: "asset" | "liability" | "other";
+    isFavorite: boolean;
   }>;
 }
 
@@ -574,6 +581,10 @@ export interface IncomeSourceResponse {
   incomeSource: IncomeSource;
 }
 
+export interface DetectedIncomePatternsResponse {
+  patterns: DetectedIncomePattern[];
+}
+
 // Auto-detected income from transaction history
 export interface DetectedIncomePattern {
   description: string;
@@ -598,6 +609,7 @@ export interface NetIncomeProjectionResponse {
   monthlyIncome: number;
   monthlyExpenses: number;
   monthlyBillTotal: number;
+  monthlyBudgetTotal: number;
   projection: NetIncomeProjectionPoint[];
 }
 
@@ -613,6 +625,7 @@ export interface AccountProjectionLine {
   accountType: AccountType;
   currentBalance: number;
   monthlyChange: number;
+  isFavorite: boolean;
   projection: AccountProjectionPoint[];
 }
 
@@ -635,6 +648,7 @@ export interface SavingsAccountSummary {
   accountType: AccountType;
   currentBalance: number;
   apy: number;
+  isFavorite: boolean;
   estimatedMonthlyContribution: number;
 }
 

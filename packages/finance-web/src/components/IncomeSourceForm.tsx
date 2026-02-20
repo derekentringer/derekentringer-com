@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { FormEvent } from "react";
 import type {
   IncomeSource,
   IncomeSourceFrequency,
+  DetectedIncomePattern,
   CreateIncomeSourceRequest,
   UpdateIncomeSourceRequest,
 } from "@derekentringer/shared/finance";
@@ -20,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -30,13 +32,16 @@ import {
 import {
   createIncomeSource,
   updateIncomeSource,
+  fetchDetectedIncome,
 } from "@/api/incomeSources.ts";
+import { formatCurrencyFull } from "@/lib/chartTheme";
 
 interface IncomeSourceFormProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   incomeSource?: IncomeSource;
+  existingNames?: string[];
 }
 
 export function IncomeSourceForm({
@@ -44,6 +49,7 @@ export function IncomeSourceForm({
   onClose,
   onSaved,
   incomeSource,
+  existingNames = [],
 }: IncomeSourceFormProps) {
   const isEdit = !!incomeSource;
 
@@ -56,6 +62,24 @@ export function IncomeSourceForm({
   const [isActive, setIsActive] = useState(incomeSource?.isActive ?? true);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [suggestions, setSuggestions] = useState<DetectedIncomePattern[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || isEdit) return;
+    setSuggestionsLoading(true);
+    fetchDetectedIncome()
+      .then(({ patterns }) => {
+        const lowerNames = existingNames.map((n) => n.toLowerCase());
+        setSuggestions(
+          patterns.filter(
+            (p) => !lowerNames.includes(p.description.toLowerCase()),
+          ),
+        );
+      })
+      .catch(() => setSuggestions([]))
+      .finally(() => setSuggestionsLoading(false));
+  }, [open, isEdit, existingNames]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -101,12 +125,52 @@ export function IncomeSourceForm({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogContent className={`max-h-[90vh] overflow-y-auto ${!isEdit && suggestions.length > 0 ? "max-w-2xl" : ""}`}>
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Edit Income Source" : "Add Income Source"}
           </DialogTitle>
         </DialogHeader>
+
+        {!isEdit && suggestionsLoading && (
+          <div className="flex flex-col gap-2 mb-1">
+            <p className="text-sm text-muted-foreground">Detected from transactions:</p>
+            <div className="space-y-1.5">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-9 rounded-md border border-border bg-muted/30 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!isEdit && !suggestionsLoading && suggestions.length > 0 && (
+          <div className="flex flex-col gap-2 mb-1">
+            <p className="text-sm text-muted-foreground">Detected from transactions:</p>
+            <div className="rounded-md border border-border divide-y divide-border">
+              {suggestions.map((pattern) => (
+                <button
+                  key={pattern.description}
+                  type="button"
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-left hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setName(pattern.description);
+                    setAmount(pattern.averageAmount.toString());
+                    setFrequency(pattern.frequency);
+                  }}
+                >
+                  <span className="font-medium truncate">{pattern.description}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className="text-success">{formatCurrencyFull(pattern.monthlyEquivalent)}/mo</span>
+                    <Badge variant="success" className="text-xs">
+                      {INCOME_SOURCE_FREQUENCY_LABELS[pattern.frequency]}
+                    </Badge>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <form className="flex flex-col gap-3.5" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1">
             <Label>Name</Label>

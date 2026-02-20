@@ -323,13 +323,34 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
 
         let accountUpdated = false;
         let interestRateUpdated = false;
+        let replaced = false;
 
         await prisma.$transaction(async (tx) => {
-          // 1. Create Balance record
+          // 1. Check for existing balance on the same account+date
+          const balanceDate = new Date(date);
+          const startOfDay = new Date(balanceDate);
+          startOfDay.setUTCHours(0, 0, 0, 0);
+          const endOfDay = new Date(balanceDate);
+          endOfDay.setUTCHours(23, 59, 59, 999);
+
+          const existing = await tx.balance.findFirst({
+            where: {
+              accountId,
+              date: { gte: startOfDay, lte: endOfDay },
+            },
+          });
+
+          if (existing) {
+            // Delete old balance — profiles cascade-delete
+            await tx.balance.delete({ where: { id: existing.id } });
+            replaced = true;
+          }
+
+          // 2. Create Balance record
           const encrypted = encryptBalanceForCreate({
             accountId,
             balance,
-            date: new Date(date),
+            date: balanceDate,
           });
           const balanceRow = await tx.balance.create({ data: encrypted });
 
@@ -393,6 +414,7 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
           date,
           accountUpdated,
           interestRateUpdated: interestRateUpdated || undefined,
+          replaced: replaced || undefined,
         });
       } catch (e) {
         request.log.error(e, "Failed to confirm PDF import");

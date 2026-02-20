@@ -63,7 +63,7 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [accountId, setAccountId] = useState("");
   const [parserOverride, setParserOverride] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Preview state
@@ -100,31 +100,38 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
   }, [loadData]);
 
   async function handleUpload() {
-    if (!file || !accountId || !pinToken) return;
+    if (files.length === 0 || !accountId || !pinToken) return;
     setError("");
     setIsLoading(true);
 
     try {
       const parserId = parserOverride || undefined;
-      const preview = await uploadCsvPreview(
-        accountId,
-        file,
-        pinToken,
-        parserId,
-      );
+      let allRows: Array<ParsedTransaction & { included: boolean; editedCategory: string | null }> = [];
+      let totalRows = 0;
+      let duplicateCount = 0;
+      let categorizedCount = 0;
 
-      setPreviewRows(
-        preview.transactions.map((t) => ({
-          ...t,
-          included: !t.isDuplicate,
-          editedCategory: t.category,
-        })),
-      );
-      setPreviewSummary({
-        totalRows: preview.totalRows,
-        duplicateCount: preview.duplicateCount,
-        categorizedCount: preview.categorizedCount,
-      });
+      for (const f of files) {
+        const preview = await uploadCsvPreview(
+          accountId,
+          f,
+          pinToken,
+          parserId,
+        );
+        allRows = allRows.concat(
+          preview.transactions.map((t) => ({
+            ...t,
+            included: !t.isDuplicate,
+            editedCategory: t.category,
+          })),
+        );
+        totalRows += preview.totalRows;
+        duplicateCount += preview.duplicateCount;
+        categorizedCount += preview.categorizedCount;
+      }
+
+      setPreviewRows(allRows);
+      setPreviewSummary({ totalRows, duplicateCount, categorizedCount });
       setStep("preview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to preview CSV");
@@ -246,14 +253,20 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
             </div>
 
             <div className="flex flex-col gap-1">
-              <Label>CSV File</Label>
+              <Label>CSV Files</Label>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                accept=".csv,.tsv"
+                multiple
+                onChange={(e) => setFiles(e.target.files ? Array.from(e.target.files) : [])}
                 className="text-sm text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:bg-primary file:text-primary-foreground file:cursor-pointer"
               />
+              {files.length > 1 && (
+                <p className="text-sm text-muted-foreground">
+                  {files.length} files selected
+                </p>
+              )}
             </div>
 
             {selectedAccount && !selectedAccount.csvParserId && !parserOverride && (
@@ -272,7 +285,7 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
                 disabled={
                   isLoading ||
                   !accountId ||
-                  !file ||
+                  files.length === 0 ||
                   (!selectedAccount?.csvParserId && !parserOverride)
                 }
               >

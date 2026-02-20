@@ -21,6 +21,7 @@ import {
 import { listAccounts } from "./accountStore.js";
 import { listIncomeSources } from "./incomeSourceStore.js";
 import { listBills } from "./billStore.js";
+import { getActiveBudgetsForMonth } from "./budgetStore.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -179,10 +180,14 @@ export async function computeNetIncomeProjection(params: {
 }): Promise<NetIncomeProjectionResponse> {
   const { months, incomeAdjustmentPct, expenseAdjustmentPct } = params;
 
-  const [detectedIncome, manualIncome, activeBills] = await Promise.all([
+  const now = new Date();
+  const currentMonth = formatMonth(now);
+
+  const [detectedIncome, manualIncome, activeBills, activeBudgets] = await Promise.all([
     detectIncomePatterns(),
     listIncomeSources({ isActive: true }),
     listBills({ isActive: true }),
+    getActiveBudgetsForMonth(currentMonth),
   ]);
 
   // Monthly income from detected patterns
@@ -203,38 +208,21 @@ export async function computeNetIncomeProjection(params: {
   const totalMonthlyIncome =
     manualIncome.length > 0 ? manualMonthly : detectedMonthly;
 
-  // Monthly expenses from bills (Frequency type is unified, no cast needed)
+  // Monthly expenses from bills
   const monthlyBillTotal = activeBills.reduce(
     (s, bill) =>
       s + bill.amount * frequencyToMonthlyMultiplier(bill.frequency),
     0,
   );
 
-  // H3 fix: historical average spending, divided by actual months with data
-  const prisma = getPrisma();
-  const expenseCutoff = new Date();
-  expenseCutoff.setMonth(expenseCutoff.getMonth() - EXPENSE_LOOKBACK_MONTHS);
+  // Monthly expenses from budgets
+  const monthlyBudgetTotal = activeBudgets.reduce(
+    (s, budget) => s + budget.amount,
+    0,
+  );
 
-  const recentTxns = await prisma.transaction.findMany({
-    where: {
-      date: { gte: expenseCutoff },
-    },
-  });
-
-  let negativeTotal = 0;
-  const negativeDates: Date[] = [];
-  for (const row of recentTxns) {
-    const amount = decryptNumber(row.amount);
-    if (amount < 0) {
-      negativeTotal += amount;
-      negativeDates.push(row.date);
-    }
-  }
-  const monthsWithData = countDistinctMonths(negativeDates);
-  const historicalMonthlySpending = Math.abs(negativeTotal) / monthsWithData;
-
-  // Use higher of bills or historical average
-  const monthlyExpenses = Math.max(monthlyBillTotal, historicalMonthlySpending);
+  // Expenses = bills + budgets
+  const monthlyExpenses = monthlyBillTotal + monthlyBudgetTotal;
 
   // Apply adjustments
   const adjustedIncome =
@@ -244,7 +232,6 @@ export async function computeNetIncomeProjection(params: {
 
   // Project forward (cumulative)
   const projection = [];
-  const now = new Date();
   let cumulativeIncome = 0;
   let cumulativeExpenses = 0;
   for (let i = 0; i < months; i++) {
@@ -266,6 +253,7 @@ export async function computeNetIncomeProjection(params: {
     monthlyIncome: Math.round(totalMonthlyIncome * 100) / 100,
     monthlyExpenses: Math.round(monthlyExpenses * 100) / 100,
     monthlyBillTotal: Math.round(monthlyBillTotal * 100) / 100,
+    monthlyBudgetTotal: Math.round(monthlyBudgetTotal * 100) / 100,
     projection,
   };
 }
@@ -291,10 +279,12 @@ export async function computeAccountProjections(params: {
   );
 
   // Compute checking net cash flow (reuse income/expense logic)
-  const [detectedIncome, manualIncome, activeBills] = await Promise.all([
+  const currentMonth = formatMonth(now);
+  const [detectedIncome, manualIncome, activeBills, activeBudgets] = await Promise.all([
     detectIncomePatterns(),
     listIncomeSources({ isActive: true }),
     listBills({ isActive: true }),
+    getActiveBudgetsForMonth(currentMonth),
   ]);
 
   const detectedMonthly = detectedIncome.reduce(
@@ -315,24 +305,13 @@ export async function computeAccountProjections(params: {
     0,
   );
 
-  const expenseCutoff = new Date();
-  expenseCutoff.setMonth(expenseCutoff.getMonth() - EXPENSE_LOOKBACK_MONTHS);
-  const recentTxns = await prisma.transaction.findMany({
-    where: { date: { gte: expenseCutoff } },
-  });
+  const monthlyBudgetTotal = activeBudgets.reduce(
+    (s, budget) => s + budget.amount,
+    0,
+  );
 
-  let negativeTotal = 0;
-  const negativeDates: Date[] = [];
-  for (const row of recentTxns) {
-    const amount = decryptNumber(row.amount);
-    if (amount < 0) {
-      negativeTotal += amount;
-      negativeDates.push(row.date);
-    }
-  }
-  const monthsWithData = countDistinctMonths(negativeDates);
-  const historicalMonthlySpending = Math.abs(negativeTotal) / monthsWithData;
-  const monthlyExpenses = Math.max(monthlyBillTotal, historicalMonthlySpending);
+  // Expenses = bills + budgets
+  const monthlyExpenses = monthlyBillTotal + monthlyBudgetTotal;
 
   const adjustedIncome =
     totalMonthlyIncome * (1 + incomeAdjustmentPct / 100);
@@ -532,6 +511,7 @@ export async function computeAccountProjections(params: {
         accountType: account.type,
         currentBalance,
         monthlyChange: Math.round(monthlyChange * 100) / 100,
+        isFavorite: account.isFavorite,
         projection,
       } satisfies AccountProjectionLine;
     }),
@@ -692,6 +672,7 @@ export async function computeSavingsProjection(params: {
     accountType: account.type,
     currentBalance,
     apy,
+    isFavorite: account.isFavorite,
     estimatedMonthlyContribution:
       Math.round(monthlyContribution * 100) / 100,
   };
@@ -772,6 +753,7 @@ export async function listSavingsAccounts(): Promise<SavingsAccountSummary[]> {
         accountType: account.type,
         currentBalance: account.currentBalance,
         apy,
+        isFavorite: account.isFavorite,
         estimatedMonthlyContribution:
           Math.round(estimatedMonthlyContribution * 100) / 100,
       } satisfies SavingsAccountSummary;

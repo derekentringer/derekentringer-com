@@ -3,8 +3,15 @@ import type {
   UpdateIncomeSourceRequest,
   IncomeSourceListResponse,
   IncomeSourceResponse,
+  DetectedIncomePatternsResponse,
 } from "@derekentringer/shared/finance";
 import { apiFetch } from "./client.ts";
+
+export async function fetchDetectedIncome(): Promise<DetectedIncomePatternsResponse> {
+  const res = await apiFetch("/income-sources/detected");
+  if (!res.ok) throw new Error("Failed to fetch detected income");
+  return res.json();
+}
 
 export async function fetchIncomeSources(
   active?: boolean,

@@ -179,6 +179,17 @@ Applied across the entire finance-web app as part of Phase 4 polish:
 **Table Header Rows:**
 - `hover:bg-transparent` applied to header rows on TransactionsPage, SettingsPage, AccountsPage
 
+## Phase 5 Enhancements
+
+### Favorite Account Balance Charts
+
+The dashboard now shows per-account balance history charts for all **favorited** accounts, replacing the hardcoded checking-only balance chart.
+
+- **`Account.isFavorite`** field added to `NetWorthSummary.accounts` — passed through `computeNetWorthSummary()` in dashboardStore
+- **`AccountBalanceCard`** (`src/components/dashboard/AccountBalanceCard.tsx`) — generalized replacement for `CheckingBalanceCard`; works with any account type; same self-managed data fetching, time range/granularity controls, and trend badge
+- **`DashboardPage.tsx`** — derives `favoriteAccountIds` from net worth summary; renders an `AccountBalanceCard` for each favorited account (was previously a single `CheckingBalanceCard` for the first checking account)
+- `CheckingBalanceCard` component deleted
+
 ## Dependencies
 
 - [03 — Account Management](03-account-management.md) — needs accounts with balances

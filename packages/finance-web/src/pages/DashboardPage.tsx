@@ -8,7 +8,7 @@ import type {
 import { fetchNetWorth, fetchSpendingSummary, fetchUpcomingBills } from "@/api/dashboard";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { NetWorthCard } from "@/components/dashboard/NetWorthCard";
-import { CheckingBalanceCard } from "@/components/dashboard/CheckingBalanceCard";
+import { AccountBalanceCard } from "@/components/dashboard/AccountBalanceCard";
 import { SpendingCard } from "@/components/dashboard/SpendingCard";
 import { UpcomingBillsCard } from "@/components/dashboard/UpcomingBillsCard";
 import { Card, CardContent } from "@/components/ui/card";
@@ -79,7 +79,7 @@ export function DashboardPage() {
     setNetWorthLoading(true);
     setNetWorthError("");
     try {
-      const data = await fetchNetWorth();
+      const data = await fetchNetWorth("all", "weekly");
       setNetWorth(data);
     } catch {
       setNetWorthError("Failed to load net worth");
@@ -158,10 +158,10 @@ export function DashboardPage() {
     };
   }, [spending, prevSpending]);
 
-  // Find checking account ID once netWorth loads
-  const checkingAccountId = useMemo(() => {
-    if (!netWorth) return undefined;
-    return netWorth.summary.accounts.find((a) => a.type === "checking")?.id;
+  // Find favorited account IDs once netWorth loads
+  const favoriteAccountIds = useMemo(() => {
+    if (!netWorth) return [];
+    return netWorth.summary.accounts.filter((a) => a.isFavorite).map((a) => a.id);
   }, [netWorth]);
 
   // Empty state: no accounts
@@ -236,11 +236,6 @@ export function DashboardPage() {
         <NetWorthCard data={netWorth} />
       ) : null}
 
-      {/* Checking balance chart - full width (self-managed data) */}
-      {checkingAccountId && (
-        <CheckingBalanceCard accountId={checkingAccountId} />
-      )}
-
       {/* Bottom row: Spending + Upcoming Bills */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {spendingLoading ? (
@@ -259,6 +254,11 @@ export function DashboardPage() {
           <UpcomingBillsCard data={upcomingBills} />
         ) : null}
       </div>
+
+      {/* Favorite account balance charts */}
+      {favoriteAccountIds.map((id) => (
+        <AccountBalanceCard key={id} accountId={id} />
+      ))}
     </div>
   );
 }

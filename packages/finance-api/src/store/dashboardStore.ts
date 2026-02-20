@@ -107,6 +107,7 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
       balance,
       previousBalance,
       classification,
+      isFavorite: decrypted.isFavorite,
     };
   });
 

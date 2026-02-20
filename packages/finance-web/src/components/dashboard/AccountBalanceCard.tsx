@@ -20,7 +20,7 @@ import { CHART_COLORS, formatCurrency } from "@/lib/chartTheme";
 import { fetchAccountBalanceHistory } from "@/api/dashboard";
 import { TimeRangeSelector } from "./TimeRangeSelector";
 
-interface CheckingBalanceCardProps {
+interface AccountBalanceCardProps {
   accountId: string;
 }
 
@@ -73,7 +73,7 @@ function CustomTooltip({
   );
 }
 
-export function CheckingBalanceCard({ accountId }: CheckingBalanceCardProps) {
+export function AccountBalanceCard({ accountId }: AccountBalanceCardProps) {
   const [range, setRange] = useState<ChartTimeRange>("all");
   const [granularity, setGranularity] = useState<ChartGranularity>("weekly");
   const [data, setData] = useState<AccountBalanceHistoryResponse | null>(null);
