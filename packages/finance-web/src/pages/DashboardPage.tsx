@@ -79,7 +79,7 @@ export function DashboardPage() {
     setNetWorthLoading(true);
     setNetWorthError("");
     try {
-      const data = await fetchNetWorth("all", "weekly");
+      const data = await fetchNetWorth("12m", "weekly");
       setNetWorth(data);
     } catch {
       setNetWorthError("Failed to load net worth");

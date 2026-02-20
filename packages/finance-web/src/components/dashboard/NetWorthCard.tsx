@@ -76,7 +76,7 @@ function CustomTooltip({
 }
 
 export function NetWorthCard({ data }: NetWorthCardProps) {
-  const [range, setRange] = useState<ChartTimeRange>("all");
+  const [range, setRange] = useState<ChartTimeRange>("12m");
   const [granularity, setGranularity] = useState<ChartGranularity>("weekly");
   const [view, setView] = useState<NetWorthView>("overview");
   const [history, setHistory] = useState<NetWorthHistoryPoint[]>(data.history);
@@ -376,7 +376,7 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
                         i % 2 === 0 && "bg-white/[0.03]",
                       )}
                     >
-                      <span className="text-muted-foreground truncate mr-2">
+                      <span className="text-foreground truncate mr-2">
                         {acct.name}
                       </span>
                       <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -430,7 +430,7 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
                         i % 2 === 0 && "bg-white/[0.03]",
                       )}
                     >
-                      <span className="text-muted-foreground truncate mr-2">
+                      <span className="text-foreground truncate mr-2">
                         {acct.name}
                       </span>
                       <div className="flex items-center gap-1.5 whitespace-nowrap">
