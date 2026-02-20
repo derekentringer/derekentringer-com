@@ -19,6 +19,9 @@ import { extractTextFromPdf, extractBalanceFromText } from "../lib/pdfExtract.js
 const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
 
 // #8: Known error messages that are safe to surface to clients
+const OVERLOADED_MESSAGE =
+  "The AI service is currently overloaded. Please try again in a few minutes.";
+
 const KNOWN_EXTRACTION_ERRORS = new Set([
   "File does not appear to be a valid PDF",
   "No text could be extracted from the PDF. This may be a scanned document — only text-based PDFs are supported.",
@@ -232,6 +235,14 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
         });
       } catch (e) {
         request.log.error(e, "Failed to preview PDF import");
+        // Surface overloaded errors so the user knows to retry
+        if (e instanceof Error && "status" in e && (e as any).status === 529) {
+          return reply.status(503).send({
+            statusCode: 503,
+            error: "Service Unavailable",
+            message: OVERLOADED_MESSAGE,
+          });
+        }
         // #8: Only surface known, safe error messages to clients
         const message =
           e instanceof Error && KNOWN_EXTRACTION_ERRORS.has(e.message)

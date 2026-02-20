@@ -30,7 +30,16 @@ export async function createAccount(data: {
 }): Promise<Account> {
   const prisma = getPrisma();
   const encrypted = encryptAccountForCreate(data);
-  const row = await prisma.account.create({ data: encrypted });
+
+  // Auto-assign sortOrder = max(sortOrder) + 1
+  const maxResult = await prisma.account.aggregate({
+    _max: { sortOrder: true },
+  });
+  const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
+
+  const row = await prisma.account.create({
+    data: { ...encrypted, sortOrder: nextSortOrder },
+  });
   return decryptAccount(row);
 }
 
@@ -49,10 +58,11 @@ export async function listAccounts(filter?: {
   if (filter?.isActive !== undefined) {
     where.isActive = filter.isActive;
   }
-  const rows = await prisma.account.findMany({ where });
-  const accounts = rows.map(decryptAccount);
-  accounts.sort((a, b) => a.name.localeCompare(b.name));
-  return accounts;
+  const rows = await prisma.account.findMany({
+    where,
+    orderBy: { sortOrder: "asc" },
+  });
+  return rows.map(decryptAccount);
 }
 
 export async function updateAccount(
@@ -201,4 +211,18 @@ export async function deleteAccount(id: string): Promise<boolean> {
     if (isNotFoundError(e)) return false;
     throw e;
   }
+}
+
+export async function reorderAccounts(
+  order: Array<{ id: string; sortOrder: number }>,
+): Promise<void> {
+  const prisma = getPrisma();
+  await prisma.$transaction(
+    order.map(({ id, sortOrder }) =>
+      prisma.account.update({
+        where: { id },
+        data: { sortOrder },
+      }),
+    ),
+  );
 }

@@ -11,6 +11,7 @@ interface SpendingCardProps {
     direction: "up" | "down" | "neutral";
     value: string;
     label?: string;
+    invertColor?: boolean;
   };
 }
 
@@ -33,6 +34,12 @@ function CustomTooltip({
 }
 
 export function SpendingCard({ data, trend }: SpendingCardProps) {
+  const isPositive = trend?.invertColor
+    ? trend.direction === "down"
+    : trend?.direction === "up";
+  const isNegative = trend?.invertColor
+    ? trend.direction === "up"
+    : trend?.direction === "down";
   const chartData = useMemo(() => {
     if (data.categories.length <= 7) {
       return data.categories.map((c, i) => ({
@@ -89,9 +96,9 @@ export function SpendingCard({ data, trend }: SpendingCardProps) {
               <span
                 className={cn(
                   "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                  trend.direction === "up"
+                  isPositive
                     ? "bg-success/10 text-success"
-                    : trend.direction === "down"
+                    : isNegative
                       ? "bg-destructive/10 text-destructive"
                       : "bg-white/10 text-foreground/70",
                 )}

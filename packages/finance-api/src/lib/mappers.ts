@@ -58,6 +58,7 @@ export function decryptAccount(row: PrismaAccount): Account {
     employerName: decryptOptionalField(row.employerName),
     isActive: row.isActive,
     isFavorite: row.isFavorite,
+    sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

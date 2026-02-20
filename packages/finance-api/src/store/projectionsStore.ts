@@ -275,6 +275,7 @@ export async function computeAccountProjections(params: {
   const accounts = allAccounts.filter(
     (a) =>
       a.type !== AccountType.RealEstate &&
+      a.type !== AccountType.Credit &&
       !EXCLUDED_NAMES.has(a.name),
   );
 
@@ -694,6 +695,7 @@ export async function listSavingsAccounts(): Promise<SavingsAccountSummary[]> {
       isActive: true,
       type: { in: ["savings", "high_yield_savings"] },
     },
+    orderBy: { sortOrder: "asc" },
   });
 
   // H2 fix: parallelize per-account queries instead of sequential N+1

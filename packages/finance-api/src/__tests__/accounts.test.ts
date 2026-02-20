@@ -68,6 +68,8 @@ describe("Account routes", () => {
       id: VALID_CUID,
       ...encrypted,
       isActive: true,
+      isFavorite: false,
+      sortOrder: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
       ...overrides,
@@ -79,11 +81,14 @@ describe("Account routes", () => {
   describe("POST /accounts", () => {
     it("creates an account with valid data (201)", async () => {
       const token = await getAccessToken();
+      mockPrisma.account.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
       mockPrisma.account.create.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           id: "acc-new",
           ...args.data,
           isActive: args.data.isActive ?? true,
+          isFavorite: args.data.isFavorite ?? false,
+          sortOrder: args.data.sortOrder ?? 0,
           createdAt: new Date(),
           updatedAt: new Date(),
         }),

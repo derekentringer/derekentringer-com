@@ -6,7 +6,7 @@
 
 ## Summary
 
-Dashboard with net worth calculation, historical trend chart, KPI cards with month-over-month trend indicators, spending breakdown by category, upcoming bills widget, and per-account balance history chart. All chart cards feature configurable time range (1M, 3M, 6M, YTD, All) and granularity (weekly/monthly) controls. Assets minus liabilities = net worth, with per-account trend tracking and Real Estate equity handling.
+Dashboard with net worth calculation, historical trend chart with view toggle (Overview/Assets/Liabilities), KPI cards with month-over-month trend indicators, spending breakdown by category, upcoming bills widget, and per-account balance history chart. All chart cards feature configurable time range (1M, 3M, 6M, YTD, All) and granularity (weekly/monthly) controls. Assets minus liabilities = net worth, with per-account trend tracking and Real Estate equity handling. Consistent chart styling across the app: strokeWidth 1.5, gradient fill fading from top to bottom.
 
 ## What Was Implemented
 
@@ -22,7 +22,7 @@ Dashboard with net worth calculation, historical trend chart, KPI cards with mon
 - Dashboard types:
   - `NetWorthSummary` — totalAssets, totalLiabilities, netWorth, accounts array (with id, name, type, balance, previousBalance, classification)
   - `NetWorthHistoryPoint` — date (YYYY-MM or YYYY-MM-DD), assets, liabilities, netWorth
-  - `NetWorthResponse` — summary + history
+  - `NetWorthResponse` — summary + history + accountHistory (per-account balances keyed by account ID, same time periods as history; Real Estate accounts store equity)
   - `SpendingSummary` — month, categories (category, amount, percentage), total
   - `DashboardUpcomingBillsResponse` — bills (UpcomingBillInstance[]), totalDue, overdueCount
   - `AccountBalanceHistoryPoint` — date (YYYY-MM or YYYY-MM-DD), balance
@@ -40,7 +40,7 @@ Period key helpers:
 
 Core functions:
 - `computeNetWorthSummary()` — aggregates active account balances into net worth; classifies each account as asset or liability; computes per-account `previousBalance` using carry-forward logic (latest Balance record on or before end of previous month); Real Estate accounts use equity (estimatedValue - currentBalance)
-- `computeNetWorthHistory(granularity, startDate?)` — computes history from Balance records with configurable granularity (weekly/monthly) and date range; fetches pre-startDate balances for carry-forward initialization; groups latest balance per account per period; carry-forward fills gaps; aggregates by asset/liability classification; returns empty array when no balance data exists
+- `computeNetWorthHistory(granularity, startDate?)` — computes history from Balance records with configurable granularity (weekly/monthly) and date range; fetches pre-startDate balances for carry-forward initialization; groups latest balance per account per period; carry-forward fills gaps; aggregates by asset/liability classification; returns `{ history, accountHistory }` — history is the aggregated net worth points, accountHistory contains per-account balances keyed by account ID for each period (Real Estate as equity, liabilities as absolute values); returns empty arrays when no balance data exists
 - `computeSpendingSummary(month)` — fetches transactions for a given month; aggregates negative amounts (expenses) by category; returns sorted list with percentage of total
 - `computeAccountBalanceHistory(accountId, granularity, startDate?)` — reconstructs historical balances from transactions by working backwards from currentBalance; aggregates net transaction amounts per period (week or month); supports any date range including all-time; for "all" range, determines earliest date from transaction data
 
@@ -111,21 +111,27 @@ Three-section layout with independent loading/error/retry states:
 **KpiCard.tsx:**
 - Title, large bold value, optional trend badge
 - Trend directions: `"up"` (green), `"down"` (red), `"neutral"` (gray with → arrow)
+- Optional `invertColor` flag — swaps green/red for metrics where increase is bad (e.g., spending, liabilities): `"up"` becomes red, `"down"` becomes green; arrow direction always matches the factual change
 - Optional label text (e.g., "vs last month")
 
 **NetWorthCard.tsx:**
-- Recharts AreaChart with 3 series (assets, liabilities, netWorth)
-- Internal state for `range` (default: "all") and `granularity` (default: "monthly")
+- View toggle: Overview / Assets / Liabilities — pill-style buttons matching TimeRangeSelector styling, positioned to the left of the time range controls
+  - **Overview** (default): Recharts AreaChart with 3 series (assets, liabilities, netWorth)
+  - **Assets**: One area per asset account, colored from `CATEGORY_COLORS` palette
+  - **Liabilities**: One area per liability account (absolute values), colored from `CATEGORY_COLORS` palette
+- Internal state for `range` (default: "all"), `granularity` (default: "weekly"), and `view` (default: "overview")
+- `accountHistory` state updated alongside `history` on refetch — provides per-account balances for Assets/Liabilities views
 - TimeRangeSelector in card header (right-aligned)
 - Re-fetches history from API when range/granularity changes (skips initial render to avoid double-fetch)
 - Loading opacity transition on chart area during re-fetch
 - Custom tooltip with full date including year (e.g., "February 2026" or "February 17, 2026")
 - Axis labels: compact format ("Feb '26" monthly, "Feb 17" weekly) with `interval="equidistantPreserveStart"`
 - Assets and Liabilities sections below chart in 2-column grid (top 5 each)
-- Section-level and per-account trend badges (always month-over-month from initial data)
+- Overall assets/liabilities trends computed from summary data (`totalAssets`/`totalLiabilities` vs sum of `previousBalance` values) for consistent month-over-month comparison with per-account trends
+- Per-account trend badges use `invertColor` for liabilities (increase = red, decrease = green; arrow direction always factual)
+- `trendColorClass()` helper centralizes color logic for all trend badges
 - Alternating row highlighting (`bg-white/[0.03]`) for readability
 - Real Estate accounts display equity (estimatedValue - balance)
-- Liabilities trend inverted: decrease = green (up), increase = red (down)
 
 **CheckingBalanceCard.tsx:**
 - Single-line AreaChart with `CHART_COLORS.balance` (amber `#f59e0b`)
@@ -141,7 +147,7 @@ Three-section layout with independent loading/error/retry states:
 **SpendingCard.tsx:**
 - Donut pie chart (hidden on small screens) with category legend
 - Top 7 categories shown; remainder aggregated as "Other"
-- Total spending (bold, white) with optional month-over-month trend badge
+- Total spending (bold, white) with optional month-over-month trend badge (uses `invertColor` — spending increase = red, decrease = green)
 - Alternating row highlighting on category list
 
 **UpcomingBillsCard.tsx:**
@@ -152,10 +158,17 @@ Three-section layout with independent loading/error/retry states:
 #### Chart Theme (`src/lib/chartTheme.ts`)
 
 - `CHART_COLORS` — assets (green), liabilities (red), netWorth (blue), balance (amber), grid, text
-- `CATEGORY_COLORS` — 13-color palette for pie chart categories
+- `CATEGORY_COLORS` — 13-color palette for pie chart categories and per-account chart lines
 - `formatCurrency(num)` — compact USD format (no cents, for chart axes)
 - `formatCurrencyFull(num)` — full USD format with cents
-- `getCategoryColor(index)` — returns color by index for pie chart slices
+- `getCategoryColor(index)` — returns color by index for pie chart slices and per-account lines
+
+#### Chart Styling Conventions
+
+All area charts across the app follow consistent styling:
+- **strokeWidth**: 1.5 on all `<Area>` components
+- **Gradient fill**: SVG `<linearGradient>` fading from `stopOpacity={0.15}` at top to `stopOpacity={0}` at bottom; `fillOpacity={1}` on the area so the gradient controls opacity entirely
+- **Exception**: Savings projection stacked area chart uses `fillOpacity={0.6}` (no gradient) since the stacked areas need solid fills to show composition
 
 ### UI/UX Improvements
 
@@ -204,7 +217,7 @@ The dashboard now shows per-account balance history charts for all **favorited**
 - **Chart library**: Recharts (React-only; Victory deferred to mobile phase)
 - **Time range**: User-selectable (1M, 3M, 6M, YTD, All) with per-chart pill-style controls; each chart manages its own range independently
 - **Granularity**: User-selectable (weekly/monthly) with per-chart toggle; weekly uses ISO week start (Monday), monthly uses YYYY-MM
-- **Trend indicators**: Month-over-month percentage change with three states (up/down/neutral); inverted for liabilities and spending; checking balance adapts between week-over-week and month-over-month based on granularity
+- **Trend indicators**: Month-over-month percentage change with three states (up/down/neutral); `invertColor` pattern used for liabilities and spending (arrows always point in the factual direction; colors inverted so increase = red, decrease = green); overall assets/liabilities trends computed from summary `previousBalance` data (not chart history points) for consistency with per-account trends; checking balance adapts between week-over-week and month-over-month based on granularity
 - **Net worth history data source**: Balance table records (PDF statement snapshots) with carry-forward for gaps; does not use transactions
 - **Checking balance history data source**: Reconstructed from transaction records by working backwards from currentBalance; does not use Balance table
 - **Tooltip dates**: Full date with year shown on hover (e.g., "February 17, 2026" for weekly, "February 2026" for monthly)

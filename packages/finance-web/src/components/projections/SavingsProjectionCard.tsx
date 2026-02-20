@@ -208,6 +208,7 @@ export function SavingsProjectionCard({ account }: SavingsProjectionCardProps) {
                       stroke={CHART_COLORS.savingsPrincipal}
                       fill={CHART_COLORS.savingsPrincipal}
                       fillOpacity={0.6}
+                      strokeWidth={1.5}
                     />
                     <Area
                       type="monotone"
@@ -217,6 +218,7 @@ export function SavingsProjectionCard({ account }: SavingsProjectionCardProps) {
                       stroke={CHART_COLORS.savingsInterest}
                       fill={CHART_COLORS.savingsInterest}
                       fillOpacity={0.6}
+                      strokeWidth={1.5}
                     />
                   </AreaChart>
                 </ResponsiveContainer>

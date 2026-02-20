@@ -28,8 +28,13 @@ export interface Account {
   employerName?: string;
   isActive: boolean;
   isFavorite: boolean;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReorderAccountsRequest {
+  order: Array<{ id: string; sortOrder: number }>;
 }
 
 export interface Transaction {
@@ -500,6 +505,7 @@ export interface NetWorthHistoryPoint {
 export interface NetWorthResponse {
   summary: NetWorthSummary;
   history: NetWorthHistoryPoint[];
+  accountHistory: Array<{ date: string; balances: Record<string, number> }>;
 }
 
 export interface SpendingSummary {

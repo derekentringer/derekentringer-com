@@ -16,9 +16,11 @@ import type {
   ChartTimeRange,
   ChartGranularity,
 } from "@derekentringer/shared/finance";
-import { CHART_COLORS, formatCurrency } from "@/lib/chartTheme";
+import { CHART_COLORS, formatCurrency, getCategoryColor } from "@/lib/chartTheme";
 import { fetchNetWorth } from "@/api/dashboard";
 import { TimeRangeSelector } from "./TimeRangeSelector";
+
+type NetWorthView = "overview" | "assets" | "liabilities";
 
 interface NetWorthCardProps {
   data: NetWorthResponse;
@@ -76,7 +78,9 @@ function CustomTooltip({
 export function NetWorthCard({ data }: NetWorthCardProps) {
   const [range, setRange] = useState<ChartTimeRange>("all");
   const [granularity, setGranularity] = useState<ChartGranularity>("weekly");
+  const [view, setView] = useState<NetWorthView>("overview");
   const [history, setHistory] = useState<NetWorthHistoryPoint[]>(data.history);
+  const [accountHistory, setAccountHistory] = useState<Array<{ date: string; balances: Record<string, number> }>>(data.accountHistory ?? []);
   const [loading, setLoading] = useState(false);
 
   const refetchHistory = useCallback(async (r: ChartTimeRange, g: ChartGranularity) => {
@@ -84,6 +88,7 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
     try {
       const result = await fetchNetWorth(r, g);
       setHistory(result.history);
+      setAccountHistory(result.accountHistory ?? []);
     } catch {
       // keep existing data on error
     } finally {
@@ -111,6 +116,27 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
     [history, granularity],
   );
 
+  // Build per-account chart data for assets/liabilities views
+  const filteredAccounts = useMemo(() => {
+    if (view === "overview") return [];
+    const classification = view === "assets" ? "asset" : "liability";
+    return data.summary.accounts.filter((a) => a.classification === classification);
+  }, [view, data.summary.accounts]);
+
+  const accountChartData = useMemo(() => {
+    if (view === "overview" || filteredAccounts.length === 0) return [];
+    return accountHistory.map((point) => {
+      const entry: Record<string, unknown> = {
+        label: formatLabel(point.date, granularity),
+        tooltipLabel: formatTooltipLabel(point.date, granularity),
+      };
+      for (const acct of filteredAccounts) {
+        entry[acct.id] = point.balances[acct.id] ?? 0;
+      }
+      return entry;
+    });
+  }, [view, accountHistory, filteredAccounts, granularity]);
+
   const assetAccounts = data.summary.accounts
     .filter((a) => a.classification === "asset")
     .sort((a, b) => b.balance - a.balance);
@@ -121,63 +147,116 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
   function accountTrend(
     balance: number,
     previousBalance: number | undefined,
-    invertDirection = false,
-  ): { direction: "up" | "down" | "neutral"; value: string } | undefined {
+    invertColor = false,
+  ): { direction: "up" | "down" | "neutral"; value: string; invertColor?: boolean } | undefined {
     if (previousBalance === undefined) return { direction: "neutral", value: "0.0%" };
     if (previousBalance === 0 && balance === 0) return { direction: "neutral", value: "0.0%" };
     if (previousBalance === 0) return undefined;
     const pct = ((balance - previousBalance) / Math.abs(previousBalance)) * 100;
     if (Math.abs(pct) < 0.05) return { direction: "neutral", value: "0.0%" };
-    const direction = invertDirection
-      ? pct <= 0 ? ("up" as const) : ("down" as const)
-      : pct >= 0 ? ("up" as const) : ("down" as const);
-    return { direction, value: `${Math.abs(pct).toFixed(1)}%` };
+    return {
+      direction: pct >= 0 ? ("up" as const) : ("down" as const),
+      value: `${Math.abs(pct).toFixed(1)}%`,
+      invertColor,
+    };
+  }
+
+  function trendColorClass(t: { direction: "up" | "down" | "neutral"; invertColor?: boolean }): string {
+    const isPositive = t.invertColor ? t.direction === "down" : t.direction === "up";
+    const isNegative = t.invertColor ? t.direction === "up" : t.direction === "down";
+    if (isPositive) return "bg-success/10 text-success";
+    if (isNegative) return "bg-destructive/10 text-destructive";
+    return "bg-white/10 text-foreground/70";
   }
 
   const assetsTrend = useMemo(() => {
-    if (data.history.length < 2) return undefined;
-    const curr = data.history[data.history.length - 1].assets;
-    const prev = data.history[data.history.length - 2].assets;
-    if (prev === 0) return { direction: "neutral" as const, value: "0.0%" };
-    const pct = ((curr - prev) / Math.abs(prev)) * 100;
+    const currentTotal = data.summary.totalAssets;
+    let prevTotal = 0;
+    let hasPrev = false;
+    for (const acct of data.summary.accounts) {
+      if (acct.classification !== "asset" || acct.previousBalance === undefined) continue;
+      hasPrev = true;
+      prevTotal += acct.previousBalance;
+    }
+    if (!hasPrev || prevTotal === 0) return undefined;
+    const pct = ((currentTotal - prevTotal) / Math.abs(prevTotal)) * 100;
     if (Math.abs(pct) < 0.05) return { direction: "neutral" as const, value: "0.0%" };
     return {
       direction: pct >= 0 ? ("up" as const) : ("down" as const),
       value: `${Math.abs(pct).toFixed(1)}%`,
     };
-  }, [data.history]);
+  }, [data.summary]);
 
   const liabilitiesTrend = useMemo(() => {
-    if (data.history.length < 2) return undefined;
-    const curr = data.history[data.history.length - 1].liabilities;
-    const prev = data.history[data.history.length - 2].liabilities;
-    if (prev === 0) return { direction: "neutral" as const, value: "0.0%" };
-    const pct = ((curr - prev) / Math.abs(prev)) * 100;
+    const currentTotal = data.summary.totalLiabilities;
+    let prevTotal = 0;
+    let hasPrev = false;
+    for (const acct of data.summary.accounts) {
+      if (acct.classification !== "liability" || acct.previousBalance === undefined) continue;
+      hasPrev = true;
+      prevTotal += Math.abs(acct.previousBalance);
+    }
+    if (!hasPrev || prevTotal === 0) return undefined;
+    const pct = ((currentTotal - prevTotal) / Math.abs(prevTotal)) * 100;
     if (Math.abs(pct) < 0.05) return { direction: "neutral" as const, value: "0.0%" };
-    // Liabilities going down is good (green/up), going up is bad (red/down)
+    // Liabilities going down is good (green), going up is bad (red)
     return {
-      direction: pct <= 0 ? ("up" as const) : ("down" as const),
+      direction: pct >= 0 ? ("up" as const) : ("down" as const),
       value: `${Math.abs(pct).toFixed(1)}%`,
+      invertColor: true,
     };
-  }, [data.history]);
+  }, [data.summary]);
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <h2 className="text-xl text-foreground">Net Worth</h2>
-          <TimeRangeSelector
-            range={range}
-            granularity={granularity}
-            onRangeChange={setRange}
-            onGranularityChange={setGranularity}
-          />
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center rounded-md border border-border overflow-hidden">
+              {(["overview", "assets", "liabilities"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={cn(
+                    "px-2.5 py-1 text-xs font-medium rounded transition-colors cursor-pointer select-none",
+                    view === v
+                      ? "bg-foreground/15 text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
+                  )}
+                >
+                  {v === "overview" ? "Overview" : v === "assets" ? "Assets" : "Liabilities"}
+                </button>
+              ))}
+            </div>
+            <TimeRangeSelector
+              range={range}
+              granularity={granularity}
+              onRangeChange={setRange}
+              onGranularityChange={setGranularity}
+            />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className={cn("transition-opacity", loading && "opacity-40")}>
+          {view === "overview" ? (
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="gradAssets" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={CHART_COLORS.assets} stopOpacity={0.15} />
+                  <stop offset="100%" stopColor={CHART_COLORS.assets} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gradLiabilities" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={CHART_COLORS.liabilities} stopOpacity={0.15} />
+                  <stop offset="100%" stopColor={CHART_COLORS.liabilities} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gradNetWorth" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={CHART_COLORS.netWorth} stopOpacity={0.15} />
+                  <stop offset="100%" stopColor={CHART_COLORS.netWorth} stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke={CHART_COLORS.grid}
@@ -199,27 +278,72 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
                 dataKey="assets"
                 name="Assets"
                 stroke={CHART_COLORS.assets}
-                fill={CHART_COLORS.assets}
-                fillOpacity={0.1}
+                fill="url(#gradAssets)"
+                fillOpacity={1}
+                strokeWidth={1.5}
               />
               <Area
                 type="monotone"
                 dataKey="liabilities"
                 name="Liabilities"
                 stroke={CHART_COLORS.liabilities}
-                fill={CHART_COLORS.liabilities}
-                fillOpacity={0.1}
+                fill="url(#gradLiabilities)"
+                fillOpacity={1}
+                strokeWidth={1.5}
               />
               <Area
                 type="monotone"
                 dataKey="netWorth"
                 name="Net Worth"
                 stroke={CHART_COLORS.netWorth}
-                fill={CHART_COLORS.netWorth}
-                fillOpacity={0.15}
+                fill="url(#gradNetWorth)"
+                fillOpacity={1}
+                strokeWidth={1.5}
               />
             </AreaChart>
           </ResponsiveContainer>
+          ) : (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={accountChartData}>
+              <defs>
+                {filteredAccounts.map((acct, i) => (
+                  <linearGradient key={acct.id} id={`gradAcct-${acct.id}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={getCategoryColor(i)} stopOpacity={0.15} />
+                    <stop offset="100%" stopColor={getCategoryColor(i)} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke={CHART_COLORS.grid}
+              />
+              <XAxis
+                dataKey="label"
+                stroke={CHART_COLORS.text}
+                fontSize={12}
+                interval="equidistantPreserveStart"
+              />
+              <YAxis
+                stroke={CHART_COLORS.text}
+                fontSize={12}
+                tickFormatter={(v) => formatCurrency(v)}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              {filteredAccounts.map((acct, i) => (
+                <Area
+                  key={acct.id}
+                  type="monotone"
+                  dataKey={acct.id}
+                  name={acct.name}
+                  stroke={getCategoryColor(i)}
+                  fill={`url(#gradAcct-${acct.id})`}
+                  fillOpacity={1}
+                  strokeWidth={1.5}
+                />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -232,11 +356,7 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
                     <span
                       className={cn(
                         "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                        assetsTrend.direction === "up"
-                          ? "bg-success/10 text-success"
-                          : assetsTrend.direction === "down"
-                            ? "bg-destructive/10 text-destructive"
-                            : "bg-white/10 text-foreground/70",
+                        trendColorClass(assetsTrend),
                       )}
                     >
                       {assetsTrend.direction === "up" ? "\u2191" : assetsTrend.direction === "down" ? "\u2193" : "\u2192"} {assetsTrend.value}
@@ -267,11 +387,7 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
                           <span
                             className={cn(
                               "inline-flex items-center rounded-full px-1.5 py-0 text-[10px] font-medium",
-                              trend.direction === "up"
-                                ? "bg-success/10 text-success"
-                                : trend.direction === "down"
-                                  ? "bg-destructive/10 text-destructive"
-                                  : "bg-white/10 text-foreground/70",
+                              trendColorClass(trend),
                             )}
                           >
                             {trend.direction === "up" ? "\u2191" : trend.direction === "down" ? "\u2193" : "\u2192"} {trend.value}
@@ -294,11 +410,7 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
                     <span
                       className={cn(
                         "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                        liabilitiesTrend.direction === "up"
-                          ? "bg-success/10 text-success"
-                          : liabilitiesTrend.direction === "down"
-                            ? "bg-destructive/10 text-destructive"
-                            : "bg-white/10 text-foreground/70",
+                        trendColorClass(liabilitiesTrend),
                       )}
                     >
                       {liabilitiesTrend.direction === "up" ? "\u2191" : liabilitiesTrend.direction === "down" ? "\u2193" : "\u2192"} {liabilitiesTrend.value}
@@ -329,11 +441,7 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
                           <span
                             className={cn(
                               "inline-flex items-center rounded-full px-1.5 py-0 text-[10px] font-medium",
-                              trend.direction === "up"
-                                ? "bg-success/10 text-success"
-                                : trend.direction === "down"
-                                  ? "bg-destructive/10 text-destructive"
-                                  : "bg-white/10 text-foreground/70",
+                              trendColorClass(trend),
                             )}
                           >
                             {trend.direction === "up" ? "\u2191" : trend.direction === "down" ? "\u2193" : "\u2192"} {trend.value}

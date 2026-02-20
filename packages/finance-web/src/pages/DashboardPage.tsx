@@ -146,15 +146,16 @@ export function DashboardPage() {
     };
   }, [netWorth]);
 
-  // Compute spending month-over-month trend (inverted: spending up = bad)
+  // Compute spending month-over-month trend (inverted colors: spending up = bad/red)
   const spendingTrend = useMemo(() => {
     if (!spending || !prevSpending || prevSpending.total === 0) return undefined;
     const pct = ((spending.total - prevSpending.total) / prevSpending.total) * 100;
-    if (Math.abs(pct) < 0.05) return { direction: "neutral" as const, value: "0.0%", label: "vs last month" };
+    if (Math.abs(pct) < 0.05) return { direction: "neutral" as const, value: "0.0%", label: "vs last month", invertColor: true };
     return {
-      direction: pct <= 0 ? ("up" as const) : ("down" as const),
+      direction: pct >= 0 ? ("up" as const) : ("down" as const),
       value: `${Math.abs(pct).toFixed(1)}%`,
       label: "vs last month",
+      invertColor: true,
     };
   }, [spending, prevSpending]);
 
