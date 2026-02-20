@@ -81,8 +81,8 @@ export function PdfPreviewBase({
         <div className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3">
           <p className="text-sm text-yellow-400">
             A balance of {formatCurrency(existingBalanceOnDate)} already exists
-            for this account on {editedDate}. Confirming will create an
-            additional record.
+            for this account on {editedDate}. Confirming will replace the
+            existing record.
           </p>
         </div>
       )}

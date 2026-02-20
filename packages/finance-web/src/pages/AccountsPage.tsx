@@ -25,7 +25,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Plus, FileUp, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Plus, FileUp, ArrowUp, ArrowDown, ArrowUpDown, Star } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   [AccountType.Checking]: "Checking",
@@ -100,6 +101,15 @@ export function AccountsPage() {
       setError("Failed to delete account");
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function handleToggleFavorite(account: Account) {
+    try {
+      await updateAccount(account.id, { isFavorite: !account.isFavorite });
+      await loadAccounts();
+    } catch {
+      setError("Failed to update favorite status");
     }
   }
 
@@ -221,6 +231,14 @@ export function AccountsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="p-1"
+                          onClick={() => handleToggleFavorite(account)}
+                        >
+                          <Star className={cn("h-4 w-4", account.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground")} />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

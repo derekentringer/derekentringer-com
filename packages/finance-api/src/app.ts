@@ -19,6 +19,8 @@ import balanceRoutes from "./routes/balances.js";
 import budgetRoutes from "./routes/budgets.js";
 import billRoutes from "./routes/bills.js";
 import dashboardRoutes from "./routes/dashboard.js";
+import incomeSourceRoutes from "./routes/incomeSources.js";
+import projectionRoutes from "./routes/projections.js";
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -89,6 +91,8 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(budgetRoutes, { prefix: "/budgets" });
   app.register(billRoutes, { prefix: "/bills" });
   app.register(dashboardRoutes, { prefix: "/dashboard" });
+  app.register(incomeSourceRoutes, { prefix: "/income-sources" });
+  app.register(projectionRoutes, { prefix: "/projections" });
 
   app.get("/health", async () => {
     return { status: "ok" };

@@ -5,7 +5,9 @@ import type {
   CategoryRule,
   CreateCategoryRuleRequest,
   UpdateCategoryRuleRequest,
+  IncomeSource,
 } from "@derekentringer/shared/finance";
+import { INCOME_SOURCE_FREQUENCY_LABELS } from "@derekentringer/shared/finance";
 import {
   fetchCategories,
   createCategory,
@@ -18,7 +20,12 @@ import {
   updateCategoryRule,
   deleteCategoryRule,
 } from "../api/categoryRules.ts";
+import {
+  fetchIncomeSources,
+  deleteIncomeSource,
+} from "../api/incomeSources.ts";
 import { CategoryRuleForm } from "../components/CategoryRuleForm.tsx";
+import { IncomeSourceForm } from "../components/IncomeSourceForm.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,10 +46,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { formatCurrencyFull } from "@/lib/chartTheme";
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"categories" | "rules">(
+  const [activeTab, setActiveTab] = useState<"categories" | "rules" | "income">(
     "categories",
   );
 
@@ -63,9 +71,22 @@ export function SettingsPage() {
         >
           Category Rules
         </Button>
+        <Button
+          variant={activeTab === "income" ? "default" : "secondary"}
+          size="sm"
+          onClick={() => setActiveTab("income")}
+        >
+          Income Sources
+        </Button>
       </div>
 
-      {activeTab === "categories" ? <CategoriesSection /> : <RulesSection />}
+      {activeTab === "categories" ? (
+        <CategoriesSection />
+      ) : activeTab === "rules" ? (
+        <RulesSection />
+      ) : (
+        <IncomeSourcesSection />
+      )}
     </div>
   );
 }
@@ -508,6 +529,155 @@ function RulesSection() {
         <ConfirmDialog
           title="Delete Rule"
           message={`Are you sure you want to delete the rule "${deleteTarget.pattern}"?`}
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+          isLoading={isDeleting}
+        />
+      )}
+    </Card>
+  );
+}
+
+function IncomeSourcesSection() {
+  const [sources, setSources] = useState<IncomeSource[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [editTarget, setEditTarget] = useState<IncomeSource | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<IncomeSource | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const loadSources = useCallback(async () => {
+    try {
+      const { incomeSources } = await fetchIncomeSources();
+      setSources(incomeSources);
+      setError("");
+    } catch {
+      setError("Failed to load income sources");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSources();
+  }, [loadSources]);
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await deleteIncomeSource(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadSources();
+    } catch {
+      setError("Failed to delete income source");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  function handleSaved() {
+    setShowAdd(false);
+    setEditTarget(null);
+    loadSources();
+  }
+
+  if (isLoading) {
+    return <p className="text-center text-muted py-8">Loading...</p>;
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl text-foreground">Income Sources</h2>
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus className="h-4 w-4" />
+            Add Income Source
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {error && <p className="text-sm text-error mb-4">{error}</p>}
+
+        {sources.length === 0 ? (
+          <p className="text-center text-muted-foreground py-12">
+            No income sources yet. Add income sources to improve projection
+            accuracy.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Name</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead className="hidden sm:table-cell">Frequency</TableHead>
+                <TableHead className="hidden md:table-cell">Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sources.map((source) => (
+                <TableRow key={source.id}>
+                  <TableCell>{source.name}</TableCell>
+                  <TableCell className="text-success">
+                    {formatCurrencyFull(source.amount)}
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    <Badge variant="outline">
+                      {INCOME_SOURCE_FREQUENCY_LABELS[source.frequency]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Badge variant={source.isActive ? "muted" : "outline"}>
+                      {source.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => setEditTarget(source)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-error hover:text-destructive-hover"
+                        onClick={() => setDeleteTarget(source)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      {(showAdd || editTarget) && (
+        <IncomeSourceForm
+          open={showAdd || !!editTarget}
+          onClose={() => {
+            setShowAdd(false);
+            setEditTarget(null);
+          }}
+          onSaved={handleSaved}
+          incomeSource={editTarget ?? undefined}
+          existingNames={sources.map((s) => s.name)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete Income Source"
+          message={`Are you sure you want to delete "${deleteTarget.name}"?`}
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}
           isLoading={isDeleting}

@@ -140,6 +140,30 @@ Multi-step dialog:
 
 - Replaced `AlertDialog` with regular `Dialog` + `Button` to fix async delete operations (AlertDialogAction auto-close was preventing async handlers from completing)
 
+## Phase 5 Enhancements
+
+### Multi-File CSV Import
+
+The CSV import dialog now accepts multiple files at once, merging all previews into a single combined table for batch confirmation.
+
+- **File input**: `multiple` attribute added; accepts `.csv,.tsv` (TSV support for Robinhood)
+- **State**: `file: File | null` → `files: File[]`
+- **Upload**: Loops through each file, calls `uploadCsvPreview` for each, concatenates preview rows and sums stats (totalRows, duplicateCount, categorizedCount)
+- **Label**: Shows file count when multiple files selected (e.g., "3 files selected")
+- **Preview/confirm flow**: Unchanged — user sees one merged table and confirms in one batch
+
+### Robinhood CSV/TSV Parser (`src/csv-parsers/robinhood.ts`)
+
+- Parses Robinhood account statement exports in both CSV and TSV formats
+- **Auto-detects delimiter** from first line (tab → TSV, comma → CSV)
+- **Custom record parser**: Handles quoted fields spanning multiple lines (Robinhood descriptions contain newlines)
+- **Date format**: `M/D/YY` or `M/D/YYYY` — 2-digit years interpreted as 2000s (00-49) or 1900s (50-99)
+- **Amount format**: Accounting notation — `($1.23)` = negative, `$1.23` = positive
+- **Description**: Built from `Instrument + first line of Description`
+- **Bank category**: Uses `Trans Code` column (e.g., "Buy", "Sell", "CDIV")
+- **Skips non-monetary rows**: Rows with no parseable amount (stock splits, conversions) are excluded
+- Registered as `"robinhood"` in `CsvParserId` union, `CSV_PARSER_IDS`, and `CSV_PARSER_LABELS`
+
 ## Resolved Open Questions
 
 - **Amex HYS format**: Placeholder parser assuming `Date,Description,Amount,Balance` columns

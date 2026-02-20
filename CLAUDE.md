@@ -15,6 +15,8 @@ npx turbo run build  # Build all packages
 npx turbo run type-check  # Type-check all packages
 ```
 
+**Dev server port notes**: When running `npx turbo run dev`, the `api` package (health-check stub on :3001) often fails with `EADDRINUSE` because it races with other turbo tasks for ports. This is not a problem — the `api` package is just a health-check stub and isn't needed for finance feature development. The important services are `finance-api` (Fastify on :3002) and `finance-web` (Vite on :3003). Vite auto-increments ports when collisions occur, so check the turbo output for actual port numbers. Before starting dev servers, always kill old processes first: `pkill -9 -f "vite|tsx watch|turbo"` then `lsof -ti :3000,:3001,:3002,:3003 | xargs kill -9`. CORS on finance-api defaults to `http://localhost:3003`, so finance-web **must** be on port 3003 for login to work — if it lands on another port, sign-in will fail with CORS errors.
+
 ## Git Workflow
 
 This project uses **gitflow**:
@@ -96,6 +98,7 @@ packages/
   - `npm run db:migrate:deploy` — Apply migrations in production
   - `npm run db:seed` — Run seed script
   - `npm run db:studio` — Open Prisma Studio
+- **Local database**: `prisma migrate dev` does not work locally (access denied). Run migration SQL manually instead: `psql "postgresql://derekentringer@localhost:5432/finance" -c '<SQL>'`. Production migrations are applied automatically via the Railway start command.
 - **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ENCRYPTION_KEY` (64-char hex, 32 bytes for AES-256-GCM)
 - **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/finance-api && npm run start --workspace=@derekentringer/finance-api`
 

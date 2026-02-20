@@ -79,6 +79,7 @@ describe("Account mappers", () => {
       id: "cuid-123",
       ...encrypted,
       isActive: encrypted.isActive ?? true,
+      isFavorite: encrypted.isFavorite ?? false,
       createdAt: now,
       updatedAt: now,
     };
@@ -113,6 +114,7 @@ describe("Account mappers", () => {
       id: "cuid-456",
       ...encrypted,
       isActive: true, // Prisma @default(true) provides this
+      isFavorite: false,
       createdAt: now,
       updatedAt: now,
     };

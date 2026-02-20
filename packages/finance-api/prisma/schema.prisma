@@ -34,6 +34,7 @@ model Account {
   loanType        String?
   employerName    String?
   isActive        Boolean       @default(true)
+  isFavorite      Boolean       @default(false)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   transactions    Transaction[]
@@ -196,6 +197,20 @@ model Bill {
 
   @@index([isActive])
   @@map("bills")
+}
+
+model IncomeSource {
+  id        String   @id @default(cuid())
+  name      String
+  amount    String
+  frequency String
+  isActive  Boolean  @default(true)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("income_sources")
 }
 
 model BillPayment {

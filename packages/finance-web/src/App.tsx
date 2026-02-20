@@ -10,6 +10,7 @@ import { TransactionsPage } from "./pages/TransactionsPage.tsx";
 import { BudgetsPage } from "./pages/BudgetsPage.tsx";
 import { BillsPage } from "./pages/BillsPage.tsx";
 import { ReportsPage } from "./pages/ReportsPage.tsx";
+import { ProjectionsPage } from "./pages/ProjectionsPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { NotFoundPage } from "./pages/NotFoundPage.tsx";
 
@@ -21,6 +22,7 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<DashboardPage />} />
+            <Route path="projections" element={<ProjectionsPage />} />
             <Route path="accounts" element={<AccountsPage />} />
             <Route path="transactions" element={<TransactionsPage />} />
             <Route path="budgets" element={<BudgetsPage />} />

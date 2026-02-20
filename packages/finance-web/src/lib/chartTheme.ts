@@ -9,6 +9,14 @@ export const CHART_COLORS = {
   budgetFill: "rgba(59, 130, 246, 0.3)",
   overBudget: "#ef4444",
   underBudget: "#22c55e",
+  income: "#22c55e",
+  expenses: "#ef4444",
+  netIncome: "#2563eb",
+  balance: "#f59e0b",
+  savingsBalance: "#8b5cf6",
+  savingsPrincipal: "#3b82f6",
+  savingsInterest: "#10b981",
+  overall: "#94a3b8",
 } as const;
 
 // Category color palette (13 colors, avoids red/green collision with chart colors)
