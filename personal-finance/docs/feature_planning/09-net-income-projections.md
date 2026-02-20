@@ -1,6 +1,6 @@
 # 09 — Net Income Projections
 
-**Status:** Not Started
+**Status:** Complete — see [features/09-net-income-projections.md](../features/09-net-income-projections.md)
 **Phase:** 5 — Projections & Planning
 **Priority:** Medium
 

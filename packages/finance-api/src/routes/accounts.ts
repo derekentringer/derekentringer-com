@@ -39,6 +39,7 @@ const createAccountSchema = {
       interestRate: { type: ["number", "null"] },
       csvParserId: { type: ["string", "null"] },
       isActive: { type: "boolean" },
+      isFavorite: { type: "boolean" },
     },
   },
 };
@@ -58,6 +59,7 @@ const updateAccountSchema = {
       interestRate: { type: ["number", "null"] },
       csvParserId: { type: ["string", "null"] },
       isActive: { type: "boolean" },
+      isFavorite: { type: "boolean" },
     },
   },
 };

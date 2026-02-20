@@ -8,6 +8,7 @@ import type {
   Budget as PrismaBudget,
   Bill as PrismaBill,
   BillPayment as PrismaBillPayment,
+  IncomeSource as PrismaIncomeSource,
 } from "../generated/prisma/client.js";
 import type {
   Account,
@@ -22,6 +23,8 @@ import type {
   Bill,
   BillPayment,
   BillFrequency,
+  IncomeSource,
+  IncomeSourceFrequency,
 } from "@derekentringer/shared";
 import { AccountType } from "@derekentringer/shared";
 import {
@@ -54,6 +57,7 @@ export function decryptAccount(row: PrismaAccount): Account {
     loanType: decryptOptionalField(row.loanType) as LoanType | undefined,
     employerName: decryptOptionalField(row.employerName),
     isActive: row.isActive,
+    isFavorite: row.isFavorite,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -74,6 +78,7 @@ interface EncryptedAccountCreate {
   loanType: string | null;
   employerName: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }
 
 export function encryptAccountForCreate(input: {
@@ -91,6 +96,7 @@ export function encryptAccountForCreate(input: {
   loanType?: string | null;
   employerName?: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }): EncryptedAccountCreate {
   const data: EncryptedAccountCreate = {
     name: encryptField(input.name),
@@ -109,6 +115,7 @@ export function encryptAccountForCreate(input: {
   };
   // Only set isActive when explicitly provided; otherwise Prisma @default(true) applies
   if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.isFavorite !== undefined) data.isFavorite = input.isFavorite;
   return data;
 }
 
@@ -127,6 +134,7 @@ export interface EncryptedAccountUpdate {
   loanType?: string | null;
   employerName?: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }
 
 export function encryptAccountForUpdate(input: {
@@ -144,6 +152,7 @@ export function encryptAccountForUpdate(input: {
   loanType?: string | null;
   employerName?: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
 }): EncryptedAccountUpdate {
   const data: EncryptedAccountUpdate = {};
 
@@ -172,6 +181,7 @@ export function encryptAccountForUpdate(input: {
   if (input.employerName !== undefined)
     data.employerName = encryptOptionalField(input.employerName);
   if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.isFavorite !== undefined) data.isFavorite = input.isFavorite;
 
   return data;
 }
@@ -627,4 +637,79 @@ export function encryptBillPaymentForCreate(input: {
     paidDate: new Date(),
     amount: encryptNumber(input.amount),
   };
+}
+
+// --- Income Source ---
+
+export function decryptIncomeSource(row: PrismaIncomeSource): IncomeSource {
+  return {
+    id: row.id,
+    name: decryptField(row.name),
+    amount: decryptNumber(row.amount),
+    frequency: row.frequency as IncomeSourceFrequency,
+    isActive: row.isActive,
+    notes: decryptOptionalField(row.notes),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function encryptIncomeSourceForCreate(input: {
+  name: string;
+  amount: number;
+  frequency: string;
+  isActive?: boolean;
+  notes?: string | null;
+}): {
+  name: string;
+  amount: string;
+  frequency: string;
+  notes: string | null;
+  isActive?: boolean;
+} {
+  const data: {
+    name: string;
+    amount: string;
+    frequency: string;
+    notes: string | null;
+    isActive?: boolean;
+  } = {
+    name: encryptField(input.name),
+    amount: encryptNumber(input.amount),
+    frequency: input.frequency,
+    notes: encryptOptionalField(input.notes),
+  };
+  if (input.isActive !== undefined) data.isActive = input.isActive;
+  return data;
+}
+
+export function encryptIncomeSourceForUpdate(input: {
+  name?: string;
+  amount?: number;
+  frequency?: string;
+  isActive?: boolean;
+  notes?: string | null;
+}): {
+  name?: string;
+  amount?: string;
+  frequency?: string;
+  isActive?: boolean;
+  notes?: string | null;
+} {
+  const data: {
+    name?: string;
+    amount?: string;
+    frequency?: string;
+    isActive?: boolean;
+    notes?: string | null;
+  } = {};
+
+  if (input.name !== undefined) data.name = encryptField(input.name);
+  if (input.amount !== undefined) data.amount = encryptNumber(input.amount);
+  if (input.frequency !== undefined) data.frequency = input.frequency;
+  if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.notes !== undefined)
+    data.notes = encryptOptionalField(input.notes);
+
+  return data;
 }

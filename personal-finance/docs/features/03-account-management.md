@@ -128,6 +128,22 @@ Single `ProtectedRoute` wrapping the layout route via `<Outlet />` pattern.
 #### Placeholder Pages
 - `TransactionsPage`, `ReportsPage`, `SettingsPage` — centered lucide icon + title + "Coming soon"
 
+## Phase 5 Enhancements
+
+### Account Favorites
+
+Added `isFavorite` boolean field to accounts for driving dashboard and projection chart visibility.
+
+**Schema**: `isFavorite Boolean @default(false)` added to Account model
+**Migration**: `20260219070000_add_account_is_favorite`
+**API**: `isFavorite` added to create/update account JSON schemas
+**Shared types**: `isFavorite: boolean` added to `Account`, `CreateAccountRequest`, `UpdateAccountRequest`
+**UI**: Star icon toggle button on each row in AccountsPage — filled yellow when favorited, muted outline when not
+
+Favorited accounts are used by:
+- **Dashboard**: Per-account balance history charts shown for all favorited accounts
+- **Projections**: Per-account projection charts shown for favorited non-savings accounts on the Net Income tab
+
 ## Resolved Open Questions
 
 - **Delete behavior**: Cascade delete — deleting an account removes all its transactions and balances (via Prisma `onDelete: Cascade`)

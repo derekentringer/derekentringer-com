@@ -2,11 +2,59 @@ import type {
   NetWorthSummary,
   NetWorthHistoryPoint,
   SpendingSummary,
+  AccountBalanceHistoryResponse,
 } from "@derekentringer/shared";
 import { classifyAccountType, AccountType } from "@derekentringer/shared";
 import { getPrisma } from "../lib/prisma.js";
 import { decryptAccount } from "../lib/mappers.js";
 import { decryptNumber } from "../lib/encryption.js";
+
+// ─── Period key helpers ─────────────────────────────────────────────────────
+
+function toMonthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function toWeekKey(d: Date): string {
+  const copy = new Date(d);
+  const day = copy.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // Monday = 1
+  copy.setDate(copy.getDate() + diff);
+  return `${copy.getFullYear()}-${String(copy.getMonth() + 1).padStart(2, "0")}-${String(copy.getDate()).padStart(2, "0")}`;
+}
+
+function dateToKey(d: Date, granularity: "weekly" | "monthly"): string {
+  return granularity === "monthly" ? toMonthKey(d) : toWeekKey(d);
+}
+
+function generatePeriodKeys(
+  start: Date,
+  end: Date,
+  granularity: "weekly" | "monthly",
+): string[] {
+  const keys: string[] = [];
+  if (granularity === "monthly") {
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (cursor <= end) {
+      keys.push(toMonthKey(cursor));
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+  } else {
+    const cursor = new Date(start);
+    const day = cursor.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    cursor.setDate(cursor.getDate() + diff);
+    while (cursor <= end) {
+      keys.push(
+        `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`,
+      );
+      cursor.setDate(cursor.getDate() + 7);
+    }
+  }
+  return keys;
+}
+
+// ─── Net Worth ──────────────────────────────────────────────────────────────
 
 /**
  * Compute current net worth summary from active account balances.
@@ -59,6 +107,7 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
       balance,
       previousBalance,
       classification,
+      isFavorite: decrypted.isFavorite,
     };
   });
 
@@ -84,30 +133,40 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
 }
 
 /**
- * Compute net worth history for the past N months.
- * Strategy: latest balance per account per month, carry forward for gaps.
+ * Compute net worth history with configurable granularity and date range.
+ * Strategy: latest balance per account per period, carry forward for gaps.
  */
 export async function computeNetWorthHistory(
-  months: number = 12,
+  granularity: "weekly" | "monthly" = "monthly",
+  startDate?: Date,
 ): Promise<NetWorthHistoryPoint[]> {
   const prisma = getPrisma();
-
-  // Calculate start date (N months ago, first day of month)
   const now = new Date();
-  const startDate = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
 
-  // Fetch all balance records from startDate onward
+  // Fetch balance records (optionally filtered by startDate)
   const balanceRows = await prisma.balance.findMany({
-    where: {
-      date: { gte: startDate },
-    },
+    where: startDate ? { date: { gte: startDate } } : undefined,
     orderBy: { date: "desc" },
-    select: {
-      accountId: true,
-      balance: true,
-      date: true,
-    },
+    select: { accountId: true, balance: true, date: true },
   });
+
+  if (balanceRows.length === 0) return [];
+
+  // If we have a startDate, also fetch the latest balance per account BEFORE
+  // that date so carry-forward starts from a known value.
+  const initialBalances = new Map<string, number>();
+  if (startDate) {
+    const preRows = await prisma.balance.findMany({
+      where: { date: { lt: startDate } },
+      orderBy: { date: "desc" },
+      select: { accountId: true, balance: true },
+    });
+    for (const row of preRows) {
+      if (!initialBalances.has(row.accountId)) {
+        initialBalances.set(row.accountId, decryptNumber(row.balance));
+      }
+    }
+  }
 
   // Fetch all active accounts to know their types and estimated values
   const accountRows = await prisma.account.findMany({
@@ -124,49 +183,42 @@ export async function computeNetWorthHistory(
     }
   }
 
-  // Deduplicate: latest balance per account per month
-  // Since ordered by date DESC, first seen per account+month wins
-  const monthlyBalances = new Map<string, Map<string, number>>(); // month -> accountId -> balance
+  // Deduplicate: latest balance per account per period
+  // Since ordered by date DESC, first seen per account+period wins
+  const periodBalances = new Map<string, Map<string, number>>();
 
   for (const row of balanceRows) {
-    const date = new Date(row.date);
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const periodKey = dateToKey(new Date(row.date), granularity);
 
-    if (!monthlyBalances.has(monthKey)) {
-      monthlyBalances.set(monthKey, new Map());
+    if (!periodBalances.has(periodKey)) {
+      periodBalances.set(periodKey, new Map());
     }
-    const monthMap = monthlyBalances.get(monthKey)!;
+    const periodMap = periodBalances.get(periodKey)!;
 
-    // Only keep first (latest date) per account per month
-    if (!monthMap.has(row.accountId)) {
-      monthMap.set(row.accountId, decryptNumber(row.balance));
+    if (!periodMap.has(row.accountId)) {
+      periodMap.set(row.accountId, decryptNumber(row.balance));
     }
   }
 
-  // Generate month keys for the range
-  const monthKeys: string[] = [];
-  const cursor = new Date(startDate);
-  while (cursor <= now) {
-    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
-    monthKeys.push(key);
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
+  // Determine effective start from data if no startDate provided
+  const effectiveStart = startDate ?? new Date(balanceRows[balanceRows.length - 1].date);
+
+  // Generate period keys
+  const periodKeys = generatePeriodKeys(effectiveStart, now, granularity);
 
   // Build history with carry-forward
-  const lastKnownBalance = new Map<string, number>(); // accountId -> last known balance
+  const lastKnownBalance = new Map<string, number>(initialBalances);
   const history: NetWorthHistoryPoint[] = [];
 
-  for (const monthKey of monthKeys) {
-    const monthData = monthlyBalances.get(monthKey);
+  for (const periodKey of periodKeys) {
+    const periodData = periodBalances.get(periodKey);
 
-    // Update last known balances with this month's data
-    if (monthData) {
-      for (const [accountId, balance] of monthData) {
+    if (periodData) {
+      for (const [accountId, balance] of periodData) {
         lastKnownBalance.set(accountId, balance);
       }
     }
 
-    // Aggregate by classification
     let assets = 0;
     let liabilities = 0;
 
@@ -176,7 +228,6 @@ export async function computeNetWorthHistory(
 
       const classification = classifyAccountType(accountType as AccountType);
       if (classification === "asset") {
-        // For Real Estate, use equity (estimatedValue - amountOwed)
         const estimatedValue = accountEstimatedValueMap.get(accountId);
         if (accountType === AccountType.RealEstate && estimatedValue != null) {
           assets += estimatedValue - balance;
@@ -189,7 +240,7 @@ export async function computeNetWorthHistory(
     }
 
     history.push({
-      month: monthKey,
+      date: periodKey,
       assets: Math.round(assets * 100) / 100,
       liabilities: Math.round(liabilities * 100) / 100,
       netWorth: Math.round((assets - liabilities) * 100) / 100,
@@ -198,6 +249,8 @@ export async function computeNetWorthHistory(
 
   return history;
 }
+
+// ─── Spending ───────────────────────────────────────────────────────────────
 
 /**
  * Compute spending summary for a given month.
@@ -257,5 +310,86 @@ export async function computeSpendingSummary(
     month,
     categories: sortedCategories,
     total: Math.round(total * 100) / 100,
+  };
+}
+
+// ─── Account Balance History ────────────────────────────────────────────────
+
+/**
+ * Compute balance history for a single account with configurable granularity.
+ * Reconstructs historical balances from transactions: starts at currentBalance
+ * and works backwards, subtracting each period's net transactions.
+ */
+export async function computeAccountBalanceHistory(
+  accountId: string,
+  granularity: "weekly" | "monthly" = "weekly",
+  startDate?: Date,
+): Promise<AccountBalanceHistoryResponse | null> {
+  const prisma = getPrisma();
+
+  // Fetch and decrypt the account
+  const accountRow = await prisma.account.findUnique({
+    where: { id: accountId },
+  });
+  if (!accountRow) return null;
+
+  const account = decryptAccount(accountRow);
+
+  const now = new Date();
+
+  // Fetch transactions (optionally filtered by startDate)
+  const txRows = await prisma.transaction.findMany({
+    where: {
+      accountId,
+      ...(startDate ? { date: { gte: startDate } } : {}),
+    },
+    select: { amount: true, date: true },
+  });
+
+  // Aggregate net transaction amount per period
+  const periodNet = new Map<string, number>();
+  let earliestTxDate: Date | null = null;
+
+  for (const row of txRows) {
+    const txDate = new Date(row.date);
+    const periodKey = dateToKey(txDate, granularity);
+    periodNet.set(periodKey, (periodNet.get(periodKey) ?? 0) + decryptNumber(row.amount));
+    if (!earliestTxDate || txDate < earliestTxDate) earliestTxDate = txDate;
+  }
+
+  // Determine effective start
+  const effectiveStart = startDate ?? earliestTxDate ?? now;
+
+  // Generate period keys
+  const periodKeys = generatePeriodKeys(effectiveStart, now, granularity);
+
+  if (periodKeys.length === 0) {
+    return {
+      accountId: account.id,
+      accountName: account.name,
+      currentBalance: account.currentBalance,
+      history: [{ date: dateToKey(now, granularity), balance: Math.round(account.currentBalance * 100) / 100 }],
+    };
+  }
+
+  // Work backwards from currentBalance
+  const balances = new Array<number>(periodKeys.length);
+  balances[periodKeys.length - 1] = account.currentBalance;
+
+  for (let i = periodKeys.length - 2; i >= 0; i--) {
+    const nextPeriodNet = periodNet.get(periodKeys[i + 1]) ?? 0;
+    balances[i] = balances[i + 1] - nextPeriodNet;
+  }
+
+  const history = periodKeys.map((date, i) => ({
+    date,
+    balance: Math.round(balances[i] * 100) / 100,
+  }));
+
+  return {
+    accountId: account.id,
+    accountName: account.name,
+    currentBalance: account.currentBalance,
+    history,
   };
 }

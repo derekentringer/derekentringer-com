@@ -1,6 +1,6 @@
 # 10 — Savings Projections
 
-**Status:** Not Started
+**Status:** Complete — see [features/10-savings-projections.md](../features/10-savings-projections.md)
 **Phase:** 5 — Projections & Planning
 **Priority:** Medium
 

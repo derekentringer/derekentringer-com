@@ -9,7 +9,7 @@
 | ORM | Prisma | Type-safe, generates migrations |
 | Web Frontend | React + Vite | Shares types/logic with mobile |
 | Mobile | React Native | Android-focused, cross-platform ready |
-| Charts | Recharts or Victory | Victory has React Native support (TBD) |
+| Charts | Recharts | Area charts, pie charts; per-chart time range/granularity controls |
 | Language | TypeScript | Everywhere — API, web, mobile, shared |
 | Monorepo | Turborepo | Shared builds across packages |
 | Hosting | Railway | API + web + Postgres in one platform |
@@ -27,6 +27,8 @@
 - **Custom domains** — `fin.derekentringer.com` (web) + `fin-api.derekentringer.com` (API); subdomain approach avoids routing conflicts with portfolio site
 - **AI-powered PDF extraction** — Claude API with account-type-aware tool schemas extracts structured data from any bank/institution statement format; no per-institution parser needed for PDF statements
 - **Account-type profiles** — LoanProfile, InvestmentProfile, SavingsProfile as separate models attached to Balance records; extensible without schema bloat
+- **Favorite accounts** — `isFavorite` flag on accounts drives dashboard balance history charts and per-account projection charts on the Projections page
+- **Expense projections** — Monthly expenses calculated from Bills + Budgets (not historical average spending), giving users explicit control over projected expenses
 
 ## Phases
 
@@ -48,14 +50,14 @@
 
 ### Phase 4: Dashboard & Tracking — High Priority
 
-- [x] [06 — Net Worth Tracking](features/06-net-worth-tracking.md)
+- [x] [06 — Net Worth Tracking](features/06-net-worth-tracking.md) — includes checking account balance history chart, configurable time range (1M/3M/6M/YTD/All) and granularity (weekly/monthly) per chart
 - [x] [07 — Budgeting & Expense Tracking](features/07-budgeting-expense-tracking.md)
 - [x] [08 — Bill Management](features/08-bill-management.md)
 
 ### Phase 5: Projections & Planning — Medium Priority
 
-- [ ] [09 — Net Income Projections](feature_planning/09-net-income-projections.md)
-- [ ] [10 — Savings Projections](feature_planning/10-savings-projections.md)
+- [x] [09 — Net Income Projections](features/09-net-income-projections.md)
+- [x] [10 — Savings Projections](features/10-savings-projections.md)
 - [ ] [11 — Debt Payoff Planning](feature_planning/11-debt-payoff-planning.md)
 - [ ] [12 — Financial Goal Planning](feature_planning/12-financial-goal-planning.md)
 

@@ -2,6 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import {
   LayoutDashboard,
+  TrendingUp,
   Wallet,
   ArrowLeftRight,
   PiggyBank,
@@ -31,6 +32,7 @@ type NavEntry =
 
 const NAV_ITEMS: NavEntry[] = [
   { type: "link", to: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { type: "link", to: "/projections", icon: TrendingUp, label: "Projections" },
   { type: "link", to: "/accounts", icon: Wallet, label: "Accounts" },
   { type: "link", to: "/transactions", icon: ArrowLeftRight, label: "Transactions" },
   { type: "separator" },

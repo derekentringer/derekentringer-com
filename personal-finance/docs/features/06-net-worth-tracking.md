@@ -6,7 +6,7 @@
 
 ## Summary
 
-Dashboard with net worth calculation, 12-month historical trend chart, KPI cards with month-over-month trend indicators, spending breakdown by category, and upcoming bills widget. Assets minus liabilities = net worth, with per-account trend tracking and Real Estate equity handling.
+Dashboard with net worth calculation, historical trend chart, KPI cards with month-over-month trend indicators, spending breakdown by category, upcoming bills widget, and per-account balance history chart. All chart cards feature configurable time range (1M, 3M, 6M, YTD, All) and granularity (weekly/monthly) controls. Assets minus liabilities = net worth, with per-account trend tracking and Real Estate equity handling.
 
 ## What Was Implemented
 
@@ -16,20 +16,33 @@ Dashboard with net worth calculation, 12-month historical trend chart, KPI cards
   - `ASSET_ACCOUNT_TYPES`: Checking, Savings, HighYieldSavings, Investment, RealEstate
   - `LIABILITY_ACCOUNT_TYPES`: Credit, Loan
   - `classifyAccountType(type)` — returns `"asset" | "liability" | "other"`
+- Chart control types:
+  - `ChartTimeRange` — `"1m" | "3m" | "6m" | "ytd" | "all"`
+  - `ChartGranularity` — `"weekly" | "monthly"`
 - Dashboard types:
   - `NetWorthSummary` — totalAssets, totalLiabilities, netWorth, accounts array (with id, name, type, balance, previousBalance, classification)
-  - `NetWorthHistoryPoint` — month (YYYY-MM), assets, liabilities, netWorth
+  - `NetWorthHistoryPoint` — date (YYYY-MM or YYYY-MM-DD), assets, liabilities, netWorth
   - `NetWorthResponse` — summary + history
   - `SpendingSummary` — month, categories (category, amount, percentage), total
   - `DashboardUpcomingBillsResponse` — bills (UpcomingBillInstance[]), totalDue, overdueCount
+  - `AccountBalanceHistoryPoint` — date (YYYY-MM or YYYY-MM-DD), balance
+  - `AccountBalanceHistoryResponse` — accountId, accountName, currentBalance, history
 
 ### Finance API (`packages/finance-api/`)
 
 #### Dashboard Store (`src/store/dashboardStore.ts`)
 
+Period key helpers:
+- `toMonthKey(d)` — returns YYYY-MM
+- `toWeekKey(d)` — returns YYYY-MM-DD (Monday of the ISO week)
+- `dateToKey(d, granularity)` — dispatches to month or week key
+- `generatePeriodKeys(start, end, granularity)` — generates array of period keys for a date range
+
+Core functions:
 - `computeNetWorthSummary()` — aggregates active account balances into net worth; classifies each account as asset or liability; computes per-account `previousBalance` using carry-forward logic (latest Balance record on or before end of previous month); Real Estate accounts use equity (estimatedValue - currentBalance)
-- `computeNetWorthHistory(months)` — computes rolling N-month history from Balance records; groups latest balance per account per month; carry-forward fills gaps for months without records; aggregates by asset/liability classification
+- `computeNetWorthHistory(granularity, startDate?)` — computes history from Balance records with configurable granularity (weekly/monthly) and date range; fetches pre-startDate balances for carry-forward initialization; groups latest balance per account per period; carry-forward fills gaps; aggregates by asset/liability classification; returns empty array when no balance data exists
 - `computeSpendingSummary(month)` — fetches transactions for a given month; aggregates negative amounts (expenses) by category; returns sorted list with percentage of total
+- `computeAccountBalanceHistory(accountId, granularity, startDate?)` — reconstructs historical balances from transactions by working backwards from currentBalance; aggregates net transaction amounts per period (week or month); supports any date range including all-time; for "all" range, determines earliest date from transaction data
 
 #### API Routes (`src/routes/dashboard.ts`)
 
@@ -37,9 +50,16 @@ All routes require JWT authentication.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/dashboard/net-worth` | Current net worth summary + 12-month history |
+| GET | `/dashboard/net-worth?range=all&granularity=monthly` | Current net worth summary + history (range: 1m/3m/6m/ytd/all; granularity: weekly/monthly) |
 | GET | `/dashboard/spending?month=YYYY-MM` | Spending by category (defaults to current month) |
+| GET | `/dashboard/account-history?accountId=xxx&range=all&granularity=weekly` | Single account balance history (range: 1m/3m/6m/ytd/all; granularity: weekly/monthly) |
 | GET | `/dashboard/upcoming-bills?days=30` | Upcoming bills widget data (max 365 days) |
+
+Route helpers:
+- `computeStartDate(range)` — converts range string to Date or undefined (for "all")
+- `CUID_PATTERN` — validates accountId format
+- Range validated against `["1m", "3m", "6m", "ytd", "all"]`; defaults to "all"
+- Granularity validated against `["weekly", "monthly"]`; defaults to "monthly" for net-worth, "weekly" for account-history
 
 #### App Registration (`src/app.ts`)
 
@@ -56,9 +76,10 @@ Migration: `20260219050000_add_estimated_value`
 
 #### API Client (`src/api/dashboard.ts`)
 
-- `fetchNetWorth()` — GET /dashboard/net-worth
+- `fetchNetWorth(range?, granularity?)` — GET /dashboard/net-worth with optional range/granularity params
 - `fetchSpendingSummary(month?)` — GET /dashboard/spending
 - `fetchUpcomingBills(days?)` — GET /dashboard/upcoming-bills
+- `fetchAccountBalanceHistory(accountId, range?, granularity?)` — GET /dashboard/account-history with optional range/granularity params
 
 #### Dashboard Page (`src/pages/DashboardPage.tsx`)
 
@@ -68,15 +89,24 @@ Three-section layout with independent loading/error/retry states:
    - Net Worth — value + month-over-month trend from history
    - Monthly Spending — value + trend vs previous month (inverted: spending down = green)
    - Bills Due — value + overdue count indicator
-2. **Net Worth Chart** — full-width area chart (assets, liabilities, netWorth)
-3. **Bottom Row** — Spending pie chart + Upcoming Bills list (2-column on desktop, stacked on mobile)
+2. **Net Worth Chart** — full-width area chart with per-card time range/granularity controls
+3. **Checking Balance Chart** — full-width area chart (self-managed data fetching) with per-card time range/granularity controls; renders when a checking account exists
+4. **Bottom Row** — Spending pie chart + Upcoming Bills list (2-column on desktop, stacked on mobile)
 
-- Computes `netWorthTrend` from history array (last two months)
+- Computes `netWorthTrend` from initial history array (last two months)
 - Fetches previous month spending for `spendingTrend` comparison
+- Derives `checkingAccountId` from net worth summary; passes to self-managing CheckingBalanceCard
 - Empty state with "Go to Accounts" link when no accounts exist
 - Skeleton loaders for all sections during loading
 
 #### Dashboard Components (`src/components/dashboard/`)
+
+**TimeRangeSelector.tsx:**
+- Reusable pill-style toggle component with two button groups
+- Granularity toggle: W (weekly) / M (monthly) — bordered pill group
+- Range pills: 1M / 3M / 6M / YTD / All — bordered pill group
+- Active pill uses `bg-foreground/15 text-foreground`; inactive uses `text-muted-foreground` with hover effect
+- Used by both NetWorthCard and CheckingBalanceCard independently
 
 **KpiCard.tsx:**
 - Title, large bold value, optional trend badge
@@ -85,14 +115,28 @@ Three-section layout with independent loading/error/retry states:
 
 **NetWorthCard.tsx:**
 - Recharts AreaChart with 3 series (assets, liabilities, netWorth)
-- Custom tooltip with formatted currency values
+- Internal state for `range` (default: "all") and `granularity` (default: "monthly")
+- TimeRangeSelector in card header (right-aligned)
+- Re-fetches history from API when range/granularity changes (skips initial render to avoid double-fetch)
+- Loading opacity transition on chart area during re-fetch
+- Custom tooltip with full date including year (e.g., "February 2026" or "February 17, 2026")
+- Axis labels: compact format ("Feb '26" monthly, "Feb 17" weekly) with `interval="equidistantPreserveStart"`
 - Assets and Liabilities sections below chart in 2-column grid (top 5 each)
-- Section-level trend badges with "vs last month" label
-- Per-account trend badges (smaller, no label) showing individual month-over-month change
-- Neutral tickers shown for accounts with no change or no historical data
+- Section-level and per-account trend badges (always month-over-month from initial data)
 - Alternating row highlighting (`bg-white/[0.03]`) for readability
 - Real Estate accounts display equity (estimatedValue - balance)
 - Liabilities trend inverted: decrease = green (up), increase = red (down)
+
+**CheckingBalanceCard.tsx:**
+- Single-line AreaChart with `CHART_COLORS.balance` (amber `#f59e0b`)
+- Self-managed data: accepts only `accountId` prop; fetches its own data via `fetchAccountBalanceHistory`
+- Internal state for `range` (default: "all") and `granularity` (default: "weekly")
+- TimeRangeSelector in card header (right-aligned, next to account name and trend badge)
+- Re-fetches automatically when range or granularity changes
+- Custom tooltip with full date including year
+- Trend badge adapts label: "vs last week" (weekly) or "vs last month" (monthly)
+- Built-in skeleton loader and error/retry states
+- Loading opacity transition during re-fetch
 
 **SpendingCard.tsx:**
 - Donut pie chart (hidden on small screens) with category legend
@@ -107,7 +151,7 @@ Three-section layout with independent loading/error/retry states:
 
 #### Chart Theme (`src/lib/chartTheme.ts`)
 
-- `CHART_COLORS` — assets (green), liabilities (red), netWorth (blue), grid, text
+- `CHART_COLORS` — assets (green), liabilities (red), netWorth (blue), balance (amber), grid, text
 - `CATEGORY_COLORS` — 13-color palette for pie chart categories
 - `formatCurrency(num)` — compact USD format (no cents, for chart axes)
 - `formatCurrencyFull(num)` — full USD format with cents
@@ -135,6 +179,17 @@ Applied across the entire finance-web app as part of Phase 4 polish:
 **Table Header Rows:**
 - `hover:bg-transparent` applied to header rows on TransactionsPage, SettingsPage, AccountsPage
 
+## Phase 5 Enhancements
+
+### Favorite Account Balance Charts
+
+The dashboard now shows per-account balance history charts for all **favorited** accounts, replacing the hardcoded checking-only balance chart.
+
+- **`Account.isFavorite`** field added to `NetWorthSummary.accounts` — passed through `computeNetWorthSummary()` in dashboardStore
+- **`AccountBalanceCard`** (`src/components/dashboard/AccountBalanceCard.tsx`) — generalized replacement for `CheckingBalanceCard`; works with any account type; same self-managed data fetching, time range/granularity controls, and trend badge
+- **`DashboardPage.tsx`** — derives `favoriteAccountIds` from net worth summary; renders an `AccountBalanceCard` for each favorited account (was previously a single `CheckingBalanceCard` for the first checking account)
+- `CheckingBalanceCard` component deleted
+
 ## Dependencies
 
 - [03 — Account Management](03-account-management.md) — needs accounts with balances
@@ -147,5 +202,9 @@ Applied across the entire finance-web app as part of Phase 4 polish:
 - **Investment accounts**: Show current balance (market value) as reported by institution
 - **Accounts added mid-history**: Carry-forward logic fills gaps; accounts without prior Balance records show neutral trend tickers
 - **Chart library**: Recharts (React-only; Victory deferred to mobile phase)
-- **Time range**: Fixed 12-month rolling window; no user-selectable range (kept simple)
-- **Trend indicators**: Month-over-month percentage change with three states (up/down/neutral); inverted for liabilities and spending
+- **Time range**: User-selectable (1M, 3M, 6M, YTD, All) with per-chart pill-style controls; each chart manages its own range independently
+- **Granularity**: User-selectable (weekly/monthly) with per-chart toggle; weekly uses ISO week start (Monday), monthly uses YYYY-MM
+- **Trend indicators**: Month-over-month percentage change with three states (up/down/neutral); inverted for liabilities and spending; checking balance adapts between week-over-week and month-over-month based on granularity
+- **Net worth history data source**: Balance table records (PDF statement snapshots) with carry-forward for gaps; does not use transactions
+- **Checking balance history data source**: Reconstructed from transaction records by working backwards from currentBalance; does not use Balance table
+- **Tooltip dates**: Full date with year shown on hover (e.g., "February 17, 2026" for weekly, "February 2026" for monthly)
