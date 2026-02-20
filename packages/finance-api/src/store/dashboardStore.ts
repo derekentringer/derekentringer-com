@@ -63,6 +63,7 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
   const prisma = getPrisma();
   const rows = await prisma.account.findMany({
     where: { isActive: true },
+    orderBy: { sortOrder: "asc" },
   });
 
   // Compute per-account previous balance using the latest balance record
@@ -139,7 +140,7 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
 export async function computeNetWorthHistory(
   granularity: "weekly" | "monthly" = "monthly",
   startDate?: Date,
-): Promise<NetWorthHistoryPoint[]> {
+): Promise<{ history: NetWorthHistoryPoint[]; accountHistory: Array<{ date: string; balances: Record<string, number> }> }> {
   const prisma = getPrisma();
   const now = new Date();
 
@@ -150,7 +151,7 @@ export async function computeNetWorthHistory(
     select: { accountId: true, balance: true, date: true },
   });
 
-  if (balanceRows.length === 0) return [];
+  if (balanceRows.length === 0) return { history: [], accountHistory: [] };
 
   // If we have a startDate, also fetch the latest balance per account BEFORE
   // that date so carry-forward starts from a known value.
@@ -209,6 +210,7 @@ export async function computeNetWorthHistory(
   // Build history with carry-forward
   const lastKnownBalance = new Map<string, number>(initialBalances);
   const history: NetWorthHistoryPoint[] = [];
+  const accountHistory: Array<{ date: string; balances: Record<string, number> }> = [];
 
   for (const periodKey of periodKeys) {
     const periodData = periodBalances.get(periodKey);
@@ -221,6 +223,7 @@ export async function computeNetWorthHistory(
 
     let assets = 0;
     let liabilities = 0;
+    const periodAccountBalances: Record<string, number> = {};
 
     for (const [accountId, balance] of lastKnownBalance) {
       const accountType = accountTypeMap.get(accountId);
@@ -230,12 +233,16 @@ export async function computeNetWorthHistory(
       if (classification === "asset") {
         const estimatedValue = accountEstimatedValueMap.get(accountId);
         if (accountType === AccountType.RealEstate && estimatedValue != null) {
-          assets += estimatedValue - balance;
+          const equity = estimatedValue - balance;
+          assets += equity;
+          periodAccountBalances[accountId] = Math.round(equity * 100) / 100;
         } else {
           assets += balance;
+          periodAccountBalances[accountId] = Math.round(balance * 100) / 100;
         }
       } else if (classification === "liability") {
         liabilities += Math.abs(balance);
+        periodAccountBalances[accountId] = Math.round(Math.abs(balance) * 100) / 100;
       }
     }
 
@@ -245,9 +252,11 @@ export async function computeNetWorthHistory(
       liabilities: Math.round(liabilities * 100) / 100,
       netWorth: Math.round((assets - liabilities) * 100) / 100,
     });
+
+    accountHistory.push({ date: periodKey, balances: periodAccountBalances });
   }
 
-  return history;
+  return { history, accountHistory };
 }
 
 // ─── Spending ───────────────────────────────────────────────────────────────

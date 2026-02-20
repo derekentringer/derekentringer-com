@@ -185,6 +185,12 @@ export function AccountBalanceCard({ accountId }: AccountBalanceCardProps) {
         <div className={cn("transition-opacity", loading && "opacity-40")}>
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="gradBalance" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={CHART_COLORS.balance} stopOpacity={0.15} />
+                  <stop offset="100%" stopColor={CHART_COLORS.balance} stopOpacity={0} />
+                </linearGradient>
+              </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke={CHART_COLORS.grid}
@@ -206,8 +212,9 @@ export function AccountBalanceCard({ accountId }: AccountBalanceCardProps) {
                 dataKey="balance"
                 name="Balance"
                 stroke={CHART_COLORS.balance}
-                fill={CHART_COLORS.balance}
-                fillOpacity={0.15}
+                fill="url(#gradBalance)"
+                fillOpacity={1}
+                strokeWidth={1.5}
               />
             </AreaChart>
           </ResponsiveContainer>

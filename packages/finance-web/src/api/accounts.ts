@@ -53,3 +53,13 @@ export async function deleteAccount(id: string): Promise<void> {
   });
   if (!res.ok) throw new Error("Failed to delete account");
 }
+
+export async function reorderAccounts(
+  order: Array<{ id: string; sortOrder: number }>,
+): Promise<void> {
+  const res = await apiFetch("/accounts/reorder", {
+    method: "PUT",
+    body: JSON.stringify({ order }),
+  });
+  if (!res.ok) throw new Error("Failed to reorder accounts");
+}

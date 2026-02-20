@@ -341,6 +341,18 @@ export function NetIncomeTab() {
                 <div className={cn("transition-opacity", loading && "opacity-40")}>
                   <ResponsiveContainer width="100%" height={350}>
                     <AreaChart data={assetChartData}>
+                      <defs>
+                        {assetAccounts.map((acct, i) => (
+                          <linearGradient key={acct.accountId} id={`gradProjAsset-${acct.accountId}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={getCategoryColor(i)} stopOpacity={0.15} />
+                            <stop offset="100%" stopColor={getCategoryColor(i)} stopOpacity={0} />
+                          </linearGradient>
+                        ))}
+                        <linearGradient id="gradProjOverall" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={CHART_COLORS.overall} stopOpacity={0.15} />
+                          <stop offset="100%" stopColor={CHART_COLORS.overall} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         stroke={CHART_COLORS.grid}
@@ -363,8 +375,8 @@ export function NetIncomeTab() {
                           type="monotone"
                           dataKey={acct.accountName}
                           stroke={getCategoryColor(i)}
-                          fill={getCategoryColor(i)}
-                          fillOpacity={0.1}
+                          fill={`url(#gradProjAsset-${acct.accountId})`}
+                          fillOpacity={1}
                           strokeWidth={1.5}
                         />
                       ))}
@@ -373,9 +385,9 @@ export function NetIncomeTab() {
                         dataKey="Overall"
                         name="Overall"
                         stroke={CHART_COLORS.overall}
-                        fill={CHART_COLORS.overall}
-                        fillOpacity={0.15}
-                        strokeWidth={3}
+                        fill="url(#gradProjOverall)"
+                        fillOpacity={1}
+                        strokeWidth={1.5}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -412,6 +424,14 @@ export function NetIncomeTab() {
                 <div className={cn("transition-opacity", loading && "opacity-40")}>
                   <ResponsiveContainer width="100%" height={350}>
                     <AreaChart data={liabilityChartData}>
+                      <defs>
+                        {liabilityAccounts.map((acct, i) => (
+                          <linearGradient key={acct.accountId} id={`gradProjLiab-${acct.accountId}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={getCategoryColor(assetAccounts.length + i)} stopOpacity={0.15} />
+                            <stop offset="100%" stopColor={getCategoryColor(assetAccounts.length + i)} stopOpacity={0} />
+                          </linearGradient>
+                        ))}
+                      </defs>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         stroke={CHART_COLORS.grid}
@@ -434,8 +454,8 @@ export function NetIncomeTab() {
                           type="monotone"
                           dataKey={acct.accountName}
                           stroke={getCategoryColor(assetAccounts.length + i)}
-                          fill={getCategoryColor(assetAccounts.length + i)}
-                          fillOpacity={0.1}
+                          fill={`url(#gradProjLiab-${acct.accountId})`}
+                          fillOpacity={1}
                           strokeWidth={1.5}
                         />
                       ))}

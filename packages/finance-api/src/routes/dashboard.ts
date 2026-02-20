@@ -47,11 +47,11 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           : "monthly";
         const startDate = computeStartDate(range);
 
-        const [summary, history] = await Promise.all([
+        const [summary, { history, accountHistory }] = await Promise.all([
           computeNetWorthSummary(),
           computeNetWorthHistory(granularity, startDate),
         ]);
-        return reply.send({ summary, history });
+        return reply.send({ summary, history, accountHistory });
       } catch (e) {
         request.log.error(e, "Failed to compute net worth");
         return reply.status(500).send({

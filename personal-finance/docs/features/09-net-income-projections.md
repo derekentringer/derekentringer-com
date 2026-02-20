@@ -96,11 +96,11 @@ Three KPI cards:
 - **Monthly Income** — total monthly income with source breakdown (manual or detected)
 - **Monthly Expenses** — total monthly expenses with Bills and Budgets breakdown
 
-Two stacked area charts with independent time range selectors (6M/12M/24M):
-- **Assets** chart — all asset accounts + Overall line
-- **Liabilities** chart — all liability accounts
+Two area charts with independent time range selectors (6M/12M/24M):
+- **Assets** chart — all asset accounts + Overall line (gradient fills, strokeWidth 1.5)
+- **Liabilities** chart — all liability accounts (gradient fills, strokeWidth 1.5)
 
-Per-account projection charts for favorited non-savings accounts (via `AccountProjectionCard` component).
+Per-account projection charts for favorited non-savings accounts (via `AccountProjectionCard` component, gradient fill, strokeWidth 1.5).
 
 #### Account Projection Card (`src/components/projections/AccountProjectionCard.tsx`)
 
