@@ -21,7 +21,7 @@ Aggregate all account balances into a net worth dashboard with historical tracki
   - Net worth history reconstructed from Balance table records (PDF statement snapshots)
   - Per-account balance history reconstructed from transaction records (working backwards from current balance)
   - Configurable granularity: weekly or monthly data points
-- Time range filters: 1M, 3M, 6M, YTD, All — per-chart controls with pill-style toggle buttons
+- Time range filters: 1M, 3M, 6M, 12M, YTD, All — per-chart controls with pill-style toggle buttons
 - Granularity toggle: Weekly (W) / Monthly (M) — per-chart
 - Visual indicators for positive/negative trends (up/down arrows, color coding)
 - Tooltip with full date (including year) on chart hover
@@ -47,5 +47,5 @@ Aggregate all account balances into a net worth dashboard with historical tracki
 - Investment accounts show current balance (market value) as reported by institution
 - Accounts added mid-history: carry-forward logic fills gaps; neutral trend tickers shown
 - Chart library: Recharts (Victory deferred to mobile phase)
-- Time range: user-selectable (1M, 3M, 6M, YTD, All) with per-chart controls
+- Time range: user-selectable (1M, 3M, 6M, 12M, YTD, All) with per-chart controls
 - Granularity: user-selectable (weekly/monthly) with per-chart toggle

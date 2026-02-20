@@ -9,7 +9,7 @@ import { listBills, getPaymentsInRange, computeUpcomingInstances } from "../stor
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
-const VALID_RANGES = ["1m", "3m", "6m", "ytd", "all"];
+const VALID_RANGES = ["1m", "3m", "6m", "12m", "ytd", "all"];
 const VALID_GRANULARITIES = ["weekly", "monthly"];
 
 function computeStartDate(range: string): Date | undefined {
@@ -21,6 +21,8 @@ function computeStartDate(range: string): Date | undefined {
       return new Date(now.getFullYear(), now.getMonth() - 3, 1);
     case "6m":
       return new Date(now.getFullYear(), now.getMonth() - 6, 1);
+    case "12m":
+      return new Date(now.getFullYear(), now.getMonth() - 12, 1);
     case "ytd":
       return new Date(now.getFullYear(), 0, 1);
     case "all":
