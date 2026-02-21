@@ -138,7 +138,7 @@ Three-section layout with independent loading/error/retry states:
 - TimeRangeSelector in card header (right-aligned)
 - Re-fetches history from API when range/granularity changes (skips initial render to avoid double-fetch)
 - Loading opacity transition on chart area during re-fetch
-- Custom tooltip with full date including year (e.g., "February 2026" or "February 17, 2026")
+- Custom tooltip with full date including year (e.g., "February 2026" or "February 17, 2026"); entries sorted by value descending so the highest line appears first in the tooltip
 - Axis labels: compact format ("Feb '26" monthly, "Feb 17" weekly) with `interval="equidistantPreserveStart"`
 - Assets and Liabilities sections below chart in 2-column grid (top 5 each); account names in white (`text-foreground`), asset values in green (`text-success`), liability values in red (`text-destructive`)
 - Overall assets/liabilities trends computed from summary data (`totalAssets`/`totalLiabilities` vs sum of `previousBalance` values) for consistent month-over-month comparison with per-account trends

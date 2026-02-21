@@ -53,11 +53,12 @@ function CustomTooltip({
 }) {
   if (!active || !payload?.length) return null;
   const tooltipLabel = (payload[0]?.payload?.tooltipLabel as string) ?? "";
-  const total = payload.reduce((sum, entry) => sum + entry.value, 0);
+  const sorted = [...payload].sort((a, b) => b.value - a.value);
+  const total = sorted.reduce((sum, entry) => sum + entry.value, 0);
   return (
     <div className="rounded-lg border bg-card p-3 text-sm shadow-md">
       <p className="font-medium mb-1">{tooltipLabel}</p>
-      {payload.map((entry) => (
+      {sorted.map((entry) => (
         <p key={entry.name} style={{ color: entry.color }}>
           {entry.name}: {formatCurrency(entry.value)}
         </p>
