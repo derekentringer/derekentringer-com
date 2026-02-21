@@ -197,6 +197,17 @@ Applied across the entire finance-web app as part of Phase 4 polish:
 - KPI card values use `font-bold`
 - Applied to: DashboardPage, AccountsPage, TransactionsPage, BudgetsPage, BillsPage, SettingsPage, ReportsPage, NotFoundPage, LoginPage, PinGate
 
+**Responsive Design (mobile-first patterns applied across all pages):**
+- **Card padding** (`card.tsx`): CardHeader, CardContent, CardFooter use `px-4 sm:px-6 py-4 sm:py-6` — tighter on mobile, standard on desktop
+- **Chart card headers** (`NetWorthCard.tsx`, `AccountBalanceCard.tsx`): `flex-col sm:flex-row` stacking with `gap-2` — title stacks above controls on small screens, inline on desktop; titles use `text-lg sm:text-xl`; control containers use `flex-wrap`
+- **Page titles** (all pages): `text-xl sm:text-2xl md:text-3xl` — scales across 3 breakpoints
+- **Page header buttons** (`AccountsPage.tsx`, `BudgetsPage.tsx`): `flex-col sm:flex-row` — buttons stack vertically on mobile, inline on desktop
+- **Filter controls** (`TransactionsPage.tsx`): Fixed widths replaced with `w-full sm:w-[180px]` pattern — full-width on mobile, fixed on desktop
+- **Month navigation** (`BudgetsPage.tsx`): `min-w-[120px] sm:min-w-[180px]` — narrower label on mobile
+- **Sidebar sheet** (`Sidebar.tsx`): `w-3/4 max-w-[240px]` — scales on very small screens instead of fixed 240px
+- **KPI cards** (`KpiCard.tsx`): Values use `text-lg sm:text-2xl`; sparkline container uses `gap-2 sm:gap-3`
+- **Settings icons** (`SettingsPage.tsx`): Touch targets increased to `h-8 w-8` for better mobile interaction
+
 **Table Sorting:**
 - Added sortable column headers to AccountsPage (name, type, institution, balance, status)
 - Added sortable column headers to SettingsPage Categories (name, type) and Category Rules (pattern, matchType, category, priority)

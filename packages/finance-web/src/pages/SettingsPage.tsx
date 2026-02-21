@@ -64,7 +64,7 @@ export function SettingsPage() {
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl text-foreground">Settings</h1>
+        <h1 className="text-xl sm:text-2xl md:text-3xl text-foreground">Settings</h1>
       </div>
 
       <TabSwitcher options={TABS} value={activeTab} onChange={setActiveTab} />
@@ -628,7 +628,7 @@ function IncomeSourcesSection() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 w-7 p-0"
+                        className="h-8 w-8 p-0"
                         onClick={() => setEditTarget(source)}
                       >
                         <Pencil className="h-3.5 w-3.5" />

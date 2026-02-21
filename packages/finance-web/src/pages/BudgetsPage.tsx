@@ -223,8 +223,8 @@ export function BudgetsPage() {
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl text-foreground">Budgets</h1>
-        <div className="flex gap-2">
+        <h1 className="text-xl sm:text-2xl md:text-3xl text-foreground">Budgets</h1>
+        <div className="flex flex-col sm:flex-row gap-2">
           <Button
             size="sm"
             variant="secondary"
@@ -252,7 +252,7 @@ export function BudgetsPage() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-lg font-medium min-w-[180px] text-center">
+            <span className="text-lg font-medium min-w-[120px] sm:min-w-[180px] text-center">
               {formatMonthLabel(month)}
             </span>
             <Button

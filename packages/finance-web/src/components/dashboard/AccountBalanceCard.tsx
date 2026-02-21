@@ -155,9 +155,9 @@ export function AccountBalanceCard({ accountId, colorIndex = 0 }: AccountBalance
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center gap-2">
-            <h2 className="text-xl text-foreground">{data.accountName}</h2>
+            <h2 className="text-lg sm:text-xl text-foreground">{data.accountName}</h2>
             {trend && (
               <>
                 <span
