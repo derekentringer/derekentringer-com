@@ -51,8 +51,8 @@ export function KpiCard({ title, value, trend, sparkline, className }: KpiCardPr
       <CardContent className="p-4">
         <p className="text-xs text-foreground">{title}</p>
         {sparkline && sparkline.data.length >= 2 ? (
-          <div className="flex items-center gap-3 mt-1">
-            <p className="text-2xl font-bold">{value}</p>
+          <div className="flex items-center gap-2 sm:gap-3 mt-1">
+            <p className="text-lg sm:text-2xl font-bold">{value}</p>
             <div className="w-px h-10 bg-border" />
             <div className="flex flex-col items-start gap-0.5">
               <Sparkline data={sparkline.data} color={sparkline.color} width={72} height={28} />
@@ -75,7 +75,7 @@ export function KpiCard({ title, value, trend, sparkline, className }: KpiCardPr
           </div>
         ) : (
           <>
-            <p className="text-2xl font-bold mt-1">{value}</p>
+            <p className="text-lg sm:text-2xl font-bold mt-1">{value}</p>
             {trend && (
               <div className="flex items-center gap-1.5 mt-1">
                 <span

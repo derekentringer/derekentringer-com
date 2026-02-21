@@ -153,7 +153,7 @@ export function Sidebar({
 
       {/* Mobile sheet */}
       <Sheet open={isMobileOpen} onOpenChange={(open) => !open && onCloseMobile()}>
-        <SheetContent side="left" className="w-[240px] p-0">
+        <SheetContent side="left" className="w-3/4 max-w-[240px] p-0">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <div className="flex items-center h-14 px-4">
             <span className="text-lg font-thin text-foreground">fin</span>
