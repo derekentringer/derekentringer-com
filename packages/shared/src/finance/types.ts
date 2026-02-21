@@ -493,7 +493,7 @@ export interface NetWorthSummary {
 }
 
 export type ChartTimeRange = "1m" | "3m" | "6m" | "12m" | "ytd" | "all";
-export type ChartGranularity = "weekly" | "monthly";
+export type ChartGranularity = "daily" | "weekly" | "monthly";
 
 export interface NetWorthHistoryPoint {
   date: string;
@@ -506,6 +506,15 @@ export interface NetWorthResponse {
   summary: NetWorthSummary;
   history: NetWorthHistoryPoint[];
   accountHistory: Array<{ date: string; balances: Record<string, number> }>;
+}
+
+export interface DailySpendingPoint {
+  date: string;
+  amount: number;
+}
+
+export interface DailySpendingResponse {
+  points: DailySpendingPoint[];
 }
 
 export interface SpendingSummary {

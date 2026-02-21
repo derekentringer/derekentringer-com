@@ -17,7 +17,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { CHART_COLORS, getCategoryColor, formatCurrency } from "@/lib/chartTheme";
+import { CHART_COLORS, getCategoryColor, formatCurrency, curveStepAfterRounded } from "@/lib/chartTheme";
 import { cn } from "@/lib/utils";
 import { AccountProjectionCard } from "./AccountProjectionCard";
 
@@ -372,7 +372,7 @@ export function NetIncomeTab() {
                       {assetAccounts.map((acct, i) => (
                         <Area
                           key={acct.accountId}
-                          type="monotone"
+                          type={curveStepAfterRounded}
                           dataKey={acct.accountName}
                           stroke={getCategoryColor(i)}
                           fill={`url(#gradProjAsset-${acct.accountId})`}
@@ -381,7 +381,7 @@ export function NetIncomeTab() {
                         />
                       ))}
                       <Area
-                        type="monotone"
+                        type={curveStepAfterRounded}
                         dataKey="Overall"
                         name="Overall"
                         stroke={CHART_COLORS.overall}
@@ -451,7 +451,7 @@ export function NetIncomeTab() {
                       {liabilityAccounts.map((acct, i) => (
                         <Area
                           key={acct.accountId}
-                          type="monotone"
+                          type={curveStepAfterRounded}
                           dataKey={acct.accountName}
                           stroke={getCategoryColor(assetAccounts.length + i)}
                           fill={`url(#gradProjLiab-${acct.accountId})`}
@@ -469,8 +469,8 @@ export function NetIncomeTab() {
       ) : null}
 
       {/* Favorite non-savings account projection charts */}
-      {favoriteNonSavingsAccounts.map((acct) => (
-        <AccountProjectionCard key={acct.accountId} account={acct} loading={loading} />
+      {favoriteNonSavingsAccounts.map((acct, i) => (
+        <AccountProjectionCard key={acct.accountId} account={acct} loading={loading} colorIndex={i} />
       ))}
     </div>
   );

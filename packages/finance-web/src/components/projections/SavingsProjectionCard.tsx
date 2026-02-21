@@ -17,7 +17,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Check, Clock } from "lucide-react";
-import { CHART_COLORS, formatCurrency } from "@/lib/chartTheme";
+import { CHART_COLORS, formatCurrency, curveStepAfterRounded } from "@/lib/chartTheme";
 import { cn } from "@/lib/utils";
 
 type MonthsOption = 12 | 24 | 60 | 120;
@@ -201,7 +201,7 @@ export function SavingsProjectionCard({ account }: SavingsProjectionCardProps) {
                     />
                     <Tooltip content={<CustomTooltip />} />
                     <Area
-                      type="monotone"
+                      type={curveStepAfterRounded}
                       dataKey="principal"
                       name="Principal"
                       stackId="1"
@@ -211,7 +211,7 @@ export function SavingsProjectionCard({ account }: SavingsProjectionCardProps) {
                       strokeWidth={1.5}
                     />
                     <Area
-                      type="monotone"
+                      type={curveStepAfterRounded}
                       dataKey="interest"
                       name="Interest"
                       stackId="1"

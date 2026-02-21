@@ -4,8 +4,9 @@ import type {
   NetWorthResponse,
   SpendingSummary,
   DashboardUpcomingBillsResponse,
+  DailySpendingResponse,
 } from "@derekentringer/shared/finance";
-import { fetchNetWorth, fetchSpendingSummary, fetchUpcomingBills } from "@/api/dashboard";
+import { fetchNetWorth, fetchSpendingSummary, fetchUpcomingBills, fetchDailySpending } from "@/api/dashboard";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { NetWorthCard } from "@/components/dashboard/NetWorthCard";
 import { AccountBalanceCard } from "@/components/dashboard/AccountBalanceCard";
@@ -62,8 +63,9 @@ function ErrorCard({
 
 export function DashboardPage() {
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
+  const [dailyNetWorth, setDailyNetWorth] = useState<NetWorthResponse | null>(null);
   const [spending, setSpending] = useState<SpendingSummary | null>(null);
-  const [prevSpending, setPrevSpending] = useState<SpendingSummary | null>(null);
+  const [dailySpending, setDailySpending] = useState<DailySpendingResponse | null>(null);
   const [upcomingBills, setUpcomingBills] =
     useState<DashboardUpcomingBillsResponse | null>(null);
 
@@ -79,8 +81,12 @@ export function DashboardPage() {
     setNetWorthLoading(true);
     setNetWorthError("");
     try {
-      const data = await fetchNetWorth("12m", "weekly");
+      const [data, dailyData] = await Promise.all([
+        fetchNetWorth("12m", "weekly"),
+        fetchNetWorth("1m", "daily"),
+      ]);
       setNetWorth(data);
+      setDailyNetWorth(dailyData);
     } catch {
       setNetWorthError("Failed to load net worth");
     } finally {
@@ -92,19 +98,16 @@ export function DashboardPage() {
     setSpendingLoading(true);
     setSpendingError("");
     try {
-      const data = await fetchSpendingSummary();
-      setSpending(data);
-
-      // Fetch previous month for trend comparison
       const now = new Date();
-      const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const prevMonth = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
-      try {
-        const prevData = await fetchSpendingSummary(prevMonth);
-        setPrevSpending(prevData);
-      } catch {
-        setPrevSpending(null);
-      }
+      const startOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+      const [data, dailyData] = await Promise.all([
+        fetchSpendingSummary(),
+        fetchDailySpending(startOfMonth, today),
+      ]);
+      setSpending(data);
+      setDailySpending(dailyData);
     } catch {
       setSpendingError("Failed to load spending");
     } finally {
@@ -131,33 +134,43 @@ export function DashboardPage() {
     loadBills();
   }, [loadNetWorth, loadSpending, loadBills]);
 
-  // Compute net worth month-over-month trend from history
-  const netWorthTrend = useMemo(() => {
-    if (!netWorth || netWorth.history.length < 2) return undefined;
-    const current = netWorth.history[netWorth.history.length - 1].netWorth;
-    const previous = netWorth.history[netWorth.history.length - 2].netWorth;
-    if (previous === 0) return { direction: "neutral" as const, value: "0.0%", label: "vs last month" };
-    const pct = ((current - previous) / Math.abs(previous)) * 100;
-    if (Math.abs(pct) < 0.05) return { direction: "neutral" as const, value: "0.0%", label: "vs last month" };
+  // Compute net worth sparkline from daily data
+  const netWorthSparkline = useMemo(() => {
+    if (!dailyNetWorth || dailyNetWorth.history.length < 2) return undefined;
+    const data = dailyNetWorth.history.map((p) => p.netWorth);
+    const first = data[0];
+    const last = data[data.length - 1];
+    const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
     return {
-      direction: pct >= 0 ? ("up" as const) : ("down" as const),
-      value: `${Math.abs(pct).toFixed(1)}%`,
-      label: "vs last month",
+      data,
+      change,
+      label: "30-Day",
+      color: change >= 0 ? "hsl(142.1 76.2% 36.3%)" : "hsl(0 84.2% 60.2%)",
     };
-  }, [netWorth]);
+  }, [dailyNetWorth]);
 
-  // Compute spending month-over-month trend (inverted colors: spending up = bad/red)
-  const spendingTrend = useMemo(() => {
-    if (!spending || !prevSpending || prevSpending.total === 0) return undefined;
-    const pct = ((spending.total - prevSpending.total) / prevSpending.total) * 100;
-    if (Math.abs(pct) < 0.05) return { direction: "neutral" as const, value: "0.0%", label: "vs last month", invertColor: true };
+  // Compute spending sparkline from daily spending data
+  const spendingSparkline = useMemo(() => {
+    if (!dailySpending || dailySpending.points.length < 2) return undefined;
+    const data = dailySpending.points.map((p) => p.amount);
+    // Compute cumulative spending for sparkline trend
+    const cumulative: number[] = [];
+    let sum = 0;
+    for (const v of data) {
+      sum += v;
+      cumulative.push(sum);
+    }
+    const first = cumulative[0];
+    const last = cumulative[cumulative.length - 1];
+    const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
     return {
-      direction: pct >= 0 ? ("up" as const) : ("down" as const),
-      value: `${Math.abs(pct).toFixed(1)}%`,
-      label: "vs last month",
+      data: cumulative,
+      change,
+      label: "MTD",
+      color: change > 0 ? "hsl(0 84.2% 60.2%)" : "hsl(142.1 76.2% 36.3%)",
       invertColor: true,
     };
-  }, [spending, prevSpending]);
+  }, [dailySpending]);
 
   // Find favorited account IDs once netWorth loads
   const favoriteAccountIds = useMemo(() => {
@@ -197,7 +210,7 @@ export function DashboardPage() {
         ) : netWorthError ? (
           <ErrorCard message={netWorthError} onRetry={loadNetWorth} />
         ) : netWorth ? (
-          <KpiCard title="Net Worth" value={formatCurrency(netWorth.summary.netWorth)} trend={netWorthTrend} />
+          <KpiCard title="Net Worth" value={formatCurrency(netWorth.summary.netWorth)} sparkline={netWorthSparkline} />
         ) : null}
 
         {spendingLoading ? (
@@ -205,7 +218,7 @@ export function DashboardPage() {
         ) : spendingError ? (
           <ErrorCard message={spendingError} onRetry={loadSpending} />
         ) : spending ? (
-          <KpiCard title="Monthly Spending" value={formatCurrency(spending.total)} trend={spendingTrend} />
+          <KpiCard title="Monthly Spending" value={formatCurrency(spending.total)} sparkline={spendingSparkline} />
         ) : null}
 
         {billsLoading ? (
@@ -244,7 +257,7 @@ export function DashboardPage() {
         ) : spendingError ? (
           <ErrorCard message={spendingError} onRetry={loadSpending} />
         ) : spending ? (
-          <SpendingCard data={spending} trend={spendingTrend} />
+          <SpendingCard data={spending} />
         ) : null}
 
         {billsLoading ? (
@@ -257,8 +270,8 @@ export function DashboardPage() {
       </div>
 
       {/* Favorite account balance charts */}
-      {favoriteAccountIds.map((id) => (
-        <AccountBalanceCard key={id} accountId={id} />
+      {favoriteAccountIds.map((id, i) => (
+        <AccountBalanceCard key={id} accountId={id} colorIndex={i} />
       ))}
     </div>
   );
