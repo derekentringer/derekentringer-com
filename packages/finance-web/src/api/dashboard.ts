@@ -3,6 +3,7 @@ import type {
   SpendingSummary,
   DashboardUpcomingBillsResponse,
   AccountBalanceHistoryResponse,
+  DailySpendingResponse,
   ChartTimeRange,
   ChartGranularity,
 } from "@derekentringer/shared/finance";
@@ -36,6 +37,16 @@ export async function fetchUpcomingBills(
   const query = days ? `?days=${days}` : "";
   const res = await apiFetch(`/dashboard/upcoming-bills${query}`);
   if (!res.ok) throw new Error("Failed to fetch upcoming bills");
+  return res.json();
+}
+
+export async function fetchDailySpending(
+  startDate: string,
+  endDate: string,
+): Promise<DailySpendingResponse> {
+  const params = new URLSearchParams({ startDate, endDate });
+  const res = await apiFetch(`/dashboard/spending-daily?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch daily spending");
   return res.json();
 }
 

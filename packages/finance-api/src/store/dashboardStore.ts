@@ -3,6 +3,7 @@ import type {
   NetWorthHistoryPoint,
   SpendingSummary,
   AccountBalanceHistoryResponse,
+  DailySpendingPoint,
 } from "@derekentringer/shared";
 import { classifyAccountType, AccountType } from "@derekentringer/shared";
 import { getPrisma } from "../lib/prisma.js";
@@ -15,6 +16,10 @@ function toMonthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function toDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function toWeekKey(d: Date): string {
   const copy = new Date(d);
   const day = copy.getDay();
@@ -23,17 +28,24 @@ function toWeekKey(d: Date): string {
   return `${copy.getFullYear()}-${String(copy.getMonth() + 1).padStart(2, "0")}-${String(copy.getDate()).padStart(2, "0")}`;
 }
 
-function dateToKey(d: Date, granularity: "weekly" | "monthly"): string {
+function dateToKey(d: Date, granularity: "daily" | "weekly" | "monthly"): string {
+  if (granularity === "daily") return toDayKey(d);
   return granularity === "monthly" ? toMonthKey(d) : toWeekKey(d);
 }
 
 function generatePeriodKeys(
   start: Date,
   end: Date,
-  granularity: "weekly" | "monthly",
+  granularity: "daily" | "weekly" | "monthly",
 ): string[] {
   const keys: string[] = [];
-  if (granularity === "monthly") {
+  if (granularity === "daily") {
+    const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    while (cursor <= end) {
+      keys.push(toDayKey(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  } else if (granularity === "monthly") {
     const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
     while (cursor <= end) {
       keys.push(toMonthKey(cursor));
@@ -138,7 +150,7 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
  * Strategy: latest balance per account per period, carry forward for gaps.
  */
 export async function computeNetWorthHistory(
-  granularity: "weekly" | "monthly" = "monthly",
+  granularity: "daily" | "weekly" | "monthly" = "monthly",
   startDate?: Date,
 ): Promise<{ history: NetWorthHistoryPoint[]; accountHistory: Array<{ date: string; balances: Record<string, number> }> }> {
   const prisma = getPrisma();
@@ -322,6 +334,41 @@ export async function computeSpendingSummary(
   };
 }
 
+/**
+ * Compute daily spending totals for a date range.
+ * Returns absolute values of negative transactions grouped by day.
+ */
+export async function computeDailySpending(
+  startDate: Date,
+  endDate: Date,
+): Promise<DailySpendingPoint[]> {
+  const prisma = getPrisma();
+
+  const rows = await prisma.transaction.findMany({
+    where: {
+      date: { gte: startDate, lte: endDate },
+    },
+    select: { amount: true, date: true },
+  });
+
+  const dayTotals = new Map<string, number>();
+
+  for (const row of rows) {
+    const amount = decryptNumber(row.amount);
+    if (amount < 0) {
+      const key = toDayKey(new Date(row.date));
+      dayTotals.set(key, (dayTotals.get(key) ?? 0) + Math.abs(amount));
+    }
+  }
+
+  // Generate all day keys in range and fill gaps with 0
+  const keys = generatePeriodKeys(startDate, endDate, "daily");
+  return keys.map((date) => ({
+    date,
+    amount: Math.round((dayTotals.get(date) ?? 0) * 100) / 100,
+  }));
+}
+
 // ─── Account Balance History ────────────────────────────────────────────────
 
 /**
@@ -331,7 +378,7 @@ export async function computeSpendingSummary(
  */
 export async function computeAccountBalanceHistory(
   accountId: string,
-  granularity: "weekly" | "monthly" = "weekly",
+  granularity: "daily" | "weekly" | "monthly" = "weekly",
   startDate?: Date,
 ): Promise<AccountBalanceHistoryResponse | null> {
   const prisma = getPrisma();

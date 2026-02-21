@@ -17,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -178,17 +178,15 @@ export function TransactionsPage() {
   }
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 md:p-8 flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl text-foreground">Transactions</h1>
+        <Button size="sm" onClick={() => setShowImport(true)}>
+          <Upload className="h-4 w-4" />
+          Import CSV
+        </Button>
+      </div>
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl text-foreground">Transactions</h1>
-            <Button size="sm" onClick={() => setShowImport(true)}>
-              <Upload className="h-4 w-4" />
-              Import CSV
-            </Button>
-          </div>
-        </CardHeader>
         <CardContent>
           {error && <p className="text-sm text-error mb-4">{error}</p>}
 

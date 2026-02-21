@@ -88,6 +88,8 @@ export type {
   NetWorthSummary,
   NetWorthHistoryPoint,
   NetWorthResponse,
+  DailySpendingPoint,
+  DailySpendingResponse,
   SpendingSummary,
   DashboardUpcomingBillsResponse,
   AccountBalanceHistoryPoint,

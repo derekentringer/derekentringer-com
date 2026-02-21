@@ -1,9 +1,14 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { TabSwitcher } from "@/components/ui/tab-switcher";
 import { NetIncomeTab } from "@/components/projections/NetIncomeTab.tsx";
 import { SavingsTab } from "@/components/projections/SavingsTab.tsx";
 
 type Tab = "net-income" | "savings";
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: "net-income", label: "Net Income" },
+  { value: "savings", label: "Savings" },
+];
 
 export function ProjectionsPage() {
   const [tab, setTab] = useState<Tab>("net-income");
@@ -14,20 +19,7 @@ export function ProjectionsPage() {
         <h1 className="text-3xl text-foreground">Projections</h1>
       </div>
 
-      <div className="flex gap-2">
-        <Button
-          variant={tab === "net-income" ? "default" : "outline"}
-          onClick={() => setTab("net-income")}
-        >
-          Net Income
-        </Button>
-        <Button
-          variant={tab === "savings" ? "default" : "outline"}
-          onClick={() => setTab("savings")}
-        >
-          Savings
-        </Button>
-      </div>
+      <TabSwitcher options={TABS} value={tab} onChange={setTab} />
 
       {tab === "net-income" ? <NetIncomeTab /> : <SavingsTab />}
     </div>

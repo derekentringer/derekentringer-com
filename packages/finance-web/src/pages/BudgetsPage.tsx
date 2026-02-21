@@ -222,27 +222,25 @@ export function BudgetsPage() {
 
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl text-foreground">Budgets</h1>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleCopyLastMonth}
+            disabled={isCopying}
+          >
+            <Copy className="h-4 w-4" />
+            {isCopying ? "Copying..." : "Copy Last Month"}
+          </Button>
+          <Button size="sm" onClick={() => setShowForm(true)}>
+            <Plus className="h-4 w-4" />
+            Set Budget
+          </Button>
+        </div>
+      </div>
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl text-foreground">Budgets</h1>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={handleCopyLastMonth}
-                disabled={isCopying}
-              >
-                <Copy className="h-4 w-4" />
-                {isCopying ? "Copying..." : "Copy Last Month"}
-              </Button>
-              <Button size="sm" onClick={() => setShowForm(true)}>
-                <Plus className="h-4 w-4" />
-                Set Budget
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
         <CardContent>
           {error && <p className="text-sm text-error mb-4">{error}</p>}
 

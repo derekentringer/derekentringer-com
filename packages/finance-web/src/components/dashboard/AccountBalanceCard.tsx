@@ -16,12 +16,13 @@ import type {
   ChartTimeRange,
   ChartGranularity,
 } from "@derekentringer/shared/finance";
-import { CHART_COLORS, formatCurrency } from "@/lib/chartTheme";
+import { CHART_COLORS, formatCurrency, getCategoryColor } from "@/lib/chartTheme";
 import { fetchAccountBalanceHistory } from "@/api/dashboard";
 import { TimeRangeSelector } from "./TimeRangeSelector";
 
 interface AccountBalanceCardProps {
   accountId: string;
+  colorIndex?: number;
 }
 
 function formatLabel(date: string, granularity: ChartGranularity): string {
@@ -73,7 +74,9 @@ function CustomTooltip({
   );
 }
 
-export function AccountBalanceCard({ accountId }: AccountBalanceCardProps) {
+export function AccountBalanceCard({ accountId, colorIndex = 0 }: AccountBalanceCardProps) {
+  const color = getCategoryColor(colorIndex);
+  const gradientId = `gradBalance-${accountId}`;
   const [range, setRange] = useState<ChartTimeRange>("all");
   const [granularity, setGranularity] = useState<ChartGranularity>("weekly");
   const [data, setData] = useState<AccountBalanceHistoryResponse | null>(null);
@@ -186,9 +189,9 @@ export function AccountBalanceCard({ accountId }: AccountBalanceCardProps) {
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={chartData}>
               <defs>
-                <linearGradient id="gradBalance" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={CHART_COLORS.balance} stopOpacity={0.15} />
-                  <stop offset="100%" stopColor={CHART_COLORS.balance} stopOpacity={0} />
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={0.15} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -211,8 +214,8 @@ export function AccountBalanceCard({ accountId }: AccountBalanceCardProps) {
                 type="monotone"
                 dataKey="balance"
                 name="Balance"
-                stroke={CHART_COLORS.balance}
-                fill="url(#gradBalance)"
+                stroke={color}
+                fill={`url(#${gradientId})`}
                 fillOpacity={1}
                 strokeWidth={1.5}
               />

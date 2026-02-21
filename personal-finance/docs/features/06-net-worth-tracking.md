@@ -6,7 +6,7 @@
 
 ## Summary
 
-Dashboard with net worth calculation, historical trend chart with view toggle (Overview/Assets/Liabilities), KPI cards with month-over-month trend indicators, spending breakdown by category, upcoming bills widget, and per-account balance history chart. All chart cards feature configurable time range (1M, 3M, 6M, YTD, All) and granularity (weekly/monthly) controls. Assets minus liabilities = net worth, with per-account trend tracking and Real Estate equity handling. Consistent chart styling across the app: strokeWidth 1.5, gradient fill fading from top to bottom.
+Dashboard with net worth calculation, historical trend chart with view toggle (Overview/Assets/Liabilities), KPI cards with inline sparkline charts (Net Worth shows 30-day daily trend, Monthly Spending shows MTD cumulative trend), spending breakdown by category, upcoming bills widget, and per-account balance history chart. All chart cards feature configurable time range (1M, 3M, 6M, 12M, YTD, All) and granularity (daily/weekly/monthly) controls. Assets minus liabilities = net worth, with per-account trend tracking and Real Estate equity handling. Consistent chart styling across the app: strokeWidth 1.5, gradient fill fading from top to bottom.
 
 ## What Was Implemented
 
@@ -18,7 +18,10 @@ Dashboard with net worth calculation, historical trend chart with view toggle (O
   - `classifyAccountType(type)` — returns `"asset" | "liability" | "other"`
 - Chart control types:
   - `ChartTimeRange` — `"1m" | "3m" | "6m" | "12m" | "ytd" | "all"`
-  - `ChartGranularity` — `"weekly" | "monthly"`
+  - `ChartGranularity` — `"daily" | "weekly" | "monthly"`
+- Daily spending types:
+  - `DailySpendingPoint` — date (YYYY-MM-DD), amount (absolute value of daily spending)
+  - `DailySpendingResponse` — points (DailySpendingPoint[])
 - Dashboard types:
   - `NetWorthSummary` — totalAssets, totalLiabilities, netWorth, accounts array (with id, name, type, balance, previousBalance, classification)
   - `NetWorthHistoryPoint` — date (YYYY-MM or YYYY-MM-DD), assets, liabilities, netWorth
@@ -35,14 +38,16 @@ Dashboard with net worth calculation, historical trend chart with view toggle (O
 Period key helpers:
 - `toMonthKey(d)` — returns YYYY-MM
 - `toWeekKey(d)` — returns YYYY-MM-DD (Monday of the ISO week)
-- `dateToKey(d, granularity)` — dispatches to month or week key
-- `generatePeriodKeys(start, end, granularity)` — generates array of period keys for a date range
+- `toDayKey(d)` — returns YYYY-MM-DD
+- `dateToKey(d, granularity)` — dispatches to day, week, or month key
+- `generatePeriodKeys(start, end, granularity)` — generates array of period keys for a date range (supports daily/weekly/monthly)
 
 Core functions:
 - `computeNetWorthSummary()` — aggregates active account balances into net worth; classifies each account as asset or liability; computes per-account `previousBalance` using carry-forward logic (latest Balance record on or before end of previous month); Real Estate accounts use equity (estimatedValue - currentBalance)
-- `computeNetWorthHistory(granularity, startDate?)` — computes history from Balance records with configurable granularity (weekly/monthly) and date range; fetches pre-startDate balances for carry-forward initialization; groups latest balance per account per period; carry-forward fills gaps; aggregates by asset/liability classification; returns `{ history, accountHistory }` — history is the aggregated net worth points, accountHistory contains per-account balances keyed by account ID for each period (Real Estate as equity, liabilities as absolute values); returns empty arrays when no balance data exists
+- `computeNetWorthHistory(granularity, startDate?)` — computes history from Balance records with configurable granularity (daily/weekly/monthly) and date range; fetches pre-startDate balances for carry-forward initialization; groups latest balance per account per period; carry-forward fills gaps; aggregates by asset/liability classification; returns `{ history, accountHistory }` — history is the aggregated net worth points, accountHistory contains per-account balances keyed by account ID for each period (Real Estate as equity, liabilities as absolute values); returns empty arrays when no balance data exists
 - `computeSpendingSummary(month)` — fetches transactions for a given month; aggregates negative amounts (expenses) by category; returns sorted list with percentage of total
-- `computeAccountBalanceHistory(accountId, granularity, startDate?)` — reconstructs historical balances from transactions by working backwards from currentBalance; aggregates net transaction amounts per period (week or month); supports any date range including all-time; for "all" range, determines earliest date from transaction data
+- `computeDailySpending(startDate, endDate)` — fetches transactions in date range; groups negative amounts (expenses) by day; returns array of `DailySpendingPoint` with absolute values; fills gaps with zero-amount days
+- `computeAccountBalanceHistory(accountId, granularity, startDate?)` — reconstructs historical balances from transactions by working backwards from currentBalance; aggregates net transaction amounts per period (day, week, or month); supports any date range including all-time; for "all" range, determines earliest date from transaction data
 
 #### API Routes (`src/routes/dashboard.ts`)
 
@@ -50,16 +55,17 @@ All routes require JWT authentication.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/dashboard/net-worth?range=all&granularity=monthly` | Current net worth summary + history (range: 1m/3m/6m/ytd/all; granularity: weekly/monthly) |
+| GET | `/dashboard/net-worth?range=all&granularity=monthly` | Current net worth summary + history (range: 1m/3m/6m/12m/ytd/all; granularity: daily/weekly/monthly) |
 | GET | `/dashboard/spending?month=YYYY-MM` | Spending by category (defaults to current month) |
-| GET | `/dashboard/account-history?accountId=xxx&range=all&granularity=weekly` | Single account balance history (range: 1m/3m/6m/ytd/all; granularity: weekly/monthly) |
+| GET | `/dashboard/spending-daily?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` | Daily spending totals for sparkline data |
+| GET | `/dashboard/account-history?accountId=xxx&range=all&granularity=weekly` | Single account balance history (range: 1m/3m/6m/12m/ytd/all; granularity: daily/weekly/monthly) |
 | GET | `/dashboard/upcoming-bills?days=30` | Upcoming bills widget data (max 365 days) |
 
 Route helpers:
 - `computeStartDate(range)` — converts range string to Date or undefined (for "all")
 - `CUID_PATTERN` — validates accountId format
 - Range validated against `["1m", "3m", "6m", "12m", "ytd", "all"]`; defaults to "all"
-- Granularity validated against `["weekly", "monthly"]`; defaults to "monthly" for net-worth, "weekly" for account-history
+- Granularity validated against `["daily", "weekly", "monthly"]`; defaults to "monthly" for net-worth, "weekly" for account-history
 
 #### App Registration (`src/app.ts`)
 
@@ -78,6 +84,7 @@ Migration: `20260219050000_add_estimated_value`
 
 - `fetchNetWorth(range?, granularity?)` — GET /dashboard/net-worth with optional range/granularity params
 - `fetchSpendingSummary(month?)` — GET /dashboard/spending
+- `fetchDailySpending(startDate, endDate)` — GET /dashboard/spending-daily with YYYY-MM-DD date range
 - `fetchUpcomingBills(days?)` — GET /dashboard/upcoming-bills
 - `fetchAccountBalanceHistory(accountId, range?, granularity?)` — GET /dashboard/account-history with optional range/granularity params
 
@@ -86,15 +93,15 @@ Migration: `20260219050000_add_estimated_value`
 Three-section layout with independent loading/error/retry states:
 
 1. **KPI Cards Row** (3-column grid):
-   - Net Worth — value + month-over-month trend from history
-   - Monthly Spending — value + trend vs previous month (inverted: spending down = green)
-   - Bills Due — value + overdue count indicator
+   - Net Worth — value + inline sparkline chart showing 30-day daily net worth trend with percentage change
+   - Monthly Spending — value + inline sparkline chart showing MTD cumulative spending trend with percentage change
+   - Bills Due — value + overdue count indicator (text-based trend, no sparkline)
 2. **Net Worth Chart** — full-width area chart with per-card time range/granularity controls
 3. **Checking Balance Chart** — full-width area chart (self-managed data fetching) with per-card time range/granularity controls; renders when a checking account exists
 4. **Bottom Row** — Spending pie chart + Upcoming Bills list (2-column on desktop, stacked on mobile)
 
-- Computes `netWorthTrend` from initial history array (last two months)
-- Fetches previous month spending for `spendingTrend` comparison
+- Fetches daily net worth data (`fetchNetWorth("1m", "daily")`) for sparkline; computes percentage change from first to last data point
+- Fetches daily spending data (`fetchDailySpending(startOfMonth, today)`) for sparkline; computes cumulative spending trend
 - Derives `checkingAccountId` from net worth summary; passes to self-managing CheckingBalanceCard
 - Empty state with "Go to Accounts" link when no accounts exist
 - Skeleton loaders for all sections during loading
@@ -109,10 +116,17 @@ Three-section layout with independent loading/error/retry states:
 - Used by both NetWorthCard and CheckingBalanceCard independently
 
 **KpiCard.tsx:**
-- Title, large bold value, optional trend badge
-- Trend directions: `"up"` (green), `"down"` (red), `"neutral"` (gray with → arrow)
-- Optional `invertColor` flag — swaps green/red for metrics where increase is bad (e.g., spending, liabilities): `"up"` becomes red, `"down"` becomes green; arrow direction always matches the factual change
-- Optional label text (e.g., "vs last month")
+- Title, large bold value, optional trend badge or sparkline
+- Two display modes:
+  - **Sparkline mode** (`sparkline` prop): value on the left, vertical divider, then inline SVG sparkline chart + "↗ +X.X%" percentage + label (e.g., "30-Day", "MTD") on the right; sparkline color matches trend direction; `invertColor` flag for spending (increase = red)
+  - **Text trend mode** (`trend` prop): traditional trend badge with up/down/neutral arrows; `invertColor` flag swaps green/red; used by Bills Due card
+- When neither prop is provided, displays value only
+
+**Sparkline.tsx** (`src/components/ui/sparkline.tsx`):
+- Lightweight pure-SVG sparkline component (no Recharts dependency)
+- Props: `data: number[]`, `color: string`, `width?` (default 80), `height?` (default 32)
+- Renders `<polyline>` scaled to fit data with gradient fill under the line
+- No axes, labels, or grid — minimal inline chart
 
 **NetWorthCard.tsx:**
 - View toggle: Overview / Assets / Liabilities — pill-style buttons matching TimeRangeSelector styling, positioned to the left of the time range controls
@@ -216,8 +230,8 @@ The dashboard now shows per-account balance history charts for all **favorited**
 - **Accounts added mid-history**: Carry-forward logic fills gaps; accounts without prior Balance records show neutral trend tickers
 - **Chart library**: Recharts (React-only; Victory deferred to mobile phase)
 - **Time range**: User-selectable (1M, 3M, 6M, 12M, YTD, All) with per-chart pill-style controls; each chart manages its own range independently; Net Worth chart defaults to 12M
-- **Granularity**: User-selectable (weekly/monthly) with per-chart toggle; weekly uses ISO week start (Monday), monthly uses YYYY-MM
-- **Trend indicators**: Month-over-month percentage change with three states (up/down/neutral); `invertColor` pattern used for liabilities and spending (arrows always point in the factual direction; colors inverted so increase = red, decrease = green); overall assets/liabilities trends computed from summary `previousBalance` data (not chart history points) for consistency with per-account trends; checking balance adapts between week-over-week and month-over-month based on granularity
+- **Granularity**: User-selectable (weekly/monthly) with per-chart toggle; daily granularity used internally for KPI sparklines (not exposed in UI toggles); weekly uses ISO week start (Monday), monthly uses YYYY-MM, daily uses YYYY-MM-DD
+- **Trend indicators**: KPI cards use inline sparkline charts for Net Worth (30-day daily) and Monthly Spending (MTD cumulative) with percentage change and direction arrow; `invertColor` pattern used for spending sparkline (increase = red); Bills Due card retains text-based trend badge; `invertColor` pattern used for liabilities in net worth chart (arrows always point in the factual direction; colors inverted so increase = red, decrease = green); overall assets/liabilities trends computed from summary `previousBalance` data (not chart history points) for consistency with per-account trends; account balance cards adapt between week-over-week and month-over-month based on granularity
 - **Net worth history data source**: Balance table records (PDF statement snapshots) with carry-forward for gaps; does not use transactions
 - **Checking balance history data source**: Reconstructed from transaction records by working backwards from currentBalance; does not use Balance table
 - **Tooltip dates**: Full date with year shown on hover (e.g., "February 17, 2026" for weekly, "February 2026" for monthly)

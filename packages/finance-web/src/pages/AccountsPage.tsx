@@ -25,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Plus, FileUp, ArrowUp, ArrowDown, ArrowUpDown, Star, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -221,27 +221,25 @@ export function AccountsPage() {
   }
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 md:p-8 flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl text-foreground">Accounts</h1>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowPdfImport(true)}
+          >
+            <FileUp className="h-4 w-4" />
+            Import Statement
+          </Button>
+          <Button size="sm" onClick={() => setShowForm(true)}>
+            <Plus className="h-4 w-4" />
+            Add Account
+          </Button>
+        </div>
+      </div>
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl text-foreground">Accounts</h1>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setShowPdfImport(true)}
-              >
-                <FileUp className="h-4 w-4" />
-                Import Statement
-              </Button>
-              <Button size="sm" onClick={() => setShowForm(true)}>
-                <Plus className="h-4 w-4" />
-                Add Account
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
         <CardContent>
           {error && <p className="text-sm text-error mb-4">{error}</p>}
 

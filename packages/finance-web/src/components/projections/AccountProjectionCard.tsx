@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { CHART_COLORS, formatCurrency } from "@/lib/chartTheme";
+import { CHART_COLORS, formatCurrency, getCategoryColor, curveStepAfterRounded } from "@/lib/chartTheme";
 import { cn } from "@/lib/utils";
 
 type Months = 6 | 12 | 24;
@@ -60,9 +60,11 @@ function CustomTooltip({
 interface AccountProjectionCardProps {
   account: AccountProjectionLine;
   loading?: boolean;
+  colorIndex?: number;
 }
 
-export function AccountProjectionCard({ account, loading }: AccountProjectionCardProps) {
+export function AccountProjectionCard({ account, loading, colorIndex = 0 }: AccountProjectionCardProps) {
+  const color = getCategoryColor(colorIndex);
   const [months, setMonths] = useState<Months>(12);
 
   const chartData = useMemo(() => {
@@ -128,8 +130,8 @@ export function AccountProjectionCard({ account, loading }: AccountProjectionCar
             <AreaChart data={chartData}>
               <defs>
                 <linearGradient id={`gradProjBal-${account.accountId}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={CHART_COLORS.balance} stopOpacity={0.15} />
-                  <stop offset="100%" stopColor={CHART_COLORS.balance} stopOpacity={0} />
+                  <stop offset="0%" stopColor={color} stopOpacity={0.15} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -149,10 +151,10 @@ export function AccountProjectionCard({ account, loading }: AccountProjectionCar
               />
               <Tooltip content={<CustomTooltip />} />
               <Area
-                type="monotone"
+                type={curveStepAfterRounded}
                 dataKey="balance"
                 name="Projected Balance"
-                stroke={CHART_COLORS.balance}
+                stroke={color}
                 fill={`url(#gradProjBal-${account.accountId})`}
                 fillOpacity={1}
                 strokeWidth={1.5}
