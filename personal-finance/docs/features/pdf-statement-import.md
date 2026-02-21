@@ -238,6 +238,7 @@ PDF import now replaces existing balances on the same date instead of creating d
 
 - **PIN verification**: Required for both preview and confirm endpoints
 - **Known error messages**: Only safe, pre-approved error messages surfaced to clients; all others replaced with generic error
+- **Billing/auth error surfacing**: Anthropic API billing and authentication errors (insufficient credits, invalid API key) detected and surfaced as 502 responses with the actual provider message, so the UI can show actionable feedback
 - **Profile type validation**: Server rejects profile data that doesn't match the account type
 - **Atomic transactions**: Balance + profile creation guaranteed to succeed or fail together
 - **Field-level encryption**: All profile numeric and string data encrypted at rest with AES-256-GCM

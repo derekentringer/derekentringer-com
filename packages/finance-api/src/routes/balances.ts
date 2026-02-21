@@ -243,6 +243,20 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
             message: OVERLOADED_MESSAGE,
           });
         }
+        // Surface billing/auth errors from the AI provider
+        if (e instanceof Error && "status" in e) {
+          const status = (e as any).status;
+          if (status === 400 || status === 401 || status === 403) {
+            const body = (e as any).error?.error?.message ?? e.message;
+            if (typeof body === "string" && (body.includes("credit balance") || body.includes("billing") || body.includes("API key"))) {
+              return reply.status(502).send({
+                statusCode: 502,
+                error: "Bad Gateway",
+                message: body,
+              });
+            }
+          }
+        }
         // #8: Only surface known, safe error messages to clients
         const message =
           e instanceof Error && KNOWN_EXTRACTION_ERRORS.has(e.message)
