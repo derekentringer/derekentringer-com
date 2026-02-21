@@ -29,6 +29,7 @@ import { IncomeSourceForm } from "../components/IncomeSourceForm.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { TabSwitcher } from "@/components/ui/tab-switcher";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -54,31 +55,19 @@ export function SettingsPage() {
     "categories",
   );
 
+  const TABS: { value: "categories" | "rules" | "income"; label: string }[] = [
+    { value: "categories", label: "Categories" },
+    { value: "rules", label: "Category Rules" },
+    { value: "income", label: "Income Sources" },
+  ];
+
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6">
-      <div className="flex gap-2">
-        <Button
-          variant={activeTab === "categories" ? "default" : "secondary"}
-          size="sm"
-          onClick={() => setActiveTab("categories")}
-        >
-          Categories
-        </Button>
-        <Button
-          variant={activeTab === "rules" ? "default" : "secondary"}
-          size="sm"
-          onClick={() => setActiveTab("rules")}
-        >
-          Category Rules
-        </Button>
-        <Button
-          variant={activeTab === "income" ? "default" : "secondary"}
-          size="sm"
-          onClick={() => setActiveTab("income")}
-        >
-          Income Sources
-        </Button>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl text-foreground">Settings</h1>
       </div>
+
+      <TabSwitcher options={TABS} value={activeTab} onChange={setActiveTab} />
 
       {activeTab === "categories" ? (
         <CategoriesSection />

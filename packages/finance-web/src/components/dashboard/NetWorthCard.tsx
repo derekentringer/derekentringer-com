@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { TabSwitcher } from "@/components/ui/tab-switcher";
 import {
   AreaChart,
   Area,
@@ -213,22 +214,16 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
         <div className="flex items-center justify-between">
           <h2 className="text-xl text-foreground">Net Worth</h2>
           <div className="flex items-center gap-1.5">
-            <div className="flex items-center rounded-md border border-border overflow-hidden">
-              {(["overview", "assets", "liabilities"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={cn(
-                    "px-2.5 py-1 text-xs font-medium rounded transition-colors cursor-pointer select-none",
-                    view === v
-                      ? "bg-foreground/15 text-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-foreground/5",
-                  )}
-                >
-                  {v === "overview" ? "Overview" : v === "assets" ? "Assets" : "Liabilities"}
-                </button>
-              ))}
-            </div>
+            <TabSwitcher
+              options={[
+                { value: "overview" as const, label: "Overview" },
+                { value: "assets" as const, label: "Assets" },
+                { value: "liabilities" as const, label: "Liabilities" },
+              ]}
+              value={view}
+              onChange={setView}
+              size="sm"
+            />
             <TimeRangeSelector
               range={range}
               granularity={granularity}

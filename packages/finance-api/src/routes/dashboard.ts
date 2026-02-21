@@ -4,13 +4,14 @@ import {
   computeNetWorthHistory,
   computeSpendingSummary,
   computeAccountBalanceHistory,
+  computeDailySpending,
 } from "../store/dashboardStore.js";
 import { listBills, getPaymentsInRange, computeUpcomingInstances } from "../store/billStore.js";
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
 const VALID_RANGES = ["1m", "3m", "6m", "12m", "ytd", "all"];
-const VALID_GRANULARITIES = ["weekly", "monthly"];
+const VALID_GRANULARITIES = ["daily", "weekly", "monthly"];
 
 function computeStartDate(range: string): Date | undefined {
   const now = new Date();
@@ -45,7 +46,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       try {
         const range = VALID_RANGES.includes(request.query.range || "") ? request.query.range! : "all";
         const granularity = VALID_GRANULARITIES.includes(request.query.granularity || "")
-          ? (request.query.granularity as "weekly" | "monthly")
+          ? (request.query.granularity as "daily" | "weekly" | "monthly")
           : "monthly";
         const startDate = computeStartDate(range);
 
@@ -118,7 +119,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
 
         const range = VALID_RANGES.includes(request.query.range || "") ? request.query.range! : "all";
         const granularity = VALID_GRANULARITIES.includes(request.query.granularity || "")
-          ? (request.query.granularity as "weekly" | "monthly")
+          ? (request.query.granularity as "daily" | "weekly" | "monthly")
           : "weekly";
         const startDate = computeStartDate(range);
 
@@ -138,6 +139,42 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           statusCode: 500,
           error: "Internal Server Error",
           message: "Failed to compute account balance history",
+        });
+      }
+    },
+  );
+
+  // GET /spending-daily?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD — daily spending totals
+  const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+  fastify.get<{ Querystring: { startDate?: string; endDate?: string } }>(
+    "/spending-daily",
+    async (
+      request: FastifyRequest<{ Querystring: { startDate?: string; endDate?: string } }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const { startDate: startStr, endDate: endStr } = request.query;
+
+        if (!startStr || !endStr || !DATE_PATTERN.test(startStr) || !DATE_PATTERN.test(endStr)) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: "startDate and endDate are required in YYYY-MM-DD format",
+          });
+        }
+
+        const startDate = new Date(startStr + "T00:00:00");
+        const endDate = new Date(endStr + "T23:59:59.999");
+
+        const points = await computeDailySpending(startDate, endDate);
+        return reply.send({ points });
+      } catch (e) {
+        request.log.error(e, "Failed to compute daily spending");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to compute daily spending",
         });
       }
     },

@@ -19,6 +19,7 @@ import { BillForm } from "@/components/BillForm.tsx";
 import { ConfirmDialog } from "@/components/ConfirmDialog.tsx";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { TabSwitcher } from "@/components/ui/tab-switcher";
 import {
   Table,
   TableBody,
@@ -27,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Plus, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { formatCurrencyFull } from "@/lib/chartTheme";
 
@@ -191,11 +192,11 @@ export function BillsPage() {
     }
   }
 
-  const TABS: { key: FilterTab; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "upcoming", label: "Upcoming" },
-    { key: "paid", label: "Paid" },
-    { key: "overdue", label: "Overdue" },
+  const FILTER_TABS: { value: FilterTab; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "upcoming", label: "Upcoming" },
+    { value: "paid", label: "Paid" },
+    { value: "overdue", label: "Overdue" },
   ];
 
   if (isLoading) {
@@ -207,31 +208,20 @@ export function BillsPage() {
   }
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 md:p-8 flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl text-foreground">Bills</h1>
+        <Button size="sm" onClick={() => setShowForm(true)}>
+          <Plus className="h-4 w-4" />
+          Add Bill
+        </Button>
+      </div>
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl text-foreground">Bills</h1>
-            <Button size="sm" onClick={() => setShowForm(true)}>
-              <Plus className="h-4 w-4" />
-              Add Bill
-            </Button>
-          </div>
-        </CardHeader>
         <CardContent>
           {error && <p className="text-sm text-error mb-4">{error}</p>}
 
-          <div className="flex gap-1 mb-4">
-            {TABS.map((tab) => (
-              <Button
-                key={tab.key}
-                size="sm"
-                variant={filter === tab.key ? "default" : "secondary"}
-                onClick={() => setFilter(tab.key)}
-              >
-                {tab.label}
-              </Button>
-            ))}
+          <div className="mb-4">
+            <TabSwitcher options={FILTER_TABS} value={filter} onChange={setFilter} size="sm" />
           </div>
 
           {filteredBills.length === 0 ? (
