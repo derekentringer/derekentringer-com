@@ -210,7 +210,7 @@ export function BillsPage() {
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl text-foreground">Bills</h1>
+        <h1 className="text-xl sm:text-2xl md:text-3xl text-foreground">Bills</h1>
         <Button size="sm" onClick={() => setShowForm(true)}>
           <Plus className="h-4 w-4" />
           Add Bill

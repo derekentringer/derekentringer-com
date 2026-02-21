@@ -211,9 +211,9 @@ export function NetWorthCard({ data }: NetWorthCardProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl text-foreground">Net Worth</h2>
-          <div className="flex items-center gap-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <h2 className="text-lg sm:text-xl text-foreground">Net Worth</h2>
+          <div className="flex flex-wrap items-center gap-1.5">
             <TabSwitcher
               options={[
                 { value: "overview" as const, label: "Overview" },

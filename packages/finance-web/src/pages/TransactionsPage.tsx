@@ -180,7 +180,7 @@ export function TransactionsPage() {
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl text-foreground">Transactions</h1>
+        <h1 className="text-xl sm:text-2xl md:text-3xl text-foreground">Transactions</h1>
         <Button size="sm" onClick={() => setShowImport(true)}>
           <Upload className="h-4 w-4" />
           Import CSV
@@ -199,7 +199,7 @@ export function TransactionsPage() {
                 handleFilterChange();
               }}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="All Accounts" />
               </SelectTrigger>
               <SelectContent>
@@ -219,7 +219,7 @@ export function TransactionsPage() {
                 handleFilterChange();
               }}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-full sm:w-[160px]">
                 <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
@@ -239,7 +239,7 @@ export function TransactionsPage() {
                 setStartDate(e.target.value);
                 handleFilterChange();
               }}
-              className="w-[150px]"
+              className="w-full sm:w-[150px]"
               placeholder="Start date"
             />
             <Input
@@ -249,7 +249,7 @@ export function TransactionsPage() {
                 setEndDate(e.target.value);
                 handleFilterChange();
               }}
-              className="w-[150px]"
+              className="w-full sm:w-[150px]"
               placeholder="End date"
             />
           </div>
