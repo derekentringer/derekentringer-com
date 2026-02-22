@@ -47,6 +47,23 @@ export async function extractTextFromPdf(buffer: Buffer): Promise<string> {
 }
 
 // #7: Head+tail truncation to catch balances at both start and end of document
+// Redact account numbers, SSNs, and similar PII before sending to external API.
+// Preserves dollar amounts, dates, and percentages needed for extraction.
+function redactPII(text: string): string {
+  return text
+    // SSNs: 123-45-6789 or 123 45 6789
+    .replace(/\b\d{3}[- ]\d{2}[- ]\d{4}\b/g, "***-**-****")
+    // Account/routing numbers: 8+ consecutive digits (but not dollar amounts or dates)
+    // Negative lookbehind for $ and . to avoid clobbering currency; negative lookbehind
+    // for - to avoid partial SSN matches already handled above
+    .replace(/(?<!\$)(?<!\.)(?<!-)\b\d{8,17}\b(?!%)/g, "XXXX")
+    // Masked account numbers already partially redacted by banks: ****1234, ***1234, XX1234
+    // Leave these as-is since they're already masked
+    // Credit card numbers with spaces/dashes: 1234 5678 9012 3456 or 1234-5678-9012-3456
+    .replace(/\b\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}\b/g, "XXXX-XXXX-XXXX-XXXX");
+}
+
+// #7: Head+tail truncation to catch balances at both start and end of document
 function truncateForExtraction(text: string, maxChars: number = 20_000): string {
   if (text.length <= maxChars) return text;
 
@@ -228,7 +245,8 @@ export async function extractBalanceFromText(
   accountType: AccountType = AccountType.Other,
 ): Promise<ExtractedStatementData> {
   const maxChars = getTruncationLimit(accountType);
-  const truncated = truncateForExtraction(text, maxChars);
+  const redacted = redactPII(text);
+  const truncated = truncateForExtraction(redacted, maxChars);
 
   const client = new Anthropic({ apiKey });
   const tool = buildExtractionTool(accountType);
