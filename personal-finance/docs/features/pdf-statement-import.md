@@ -236,6 +236,11 @@ PDF import now replaces existing balances on the same date instead of creating d
 
 ## Security Design
 
+- **PII redaction**: Before sending extracted text to the Anthropic API, a `redactPII()` function strips sensitive identifiers:
+  - SSNs (`123-45-6789` → `***-**-****`)
+  - Account/routing numbers (8-17 consecutive digits → `XXXX`, preserving dollar amounts, dates, and percentages)
+  - Full credit card numbers (`1234 5678 9012 3456` → `XXXX-XXXX-XXXX-XXXX`)
+  - Already-masked numbers (e.g., `****1234`) are left unchanged
 - **PIN verification**: Required for both preview and confirm endpoints
 - **Known error messages**: Only safe, pre-approved error messages surfaced to clients; all others replaced with generic error
 - **Billing/auth error surfacing**: Anthropic API billing and authentication errors (insufficient credits, invalid API key) detected and surfaced as 502 responses with the actual provider message, so the UI can show actionable feedback

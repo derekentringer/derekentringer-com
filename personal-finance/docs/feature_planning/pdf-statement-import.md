@@ -36,3 +36,4 @@ AI-powered PDF statement import with account-type-specific profile extraction. U
 - **Duplicate detection**: Calendar day matching per account
 - **Interest rate updates**: Optional, user-controlled
 - **Fidelity 401(k)**: CSV parser added alongside PDF import; parses Transaction Date, Investment, Contribution, Description, Activity, Price, Units, Amount columns
+- **PII in API calls**: Account numbers, SSNs, and credit card numbers are redacted from extracted text before sending to the Anthropic API; dollar amounts, dates, and percentages are preserved for extraction
