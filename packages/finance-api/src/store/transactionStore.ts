@@ -21,6 +21,7 @@ export async function listTransactions(filter?: {
   startDate?: Date;
   endDate?: Date;
   category?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 }): Promise<{ transactions: Transaction[]; total: number }> {
@@ -36,12 +37,34 @@ export async function listTransactions(filter?: {
     where.date = dateFilter;
   }
 
+  const limit = filter?.limit ?? 50;
+  const offset = filter?.offset ?? 0;
+
+  // When search is active, fetch all SQL-matching rows, decrypt, filter in-memory, then paginate
+  if (filter?.search) {
+    const rows = await prisma.transaction.findMany({
+      where,
+      orderBy: { date: "desc" },
+      take: 10000,
+    });
+
+    const searchLower = filter.search.toLowerCase();
+    const filtered = rows
+      .map(decryptTransaction)
+      .filter((t) => t.description.toLowerCase().includes(searchLower));
+
+    return {
+      transactions: filtered.slice(offset, offset + limit),
+      total: filtered.length,
+    };
+  }
+
   const [rows, total] = await Promise.all([
     prisma.transaction.findMany({
       where,
       orderBy: { date: "desc" },
-      take: filter?.limit ?? 50,
-      skip: filter?.offset ?? 0,
+      take: limit,
+      skip: offset,
     }),
     prisma.transaction.count({ where }),
   ]);
@@ -126,6 +149,18 @@ export async function deleteTransaction(id: string): Promise<boolean> {
     if (isNotFoundError(e)) return false;
     throw e;
   }
+}
+
+export async function bulkUpdateCategory(
+  ids: string[],
+  category: string | null,
+): Promise<number> {
+  const prisma = getPrisma();
+  const result = await prisma.transaction.updateMany({
+    where: { id: { in: ids } },
+    data: { category },
+  });
+  return result.count;
 }
 
 export async function applyRuleToTransactions(

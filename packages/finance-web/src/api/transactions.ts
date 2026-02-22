@@ -2,6 +2,7 @@ import type {
   TransactionListResponse,
   TransactionResponse,
   UpdateTransactionRequest,
+  BulkUpdateCategoryResponse,
   CsvImportPreviewResponse,
   CsvImportConfirmRequest,
   CsvImportConfirmResponse,
@@ -13,6 +14,7 @@ export async function fetchTransactions(params?: {
   startDate?: string;
   endDate?: string;
   category?: string;
+  search?: string;
   limit?: number;
   offset?: number;
 }): Promise<TransactionListResponse> {
@@ -21,6 +23,7 @@ export async function fetchTransactions(params?: {
   if (params?.startDate) searchParams.set("startDate", params.startDate);
   if (params?.endDate) searchParams.set("endDate", params.endDate);
   if (params?.category) searchParams.set("category", params.category);
+  if (params?.search) searchParams.set("search", params.search);
   if (params?.limit) searchParams.set("limit", String(params.limit));
   if (params?.offset) searchParams.set("offset", String(params.offset));
 
@@ -49,6 +52,21 @@ export async function updateTransaction(
   if (!res.ok) {
     const err = await res.json().catch(() => null);
     throw new Error(err?.message || "Failed to update transaction");
+  }
+  return res.json();
+}
+
+export async function bulkUpdateCategory(
+  ids: string[],
+  category: string | null,
+): Promise<BulkUpdateCategoryResponse> {
+  const res = await apiFetch("/transactions/bulk-category", {
+    method: "PATCH",
+    body: JSON.stringify({ ids, category }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.message || "Failed to bulk update category");
   }
   return res.json();
 }

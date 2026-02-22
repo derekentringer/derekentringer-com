@@ -8,6 +8,8 @@ import {
   encryptTransactionForCreate,
   decryptBalance,
   encryptBalanceForCreate,
+  encryptCreditProfileForCreate,
+  decryptCreditProfile,
 } from "../lib/mappers.js";
 import { AccountType } from "@derekentringer/shared";
 import { randomBytes } from "crypto";
@@ -80,6 +82,8 @@ describe("Account mappers", () => {
       ...encrypted,
       isActive: encrypted.isActive ?? true,
       isFavorite: encrypted.isFavorite ?? false,
+      excludeFromIncomeSources: encrypted.excludeFromIncomeSources ?? false,
+      dtiPercentage: encrypted.dtiPercentage ?? 100,
       sortOrder: 0,
       createdAt: now,
       updatedAt: now,
@@ -117,6 +121,8 @@ describe("Account mappers", () => {
       ...encrypted,
       isActive: true, // Prisma @default(true) provides this
       isFavorite: false,
+      excludeFromIncomeSources: false,
+      dtiPercentage: 100,
       sortOrder: 0,
       createdAt: now,
       updatedAt: now,
@@ -127,6 +133,35 @@ describe("Account mappers", () => {
     expect(decrypted.interestRate).toBeUndefined();
     expect(decrypted.csvParserId).toBeUndefined();
     expect(decrypted.isActive).toBe(true);
+  });
+
+  it("decryptAccount preserves excludeFromIncomeSources=true", () => {
+    const input = {
+      name: "Checking",
+      type: AccountType.Checking,
+      institution: "Chase",
+      currentBalance: 1000,
+      excludeFromIncomeSources: true,
+    };
+
+    const encrypted = encryptAccountForCreate(input);
+    const now = new Date();
+
+    const row = {
+      id: "cuid-789",
+      ...encrypted,
+      isActive: encrypted.isActive ?? true,
+      isFavorite: encrypted.isFavorite ?? false,
+      excludeFromIncomeSources: encrypted.excludeFromIncomeSources ?? false,
+      dtiPercentage: encrypted.dtiPercentage ?? 100,
+      sortOrder: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const decrypted = decryptAccount(row);
+
+    expect(decrypted.excludeFromIncomeSources).toBe(true);
   });
 
   it("encryptAccountForUpdate only includes provided fields", () => {
@@ -249,5 +284,79 @@ describe("Balance mappers", () => {
 
     expect(decrypted.accountId).toBe("acc-1");
     expect(decrypted.balance).toBe(10000.0);
+  });
+});
+
+describe("Credit profile mappers", () => {
+  it("encryptCreditProfileForCreate / decryptCreditProfile round-trip", () => {
+    const data = {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-01-31",
+      apr: 24.99,
+      minimumPayment: 35.0,
+      creditLimit: 10000,
+      availableCredit: 7500.5,
+      interestCharged: 42.15,
+      feesCharged: 0,
+      rewardsEarned: 12.34,
+      paymentDueDate: "2026-02-25",
+    };
+
+    const encrypted = encryptCreditProfileForCreate("bal-123", data);
+
+    expect(encrypted.balanceId).toBe("bal-123");
+    // All values should be encrypted (not plaintext)
+    expect(encrypted.apr).not.toBe("24.99");
+    expect(encrypted.minimumPayment).not.toBe("35");
+    expect(encrypted.creditLimit).not.toBe("10000");
+
+    const now = new Date();
+    const row = {
+      id: "cp-123",
+      ...encrypted,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const decrypted = decryptCreditProfile(row);
+
+    expect(decrypted.periodStart).toBe("2026-01-01");
+    expect(decrypted.periodEnd).toBe("2026-01-31");
+    expect(decrypted.apr).toBe(24.99);
+    expect(decrypted.minimumPayment).toBe(35.0);
+    expect(decrypted.creditLimit).toBe(10000);
+    expect(decrypted.availableCredit).toBe(7500.5);
+    expect(decrypted.interestCharged).toBe(42.15);
+    expect(decrypted.feesCharged).toBe(0);
+    expect(decrypted.rewardsEarned).toBe(12.34);
+    expect(decrypted.paymentDueDate).toBe("2026-02-25");
+  });
+
+  it("handles undefined/null fields gracefully", () => {
+    const data = {
+      apr: 19.99,
+      minimumPayment: 25.0,
+    };
+
+    const encrypted = encryptCreditProfileForCreate("bal-456", data);
+
+    expect(encrypted.periodStart).toBeNull();
+    expect(encrypted.creditLimit).toBeNull();
+    expect(encrypted.apr).not.toBeNull();
+
+    const now = new Date();
+    const row = {
+      id: "cp-456",
+      ...encrypted,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const decrypted = decryptCreditProfile(row);
+
+    expect(decrypted.periodStart).toBeUndefined();
+    expect(decrypted.creditLimit).toBeUndefined();
+    expect(decrypted.apr).toBe(19.99);
+    expect(decrypted.minimumPayment).toBe(25.0);
   });
 });

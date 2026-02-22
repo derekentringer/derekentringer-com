@@ -5,13 +5,17 @@ import type {
   SpendingSummary,
   DashboardUpcomingBillsResponse,
   DailySpendingResponse,
+  IncomeSpendingResponse,
+  DTIResponse,
 } from "@derekentringer/shared/finance";
-import { fetchNetWorth, fetchSpendingSummary, fetchUpcomingBills, fetchDailySpending } from "@/api/dashboard";
+import { fetchNetWorth, fetchSpendingSummary, fetchUpcomingBills, fetchDailySpending, fetchIncomeSpending, fetchDTI } from "@/api/dashboard";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { NetWorthCard } from "@/components/dashboard/NetWorthCard";
 import { AccountBalanceCard } from "@/components/dashboard/AccountBalanceCard";
 import { SpendingCard } from "@/components/dashboard/SpendingCard";
+import { IncomeSpendingCard } from "@/components/dashboard/IncomeSpendingCard";
 import { UpcomingBillsCard } from "@/components/dashboard/UpcomingBillsCard";
+import { DTIDetailDialog } from "@/components/dashboard/DTIDetailDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/chartTheme";
@@ -68,14 +72,22 @@ export function DashboardPage() {
   const [dailySpending, setDailySpending] = useState<DailySpendingResponse | null>(null);
   const [upcomingBills, setUpcomingBills] =
     useState<DashboardUpcomingBillsResponse | null>(null);
+  const [incomeSpending, setIncomeSpending] =
+    useState<IncomeSpendingResponse | null>(null);
+  const [dti, setDti] = useState<DTIResponse | null>(null);
+  const [dtiDialogOpen, setDtiDialogOpen] = useState(false);
 
   const [netWorthLoading, setNetWorthLoading] = useState(true);
   const [spendingLoading, setSpendingLoading] = useState(true);
   const [billsLoading, setBillsLoading] = useState(true);
+  const [incomeSpendingLoading, setIncomeSpendingLoading] = useState(true);
+  const [dtiLoading, setDtiLoading] = useState(true);
 
   const [netWorthError, setNetWorthError] = useState("");
   const [spendingError, setSpendingError] = useState("");
   const [billsError, setBillsError] = useState("");
+  const [incomeSpendingError, setIncomeSpendingError] = useState("");
+  const [dtiError, setDtiError] = useState("");
 
   const loadNetWorth = useCallback(async () => {
     setNetWorthLoading(true);
@@ -128,11 +140,39 @@ export function DashboardPage() {
     }
   }, []);
 
+  const loadIncomeSpending = useCallback(async () => {
+    setIncomeSpendingLoading(true);
+    setIncomeSpendingError("");
+    try {
+      const data = await fetchIncomeSpending("12m", "monthly", "sources");
+      setIncomeSpending(data);
+    } catch {
+      setIncomeSpendingError("Failed to load income vs spending");
+    } finally {
+      setIncomeSpendingLoading(false);
+    }
+  }, []);
+
+  const loadDTI = useCallback(async () => {
+    setDtiLoading(true);
+    setDtiError("");
+    try {
+      const data = await fetchDTI();
+      setDti(data);
+    } catch {
+      setDtiError("Failed to load DTI");
+    } finally {
+      setDtiLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadNetWorth();
     loadSpending();
     loadBills();
-  }, [loadNetWorth, loadSpending, loadBills]);
+    loadIncomeSpending();
+    loadDTI();
+  }, [loadNetWorth, loadSpending, loadBills, loadIncomeSpending, loadDTI]);
 
   // Compute net worth sparkline from daily data
   const netWorthSparkline = useMemo(() => {
@@ -172,6 +212,22 @@ export function DashboardPage() {
     };
   }, [dailySpending]);
 
+  // Compute rest-of-month unpaid bills total for the KPI card
+  const restOfMonthBills = useMemo(() => {
+    if (!upcomingBills) return { totalDue: 0, overdueCount: 0 };
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const totalDue = upcomingBills.bills
+      .filter((b) => {
+        const due = new Date(b.dueDate + "T00:00:00");
+        return !b.isPaid && due >= today && due <= endOfMonth;
+      })
+      .reduce((sum, b) => sum + b.amount, 0);
+    const overdueCount = upcomingBills.bills.filter((b) => b.isOverdue && !b.isPaid).length;
+    return { totalDue: Math.round(totalDue * 100) / 100, overdueCount };
+  }, [upcomingBills]);
+
   // Find favorited account IDs once netWorth loads
   const favoriteAccountIds = useMemo(() => {
     if (!netWorth) return [];
@@ -204,7 +260,7 @@ export function DashboardPage() {
   return (
     <div className="p-4 md:p-8 space-y-4">
       {/* KPI summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {netWorthLoading ? (
           <SkeletonCard />
         ) : netWorthError ? (
@@ -221,25 +277,48 @@ export function DashboardPage() {
           <KpiCard title="Monthly Spending" value={formatCurrency(spending.total)} sparkline={spendingSparkline} />
         ) : null}
 
+        {dtiLoading ? (
+          <SkeletonCard />
+        ) : dtiError ? (
+          <ErrorCard message={dtiError} onRetry={loadDTI} />
+        ) : dti ? (
+          <button type="button" className="text-left w-full" onClick={() => setDtiDialogOpen(true)}>
+            <KpiCard
+              title="DTI"
+              value={`${dti.ratio.toFixed(1)}%`}
+              trend={{
+                direction: dti.ratio > 43 ? "down" : dti.ratio > 36 ? "neutral" : "up",
+                value: dti.ratio > 43 ? "High" : dti.ratio > 36 ? "Moderate" : "Good",
+              }}
+              className="cursor-pointer hover:border-border/80 transition-colors"
+            />
+          </button>
+        ) : null}
+
         {billsLoading ? (
           <SkeletonCard />
         ) : billsError ? (
           <ErrorCard message={billsError} onRetry={loadBills} />
         ) : upcomingBills ? (
           <KpiCard
-            title="Bills Due"
-            value={formatCurrency(upcomingBills.totalDue)}
+            title="Upcoming Bills"
+            value={formatCurrency(restOfMonthBills.totalDue)}
             trend={
-              upcomingBills.overdueCount > 0
+              restOfMonthBills.overdueCount > 0
                 ? {
                     direction: "down",
-                    value: `${upcomingBills.overdueCount} overdue`,
+                    value: `${restOfMonthBills.overdueCount} overdue`,
                   }
                 : undefined
             }
           />
         ) : null}
       </div>
+
+      {/* DTI detail dialog */}
+      {dtiDialogOpen && dti && (
+        <DTIDetailDialog data={dti} onClose={() => setDtiDialogOpen(false)} />
+      )}
 
       {/* Net worth chart - full width */}
       {netWorthLoading ? (
@@ -248,6 +327,15 @@ export function DashboardPage() {
         <ErrorCard message={netWorthError} onRetry={loadNetWorth} />
       ) : netWorth ? (
         <NetWorthCard data={netWorth} />
+      ) : null}
+
+      {/* Income vs Spending chart - full width */}
+      {incomeSpendingLoading ? (
+        <SkeletonChartCard />
+      ) : incomeSpendingError ? (
+        <ErrorCard message={incomeSpendingError} onRetry={loadIncomeSpending} />
+      ) : incomeSpending ? (
+        <IncomeSpendingCard data={incomeSpending} />
       ) : null}
 
       {/* Bottom row: Spending + Upcoming Bills */}

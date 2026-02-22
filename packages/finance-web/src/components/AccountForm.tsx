@@ -72,6 +72,8 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
   );
   const [csvParserId, setCsvParserId] = useState(account?.csvParserId ?? "");
   const [isActive, setIsActive] = useState(account?.isActive ?? true);
+  const [excludeFromIncomeSources, setExcludeFromIncomeSources] = useState(account?.excludeFromIncomeSources ?? false);
+  const [dtiPercentage, setDtiPercentage] = useState(account?.dtiPercentage?.toString() ?? "100");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -86,6 +88,7 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
 
   const showInterestRate = INTEREST_RATE_TYPES.has(type);
   const isRealEstate = type === AccountType.RealEstate;
+  const showDtiPercentage = type === AccountType.Loan || type === AccountType.RealEstate || type === AccountType.Credit;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -112,6 +115,9 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
         if (parser !== (account!.csvParserId ?? null))
           data.csvParserId = parser;
         if (isActive !== account!.isActive) data.isActive = isActive;
+        if (excludeFromIncomeSources !== account!.excludeFromIncomeSources) data.excludeFromIncomeSources = excludeFromIncomeSources;
+        const dtiPct = parseInt(dtiPercentage, 10) || 100;
+        if (dtiPct !== (account!.dtiPercentage ?? 100)) data.dtiPercentage = dtiPct;
         await onSubmit(data);
       } else {
         const data: CreateAccountRequest = {
@@ -125,6 +131,9 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
         if (interestRate) data.interestRate = parseFloat(interestRate);
         if (csvParserId) data.csvParserId = csvParserId;
         if (!isActive) data.isActive = false;
+        if (excludeFromIncomeSources) data.excludeFromIncomeSources = true;
+        const dtiPct = parseInt(dtiPercentage, 10) || 100;
+        if (dtiPct !== 100) data.dtiPercentage = dtiPct;
         await onSubmit(data);
       }
     } catch (err) {
@@ -238,6 +247,22 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
               </SelectContent>
             </Select>
           </div>
+          {showDtiPercentage && (
+            <div className="flex flex-col gap-1">
+              <Label>DTI Responsibility (%)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                value={dtiPercentage}
+                onChange={(e) => setDtiPercentage(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Percentage of this account's debt payments to include in DTI (e.g., 50 if you split the payment)
+              </p>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <Checkbox
               id="isActive"
@@ -249,6 +274,19 @@ export function AccountForm({ account, onSubmit, onClose }: AccountFormProps) {
               className="text-sm text-foreground cursor-pointer"
             >
               Active
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="excludeFromIncomeSources"
+              checked={excludeFromIncomeSources}
+              onCheckedChange={(checked) => setExcludeFromIncomeSources(checked === true)}
+            />
+            <label
+              htmlFor="excludeFromIncomeSources"
+              className="text-sm text-foreground cursor-pointer"
+            >
+              Exclude from Income vs Spending (Acct Filtered)
             </label>
           </div>
           {error && (

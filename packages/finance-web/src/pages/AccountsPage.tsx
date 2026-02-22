@@ -26,7 +26,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, FileUp, ArrowUp, ArrowDown, ArrowUpDown, Star, GripVertical } from "lucide-react";
+import { Plus, FileUp, Star, GripVertical, Eye, EyeOff } from "lucide-react";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 import { cn } from "@/lib/utils";
 import {
   DndContext,
@@ -137,6 +138,15 @@ export function AccountsPage() {
       await loadAccounts();
     } catch {
       setError("Failed to update favorite status");
+    }
+  }
+
+  async function handleToggleExcludeIncome(account: Account) {
+    try {
+      await updateAccount(account.id, { excludeFromIncomeSources: !account.excludeFromIncomeSources });
+      await loadAccounts();
+    } catch {
+      setError("Failed to update exclude status");
     }
   }
 
@@ -279,6 +289,7 @@ export function AccountsPage() {
                           onEdit={setEditAccount}
                           onDelete={setDeleteTarget}
                           onToggleFavorite={handleToggleFavorite}
+                          onToggleExcludeIncome={handleToggleExcludeIncome}
                         />
                       ))}
                     </TableBody>
@@ -314,6 +325,17 @@ export function AccountsPage() {
                             onClick={() => handleToggleFavorite(account)}
                           >
                             <Star className={cn("h-4 w-4", account.isFavorite ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground")} />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="p-1"
+                            title={account.excludeFromIncomeSources ? "Excluded from Income vs Spending (Acct Filtered) — click to include" : "Included in Income vs Spending (Acct Filtered) — click to exclude"}
+                            onClick={() => handleToggleExcludeIncome(account)}
+                          >
+                            {account.excludeFromIncomeSources
+                              ? <EyeOff className="h-4 w-4 text-orange-400" />
+                              : <Eye className="h-4 w-4 text-muted-foreground" />}
                           </Button>
                           <Button
                             variant="ghost"
@@ -385,11 +407,13 @@ function SortableRow({
   onEdit,
   onDelete,
   onToggleFavorite,
+  onToggleExcludeIncome,
 }: {
   account: Account;
   onEdit: (account: Account) => void;
   onDelete: (account: Account) => void;
   onToggleFavorite: (account: Account) => void;
+  onToggleExcludeIncome: (account: Account) => void;
 }) {
   const {
     attributes,
@@ -448,6 +472,17 @@ function SortableRow({
           <Button
             variant="ghost"
             size="sm"
+            className="p-1"
+            title={account.excludeFromIncomeSources ? "Excluded from Income vs Spending (Acct Filtered) — click to include" : "Included in Income vs Spending (Acct Filtered) — click to exclude"}
+            onClick={() => onToggleExcludeIncome(account)}
+          >
+            {account.excludeFromIncomeSources
+              ? <EyeOff className="h-4 w-4 text-orange-400" />
+              : <Eye className="h-4 w-4 text-muted-foreground" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             className="text-primary hover:text-primary-hover"
             onClick={() => onEdit(account)}
           >
@@ -467,36 +502,3 @@ function SortableRow({
   );
 }
 
-function SortableTableHead({
-  field,
-  label,
-  sortField,
-  sortDir,
-  onSort,
-  className = "",
-}: {
-  field: SortField;
-  label: string;
-  sortField: SortField | null;
-  sortDir: SortDir;
-  onSort: (field: SortField) => void;
-  className?: string;
-}) {
-  const isActive = sortField === field;
-  const Icon = isActive
-    ? sortDir === "asc" ? ArrowUp : ArrowDown
-    : ArrowUpDown;
-
-  return (
-    <TableHead className={className}>
-      <button
-        type="button"
-        className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${isActive ? "text-foreground" : ""}`}
-        onClick={() => onSort(field)}
-      >
-        {label}
-        <Icon className={`h-3.5 w-3.5 ${isActive ? "" : "opacity-40"}`} />
-      </button>
-    </TableHead>
-  );
-}

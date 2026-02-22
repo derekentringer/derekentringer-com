@@ -59,3 +59,4 @@ Manually add, edit, and delete financial accounts (checking, savings, HYS, credi
 
 - **Delete behavior**: Cascade delete — deleting an account removes all its transactions and balances
 - **Balance history**: Automatically tracked — a balance snapshot is created whenever currentBalance is updated
+- **DTI percentage**: `dtiPercentage` (1-100, default 100) on Account controls what portion of the account's debt payments count toward DTI — used for shared debts like a mortgage split with a partner

@@ -45,3 +45,7 @@ Project future net income based on current income sources, recurring expenses, a
 - How to handle tax withholding — gross vs. net salary input?
 - Should projections account for inflation?
 - How granular should scenario modeling be (simple slider vs. full "what-if" editor)?
+
+## Resolved Open Questions
+
+- **DTI partial responsibility**: Supported via `Account.dtiPercentage` — each debt account's payments are multiplied by its percentage before summing for DTI

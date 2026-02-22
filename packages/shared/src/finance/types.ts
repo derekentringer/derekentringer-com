@@ -28,6 +28,8 @@ export interface Account {
   employerName?: string;
   isActive: boolean;
   isFavorite: boolean;
+  excludeFromIncomeSources: boolean;
+  dtiPercentage: number;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -92,6 +94,19 @@ export interface SavingsProfileData {
   interestEarnedYtd?: number;
 }
 
+export interface CreditProfileData {
+  periodStart?: string;
+  periodEnd?: string;
+  apr?: number;
+  minimumPayment?: number;
+  creditLimit?: number;
+  availableCredit?: number;
+  interestCharged?: number;
+  feesCharged?: number;
+  rewardsEarned?: number;
+  paymentDueDate?: string;
+}
+
 export interface Balance {
   accountId: string;
   balance: number;
@@ -99,6 +114,7 @@ export interface Balance {
   loanProfile?: LoanProfileData;
   investmentProfile?: InvestmentProfileData;
   savingsProfile?: SavingsProfileData;
+  creditProfile?: CreditProfileData;
 }
 
 // --- Account request/response types ---
@@ -114,6 +130,8 @@ export interface CreateAccountRequest {
   csvParserId?: string;
   isActive?: boolean;
   isFavorite?: boolean;
+  excludeFromIncomeSources?: boolean;
+  dtiPercentage?: number;
 }
 
 export interface UpdateAccountRequest {
@@ -127,6 +145,8 @@ export interface UpdateAccountRequest {
   csvParserId?: string | null;
   isActive?: boolean;
   isFavorite?: boolean;
+  excludeFromIncomeSources?: boolean;
+  dtiPercentage?: number;
 }
 
 export interface AccountListResponse {
@@ -272,6 +292,7 @@ export interface PdfImportPreviewResponse {
   loanStatic?: LoanStaticData;
   investmentProfile?: InvestmentProfileData;
   savingsProfile?: SavingsProfileData;
+  creditProfile?: CreditProfileData;
   rawProfileExtraction?: Record<string, string>;
 }
 
@@ -285,6 +306,7 @@ export interface PdfImportConfirmRequest {
   loanStatic?: LoanStaticData;
   investmentProfile?: InvestmentProfileData;
   savingsProfile?: SavingsProfileData;
+  creditProfile?: CreditProfileData;
 }
 
 export interface PdfImportConfirmResponse {
@@ -300,6 +322,15 @@ export interface PdfImportConfirmResponse {
 export interface UpdateTransactionRequest {
   category?: string | null;
   notes?: string | null;
+}
+
+export interface BulkUpdateCategoryRequest {
+  ids: string[];
+  category: string | null;
+}
+
+export interface BulkUpdateCategoryResponse {
+  updated: number;
 }
 
 export interface TransactionListResponse {
@@ -326,6 +357,9 @@ export const LIABILITY_ACCOUNT_TYPES: readonly AccountType[] = [
   AccountType.Credit,
   AccountType.Loan,
 ] as const;
+
+/** Category excluded from spending/income calculations to avoid double-counting transfers. */
+export const TRANSFER_CATEGORY = "Transfer";
 
 export function classifyAccountType(
   type: AccountType,
@@ -517,6 +551,16 @@ export interface DailySpendingResponse {
   points: DailySpendingPoint[];
 }
 
+export interface IncomeSpendingPoint {
+  date: string;
+  income: number;
+  spending: number;
+}
+
+export interface IncomeSpendingResponse {
+  points: IncomeSpendingPoint[];
+}
+
 export interface SpendingSummary {
   month: string;
   categories: Array<{
@@ -671,4 +715,20 @@ export interface SavingsProjectionResponse {
   account: SavingsAccountSummary;
   projection: SavingsProjectionPoint[];
   milestones: Array<{ targetAmount: number; targetDate: string | null }>;
+}
+
+// DTI (Debt-to-Income) Ratio
+export interface DTIComponent {
+  name: string;
+  amount: number;
+  type: "loan" | "bill" | "credit" | "manual" | "detected";
+  dtiPercentage?: number;
+}
+
+export interface DTIResponse {
+  ratio: number;
+  monthlyDebtPayments: number;
+  grossMonthlyIncome: number;
+  debtComponents: DTIComponent[];
+  incomeComponents: DTIComponent[];
 }

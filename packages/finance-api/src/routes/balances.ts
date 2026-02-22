@@ -12,6 +12,7 @@ import {
   encryptInvestmentProfileForCreate,
   encryptSavingsProfileForCreate,
   encryptLoanStaticForUpdate,
+  encryptCreditProfileForCreate,
 } from "../lib/mappers.js";
 import { encryptNumber } from "../lib/encryption.js";
 import { extractTextFromPdf, extractBalanceFromText } from "../lib/pdfExtract.js";
@@ -95,6 +96,22 @@ const confirmSchema = {
           apy: { type: "number" },
           interestEarned: { type: "number" },
           interestEarnedYtd: { type: "number" },
+        },
+      },
+      creditProfile: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          periodStart: { type: "string" },
+          periodEnd: { type: "string" },
+          apr: { type: "number" },
+          minimumPayment: { type: "number" },
+          creditLimit: { type: "number" },
+          availableCredit: { type: "number" },
+          interestCharged: { type: "number" },
+          feesCharged: { type: "number" },
+          rewardsEarned: { type: "number" },
+          paymentDueDate: { type: "string" },
         },
       },
     },
@@ -231,6 +248,7 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
           loanStatic: extraction.loanStatic,
           investmentProfile: extraction.investmentProfile,
           savingsProfile: extraction.savingsProfile,
+          creditProfile: extraction.creditProfile,
           rawProfileExtraction: extraction.rawProfileExtraction,
         });
       } catch (e) {
@@ -289,6 +307,7 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
         loanStatic,
         investmentProfile,
         savingsProfile,
+        creditProfile,
       } = request.body;
 
       if (!CUID_PATTERN.test(accountId)) {
@@ -311,18 +330,18 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
 
         // Validate profile type matches account type
         const at = account.type;
-        if (loanProfile && at !== AccountType.Loan) {
+        if (loanProfile && at !== AccountType.Loan && at !== AccountType.RealEstate) {
           return reply.status(400).send({
             statusCode: 400,
             error: "Bad Request",
-            message: "loanProfile is only valid for loan accounts",
+            message: "loanProfile is only valid for loan and real estate accounts",
           });
         }
-        if (loanStatic && at !== AccountType.Loan) {
+        if (loanStatic && at !== AccountType.Loan && at !== AccountType.RealEstate) {
           return reply.status(400).send({
             statusCode: 400,
             error: "Bad Request",
-            message: "loanStatic is only valid for loan accounts",
+            message: "loanStatic is only valid for loan and real estate accounts",
           });
         }
         if (investmentProfile && at !== AccountType.Investment) {
@@ -341,6 +360,13 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
             statusCode: 400,
             error: "Bad Request",
             message: "savingsProfile is only valid for savings accounts",
+          });
+        }
+        if (creditProfile && at !== AccountType.Credit) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: "creditProfile is only valid for credit accounts",
           });
         }
 
@@ -393,6 +419,11 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
           if (savingsProfile && hasData(savingsProfile)) {
             await tx.savingsProfile.create({
               data: encryptSavingsProfileForCreate(balanceRow.id, savingsProfile),
+            });
+          }
+          if (creditProfile && hasData(creditProfile)) {
+            await tx.creditProfile.create({
+              data: encryptCreditProfileForCreate(balanceRow.id, creditProfile),
             });
           }
 

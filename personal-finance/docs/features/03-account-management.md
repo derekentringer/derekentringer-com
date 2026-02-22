@@ -144,6 +144,24 @@ Favorited accounts are used by:
 - **Dashboard**: Per-account balance history charts shown for all favorited accounts
 - **Projections**: Per-account projection charts shown for favorited non-savings accounts on the Net Income tab
 
+### DTI Responsibility Percentage
+
+Added `dtiPercentage` field to accounts so users can specify what portion of a debt account's payments to include in DTI calculations (e.g., 50% for a mortgage split with someone).
+
+**Schema**: `dtiPercentage Int @default(100)` added to Account model (plain integer, not encrypted)
+**Migration**: `20260221020000_add_dti_percentage`
+**API**: `dtiPercentage` added to create/update account JSON schemas with validation (minimum: 1, maximum: 100)
+**Shared types**: `dtiPercentage: number` added to `Account`; `dtiPercentage?: number` added to `CreateAccountRequest`, `UpdateAccountRequest`
+**Mappers**: `dtiPercentage` mapped as plain integer in encrypt/decrypt account functions
+**UI**: Number input (1-100) labeled "DTI Responsibility (%)" shown in AccountForm for Loan, RealEstate, and Credit account types; helper text explains the use case
+
+DTI percentage is applied in `computeDTI()` to all debt sources from the account:
+- **Loan profiles**: `monthlyPayment * (dtiPercentage / 100)`
+- **Credit profiles**: `minimumPayment * (dtiPercentage / 100)`
+- **Bills**: Bills linked to the account are multiplied by the account's `dtiPercentage / 100`
+
+The DTI detail dialog shows a `(50%)` annotation next to the debt type label when the percentage is not 100%.
+
 ## Resolved Open Questions
 
 - **Delete behavior**: Cascade delete — deleting an account removes all its transactions and balances (via Prisma `onDelete: Cascade`)
