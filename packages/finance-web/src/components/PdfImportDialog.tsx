@@ -5,6 +5,7 @@ import type {
   LoanStaticData,
   InvestmentProfileData,
   SavingsProfileData,
+  CreditProfileData,
   PdfImportPreviewResponse,
 } from "@derekentringer/shared/finance";
 import { AccountType } from "@derekentringer/shared/finance";
@@ -16,6 +17,7 @@ import { PdfPreviewBase } from "./pdf-import/PdfPreviewBase.tsx";
 import { LoanProfilePreview } from "./pdf-import/LoanProfilePreview.tsx";
 import { InvestmentProfilePreview } from "./pdf-import/InvestmentProfilePreview.tsx";
 import { SavingsProfilePreview } from "./pdf-import/SavingsProfilePreview.tsx";
+import { CreditProfilePreview } from "./pdf-import/CreditProfilePreview.tsx";
 import {
   Dialog,
   DialogContent,
@@ -80,6 +82,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
   const [loanStatic, setLoanStatic] = useState<LoanStaticData>({});
   const [investmentProfile, setInvestmentProfile] = useState<InvestmentProfileData>({});
   const [savingsProfile, setSavingsProfile] = useState<SavingsProfileData>({});
+  const [creditProfile, setCreditProfile] = useState<CreditProfileData>({});
 
   // Result state
   const [result, setResult] = useState<{
@@ -134,6 +137,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
     setLoanStatic({});
     setInvestmentProfile({});
     setSavingsProfile({});
+    setCreditProfile({});
     setError("");
   }
 
@@ -153,6 +157,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
       if (data.loanStatic) setLoanStatic(data.loanStatic);
       if (data.investmentProfile) setInvestmentProfile(data.investmentProfile);
       if (data.savingsProfile) setSavingsProfile(data.savingsProfile);
+      if (data.creditProfile) setCreditProfile(data.creditProfile);
 
       setStep("preview");
     } catch (err) {
@@ -190,6 +195,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
       if (data.loanStatic) setLoanStatic(data.loanStatic);
       if (data.investmentProfile) setInvestmentProfile(data.investmentProfile);
       if (data.savingsProfile) setSavingsProfile(data.savingsProfile);
+      if (data.creditProfile) setCreditProfile(data.creditProfile);
     } catch (err) {
       // Extraction failed — show retry/skip dialog
       setError(err instanceof Error ? err.message : "Failed to extract PDF");
@@ -235,14 +241,19 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
           updateInterestRate:
             updateInterestRate &&
             (accountType === AccountType.Loan ||
+              accountType === AccountType.RealEstate ||
               accountType === AccountType.HighYieldSavings ||
               accountType === AccountType.Savings)
               ? true
               : undefined,
           loanProfile:
-            accountType === AccountType.Loan ? loanProfile : undefined,
+            accountType === AccountType.Loan || accountType === AccountType.RealEstate
+              ? loanProfile
+              : undefined,
           loanStatic:
-            accountType === AccountType.Loan ? loanStatic : undefined,
+            accountType === AccountType.Loan || accountType === AccountType.RealEstate
+              ? loanStatic
+              : undefined,
           investmentProfile:
             accountType === AccountType.Investment
               ? investmentProfile
@@ -251,6 +262,10 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
             accountType === AccountType.HighYieldSavings ||
             accountType === AccountType.Savings
               ? savingsProfile
+              : undefined,
+          creditProfile:
+            accountType === AccountType.Credit
+              ? creditProfile
               : undefined,
         },
         pinToken,
@@ -408,7 +423,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
               rawProfileExtraction={preview.rawProfileExtraction}
             />
 
-            {preview.accountType === AccountType.Loan && (
+            {(preview.accountType === AccountType.Loan || preview.accountType === AccountType.RealEstate) && (
               <LoanProfilePreview
                 loanProfile={loanProfile}
                 onLoanProfileChange={setLoanProfile}
@@ -433,6 +448,13 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
                 onSavingsProfileChange={setSavingsProfile}
                 updateInterestRate={updateInterestRate}
                 onUpdateInterestRateChange={setUpdateInterestRate}
+              />
+            )}
+
+            {preview.accountType === AccountType.Credit && (
+              <CreditProfilePreview
+                creditProfile={creditProfile}
+                onCreditProfileChange={setCreditProfile}
               />
             )}
 

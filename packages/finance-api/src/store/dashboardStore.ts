@@ -4,11 +4,18 @@ import type {
   SpendingSummary,
   AccountBalanceHistoryResponse,
   DailySpendingPoint,
+  IncomeSpendingPoint,
+  DTIResponse,
+  DTIComponent,
 } from "@derekentringer/shared";
-import { classifyAccountType, AccountType } from "@derekentringer/shared";
+import { classifyAccountType, AccountType, TRANSFER_CATEGORY } from "@derekentringer/shared";
 import { getPrisma } from "../lib/prisma.js";
-import { decryptAccount } from "../lib/mappers.js";
+import { decryptAccount, decryptLoanProfile, decryptCreditProfile } from "../lib/mappers.js";
 import { decryptNumber } from "../lib/encryption.js";
+import { listAccounts } from "./accountStore.js";
+import { listBills } from "./billStore.js";
+import { listIncomeSources } from "./incomeSourceStore.js";
+import { frequencyToMonthlyMultiplier, detectIncomePatterns } from "./projectionsStore.js";
 
 // ─── Period key helpers ─────────────────────────────────────────────────────
 
@@ -301,15 +308,17 @@ export async function computeSpendingSummary(
   });
 
   // Aggregate spending by category (negative amounts = spending)
+  // Exclude "Transfer" category to avoid double-counting (e.g. credit card payments from checking)
   const categoryTotals = new Map<string, number>();
   let total = 0;
 
   for (const row of rows) {
+    const category = row.category || "Uncategorized";
+    if (category === TRANSFER_CATEGORY) continue;
     const amount = decryptNumber(row.amount);
     // Only count negative amounts (expenses)
     if (amount < 0) {
       const absAmount = Math.abs(amount);
-      const category = row.category || "Uncategorized";
       categoryTotals.set(
         category,
         (categoryTotals.get(category) ?? 0) + absAmount,
@@ -348,12 +357,13 @@ export async function computeDailySpending(
     where: {
       date: { gte: startDate, lte: endDate },
     },
-    select: { amount: true, date: true },
+    select: { amount: true, date: true, category: true },
   });
 
   const dayTotals = new Map<string, number>();
 
   for (const row of rows) {
+    if ((row.category || "Uncategorized") === TRANSFER_CATEGORY) continue;
     const amount = decryptNumber(row.amount);
     if (amount < 0) {
       const key = toDayKey(new Date(row.date));
@@ -366,6 +376,63 @@ export async function computeDailySpending(
   return keys.map((date) => ({
     date,
     amount: Math.round((dayTotals.get(date) ?? 0) * 100) / 100,
+  }));
+}
+
+// ─── Income vs Spending ─────────────────────────────────────────────────────
+
+/**
+ * Compute income and spending totals grouped by week or month.
+ * Excludes "Transfer" category to avoid double-counting.
+ *
+ * When excludedAccountIds is provided, transactions from those accounts
+ * are excluded from both income and spending totals.
+ */
+export async function computeIncomeSpending(
+  granularity: "weekly" | "monthly",
+  startDate?: Date,
+  excludedAccountIds?: Set<string>,
+): Promise<IncomeSpendingPoint[]> {
+  const prisma = getPrisma();
+  const now = new Date();
+
+  const needAccountId = !!excludedAccountIds && excludedAccountIds.size > 0;
+  const rows = await prisma.transaction.findMany({
+    where: startDate ? { date: { gte: startDate } } : undefined,
+    select: {
+      amount: true,
+      date: true,
+      category: true,
+      ...(needAccountId ? { accountId: true } : {}),
+    },
+  });
+
+  const incomeMap = new Map<string, number>();
+  const spendingMap = new Map<string, number>();
+
+  for (const row of rows) {
+    if ((row.category || "Uncategorized") === TRANSFER_CATEGORY) continue;
+    if (needAccountId && excludedAccountIds!.has((row as { accountId: string }).accountId)) continue;
+    const amount = decryptNumber(row.amount);
+    const key = dateToKey(new Date(row.date), granularity);
+    if (amount >= 0) {
+      incomeMap.set(key, (incomeMap.get(key) ?? 0) + amount);
+    } else {
+      spendingMap.set(key, (spendingMap.get(key) ?? 0) + Math.abs(amount));
+    }
+  }
+
+  const effectiveStart = startDate ?? (rows.length > 0
+    ? rows.reduce((min, r) => (r.date < min ? r.date : min), rows[0].date)
+    : now);
+  const start = effectiveStart instanceof Date ? effectiveStart : new Date(effectiveStart);
+
+  const keys = generatePeriodKeys(start, now, granularity);
+
+  return keys.map((date) => ({
+    date,
+    income: Math.round((incomeMap.get(date) ?? 0) * 100) / 100,
+    spending: Math.round((spendingMap.get(date) ?? 0) * 100) / 100,
   }));
 }
 
@@ -448,4 +515,148 @@ export async function computeAccountBalanceHistory(
     currentBalance: account.currentBalance,
     history,
   };
+}
+
+// ─── DTI (Debt-to-Income) Ratio ─────────────────────────────────────────────
+
+export async function computeDTI(): Promise<DTIResponse> {
+  const prisma = getPrisma();
+  const debtComponents: DTIComponent[] = [];
+  const incomeComponents: DTIComponent[] = [];
+
+  // 1. Monthly debt payments from accounts with loan profiles (Loan + RealEstate,
+  //    since mortgages are tracked on RealEstate accounts for correct equity display).
+  const allAccounts = await listAccounts({ isActive: true });
+  const debtBearingAccounts = allAccounts.filter(
+    (a) => a.type === AccountType.Loan || a.type === AccountType.RealEstate,
+  );
+
+  // Track which loan accounts already contributed via their profile,
+  // so we can avoid double-counting if a bill also targets the same account.
+  const loanAccountIdsWithPayment = new Set<string>();
+
+  let loanPaymentsTotal = 0;
+  await Promise.all(
+    debtBearingAccounts.map(async (account) => {
+      const latestBalance = await prisma.balance.findFirst({
+        where: { accountId: account.id },
+        orderBy: { date: "desc" },
+        include: { loanProfile: true },
+      });
+      if (latestBalance?.loanProfile) {
+        const profile = decryptLoanProfile(latestBalance.loanProfile);
+        if (profile.monthlyPayment) {
+          const adjusted = profile.monthlyPayment * (account.dtiPercentage / 100);
+          const amount = Math.round(adjusted * 100) / 100;
+          loanPaymentsTotal += adjusted;
+          debtComponents.push({ name: account.name, amount, type: "loan", ...(account.dtiPercentage !== 100 && { dtiPercentage: account.dtiPercentage }) });
+          loanAccountIdsWithPayment.add(account.id);
+        }
+      }
+    }),
+  );
+
+  // 2. Minimum payments from credit card profiles
+  const creditAccounts = allAccounts.filter((a) => a.type === AccountType.Credit);
+  let creditPaymentsTotal = 0;
+  await Promise.all(
+    creditAccounts.map(async (account) => {
+      const latestBalance = await prisma.balance.findFirst({
+        where: { accountId: account.id },
+        orderBy: { date: "desc" },
+        include: { creditProfile: true },
+      });
+      if (latestBalance?.creditProfile) {
+        const profile = decryptCreditProfile(latestBalance.creditProfile);
+        if (profile.minimumPayment) {
+          const adjusted = profile.minimumPayment * (account.dtiPercentage / 100);
+          const amount = Math.round(adjusted * 100) / 100;
+          creditPaymentsTotal += adjusted;
+          debtComponents.push({ name: account.name, amount, type: "credit", ...(account.dtiPercentage !== 100 && { dtiPercentage: account.dtiPercentage }) });
+        }
+      }
+    }),
+  );
+
+  // 3. Bills that represent debt obligations, frequency-normalized.
+  //    Include bills linked to a debt-bearing account (Credit/Loan/RealEstate).
+  //    Skip bills whose accountId matches an account that already
+  //    contributed a monthlyPayment above (avoid double-counting).
+  const allBills = await listBills({ isActive: true });
+
+  const debtAccountIds = new Set(
+    allAccounts
+      .filter((a) =>
+        a.type === AccountType.Loan ||
+        a.type === AccountType.RealEstate,
+      )
+      .map((a) => a.id),
+  );
+
+  // Build lookup for DTI percentage by account ID
+  const accountDtiPctMap = new Map<string, number>();
+  for (const a of allAccounts) {
+    accountDtiPctMap.set(a.id, a.dtiPercentage);
+  }
+
+  let billDebtTotal = 0;
+  for (const bill of allBills) {
+    // Skip bills already captured via loan profile monthlyPayment
+    if (bill.accountId && loanAccountIdsWithPayment.has(bill.accountId)) continue;
+
+    if (bill.accountId && debtAccountIds.has(bill.accountId)) {
+      const monthly = bill.amount * frequencyToMonthlyMultiplier(bill.frequency);
+      const dtiPct = accountDtiPctMap.get(bill.accountId) ?? 100;
+      const adjusted = monthly * (dtiPct / 100);
+      billDebtTotal += adjusted;
+      debtComponents.push({
+        name: bill.name,
+        amount: Math.round(adjusted * 100) / 100,
+        type: "bill",
+        ...(dtiPct !== 100 && { dtiPercentage: dtiPct }),
+      });
+    }
+  }
+
+  const monthlyDebtPayments = Math.round((loanPaymentsTotal + creditPaymentsTotal + billDebtTotal) * 100) / 100;
+
+  // 3. Gross monthly income (same logic as projections: manual sources preferred)
+  const [manualIncome, detectedIncome] = await Promise.all([
+    listIncomeSources({ isActive: true }),
+    detectIncomePatterns(),
+  ]);
+
+  if (manualIncome.length > 0) {
+    for (const src of manualIncome) {
+      const monthly = src.amount * frequencyToMonthlyMultiplier(src.frequency);
+      incomeComponents.push({
+        name: src.name,
+        amount: Math.round(monthly * 100) / 100,
+        type: "manual",
+      });
+    }
+  } else {
+    for (const pattern of detectedIncome) {
+      incomeComponents.push({
+        name: pattern.description,
+        amount: Math.round(pattern.monthlyEquivalent * 100) / 100,
+        type: "detected",
+      });
+    }
+  }
+
+  const grossMonthlyIncome = Math.round(
+    incomeComponents.reduce((s, c) => s + c.amount, 0) * 100,
+  ) / 100;
+
+  // 4. Compute ratio
+  const ratio = grossMonthlyIncome > 0
+    ? Math.round((monthlyDebtPayments / grossMonthlyIncome) * 1000) / 10
+    : 0;
+
+  // Sort components by amount descending
+  debtComponents.sort((a, b) => b.amount - a.amount);
+  incomeComponents.sort((a, b) => b.amount - a.amount);
+
+  return { ratio, monthlyDebtPayments, grossMonthlyIncome, debtComponents, incomeComponents };
 }

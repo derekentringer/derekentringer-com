@@ -36,7 +36,7 @@ const TRANSFER_PATTERN =
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function frequencyToMonthlyMultiplier(freq: Frequency): number {
+export function frequencyToMonthlyMultiplier(freq: Frequency): number {
   switch (freq) {
     case "weekly":
       return 52 / 12;

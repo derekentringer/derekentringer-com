@@ -41,6 +41,8 @@ const createAccountSchema = {
       csvParserId: { type: ["string", "null"] },
       isActive: { type: "boolean" },
       isFavorite: { type: "boolean" },
+      excludeFromIncomeSources: { type: "boolean" },
+      dtiPercentage: { type: "number", minimum: 1, maximum: 100 },
     },
   },
 };
@@ -61,6 +63,8 @@ const updateAccountSchema = {
       csvParserId: { type: ["string", "null"] },
       isActive: { type: "boolean" },
       isFavorite: { type: "boolean" },
+      excludeFromIncomeSources: { type: "boolean" },
+      dtiPercentage: { type: "number", minimum: 1, maximum: 100 },
     },
   },
 };

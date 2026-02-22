@@ -1,0 +1,1 @@
+ALTER TABLE "accounts" ADD COLUMN "dtiPercentage" INTEGER NOT NULL DEFAULT 100;

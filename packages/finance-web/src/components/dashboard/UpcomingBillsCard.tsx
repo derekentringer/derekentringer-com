@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -10,14 +11,28 @@ interface UpcomingBillsCardProps {
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });
 }
 
 export function UpcomingBillsCard({ data }: UpcomingBillsCardProps) {
-  if (data.bills.length === 0) {
+  // Filter to bills due from today through end of current month
+  const { bills, overdueCount } = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const filtered = data.bills.filter((b) => {
+      if (b.isPaid) return false;
+      const due = new Date(b.dueDate + "T00:00:00");
+      return due >= today && due <= endOfMonth;
+    });
+    const overdue = filtered.filter((b) => b.isOverdue).length;
+    return { bills: filtered, overdueCount: overdue };
+  }, [data.bills]);
+
+  if (bills.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -25,18 +40,15 @@ export function UpcomingBillsCard({ data }: UpcomingBillsCardProps) {
         </CardHeader>
         <CardContent>
           <p className="text-center text-muted-foreground py-8">
-            No upcoming bills.{" "}
+            No upcoming bills this month.{" "}
             <Link to="/bills" className="text-primary hover:underline">
-              Add a bill
+              View all bills
             </Link>
           </p>
         </CardContent>
       </Card>
     );
   }
-
-  // Show at most 8 bills on dashboard
-  const displayBills = data.bills.slice(0, 8);
 
   return (
     <Card>
@@ -53,7 +65,7 @@ export function UpcomingBillsCard({ data }: UpcomingBillsCardProps) {
       </CardHeader>
       <CardContent>
         <div>
-          {displayBills.map((bill, i) => (
+          {bills.map((bill, i) => (
             <div
               key={`${bill.billId}-${bill.dueDate}-${i}`}
               className={cn(
@@ -84,9 +96,9 @@ export function UpcomingBillsCard({ data }: UpcomingBillsCardProps) {
           ))}
         </div>
 
-        {data.overdueCount > 0 && (
+        {overdueCount > 0 && (
           <p className="text-xs text-destructive mt-3">
-            {data.overdueCount} overdue bill{data.overdueCount > 1 ? "s" : ""}
+            {overdueCount} overdue bill{overdueCount > 1 ? "s" : ""}
           </p>
         )}
       </CardContent>

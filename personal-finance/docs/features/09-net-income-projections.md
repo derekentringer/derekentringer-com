@@ -134,6 +134,17 @@ Monthly expenses are calculated as **Bills + Budgets** (not historical average s
 - [07 — Budgeting & Expense Tracking](07-budgeting-expense-tracking.md) — budget totals feed into expense projections
 - [08 — Bill Management](08-bill-management.md) — bill totals feed into expense projections
 
+## DTI Responsibility Percentage
+
+The DTI calculation in `computeDTI()` supports per-account `dtiPercentage` fields (1-100, default 100) that multiply debt payments before summing. This lets users specify partial responsibility for shared debts (e.g., a mortgage split 50/50). The multiplier applies to:
+- Loan profile `monthlyPayment`
+- Credit profile `minimumPayment`
+- Bills linked to debt-bearing accounts
+
+The `DTIComponent` type includes an optional `dtiPercentage` field so the frontend can annotate adjusted components (e.g., "Loan (50%)").
+
+See [03 — Account Management](03-account-management.md) for the account-level field details.
+
 ## Resolved Open Questions
 
 - **Tax withholding**: Users enter net (take-home) salary amounts; no gross/tax calculation

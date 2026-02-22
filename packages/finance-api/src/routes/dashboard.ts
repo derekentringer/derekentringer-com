@@ -5,8 +5,11 @@ import {
   computeSpendingSummary,
   computeAccountBalanceHistory,
   computeDailySpending,
+  computeIncomeSpending,
+  computeDTI,
 } from "../store/dashboardStore.js";
 import { listBills, getPaymentsInRange, computeUpcomingInstances } from "../store/billStore.js";
+import { listExcludedAccountIds } from "../store/accountStore.js";
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
@@ -180,6 +183,38 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // GET /income-spending?range=12m&granularity=monthly&incomeFilter=all|sources
+  fastify.get<{ Querystring: { range?: string; granularity?: string; incomeFilter?: string } }>(
+    "/income-spending",
+    async (
+      request: FastifyRequest<{ Querystring: { range?: string; granularity?: string; incomeFilter?: string } }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const range = VALID_RANGES.includes(request.query.range || "") ? request.query.range! : "12m";
+        const rawGran = request.query.granularity;
+        const granularity = rawGran === "weekly" || rawGran === "monthly" ? rawGran : "monthly";
+        const startDate = computeStartDate(range);
+
+        let excludedAccountIds: Set<string> | undefined;
+        if (request.query.incomeFilter === "sources") {
+          const excluded = await listExcludedAccountIds();
+          if (excluded.length > 0) excludedAccountIds = new Set(excluded);
+        }
+
+        const points = await computeIncomeSpending(granularity, startDate, excludedAccountIds);
+        return reply.send({ points });
+      } catch (e) {
+        request.log.error(e, "Failed to compute income vs spending");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to compute income vs spending",
+        });
+      }
+    },
+  );
+
   // GET /upcoming-bills?days=30 — upcoming bills for dashboard widget
   fastify.get<{ Querystring: { days?: string } }>(
     "/upcoming-bills",
@@ -229,4 +264,19 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       }
     },
   );
+
+  // GET /dti — debt-to-income ratio
+  fastify.get("/dti", async (request, reply) => {
+    try {
+      const result = await computeDTI();
+      return reply.send(result);
+    } catch (e) {
+      request.log.error(e, "Failed to compute DTI");
+      return reply.status(500).send({
+        statusCode: 500,
+        error: "Internal Server Error",
+        message: "Failed to compute DTI ratio",
+      });
+    }
+  });
 }

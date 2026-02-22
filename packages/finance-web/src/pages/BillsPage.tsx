@@ -47,8 +47,8 @@ export function BillsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [filter, setFilter] = useState<FilterTab>("all");
   const [payingId, setPayingId] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<SortField | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortField, setSortField] = useState<SortField | null>("amount");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const loadData = useCallback(async () => {
     try {

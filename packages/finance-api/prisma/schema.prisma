@@ -33,8 +33,10 @@ model Account {
   maturityDate    String?
   loanType        String?
   employerName    String?
-  isActive        Boolean       @default(true)
-  isFavorite      Boolean       @default(false)
+  isActive                Boolean       @default(true)
+  isFavorite              Boolean       @default(false)
+  excludeFromIncomeSources Boolean      @default(false)
+  dtiPercentage   Int           @default(100)
   sortOrder       Int           @default(0)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -63,6 +65,7 @@ model Transaction {
   @@unique([accountId, dedupeHash])
   @@index([accountId])
   @@index([date])
+  @@index([date, accountId])
   @@map("transactions")
 }
 
@@ -102,6 +105,7 @@ model Balance {
   loanProfile       LoanProfile?
   investmentProfile InvestmentProfile?
   savingsProfile    SavingsProfile?
+  creditProfile     CreditProfile?
 
   @@index([accountId, date])
   @@index([accountId])
@@ -164,6 +168,26 @@ model SavingsProfile {
   balance           Balance  @relation(fields: [balanceId], references: [id], onDelete: Cascade)
 
   @@map("savings_profiles")
+}
+
+model CreditProfile {
+  id              String   @id @default(cuid())
+  balanceId       String   @unique
+  periodStart     String?
+  periodEnd       String?
+  apr             String?
+  minimumPayment  String?
+  creditLimit     String?
+  availableCredit String?
+  interestCharged String?
+  feesCharged     String?
+  rewardsEarned   String?
+  paymentDueDate  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  balance         Balance  @relation(fields: [balanceId], references: [id], onDelete: Cascade)
+
+  @@map("credit_profiles")
 }
 
 model Budget {

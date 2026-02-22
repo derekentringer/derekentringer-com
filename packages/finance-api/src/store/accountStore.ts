@@ -23,10 +23,14 @@ export async function createAccount(data: {
   type: AccountType;
   institution?: string;
   currentBalance?: number;
+  estimatedValue?: number;
   accountNumber?: string | null;
   interestRate?: number | null;
   csvParserId?: string | null;
   isActive?: boolean;
+  isFavorite?: boolean;
+  excludeFromIncomeSources?: boolean;
+  dtiPercentage?: number;
 }): Promise<Account> {
   const prisma = getPrisma();
   const encrypted = encryptAccountForCreate(data);
@@ -72,10 +76,14 @@ export async function updateAccount(
     type?: AccountType;
     institution?: string;
     currentBalance?: number;
+    estimatedValue?: number | null;
     accountNumber?: string | null;
     interestRate?: number | null;
     csvParserId?: string | null;
     isActive?: boolean;
+    isFavorite?: boolean;
+    excludeFromIncomeSources?: boolean;
+    dtiPercentage?: number;
   },
 ): Promise<Account | null> {
   const prisma = getPrisma();
@@ -200,6 +208,19 @@ export async function updateAccountEmployerName(
     data: { employerName: encryptOptionalField(name) },
   });
   return true;
+}
+
+/**
+ * Return IDs of accounts with excludeFromIncomeSources=true.
+ * Avoids decrypting all account fields when only IDs are needed.
+ */
+export async function listExcludedAccountIds(): Promise<string[]> {
+  const prisma = getPrisma();
+  const rows = await prisma.account.findMany({
+    where: { excludeFromIncomeSources: true },
+    select: { id: true },
+  });
+  return rows.map((r) => r.id);
 }
 
 export async function deleteAccount(id: string): Promise<boolean> {

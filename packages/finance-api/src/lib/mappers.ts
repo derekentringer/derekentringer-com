@@ -5,6 +5,7 @@ import type {
   LoanProfile as PrismaLoanProfile,
   InvestmentProfile as PrismaInvestmentProfile,
   SavingsProfile as PrismaSavingsProfile,
+  CreditProfile as PrismaCreditProfile,
   Budget as PrismaBudget,
   Bill as PrismaBill,
   BillPayment as PrismaBillPayment,
@@ -17,6 +18,7 @@ import type {
   LoanProfileData,
   InvestmentProfileData,
   SavingsProfileData,
+  CreditProfileData,
   LoanStaticData,
   LoanType,
   Budget,
@@ -58,6 +60,8 @@ export function decryptAccount(row: PrismaAccount): Account {
     employerName: decryptOptionalField(row.employerName),
     isActive: row.isActive,
     isFavorite: row.isFavorite,
+    excludeFromIncomeSources: row.excludeFromIncomeSources,
+    dtiPercentage: row.dtiPercentage,
     sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -80,6 +84,8 @@ interface EncryptedAccountCreate {
   employerName: string | null;
   isActive?: boolean;
   isFavorite?: boolean;
+  excludeFromIncomeSources?: boolean;
+  dtiPercentage?: number;
 }
 
 export function encryptAccountForCreate(input: {
@@ -98,6 +104,8 @@ export function encryptAccountForCreate(input: {
   employerName?: string | null;
   isActive?: boolean;
   isFavorite?: boolean;
+  excludeFromIncomeSources?: boolean;
+  dtiPercentage?: number;
 }): EncryptedAccountCreate {
   const data: EncryptedAccountCreate = {
     name: encryptField(input.name),
@@ -117,6 +125,8 @@ export function encryptAccountForCreate(input: {
   // Only set isActive when explicitly provided; otherwise Prisma @default(true) applies
   if (input.isActive !== undefined) data.isActive = input.isActive;
   if (input.isFavorite !== undefined) data.isFavorite = input.isFavorite;
+  if (input.excludeFromIncomeSources !== undefined) data.excludeFromIncomeSources = input.excludeFromIncomeSources;
+  if (input.dtiPercentage !== undefined) data.dtiPercentage = input.dtiPercentage;
   return data;
 }
 
@@ -136,6 +146,8 @@ export interface EncryptedAccountUpdate {
   employerName?: string | null;
   isActive?: boolean;
   isFavorite?: boolean;
+  excludeFromIncomeSources?: boolean;
+  dtiPercentage?: number;
 }
 
 export function encryptAccountForUpdate(input: {
@@ -154,6 +166,8 @@ export function encryptAccountForUpdate(input: {
   employerName?: string | null;
   isActive?: boolean;
   isFavorite?: boolean;
+  excludeFromIncomeSources?: boolean;
+  dtiPercentage?: number;
 }): EncryptedAccountUpdate {
   const data: EncryptedAccountUpdate = {};
 
@@ -183,6 +197,8 @@ export function encryptAccountForUpdate(input: {
     data.employerName = encryptOptionalField(input.employerName);
   if (input.isActive !== undefined) data.isActive = input.isActive;
   if (input.isFavorite !== undefined) data.isFavorite = input.isFavorite;
+  if (input.excludeFromIncomeSources !== undefined) data.excludeFromIncomeSources = input.excludeFromIncomeSources;
+  if (input.dtiPercentage !== undefined) data.dtiPercentage = input.dtiPercentage;
 
   return data;
 }
@@ -251,6 +267,7 @@ type PrismaBalanceWithProfiles = PrismaBalance & {
   loanProfile?: PrismaLoanProfile | null;
   investmentProfile?: PrismaInvestmentProfile | null;
   savingsProfile?: PrismaSavingsProfile | null;
+  creditProfile?: PrismaCreditProfile | null;
 };
 
 export function decryptBalance(row: PrismaBalanceWithProfiles): Balance {
@@ -268,6 +285,9 @@ export function decryptBalance(row: PrismaBalanceWithProfiles): Balance {
   }
   if (row.savingsProfile) {
     result.savingsProfile = decryptSavingsProfile(row.savingsProfile);
+  }
+  if (row.creditProfile) {
+    result.creditProfile = decryptCreditProfile(row.creditProfile);
   }
 
   return result;
@@ -425,6 +445,56 @@ export function decryptSavingsProfile(
     apy: decryptOptionalNumber(row.apy),
     interestEarned: decryptOptionalNumber(row.interestEarned),
     interestEarnedYtd: decryptOptionalNumber(row.interestEarnedYtd),
+  };
+}
+
+// --- Credit Profile ---
+
+export function encryptCreditProfileForCreate(
+  balanceId: string,
+  data: CreditProfileData,
+): {
+  balanceId: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  apr: string | null;
+  minimumPayment: string | null;
+  creditLimit: string | null;
+  availableCredit: string | null;
+  interestCharged: string | null;
+  feesCharged: string | null;
+  rewardsEarned: string | null;
+  paymentDueDate: string | null;
+} {
+  return {
+    balanceId,
+    periodStart: encryptOptionalField(data.periodStart) ?? null,
+    periodEnd: encryptOptionalField(data.periodEnd) ?? null,
+    apr: encryptOptionalNumber(data.apr) ?? null,
+    minimumPayment: encryptOptionalNumber(data.minimumPayment) ?? null,
+    creditLimit: encryptOptionalNumber(data.creditLimit) ?? null,
+    availableCredit: encryptOptionalNumber(data.availableCredit) ?? null,
+    interestCharged: encryptOptionalNumber(data.interestCharged) ?? null,
+    feesCharged: encryptOptionalNumber(data.feesCharged) ?? null,
+    rewardsEarned: encryptOptionalNumber(data.rewardsEarned) ?? null,
+    paymentDueDate: encryptOptionalField(data.paymentDueDate) ?? null,
+  };
+}
+
+export function decryptCreditProfile(
+  row: PrismaCreditProfile,
+): CreditProfileData {
+  return {
+    periodStart: decryptOptionalField(row.periodStart),
+    periodEnd: decryptOptionalField(row.periodEnd),
+    apr: decryptOptionalNumber(row.apr),
+    minimumPayment: decryptOptionalNumber(row.minimumPayment),
+    creditLimit: decryptOptionalNumber(row.creditLimit),
+    availableCredit: decryptOptionalNumber(row.availableCredit),
+    interestCharged: decryptOptionalNumber(row.interestCharged),
+    feesCharged: decryptOptionalNumber(row.feesCharged),
+    rewardsEarned: decryptOptionalNumber(row.rewardsEarned),
+    paymentDueDate: decryptOptionalField(row.paymentDueDate),
   };
 }
 

@@ -5,6 +5,7 @@ import type {
   LoanStaticData,
   InvestmentProfileData,
   SavingsProfileData,
+  CreditProfileData,
 } from "@derekentringer/shared";
 import { AccountType } from "@derekentringer/shared";
 
@@ -17,6 +18,7 @@ export interface ExtractedStatementData {
   loanStatic?: LoanStaticData;
   investmentProfile?: InvestmentProfileData;
   savingsProfile?: SavingsProfileData;
+  creditProfile?: CreditProfileData;
   rawProfileExtraction?: Record<string, string>;
 }
 
@@ -148,16 +150,36 @@ function savingsProperties(): Record<string, ToolProperty> {
   };
 }
 
+function creditProperties(): Record<string, ToolProperty> {
+  return {
+    periodStart: { type: "string", description: "Statement period start date in YYYY-MM-DD format" },
+    periodEnd: { type: "string", description: "Statement period end date in YYYY-MM-DD format" },
+    apr: { type: "number", description: "Current annual percentage rate as a percentage (e.g. 24.99 for 24.99%)" },
+    minimumPayment: { type: "number", description: "Minimum payment due amount" },
+    creditLimit: { type: "number", description: "Total credit limit" },
+    availableCredit: { type: "number", description: "Available credit remaining" },
+    interestCharged: { type: "number", description: "Interest charged this period" },
+    feesCharged: { type: "number", description: "Fees charged this period" },
+    rewardsEarned: { type: "number", description: "Rewards or cashback earned this period" },
+    paymentDueDate: { type: "string", description: "Next payment due date in YYYY-MM-DD format" },
+    // Raw text fields
+    aprText: { type: "string", description: "Exact text containing the APR" },
+    paymentText: { type: "string", description: "Exact text containing the minimum payment details" },
+  };
+}
+
 function buildExtractionTool(accountType: AccountType): ToolSchema {
   const props = baseProperties();
   const baseRequired = ["balance", "date", "balanceText", "dateText"];
 
-  if (accountType === AccountType.Loan) {
+  if (accountType === AccountType.Loan || accountType === AccountType.RealEstate) {
     Object.assign(props, loanProperties());
   } else if (accountType === AccountType.Investment) {
     Object.assign(props, investmentProperties());
   } else if (accountType === AccountType.HighYieldSavings || accountType === AccountType.Savings) {
     Object.assign(props, savingsProperties());
+  } else if (accountType === AccountType.Credit) {
+    Object.assign(props, creditProperties());
   }
 
   return {
@@ -174,8 +196,8 @@ function buildExtractionTool(accountType: AccountType): ToolSchema {
 function getSystemPrompt(accountType: AccountType): string {
   const base = "You extract structured data from financial statements.";
 
-  if (accountType === AccountType.Loan) {
-    return `${base} This is a loan statement. Extract the ending balance, statement date, and all available loan details including interest rate, payment breakdown (principal, interest, escrow), remaining term, and any static loan information (original balance, origination date, maturity date, loan type). If there are multiple balances, use the principal/remaining balance. For dates, use YYYY-MM-DD format. Only include fields you can confidently extract from the document.`;
+  if (accountType === AccountType.Loan || accountType === AccountType.RealEstate) {
+    return `${base} This is a loan/mortgage statement. Extract the ending balance, statement date, and all available loan details including interest rate, payment breakdown (principal, interest, escrow), remaining term, and any static loan information (original balance, origination date, maturity date, loan type). If there are multiple balances, use the principal/remaining balance. For dates, use YYYY-MM-DD format. Only include fields you can confidently extract from the document.`;
   }
 
   if (accountType === AccountType.Investment) {
@@ -184,6 +206,10 @@ function getSystemPrompt(accountType: AccountType): string {
 
   if (accountType === AccountType.HighYieldSavings || accountType === AccountType.Savings) {
     return `${base} This is a savings account statement. Extract the ending balance, statement date, and all available savings details including APY, interest earned this period, and year-to-date interest. For dates, use YYYY-MM-DD format. Only include fields you can confidently extract from the document.`;
+  }
+
+  if (accountType === AccountType.Credit) {
+    return `${base} This is a credit card statement. Extract the ending balance (amount owed), statement date, and all available credit card details including APR, minimum payment, credit limit, available credit, interest charged, fees, rewards earned, and payment due date. Balances owed should be positive numbers. For dates, use YYYY-MM-DD format. Only include fields you can confidently extract from the document.`;
   }
 
   return `${base} Extract the summary/ending balance and statement date. If there are multiple balances, use the total/ending/summary balance, not individual line items. For credit accounts, balances owed should be positive numbers.`;
@@ -250,7 +276,7 @@ export async function extractBalanceFromText(
   };
 
   // Parse account-type-specific fields
-  if (accountType === AccountType.Loan) {
+  if (accountType === AccountType.Loan || accountType === AccountType.RealEstate) {
     result.loanProfile = parseLoanProfile(input);
     result.loanStatic = parseLoanStatic(input);
     result.rawProfileExtraction = pickRawText(input, ["interestRateText", "paymentText"]);
@@ -260,6 +286,9 @@ export async function extractBalanceFromText(
   } else if (accountType === AccountType.HighYieldSavings || accountType === AccountType.Savings) {
     result.savingsProfile = parseSavingsProfile(input);
     result.rawProfileExtraction = pickRawText(input, ["apyText", "interestText"]);
+  } else if (accountType === AccountType.Credit) {
+    result.creditProfile = parseCreditProfile(input);
+    result.rawProfileExtraction = pickRawText(input, ["aprText", "paymentText"]);
   }
 
   return result;
@@ -333,6 +362,21 @@ function parseSavingsProfile(input: Record<string, unknown>): SavingsProfileData
     apy: optNum(input.apy),
     interestEarned: optNum(input.interestEarned),
     interestEarnedYtd: optNum(input.interestEarnedYtd),
+  };
+}
+
+function parseCreditProfile(input: Record<string, unknown>): CreditProfileData {
+  return {
+    periodStart: optDate(input.periodStart),
+    periodEnd: optDate(input.periodEnd),
+    apr: optNum(input.apr),
+    minimumPayment: optNum(input.minimumPayment),
+    creditLimit: optNum(input.creditLimit),
+    availableCredit: optNum(input.availableCredit),
+    interestCharged: optNum(input.interestCharged),
+    feesCharged: optNum(input.feesCharged),
+    rewardsEarned: optNum(input.rewardsEarned),
+    paymentDueDate: optDate(input.paymentDueDate),
   };
 }
 

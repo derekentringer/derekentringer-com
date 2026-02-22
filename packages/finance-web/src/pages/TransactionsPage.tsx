@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { FormEvent } from "react";
 import type { Account, Transaction, Category } from "@derekentringer/shared/finance";
-import { fetchTransactions, updateTransaction } from "../api/transactions.ts";
+import { fetchTransactions, updateTransaction, bulkUpdateCategory } from "../api/transactions.ts";
 import { fetchAccounts } from "../api/accounts.ts";
 import { fetchCategories } from "../api/categories.ts";
 import { CsvImportDialog } from "../components/CsvImportDialog.tsx";
@@ -31,7 +31,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Upload, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { SortableTableHead } from "@/components/ui/sortable-table-head";
 
 type SortField = "date" | "description" | "amount" | "category" | "account";
 type SortDir = "asc" | "desc";
@@ -62,13 +64,27 @@ export function TransactionsPage() {
   const [error, setError] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [editTarget, setEditTarget] = useState<Transaction | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState("__none__");
+  const [isBulkApplying, setIsBulkApplying] = useState(false);
 
   // Filters
   const [accountId, setAccountId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [category, setCategory] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setOffset(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   // Sorting
   const [sortField, setSortField] = useState<SortField | null>(null);
@@ -129,17 +145,20 @@ export function TransactionsPage() {
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
       if (category) params.category = category;
+      if (search) params.search = search;
 
       const result = await fetchTransactions(params as Parameters<typeof fetchTransactions>[0]);
       setTransactions(result.transactions);
       setTotal(result.total);
+      setSelected(new Set());
+      setBulkCategory("__none__");
       setError("");
     } catch {
       setError("Failed to load transactions");
     } finally {
       setIsLoading(false);
     }
-  }, [accountId, startDate, endDate, category, offset]);
+  }, [accountId, startDate, endDate, category, search, offset]);
 
   const loadFilters = useCallback(async () => {
     try {
@@ -169,6 +188,47 @@ export function TransactionsPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
+  const allVisibleIds = sortedTransactions.map((t) => t.id);
+  const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
+  const someSelected = allVisibleIds.some((id) => selected.has(id));
+  const headerChecked = allSelected ? true : someSelected ? ("indeterminate" as const) : false;
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(allVisibleIds));
+    }
+  }
+
+  function toggleRow(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  async function handleBulkApply() {
+    if (selected.size === 0) return;
+    setIsBulkApplying(true);
+    try {
+      const category = bulkCategory === "__none__" ? null : bulkCategory;
+      await bulkUpdateCategory(Array.from(selected), category);
+      setSelected(new Set());
+      setBulkCategory("__none__");
+      loadTransactions();
+    } catch {
+      setError("Failed to bulk update category");
+    } finally {
+      setIsBulkApplying(false);
+    }
+  }
+
   if (isLoading && transactions.length === 0) {
     return (
       <div className="p-4 md:p-8">
@@ -192,6 +252,16 @@ export function TransactionsPage() {
 
           {/* Filter bar */}
           <div className="flex flex-wrap gap-3 mb-4">
+            <div className="relative w-full sm:w-[220px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="pl-8 w-full"
+                placeholder="Search descriptions..."
+              />
+            </div>
             <Select
               value={accountId}
               onValueChange={(v) => {
@@ -254,6 +324,49 @@ export function TransactionsPage() {
             />
           </div>
 
+          {/* Bulk action bar */}
+          {selected.size > 0 && (
+            <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-md bg-muted/50 border border-border">
+              <span className="text-sm font-medium">
+                {selected.size} selected
+              </span>
+              <Select
+                value={bulkCategory}
+                onValueChange={setBulkCategory}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                onClick={handleBulkApply}
+                disabled={isBulkApplying}
+              >
+                {isBulkApplying ? "Applying..." : "Apply"}
+              </Button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors ml-auto"
+                onClick={() => {
+                  setSelected(new Set());
+                  setBulkCategory("__none__");
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+                Clear
+              </button>
+            </div>
+          )}
+
           {transactions.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">
               No transactions found. Import a CSV to get started.
@@ -263,6 +376,13 @@ export function TransactionsPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={headerChecked}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all"
+                      />
+                    </TableHead>
                     <SortableTableHead field="date" label="Date" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortableTableHead field="description" label="Description" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                     <SortableTableHead field="amount" label="Amount" sortField={sortField} sortDir={sortDir} onSort={handleSort} className="text-right" />
@@ -274,6 +394,13 @@ export function TransactionsPage() {
                 <TableBody>
                   {sortedTransactions.map((txn) => (
                     <TableRow key={txn.id}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selected.has(txn.id)}
+                          onCheckedChange={() => toggleRow(txn.id)}
+                          aria-label={`Select transaction ${txn.description}`}
+                        />
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">
                         {formatDate(txn.date)}
                       </TableCell>
@@ -367,39 +494,6 @@ export function TransactionsPage() {
   );
 }
 
-function SortableTableHead({
-  field,
-  label,
-  sortField,
-  sortDir,
-  onSort,
-  className = "",
-}: {
-  field: SortField;
-  label: string;
-  sortField: SortField | null;
-  sortDir: SortDir;
-  onSort: (field: SortField) => void;
-  className?: string;
-}) {
-  const isActive = sortField === field;
-  const Icon = isActive
-    ? sortDir === "asc" ? ArrowUp : ArrowDown
-    : ArrowUpDown;
-
-  return (
-    <TableHead className={className}>
-      <button
-        type="button"
-        className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${isActive ? "text-foreground" : ""}`}
-        onClick={() => onSort(field)}
-      >
-        {label}
-        <Icon className={`h-3.5 w-3.5 ${isActive ? "" : "opacity-40"}`} />
-      </button>
-    </TableHead>
-  );
-}
 
 function TransactionEditDialog({
   transaction,

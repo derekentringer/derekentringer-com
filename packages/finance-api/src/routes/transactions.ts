@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type {
   CsvImportConfirmRequest,
   UpdateTransactionRequest,
+  BulkUpdateCategoryRequest,
 } from "@derekentringer/shared";
 import { requirePin } from "@derekentringer/shared/auth/pinVerify";
 import { loadConfig } from "../config.js";
@@ -12,6 +13,7 @@ import {
   deleteTransaction,
   findExistingHashes,
   bulkCreateTransactions,
+  bulkUpdateCategory,
 } from "../store/transactionStore.js";
 import { listCategoryRules } from "../store/categoryRuleStore.js";
 import { getAccount } from "../store/accountStore.js";
@@ -60,6 +62,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       startDate?: string;
       endDate?: string;
       category?: string;
+      search?: string;
       limit?: string;
       offset?: string;
     };
@@ -72,6 +75,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
           startDate?: string;
           endDate?: string;
           category?: string;
+          search?: string;
           limit?: string;
           offset?: string;
         };
@@ -79,7 +83,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        const { accountId, startDate, endDate, category, limit, offset } =
+        const { accountId, startDate, endDate, category, search, limit, offset } =
           request.query;
 
         const filter: {
@@ -87,16 +91,18 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
           startDate?: Date;
           endDate?: Date;
           category?: string;
+          search?: string;
           limit?: number;
           offset?: number;
         } = {};
 
         if (accountId) filter.accountId = accountId;
         if (category) filter.category = category;
-        if (startDate) filter.startDate = new Date(startDate);
-        if (endDate) filter.endDate = new Date(endDate);
-        if (limit) filter.limit = parseInt(limit, 10);
-        if (offset) filter.offset = parseInt(offset, 10);
+        if (search) filter.search = search.slice(0, 200);
+        if (startDate) filter.startDate = new Date(startDate.includes("T") ? startDate : startDate + "T00:00:00");
+        if (endDate) filter.endDate = new Date(endDate.includes("T") ? endDate : endDate + "T00:00:00");
+        if (limit) filter.limit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 500);
+        if (offset) filter.offset = Math.max(parseInt(offset, 10) || 0, 0);
 
         const result = await listTransactions(filter);
         return reply.send(result);
@@ -142,6 +148,46 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
           statusCode: 500,
           error: "Internal Server Error",
           message: "Failed to get transaction",
+        });
+      }
+    },
+  );
+
+  // PATCH /bulk-category — bulk update category for multiple transactions
+  const bulkCategorySchema = {
+    body: {
+      type: "object" as const,
+      required: ["ids", "category"],
+      additionalProperties: false,
+      properties: {
+        ids: {
+          type: "array" as const,
+          minItems: 1,
+          maxItems: 500,
+          items: { type: "string", pattern: "^c[a-z0-9]{20,}$" },
+        },
+        category: { type: ["string", "null"] },
+      },
+    },
+  };
+
+  fastify.patch<{ Body: BulkUpdateCategoryRequest }>(
+    "/bulk-category",
+    { schema: bulkCategorySchema },
+    async (
+      request: FastifyRequest<{ Body: BulkUpdateCategoryRequest }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const { ids, category } = request.body;
+        const updated = await bulkUpdateCategory(ids, category);
+        return reply.send({ updated });
+      } catch (e) {
+        request.log.error(e, "Failed to bulk update category");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to bulk update category",
         });
       }
     },

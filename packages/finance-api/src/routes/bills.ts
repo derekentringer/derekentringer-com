@@ -410,7 +410,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const dueDate = new Date(request.body.dueDate);
+      const dueDate = new Date(request.body.dueDate + "T00:00:00");
       if (isNaN(dueDate.getTime())) {
         return reply.status(400).send({
           statusCode: 400,
@@ -466,7 +466,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const dueDate = new Date(request.query.dueDate);
+      const dueDate = new Date(request.query.dueDate + "T00:00:00");
       if (isNaN(dueDate.getTime())) {
         return reply.status(400).send({
           statusCode: 400,

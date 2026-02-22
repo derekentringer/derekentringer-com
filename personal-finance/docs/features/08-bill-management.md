@@ -141,7 +141,7 @@ Migration: `20260219040000_add_budgets_bills_bill_payments`
 
 Filter tabs: All | Upcoming | Paid | Overdue
 
-Sortable table with columns:
+Sortable table with columns (default sort: amount descending):
 - Name (alphabetical)
 - Amount (numeric)
 - Frequency (alphabetical)

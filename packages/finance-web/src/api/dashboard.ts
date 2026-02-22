@@ -4,8 +4,10 @@ import type {
   DashboardUpcomingBillsResponse,
   AccountBalanceHistoryResponse,
   DailySpendingResponse,
+  IncomeSpendingResponse,
   ChartTimeRange,
   ChartGranularity,
+  DTIResponse,
 } from "@derekentringer/shared/finance";
 import { apiFetch } from "./client.ts";
 
@@ -50,6 +52,21 @@ export async function fetchDailySpending(
   return res.json();
 }
 
+export async function fetchIncomeSpending(
+  range?: ChartTimeRange,
+  granularity?: "weekly" | "monthly",
+  incomeFilter?: "all" | "sources",
+): Promise<IncomeSpendingResponse> {
+  const params = new URLSearchParams();
+  if (range) params.set("range", range);
+  if (granularity) params.set("granularity", granularity);
+  if (incomeFilter) params.set("incomeFilter", incomeFilter);
+  const query = params.toString() ? `?${params}` : "";
+  const res = await apiFetch(`/dashboard/income-spending${query}`);
+  if (!res.ok) throw new Error("Failed to fetch income vs spending");
+  return res.json();
+}
+
 export async function fetchAccountBalanceHistory(
   accountId: string,
   range?: ChartTimeRange,
@@ -60,5 +77,11 @@ export async function fetchAccountBalanceHistory(
   if (granularity) params.set("granularity", granularity);
   const res = await apiFetch(`/dashboard/account-history?${params}`);
   if (!res.ok) throw new Error("Failed to fetch account balance history");
+  return res.json();
+}
+
+export async function fetchDTI(): Promise<DTIResponse> {
+  const res = await apiFetch("/dashboard/dti");
+  if (!res.ok) throw new Error("Failed to fetch DTI");
   return res.json();
 }
