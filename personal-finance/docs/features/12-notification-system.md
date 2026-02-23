@@ -62,14 +62,16 @@ model NotificationLog {
   body         String                 // encrypted
   dedupeKey    String   @unique
   isRead       Boolean  @default(false)
+  isCleared    Boolean  @default(false)  // soft-delete flag; preserves dedup keys
   sentAt       DateTime @default(now())
   fcmMessageId String?
   metadata     String?               // encrypted JSON
+  @@index([isCleared])
   @@map("notification_logs")
 }
 ```
 
-Migration: `20260222000000_add_notifications`
+Migrations: `20260222000000_add_notifications`, `20260223000000_add_notification_is_cleared`
 
 #### Notification Store (`src/store/notificationStore.ts`)
 
@@ -77,7 +79,7 @@ CRUD operations for all three models:
 
 - **Device tokens**: `registerDeviceToken()`, `getAllEncryptedTokens()`, `listDeviceTokens()`, `removeDeviceToken()`, `removeDeviceTokenByEncryptedToken()`
 - **Preferences**: `getPreferences()` (auto-seeds defaults for missing types), `getPreference()`, `updatePreference()`
-- **Notification log**: `createNotificationLog()`, `getNotificationHistory()`, `getUnreadCount()`, `markAllNotificationsRead()`, `clearNotificationHistory()`, `cleanupOldNotificationLogs()` (90-day retention), `updateNotificationLogFcmId()`
+- **Notification log**: `createNotificationLog()`, `getNotificationHistory()`, `getUnreadCount()`, `markAllNotificationsRead()`, `clearNotificationHistory()` (soft-delete via `isCleared` flag), `cleanupOldNotificationLogs()` (90-day retention), `updateNotificationLogFcmId()`, `checkDedupeKeyExists()` (checks all rows regardless of `isCleared`)
 
 #### API Routes (`src/routes/notifications.ts`)
 
@@ -91,7 +93,7 @@ CRUD operations for all three models:
 | GET | `/notifications/history` | Paginated notification log (`?limit=20&offset=0`) |
 | GET | `/notifications/unread-count` | Returns `{ count: number }` for bell badge |
 | POST | `/notifications/mark-all-read` | Sets `isRead = true` on all unread |
-| DELETE | `/notifications/history` | Clears all notification log entries |
+| DELETE | `/notifications/history` | Soft-clears all notification log entries (`isCleared = true`); returns `{ cleared: number }` |
 | POST | `/notifications/test` | Creates test notification + sends via FCM |
 
 #### FCM Integration (`src/lib/fcm.ts`)
@@ -265,6 +267,7 @@ Two cards in Settings > Notifications tab:
 - **Mobile: FCM via firebase-admin** — Standard approach for iOS/Android push. Device tokens registered per-device, server sends multicast.
 - **NotificationPreference.config is nullable** — Null means "use defaults"; avoids conflict with encryption (encrypted empty JSON !== `"{}"`).
 - **NotificationLog.dedupeKey is @unique** — Duplicate insert attempts caught as benign (safe during Railway rolling deploys).
+- **Soft-delete on clear** — "Clear All" sets `isCleared = true` (via `updateMany`) instead of `deleteMany`, preserving dedup keys so cleared notifications don't re-fire on the next scheduler cycle. UI queries (`listNotificationLogs`, `getUnreadCount`, `markAllNotificationsRead`) filter by `isCleared: false`; `checkDedupeKeyExists` deliberately ignores `isCleared` to maintain dedup integrity. The `cleanupOldNotificationLogs` 90-day retention job eventually hard-deletes old rows.
 - **Log retention: 90 days** — Cleanup runs on existing hourly timer in app.ts.
 - **Scheduler interval: 15 minutes** — Date-based checks are lightweight; frequent enough for timely reminders.
 - **Import guard** — Scheduler skips evaluation when statement import is in progress to avoid alerting on partially imported data.

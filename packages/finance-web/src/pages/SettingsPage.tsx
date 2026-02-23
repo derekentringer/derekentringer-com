@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import type { FormEvent } from "react";
 import type {
   Account,
@@ -83,18 +84,35 @@ import {
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 
-export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"accounts" | "categories" | "rules" | "income" | "notifications">(
-    "accounts",
-  );
+type SettingsSlug = "accounts" | "categories" | "category-rules" | "income-sources" | "notifications";
 
-  const TABS: { value: "accounts" | "categories" | "rules" | "income" | "notifications"; label: string }[] = [
-    { value: "accounts", label: "Accounts" },
-    { value: "categories", label: "Categories" },
-    { value: "rules", label: "Category Rules" },
-    { value: "income", label: "Income Sources" },
-    { value: "notifications", label: "Notifications" },
-  ];
+const SLUG_TO_VALUE: Record<SettingsSlug, string> = {
+  "accounts": "accounts",
+  "categories": "categories",
+  "category-rules": "rules",
+  "income-sources": "income",
+  "notifications": "notifications",
+};
+
+const VALID_SLUGS: SettingsSlug[] = ["accounts", "categories", "category-rules", "income-sources", "notifications"];
+
+const TABS: { value: SettingsSlug; label: string }[] = [
+  { value: "accounts", label: "Accounts" },
+  { value: "categories", label: "Categories" },
+  { value: "category-rules", label: "Category Rules" },
+  { value: "income-sources", label: "Income Sources" },
+  { value: "notifications", label: "Notifications" },
+];
+
+export function SettingsPage() {
+  const { tab: tabParam } = useParams();
+  const navigate = useNavigate();
+  const activeTab: SettingsSlug = VALID_SLUGS.includes(tabParam as SettingsSlug) ? (tabParam as SettingsSlug) : "accounts";
+  const activeValue = SLUG_TO_VALUE[activeTab];
+
+  function handleTabChange(slug: SettingsSlug) {
+    navigate(`/settings/${slug}`, { replace: true });
+  }
 
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6">
@@ -102,15 +120,15 @@ export function SettingsPage() {
         <h1 className="text-xl sm:text-2xl md:text-3xl text-foreground">Settings</h1>
       </div>
 
-      <TabSwitcher options={TABS} value={activeTab} onChange={setActiveTab} />
+      <TabSwitcher options={TABS} value={activeTab} onChange={handleTabChange} />
 
-      {activeTab === "accounts" ? (
+      {activeValue === "accounts" ? (
         <AccountsSection />
-      ) : activeTab === "categories" ? (
+      ) : activeValue === "categories" ? (
         <CategoriesSection />
-      ) : activeTab === "rules" ? (
+      ) : activeValue === "rules" ? (
         <RulesSection />
-      ) : activeTab === "income" ? (
+      ) : activeValue === "income" ? (
         <IncomeSourcesSection />
       ) : (
         <NotificationSettings />

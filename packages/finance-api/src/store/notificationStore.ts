@@ -196,13 +196,15 @@ export async function listNotificationLogs(
   offset = 0,
 ): Promise<{ notifications: NotificationLogEntry[]; total: number }> {
   const prisma = getPrisma();
+  const where = { isCleared: false };
   const [rows, total] = await Promise.all([
     prisma.notificationLog.findMany({
+      where,
       orderBy: { sentAt: "desc" },
       take: limit,
       skip: offset,
     }),
-    prisma.notificationLog.count(),
+    prisma.notificationLog.count({ where }),
   ]);
   return {
     notifications: rows.map(decryptNotificationLog),
@@ -212,13 +214,13 @@ export async function listNotificationLogs(
 
 export async function getUnreadCount(): Promise<number> {
   const prisma = getPrisma();
-  return prisma.notificationLog.count({ where: { isRead: false } });
+  return prisma.notificationLog.count({ where: { isRead: false, isCleared: false } });
 }
 
 export async function markAllNotificationsRead(): Promise<number> {
   const prisma = getPrisma();
   const result = await prisma.notificationLog.updateMany({
-    where: { isRead: false },
+    where: { isRead: false, isCleared: false },
     data: { isRead: true },
   });
   return result.count;
@@ -226,7 +228,10 @@ export async function markAllNotificationsRead(): Promise<number> {
 
 export async function clearNotificationHistory(): Promise<number> {
   const prisma = getPrisma();
-  const result = await prisma.notificationLog.deleteMany();
+  const result = await prisma.notificationLog.updateMany({
+    where: { isCleared: false },
+    data: { isCleared: true },
+  });
   return result.count;
 }
 

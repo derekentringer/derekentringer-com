@@ -283,6 +283,7 @@ model NotificationLog {
   body         String
   dedupeKey    String   @unique
   isRead       Boolean  @default(false)
+  isCleared    Boolean  @default(false)
   sentAt       DateTime @default(now())
   fcmMessageId String?
   metadata     String?
@@ -290,5 +291,6 @@ model NotificationLog {
   @@index([type])
   @@index([sentAt])
   @@index([isRead])
+  @@index([isCleared])
   @@map("notification_logs")
 }
