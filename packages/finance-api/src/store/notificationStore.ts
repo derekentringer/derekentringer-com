@@ -4,7 +4,7 @@ import type {
   NotificationLogEntry,
   NotificationConfig,
 } from "@derekentringer/shared";
-import { NotificationType, DEFAULT_NOTIFICATION_CONFIGS } from "@derekentringer/shared";
+import { NotificationType } from "@derekentringer/shared";
 import { getPrisma } from "../lib/prisma.js";
 import {
   decryptDeviceToken,

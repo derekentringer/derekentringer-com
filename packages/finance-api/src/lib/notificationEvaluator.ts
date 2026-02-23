@@ -145,13 +145,6 @@ async function evaluateCreditPaymentDue(
     );
 
     if (diffDays >= 0 && diffDays <= reminderDaysBefore) {
-      const decryptedName = (await prisma.account.findUnique({
-        where: { id: account.id },
-        select: { name: true },
-      }))?.name;
-
-      // We need to use the decrypted account name from a proper source
-      // For the notification, we'll use the account data we have
       const dedupeKey = `credit_payment_due:${account.id}:${toDateStr(dueDate)}`;
       notifications.push({
         type: NotificationType.CreditPaymentDue,

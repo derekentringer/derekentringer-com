@@ -77,7 +77,7 @@ export function NotificationBell() {
     if (isOpen) {
       loadNotifications();
     }
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen]); // loadNotifications is stable
 
   async function handleMarkAllRead() {
     try {
