@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { CreateBillRequest, UpdateBillRequest } from "@derekentringer/shared";
 import { BILL_FREQUENCIES } from "@derekentringer/shared";
+import { requirePin } from "@derekentringer/shared/auth/pinVerify";
+import { loadConfig } from "../config.js";
 import {
   createBill,
   getBill,
@@ -108,6 +110,9 @@ function validateFrequencyFields(
 
 export default async function billRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  const config = loadConfig();
+  const pinGuard = requirePin(config.pinTokenSecret);
 
   // GET / — list bills
   fastify.get<{ Querystring: { active?: string } }>(
@@ -352,9 +357,10 @@ export default async function billRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete bill (cascades payments)
+  // DELETE /:id — delete bill (cascades payments, PIN required)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
+    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,

@@ -165,7 +165,10 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
   // POST /import/preview — upload PDF, extract balance via AI
   fastify.post<{ Querystring: { accountId: string } }>(
     "/import/preview",
-    { preHandler: pinGuard },
+    {
+      preHandler: pinGuard,
+      config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+    },
     async (
       request: FastifyRequest<{ Querystring: { accountId: string } }>,
       reply: FastifyReply,

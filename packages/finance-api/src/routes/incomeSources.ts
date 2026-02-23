@@ -4,6 +4,8 @@ import type {
   UpdateIncomeSourceRequest,
 } from "@derekentringer/shared";
 import { INCOME_SOURCE_FREQUENCIES } from "@derekentringer/shared";
+import { requirePin } from "@derekentringer/shared/auth/pinVerify";
+import { loadConfig } from "../config.js";
 import {
   createIncomeSource,
   getIncomeSource,
@@ -51,6 +53,9 @@ const updateSchema = {
 
 export default async function incomeSourceRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  const config = loadConfig();
+  const pinGuard = requirePin(config.pinTokenSecret);
 
   // GET / — list income sources
   fastify.get<{ Querystring: { active?: string } }>(
@@ -242,9 +247,10 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete income source
+  // DELETE /:id — delete income source (PIN required)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
+    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,

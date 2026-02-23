@@ -18,6 +18,7 @@ export function loadConfig(): Config {
       "CORS_ORIGIN",
       "DATABASE_URL",
       "ENCRYPTION_KEY",
+      "PIN_HASH",
     ];
     for (const name of required) {
       if (!process.env[name]) {

@@ -49,7 +49,7 @@ function computeStartDate(range: string): Date | undefined {
     case "ytd":
       return new Date(now.getFullYear(), 0, 1);
     case "all":
-      return undefined;
+      return new Date(now.getFullYear() - 5, now.getMonth(), 1);
     default:
       return undefined;
   }
@@ -188,6 +188,14 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
 
         const startDate = new Date(startStr + "T00:00:00");
         const endDate = new Date(endStr + "T23:59:59.999");
+
+        if (endDate.getTime() - startDate.getTime() > 366 * 24 * 60 * 60 * 1000) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: "Date range must not exceed 366 days",
+          });
+        }
 
         const points = await computeDailySpending(startDate, endDate);
         return reply.send({ points });

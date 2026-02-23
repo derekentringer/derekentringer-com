@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { CreateBudgetRequest, UpdateBudgetRequest } from "@derekentringer/shared";
+import { requirePin } from "@derekentringer/shared/auth/pinVerify";
+import { loadConfig } from "../config.js";
 import {
   createBudget,
   listBudgets,
@@ -44,6 +46,9 @@ const updateBudgetSchema = {
 
 export default async function budgetRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  const config = loadConfig();
+  const pinGuard = requirePin(config.pinTokenSecret);
 
   // GET / — list all budget records
   fastify.get("/", async (_request: FastifyRequest, reply: FastifyReply) => {
@@ -227,9 +232,10 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete budget
+  // DELETE /:id — delete budget (PIN required)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
+    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
