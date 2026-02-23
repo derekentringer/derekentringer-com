@@ -80,7 +80,7 @@ export function curveStepAfterRounded(context: PathContext) {
       switch (_point) {
         case 0:
           _point = 1;
-          _line ? context.lineTo(x, y) : context.moveTo(x, y);
+          if (_line) { context.lineTo(x, y); } else { context.moveTo(x, y); }
           break;
         case 1:
           _point = 2;

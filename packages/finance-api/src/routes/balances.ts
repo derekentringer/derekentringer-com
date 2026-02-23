@@ -254,7 +254,7 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
       } catch (e) {
         request.log.error(e, "Failed to preview PDF import");
         // Surface overloaded errors so the user knows to retry
-        if (e instanceof Error && "status" in e && (e as any).status === 529) {
+        if (e instanceof Error && "status" in e && (e as Record<string, unknown>).status === 529) {
           return reply.status(503).send({
             statusCode: 503,
             error: "Service Unavailable",
@@ -263,9 +263,9 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
         }
         // Surface billing/auth errors from the AI provider
         if (e instanceof Error && "status" in e) {
-          const status = (e as any).status;
+          const status = (e as Record<string, unknown>).status;
           if (status === 400 || status === 401 || status === 403) {
-            const body = (e as any).error?.error?.message ?? e.message;
+            const body = (e as Record<string, unknown> & { error?: { error?: { message?: string } } }).error?.error?.message ?? e.message;
             if (typeof body === "string" && (body.includes("credit balance") || body.includes("billing") || body.includes("API key"))) {
               return reply.status(502).send({
                 statusCode: 502,

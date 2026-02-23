@@ -229,7 +229,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateBillRequest }>,
       reply: FastifyReply,
     ) => {
-      const { name, amount, frequency, dueDay, dueMonth, dueWeekday } =
+      const { amount, frequency, dueDay, dueMonth, dueWeekday } =
         request.body;
 
       if (!isValidNumber(amount) || amount <= 0) {

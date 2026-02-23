@@ -5,7 +5,6 @@ import type {
   Balance,
   LoanProfileData,
   InvestmentProfileData,
-  SavingsProfileData,
   CreditProfileData,
   MortgageRatesResponse,
 } from "@derekentringer/shared/finance";
@@ -169,26 +168,6 @@ function InvestmentProfileTiered({ profile, className }: { profile: InvestmentPr
         {profile.periodStart && profile.periodEnd && (
           <p className="text-xs text-muted-foreground">{profile.periodStart} — {profile.periodEnd}</p>
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function SavingsProfileTiered({ profile, className }: { profile: SavingsProfileData; className?: string }) {
-  return (
-    <Card className={cn("flex flex-col", className)}>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-foreground">Latest Statement Profile</h3>
-          {profile.periodStart && profile.periodEnd && (
-            <span className="text-xs text-muted-foreground">{profile.periodStart} — {profile.periodEnd}</span>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5 flex-1">
-        {profile.apy != null && <TierOneMetric label="APY" value={formatPercent(profile.apy)} />}
-        {profile.interestEarned != null && <TierOneMetric label="Interest Earned" value={formatCurrencyFull(profile.interestEarned)} />}
-        {profile.interestEarnedYtd != null && <TierOneMetric label="Interest YTD" value={formatCurrencyFull(profile.interestEarnedYtd)} />}
       </CardContent>
     </Card>
   );
@@ -1045,7 +1024,7 @@ export function AccountTypePage() {
       ) : viewMode === "grid" ? (
         /* --- Grid View --- */
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {accountsWithProfiles.map(({ account, latestBalance }, index) => (
+          {accountsWithProfiles.map(({ account }, index) => (
             <AccountBalanceCard
               key={account.id}
               accountId={account.id}

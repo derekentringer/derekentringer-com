@@ -301,7 +301,7 @@ describe("Auth routes", () => {
       expect(pinRes.statusCode).toBe(200);
       const body = pinRes.json();
       expect(body.pinToken).toBeDefined();
-      expect(body.expiresIn).toBe(300);
+      expect(body.expiresIn).toBe(900);
     });
 
     it("returns 401 with wrong PIN", async () => {
