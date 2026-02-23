@@ -73,8 +73,12 @@ packages/
 
 - React + Vite SPA for personal finance dashboard
 - `src/App.tsx` — Routes + auth-gated layout
-- `src/pages/LoginPage.tsx` — Login form with PIN support
+- `src/pages/LoginPage.tsx` — Login form with logo and PIN support
 - `src/contexts/AuthContext.tsx` — JWT auth state management
+- `src/components/FinLogo.tsx` — Inline SVG logo component (two-peaks icon)
+- `src/components/Sidebar.tsx` — Navigation sidebar with logo in header (expanded + collapsed)
+- `src/components/Header.tsx` — Top header with logo on mobile
+- `public/` — Favicon (ICO + PNG), apple-touch-icon, Android Chrome icons, `site.webmanifest`, `logo.svg`
 - API URL configured via `VITE_API_URL` env var (build-time)
 - Production domain: `fin.derekentringer.com`
 
@@ -110,4 +114,5 @@ packages/
 
 ## Design Assets
 
-- `design-assets/` — PSD source files for logos (not part of the build)
+- `designs/derekentringer-com/` — PSD source files for portfolio site logos
+- `designs/fin-app/fin_logo/` — Finance app logo (original + clean 512px PNG)

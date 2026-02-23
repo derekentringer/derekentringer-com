@@ -2,13 +2,14 @@ import { Menu, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { NotificationBell } from "./NotificationBell.tsx";
+import { FinLogo } from "./FinLogo.tsx";
 
 interface HeaderProps {
   onMenuClick: () => void;
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
 
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between h-14 border-b border-border bg-background px-4">
@@ -21,12 +22,10 @@ export function Header({ onMenuClick }: HeaderProps) {
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <span className="text-lg font-thin md:hidden">fin</span>
+        <FinLogo className="h-5 w-5 md:hidden" />
+        <span className="text-lg font-normal md:hidden">fin</span>
       </div>
       <div className="flex items-center gap-3">
-        {user && (
-          <span className="text-sm text-muted">{user.username}</span>
-        )}
         <NotificationBell />
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={logout}>
           <LogOut className="h-4 w-4" />
