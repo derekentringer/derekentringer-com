@@ -130,7 +130,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     {
       config: {
         rateLimit: {
-          max: 10,
+          max: 30,
           timeWindow: "15 minutes",
         },
       },
@@ -279,12 +279,12 @@ export default async function authRoutes(fastify: FastifyInstance) {
         // Pin tokens use a different payload shape than access tokens
         const pinToken = fastify.jwt.sign(
           { sub: user.sub, type: "pin" } as unknown as { sub: string; username: string },
-          { key: config.pinTokenSecret, expiresIn: 300 },
+          { key: config.pinTokenSecret, expiresIn: 900 },
         );
 
         const response: PinVerifyResponse = {
           pinToken,
-          expiresIn: 300,
+          expiresIn: 900,
         };
 
         return reply.send(response);

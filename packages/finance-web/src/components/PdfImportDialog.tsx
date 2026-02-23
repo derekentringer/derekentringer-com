@@ -34,13 +34,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface PdfImportDialogProps {
   onClose: () => void;
   onImported: () => void;
 }
 
-type Step = "upload" | "preview" | "result";
+type Step = "upload" | "preview" | "auto-importing" | "result";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -92,6 +93,17 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
     interestRateUpdated?: boolean;
     replaced?: boolean;
   } | null>(null);
+
+  // Auto-import state
+  const [autoImport, setAutoImport] = useState(false);
+  const [autoProgress, setAutoProgress] = useState<{
+    current: number;
+    total: number;
+    fileName: string;
+    phase: "extracting" | "importing";
+  }>({ current: 0, total: 0, fileName: "", phase: "extracting" });
+  const cancelledRef = useRef(false);
+  const autoImportActiveRef = useRef(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -287,7 +299,109 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
     setCompletedResults([]);
   }
 
-  if (!isPinVerified) {
+  async function runAutoImport() {
+    // Capture pin token at start so the async function keeps working
+    // even if the PinContext timer clears the reactive state mid-import
+    const token = pinToken;
+    if (!accountId || !token) return;
+    cancelledRef.current = false;
+    autoImportActiveRef.current = true;
+    setCompletedResults([]);
+    setSkippedFiles([]);
+    setStep("auto-importing");
+    const total = files.length;
+
+    // Phase 1: Extract all PDFs
+    type Extracted = { file: File; data: PdfImportPreviewResponse };
+    const extracted: Extracted[] = [];
+
+    for (let i = 0; i < total; i++) {
+      if (cancelledRef.current) break;
+
+      const file = files[i];
+      setAutoProgress({ current: i + 1, total, fileName: file.name, phase: "extracting" });
+
+      try {
+        const data = await uploadPdfPreview(accountId, file, token);
+        extracted.push({ file, data });
+      } catch {
+        setSkippedFiles((prev) => [...prev, file.name]);
+      }
+    }
+
+    if (cancelledRef.current || extracted.length === 0) {
+      setStep("result");
+      return;
+    }
+
+    // Sort by date ascending — latest statement is last
+    extracted.sort((a, b) => a.data.date.localeCompare(b.data.date));
+    const latestIndex = extracted.length - 1;
+
+    // Phase 2: Import all in date order
+    for (let i = 0; i < extracted.length; i++) {
+      if (cancelledRef.current) break;
+
+      const { file, data } = extracted[i];
+      const isLatest = i === latestIndex;
+      setAutoProgress({ current: i + 1, total: extracted.length, fileName: file.name, phase: "importing" });
+
+      try {
+        const accountType = data.accountType;
+        const res = await confirmPdfImport(
+          {
+            accountId,
+            balance: data.balance,
+            date: data.date,
+            updateCurrentBalance: isLatest,
+            updateInterestRate:
+              isLatest &&
+              (accountType === AccountType.Loan ||
+                accountType === AccountType.RealEstate ||
+                accountType === AccountType.HighYieldSavings ||
+                accountType === AccountType.Savings)
+                ? true
+                : undefined,
+            loanProfile:
+              accountType === AccountType.Loan || accountType === AccountType.RealEstate
+                ? data.loanProfile
+                : undefined,
+            loanStatic:
+              isLatest && (accountType === AccountType.Loan || accountType === AccountType.RealEstate)
+                ? data.loanStatic
+                : undefined,
+            investmentProfile:
+              accountType === AccountType.Investment ? data.investmentProfile : undefined,
+            savingsProfile:
+              accountType === AccountType.HighYieldSavings || accountType === AccountType.Savings
+                ? data.savingsProfile
+                : undefined,
+            creditProfile:
+              accountType === AccountType.Credit ? data.creditProfile : undefined,
+          },
+          token,
+        );
+
+        setCompletedResults((prev) => [
+          ...prev,
+          {
+            fileName: file.name,
+            balance: res.balance,
+            date: res.date,
+            accountUpdated: res.accountUpdated,
+            interestRateUpdated: res.interestRateUpdated,
+            replaced: res.replaced,
+          },
+        ]);
+      } catch {
+        setSkippedFiles((prev) => [...prev, file.name]);
+      }
+    }
+
+    setStep("result");
+  }
+
+  if (!isPinVerified && !autoImportActiveRef.current) {
     return (
       <Dialog open onOpenChange={(open) => !open && onClose()}>
         <DialogContent className="max-w-md">
@@ -310,6 +424,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
                 ? `Preview Extraction — Statement ${currentFileIndex + 1} of ${files.length}`
                 : "Preview Extraction"
             )}
+            {step === "auto-importing" && "Auto-Importing Statements"}
             {step === "result" && (
               skippedFiles.length > 0
                 ? `Import Complete — ${skippedFiles.length} Failed`
@@ -358,6 +473,26 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
               )}
             </div>
 
+            {files.length > 1 && (
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={autoImport}
+                  onCheckedChange={(checked) => setAutoImport(checked === true)}
+                  id="auto-import"
+                />
+                <Label htmlFor="auto-import" className="text-sm cursor-pointer">
+                  Auto-import all statements (skip preview)
+                </Label>
+              </div>
+            )}
+
+            {autoImport && files.length > 1 && (
+              <p className="text-xs text-muted-foreground">
+                Statements will be imported using AI-extracted values without manual review.
+                The latest statement will be used to update your account balance.
+              </p>
+            )}
+
             {isLoading && (
               <p className="text-sm text-muted-foreground">
                 Analyzing statement with AI — this may take a few seconds.
@@ -369,10 +504,10 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
                 Cancel
               </Button>
               <Button
-                onClick={handleUpload}
+                onClick={autoImport ? runAutoImport : handleUpload}
                 disabled={isLoading || !accountId || files.length === 0 || !!fileSizeError}
               >
-                {isLoading ? "Extracting..." : "Upload & Extract"}
+                {isLoading ? "Extracting..." : autoImport ? "Upload & Import All" : "Upload & Extract"}
               </Button>
             </div>
           </div>
@@ -475,6 +610,51 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
                     : "Confirm Import"}
               </Button>
             </div>
+          </div>
+        )}
+
+        {step === "auto-importing" && (
+          <div className="flex flex-col gap-4 py-4">
+            <p className="text-sm font-medium text-foreground">
+              {autoProgress.phase === "extracting" ? "Extracting Statements..." : "Importing Statements..."}
+            </p>
+
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>
+                  {autoProgress.phase === "extracting" ? "Extracting" : "Importing"}: {autoProgress.fileName}
+                </span>
+                <span>{autoProgress.current} of {autoProgress.total}</span>
+              </div>
+              <div className="h-2 rounded-full bg-input">
+                <div
+                  className="h-2 rounded-full bg-primary transition-all"
+                  style={{ width: `${autoProgress.total > 0 ? (autoProgress.current / autoProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {(completedResults.length > 0 || skippedFiles.length > 0) && (
+              <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+                {completedResults.map((r, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-green-400">&#10003; {r.fileName}</span>
+                    <span className="text-muted-foreground">{formatCurrency(r.balance)}</span>
+                  </div>
+                ))}
+                {skippedFiles.map((name, i) => (
+                  <div key={`skip-${i}`} className="text-sm text-destructive">&#10007; {name}</div>
+                ))}
+              </div>
+            )}
+
+            <Button
+              variant="secondary"
+              onClick={() => { cancelledRef.current = true; }}
+              className="self-end"
+            >
+              Stop Import
+            </Button>
           </div>
         )}
 

@@ -11,6 +11,21 @@ export enum AccountType {
 
 export type LoanType = "fixed" | "variable" | "fixed-mortgage" | "variable-mortgage";
 
+export interface AccountTypeGroup {
+  slug: string;
+  label: string;
+  types: AccountType[];
+}
+
+export const ACCOUNT_TYPE_GROUPS: AccountTypeGroup[] = [
+  { slug: "checking", label: "Checking", types: [AccountType.Checking] },
+  { slug: "savings", label: "Savings", types: [AccountType.Savings, AccountType.HighYieldSavings] },
+  { slug: "credit", label: "Credit", types: [AccountType.Credit] },
+  { slug: "loans", label: "Loans", types: [AccountType.Loan] },
+  { slug: "real-estate", label: "Real Estate", types: [AccountType.RealEstate] },
+  { slug: "investments", label: "Investments", types: [AccountType.Investment] },
+];
+
 export interface Account {
   id: string;
   name: string;
@@ -731,4 +746,11 @@ export interface DTIResponse {
   grossMonthlyIncome: number;
   debtComponents: DTIComponent[];
   incomeComponents: DTIComponent[];
+}
+
+// Market mortgage rates (from FRED API)
+export interface MortgageRatesResponse {
+  rate30yr: number | null;
+  rate15yr: number | null;
+  asOf: string | null;
 }

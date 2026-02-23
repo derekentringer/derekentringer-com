@@ -1,9 +1,16 @@
 import type {
+  Balance,
   PdfImportPreviewResponse,
   PdfImportConfirmRequest,
   PdfImportConfirmResponse,
 } from "@derekentringer/shared/finance";
 import { apiFetch } from "./client.ts";
+
+export async function fetchBalances(accountId: string): Promise<{ balances: Balance[] }> {
+  const res = await apiFetch(`/balances?accountId=${accountId}`);
+  if (!res.ok) throw new Error("Failed to fetch balances");
+  return res.json();
+}
 
 export async function uploadPdfPreview(
   accountId: string,

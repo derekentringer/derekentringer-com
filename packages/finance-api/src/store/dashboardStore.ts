@@ -13,6 +13,7 @@ import { getPrisma } from "../lib/prisma.js";
 import { decryptAccount, decryptLoanProfile, decryptCreditProfile } from "../lib/mappers.js";
 import { decryptNumber } from "../lib/encryption.js";
 import { listAccounts } from "./accountStore.js";
+import { listBalances } from "./balanceStore.js";
 import { listBills } from "./billStore.js";
 import { listIncomeSources } from "./incomeSourceStore.js";
 import { frequencyToMonthlyMultiplier, detectIncomePatterns } from "./projectionsStore.js";
@@ -440,8 +441,14 @@ export async function computeIncomeSpending(
 
 /**
  * Compute balance history for a single account with configurable granularity.
- * Reconstructs historical balances from transactions: starts at currentBalance
- * and works backwards, subtracting each period's net transactions.
+ *
+ * For transaction-driven accounts (checking, savings, credit, loan):
+ *   Reconstructs historical balances from transactions — starts at currentBalance
+ *   and works backwards, subtracting each period's net transactions.
+ *
+ * For snapshot-driven accounts (investment, real estate):
+ *   Uses actual balance entries from statement imports, since balance changes
+ *   are driven by market movements rather than individual transactions.
  */
 export async function computeAccountBalanceHistory(
   accountId: string,
@@ -460,7 +467,47 @@ export async function computeAccountBalanceHistory(
 
   const now = new Date();
 
-  // Fetch transactions (optionally filtered by startDate)
+  // Snapshot-driven accounts: use balance entries directly
+  const snapshotTypes: string[] = [AccountType.Investment, AccountType.RealEstate, AccountType.Loan];
+  if (snapshotTypes.includes(account.type)) {
+    const balances = await listBalances(accountId);
+    // balances are sorted desc by date; reverse for chronological order
+    const sorted = [...balances].reverse();
+
+    // Filter by startDate if provided
+    const filtered = startDate
+      ? sorted.filter((b) => new Date(b.date) >= startDate)
+      : sorted;
+
+    if (filtered.length === 0) {
+      return {
+        accountId: account.id,
+        accountName: account.name,
+        currentBalance: account.currentBalance,
+        history: [{ date: dateToKey(now, granularity), balance: Math.round(account.currentBalance * 100) / 100 }],
+      };
+    }
+
+    // Aggregate balances by period (use latest balance per period)
+    const byPeriod = new Map<string, number>();
+    for (const bal of filtered) {
+      const key = dateToKey(new Date(bal.date), granularity);
+      byPeriod.set(key, bal.balance); // last write wins (latest date in period)
+    }
+
+    const history = [...byPeriod.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, balance]) => ({ date, balance: Math.round(balance * 100) / 100 }));
+
+    return {
+      accountId: account.id,
+      accountName: account.name,
+      currentBalance: account.currentBalance,
+      history,
+    };
+  }
+
+  // Transaction-driven accounts: reconstruct from transactions
   const txRows = await prisma.transaction.findMany({
     where: {
       accountId,
@@ -496,17 +543,17 @@ export async function computeAccountBalanceHistory(
   }
 
   // Work backwards from currentBalance
-  const balances = new Array<number>(periodKeys.length);
-  balances[periodKeys.length - 1] = account.currentBalance;
+  const balanceArr = new Array<number>(periodKeys.length);
+  balanceArr[periodKeys.length - 1] = account.currentBalance;
 
   for (let i = periodKeys.length - 2; i >= 0; i--) {
     const nextPeriodNet = periodNet.get(periodKeys[i + 1]) ?? 0;
-    balances[i] = balances[i + 1] - nextPeriodNet;
+    balanceArr[i] = balanceArr[i + 1] - nextPeriodNet;
   }
 
   const history = periodKeys.map((date, i) => ({
     date,
-    balance: Math.round(balances[i] * 100) / 100,
+    balance: Math.round(balanceArr[i] * 100) / 100,
   }));
 
   return {

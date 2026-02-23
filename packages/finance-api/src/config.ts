@@ -43,6 +43,7 @@ export function loadConfig(): Config {
     databaseUrl: process.env.DATABASE_URL || "",
     encryptionKey: process.env.ENCRYPTION_KEY || "",
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
+    fredApiKey: process.env.FRED_API_KEY || "",
   };
 
   return cachedConfig;
@@ -62,6 +63,7 @@ export interface Config {
   databaseUrl: string;
   encryptionKey: string;
   anthropicApiKey: string;
+  fredApiKey: string;
 }
 
 /** Reset cached config (for testing only) */

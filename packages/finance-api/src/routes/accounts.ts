@@ -74,17 +74,18 @@ export default async function accountRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
   // GET / — list accounts
-  fastify.get<{ Querystring: { active?: string } }>(
+  fastify.get<{ Querystring: { active?: string; type?: string } }>(
     "/",
     async (
-      request: FastifyRequest<{ Querystring: { active?: string } }>,
+      request: FastifyRequest<{ Querystring: { active?: string; type?: string } }>,
       reply: FastifyReply,
     ) => {
       try {
-        const { active } = request.query;
-        const filter: { isActive?: boolean } = {};
+        const { active, type } = request.query;
+        const filter: { isActive?: boolean; type?: string } = {};
         if (active === "true") filter.isActive = true;
         if (active === "false") filter.isActive = false;
+        if (type) filter.type = type;
 
         const accounts = await listAccounts(filter);
         return reply.send({ accounts });

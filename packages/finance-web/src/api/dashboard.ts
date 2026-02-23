@@ -8,6 +8,7 @@ import type {
   ChartTimeRange,
   ChartGranularity,
   DTIResponse,
+  MortgageRatesResponse,
 } from "@derekentringer/shared/finance";
 import { apiFetch } from "./client.ts";
 
@@ -83,5 +84,11 @@ export async function fetchAccountBalanceHistory(
 export async function fetchDTI(): Promise<DTIResponse> {
   const res = await apiFetch("/dashboard/dti");
   if (!res.ok) throw new Error("Failed to fetch DTI");
+  return res.json();
+}
+
+export async function fetchMortgageRates(): Promise<MortgageRatesResponse> {
+  const res = await apiFetch("/dashboard/mortgage-rates");
+  if (!res.ok) throw new Error("Failed to fetch mortgage rates");
   return res.json();
 }

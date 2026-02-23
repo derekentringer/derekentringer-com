@@ -17,6 +17,7 @@ const PROFILE_INCLUDE = {
   loanProfile: true,
   investmentProfile: true,
   savingsProfile: true,
+  creditProfile: true,
 } as const;
 
 export async function createBalance(input: {

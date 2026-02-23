@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { Account, Transaction, Category } from "@derekentringer/shared/finance";
 import { fetchTransactions, updateTransaction, bulkUpdateCategory } from "../api/transactions.ts";
 import { fetchAccounts } from "../api/accounts.ts";
@@ -56,6 +57,7 @@ function formatDate(iso: string): string {
 }
 
 export function TransactionsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [total, setTotal] = useState(0);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -69,7 +71,7 @@ export function TransactionsPage() {
   const [isBulkApplying, setIsBulkApplying] = useState(false);
 
   // Filters
-  const [accountId, setAccountId] = useState("");
+  const [accountId, setAccountId] = useState(searchParams.get("accountId") ?? "");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [category, setCategory] = useState("");
@@ -265,7 +267,16 @@ export function TransactionsPage() {
             <Select
               value={accountId}
               onValueChange={(v) => {
-                setAccountId(v === "all" ? "" : v);
+                const newId = v === "all" ? "" : v;
+                setAccountId(newId);
+                setSearchParams((prev) => {
+                  if (newId) {
+                    prev.set("accountId", newId);
+                  } else {
+                    prev.delete("accountId");
+                  }
+                  return prev;
+                }, { replace: true });
                 handleFilterChange();
               }}
             >

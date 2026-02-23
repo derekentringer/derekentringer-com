@@ -22,6 +22,7 @@ export { encrypt, decrypt } from "./crypto/index.js";
 
 export {
   AccountType,
+  ACCOUNT_TYPE_GROUPS,
   CSV_PARSER_IDS,
   CSV_PARSER_LABELS,
   ASSET_ACCOUNT_TYPES,
@@ -35,6 +36,7 @@ export {
   INCOME_SOURCE_FREQUENCY_LABELS,
 } from "./finance/types.js";
 export type {
+  AccountTypeGroup,
   Account,
   Transaction,
   Balance,
@@ -118,4 +120,5 @@ export type {
   SavingsProjectionResponse,
   DTIComponent,
   DTIResponse,
+  MortgageRatesResponse,
 } from "./finance/types.js";

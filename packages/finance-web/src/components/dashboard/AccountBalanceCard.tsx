@@ -11,6 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { Badge } from "@/components/ui/badge";
 import type {
   AccountBalanceHistoryResponse,
   ChartTimeRange,
@@ -23,6 +24,13 @@ import { TimeRangeSelector } from "./TimeRangeSelector";
 interface AccountBalanceCardProps {
   accountId: string;
   colorIndex?: number;
+  subtitle?: string;
+  badge?: string;
+  badges?: string[];
+  defaultRange?: ChartTimeRange;
+  className?: string;
+  /** "period" = compare last two data points (default); "mom" = same day last month vs now */
+  trendMode?: "period" | "mom";
 }
 
 function formatLabel(date: string, granularity: ChartGranularity): string {
@@ -74,10 +82,10 @@ function CustomTooltip({
   );
 }
 
-export function AccountBalanceCard({ accountId, colorIndex = 0 }: AccountBalanceCardProps) {
+export function AccountBalanceCard({ accountId, colorIndex = 0, subtitle, badge, badges, defaultRange = "all", className, trendMode = "period" }: AccountBalanceCardProps) {
   const color = getCategoryColor(colorIndex);
   const gradientId = `gradBalance-${accountId}`;
-  const [range, setRange] = useState<ChartTimeRange>("all");
+  const [range, setRange] = useState<ChartTimeRange>(defaultRange);
   const [granularity, setGranularity] = useState<ChartGranularity>("weekly");
   const [data, setData] = useState<AccountBalanceHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,9 +119,41 @@ export function AccountBalanceCard({ accountId, colorIndex = 0 }: AccountBalance
 
   const trend = useMemo(() => {
     if (!data || data.history.length < 2) return undefined;
-    const current = data.history[data.history.length - 1].balance;
-    const previous = data.history[data.history.length - 2].balance;
-    const trendLabel = granularity === "weekly" ? "vs last week" : "vs last month";
+
+    let current: number;
+    let previous: number;
+    let trendLabel: string;
+
+    if (trendMode === "mom") {
+      // Month-over-month: current balance vs balance at same day last month
+      current = data.history[data.history.length - 1].balance;
+      const now = new Date();
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      const target = lastMonth.toISOString().slice(0, 10);
+
+      // Find history point closest to target date
+      let closest = data.history[0];
+      let closestDiff = Infinity;
+      for (const point of data.history) {
+        const diff = Math.abs(new Date(point.date + (point.date.length === 7 ? "-15" : "T00:00:00")).getTime() - lastMonth.getTime());
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closest = point;
+        }
+      }
+      // Only use if the closest point is actually from a different period than current
+      const closestDate = closest.date.slice(0, 7);
+      const currentDate = data.history[data.history.length - 1].date.slice(0, 7);
+      if (closestDate === currentDate) return undefined;
+
+      previous = closest.balance;
+      trendLabel = `vs ${lastMonth.toLocaleDateString("en-US", { month: "short" })}`;
+    } else {
+      current = data.history[data.history.length - 1].balance;
+      previous = data.history[data.history.length - 2].balance;
+      trendLabel = granularity === "weekly" ? "vs last week" : "vs last month";
+    }
+
     if (previous === 0) return { direction: "neutral" as const, value: "0.0%", label: trendLabel };
     const pct = ((current - previous) / Math.abs(previous)) * 100;
     if (Math.abs(pct) < 0.05) return { direction: "neutral" as const, value: "0.0%", label: trendLabel };
@@ -122,7 +162,7 @@ export function AccountBalanceCard({ accountId, colorIndex = 0 }: AccountBalance
       value: `${Math.abs(pct).toFixed(1)}%`,
       label: trendLabel,
     };
-  }, [data, granularity]);
+  }, [data, granularity, trendMode]);
 
   if (error && !data) {
     return (
@@ -153,12 +193,14 @@ export function AccountBalanceCard({ accountId, colorIndex = 0 }: AccountBalance
   if (!data) return null;
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg sm:text-xl text-foreground">{data.accountName}</h2>
-            {trend && (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg sm:text-xl text-foreground">{data.accountName}</h2>
+              {badges ? badges.map((b) => <Badge key={b} variant="secondary">{b}</Badge>) : badge ? <Badge variant="secondary">{badge}</Badge> : null}
+              {trend && (
               <>
                 <span
                   className={cn(
@@ -175,6 +217,8 @@ export function AccountBalanceCard({ accountId, colorIndex = 0 }: AccountBalance
                 <span className="text-xs text-muted-foreground">{trend.label}</span>
               </>
             )}
+            </div>
+            {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
           </div>
           <TimeRangeSelector
             range={range}
@@ -208,6 +252,7 @@ export function AccountBalanceCard({ accountId, colorIndex = 0 }: AccountBalance
                 stroke={CHART_COLORS.text}
                 fontSize={12}
                 tickFormatter={(v) => formatCurrency(v)}
+                domain={[(dataMin: number) => (dataMin < 0 ? dataMin : 0), "auto"]}
               />
               <Tooltip content={<CustomTooltip />} />
               <Area

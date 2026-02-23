@@ -47,7 +47,7 @@ Core functions:
 - `computeNetWorthHistory(granularity, startDate?)` — computes history from Balance records with configurable granularity (daily/weekly/monthly) and date range; fetches pre-startDate balances for carry-forward initialization; groups latest balance per account per period; carry-forward fills gaps; aggregates by asset/liability classification; returns `{ history, accountHistory }` — history is the aggregated net worth points, accountHistory contains per-account balances keyed by account ID for each period (Real Estate as equity, liabilities as absolute values); returns empty arrays when no balance data exists
 - `computeSpendingSummary(month)` — fetches transactions for a given month; aggregates negative amounts (expenses) by category; returns sorted list with percentage of total
 - `computeDailySpending(startDate, endDate)` — fetches transactions in date range; groups negative amounts (expenses) by day; returns array of `DailySpendingPoint` with absolute values; fills gaps with zero-amount days
-- `computeAccountBalanceHistory(accountId, granularity, startDate?)` — reconstructs historical balances from transactions by working backwards from currentBalance; aggregates net transaction amounts per period (day, week, or month); supports any date range including all-time; for "all" range, determines earliest date from transaction data
+- `computeAccountBalanceHistory(accountId, granularity, startDate?)` — computes balance history with two strategies based on account type: **snapshot-driven** (Investment, Real Estate, Loan) uses actual Balance table entries from statement imports; **transaction-driven** (Checking, Savings, Credit) reconstructs from transactions by working backwards from currentBalance. Aggregates per period (day, week, or month); supports any date range including all-time
 
 #### API Routes (`src/routes/dashboard.ts`)
 
@@ -60,6 +60,7 @@ All routes require JWT authentication.
 | GET | `/dashboard/spending-daily?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` | Daily spending totals for sparkline data |
 | GET | `/dashboard/account-history?accountId=xxx&range=all&granularity=weekly` | Single account balance history (range: 1m/3m/6m/12m/ytd/all; granularity: daily/weekly/monthly) |
 | GET | `/dashboard/upcoming-bills?days=30` | Upcoming bills widget data (max 365 days) |
+| GET | `/dashboard/mortgage-rates` | Current 30yr/15yr fixed mortgage rates from FRED API (24h cache) |
 
 Route helpers:
 - `computeStartDate(range)` — converts range string to Date or undefined (for "all")
@@ -245,5 +246,6 @@ The dashboard now shows per-account balance history charts for all **favorited**
 - **Granularity**: User-selectable (weekly/monthly) with per-chart toggle; daily granularity used internally for KPI sparklines (not exposed in UI toggles); weekly uses ISO week start (Monday), monthly uses YYYY-MM, daily uses YYYY-MM-DD
 - **Trend indicators**: KPI cards use inline sparkline charts for Net Worth (30-day daily) and Monthly Spending (MTD cumulative) with percentage change and direction arrow; `invertColor` pattern used for spending sparkline (increase = red); Bills Due card retains text-based trend badge; `invertColor` pattern used for liabilities in net worth chart (arrows always point in the factual direction; colors inverted so increase = red, decrease = green); overall assets/liabilities trends computed from summary `previousBalance` data (not chart history points) for consistency with per-account trends; account balance cards adapt between week-over-week and month-over-month based on granularity
 - **Net worth history data source**: Balance table records (PDF statement snapshots) with carry-forward for gaps; does not use transactions
-- **Checking balance history data source**: Reconstructed from transaction records by working backwards from currentBalance; does not use Balance table
+- **Checking/Savings/Credit balance history data source**: Reconstructed from transaction records by working backwards from currentBalance
+- **Investment/Real Estate/Loan balance history data source**: Uses actual Balance table entries from PDF statement imports; snapshot-driven since balance changes come from market movements or statement-reported payments, not individual transactions
 - **Tooltip dates**: Full date with year shown on hover (e.g., "February 17, 2026" for weekly, "February 2026" for monthly)
