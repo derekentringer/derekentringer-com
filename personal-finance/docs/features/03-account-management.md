@@ -89,7 +89,7 @@ Migrated from CSS Modules to Tailwind CSS v4 + shadcn/ui:
 /*              → NotFoundPage (no layout)
 <ProtectedRoute>
   <AppLayout>
-    /             → DashboardPage
+    /             → DashboardPage (empty state links to /settings/accounts)
     /accounts     → AccountsPage
     /transactions → TransactionsPage (placeholder)
     /reports      → ReportsPage (placeholder)

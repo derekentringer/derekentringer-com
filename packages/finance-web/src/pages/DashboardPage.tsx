@@ -248,7 +248,7 @@ export function DashboardPage() {
             <p className="text-muted-foreground mb-4">
               Add your first account to get started.
             </p>
-            <Link to="/accounts">
+            <Link to="/settings/accounts">
               <Button>Go to Accounts</Button>
             </Link>
           </CardContent>
