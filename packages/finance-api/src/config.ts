@@ -6,12 +6,15 @@ export function loadConfig(): Config {
   const nodeEnv = (process.env.NODE_ENV || "development").toLowerCase().trim();
   const isProduction = nodeEnv === "production";
 
-  if (isProduction) {
+  const enforceSecrets = nodeEnv !== "development" && nodeEnv !== "test";
+
+  if (enforceSecrets) {
     const required = [
       "ADMIN_USERNAME",
       "ADMIN_PASSWORD_HASH",
       "JWT_SECRET",
       "REFRESH_TOKEN_SECRET",
+      "PIN_TOKEN_SECRET",
       "CORS_ORIGIN",
       "DATABASE_URL",
       "ENCRYPTION_KEY",
@@ -33,7 +36,6 @@ export function loadConfig(): Config {
       "dev-refresh-secret-do-not-use-in-prod",
     pinTokenSecret:
       process.env.PIN_TOKEN_SECRET ||
-      process.env.REFRESH_TOKEN_SECRET ||
       "dev-pin-secret-do-not-use-in-prod",
     pinHash: process.env.PIN_HASH || null,
     corsOrigin: process.env.CORS_ORIGIN || "http://localhost:3003",

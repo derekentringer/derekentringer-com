@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { NotificationLogEntry } from "@derekentringer/shared/finance";
 import { NOTIFICATION_LABELS } from "@derekentringer/shared/finance";
 import {
@@ -17,7 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Bell, Check, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const POLL_INTERVAL_MS = 60_000; // 60 seconds
 const PAGE_SIZE = 20;
 
 export function NotificationBell() {
@@ -26,7 +25,6 @@ export function NotificationBell() {
   const [total, setTotal] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadUnreadCount = useCallback(async () => {
     try {
@@ -58,16 +56,19 @@ export function NotificationBell() {
     }
   }, [notifications.length]);
 
-  // Poll unread count + listen for manual refresh events
+  // Initial load + listen for consolidated polling refresh events
   useEffect(() => {
     loadUnreadCount();
-    pollRef.current = setInterval(loadUnreadCount, POLL_INTERVAL_MS);
 
-    const handleRefresh = () => loadUnreadCount();
+    const handleRefresh = (e: Event) => {
+      const detail = (e as CustomEvent<{ unreadCount: number }>).detail;
+      if (detail?.unreadCount !== undefined) {
+        setUnreadCount(detail.unreadCount);
+      }
+    };
     window.addEventListener("notification-refresh", handleRefresh);
 
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
       window.removeEventListener("notification-refresh", handleRefresh);
     };
   }, [loadUnreadCount]);
