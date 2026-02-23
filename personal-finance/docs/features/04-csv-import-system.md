@@ -121,7 +121,7 @@ Multi-step dialog:
   - Click once: sort ascending; click again: sort descending; third click: reset to server order
   - Client-side sorting on current page (encrypted fields prevent server-side sorting)
 - Pagination with page size of 50
-- "Import CSV" button in header
+- "Import CSV" button in header (disabled when no accounts exist)
 - Edit button per row opens `TransactionEditDialog`
 
 #### Transaction Edit Dialog

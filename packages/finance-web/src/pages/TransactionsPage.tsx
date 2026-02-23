@@ -243,7 +243,7 @@ export function TransactionsPage() {
     <div className="p-4 md:p-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl sm:text-2xl md:text-3xl text-foreground">Transactions</h1>
-        <Button size="sm" onClick={() => setShowImport(true)}>
+        <Button size="sm" onClick={() => setShowImport(true)} disabled={accounts.length === 0}>
           <Upload className="h-4 w-4" />
           Import CSV
         </Button>
