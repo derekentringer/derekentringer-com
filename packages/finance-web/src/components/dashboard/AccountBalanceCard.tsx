@@ -129,8 +129,6 @@ export function AccountBalanceCard({ accountId, colorIndex = 0, subtitle, badge,
       current = data.history[data.history.length - 1].balance;
       const now = new Date();
       const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-      const target = lastMonth.toISOString().slice(0, 10);
-
       // Find history point closest to target date
       let closest = data.history[0];
       let closestDiff = Infinity;

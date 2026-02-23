@@ -9,11 +9,12 @@ describe("AccountType enum", () => {
     expect(AccountType.Credit).toBe("credit");
     expect(AccountType.Investment).toBe("investment");
     expect(AccountType.Loan).toBe("loan");
+    expect(AccountType.RealEstate).toBe("real_estate");
     expect(AccountType.Other).toBe("other");
   });
 
-  it("has exactly 7 members", () => {
+  it("has exactly 8 members", () => {
     const values = Object.values(AccountType);
-    expect(values).toHaveLength(7);
+    expect(values).toHaveLength(8);
   });
 });
