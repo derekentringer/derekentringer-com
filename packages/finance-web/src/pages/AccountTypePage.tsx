@@ -250,6 +250,7 @@ interface KpiSparkline {
 interface KpiData {
   title: string;
   value: string;
+  tooltip?: string;
   trend?: KpiTrend;
   sparkline?: KpiSparkline;
 }
@@ -340,6 +341,53 @@ function buildDailySparkline(
   return cumulative;
 }
 
+/**
+ * Aggregate a per-balance metric across accounts with carry-forward.
+ * On dates where an account has no entry, its last known value is carried forward
+ * so every data point reflects all accounts — not just those with entries on that date.
+ */
+function buildAggregatedSparkline(
+  items: AccountWithProfile[],
+  getValue: (bal: Balance, account: Account) => number,
+  recentCount = 12,
+): number[] {
+  const accounts: Map<string, number>[] = [];
+  const allDates = new Set<string>();
+  for (const item of items) {
+    const dateMap = new Map<string, number>();
+    for (const bal of item.allBalances) {
+      const day = bal.date.slice(0, 10);
+      allDates.add(day);
+      dateMap.set(day, (dateMap.get(day) ?? 0) + getValue(bal, item.account));
+    }
+    if (dateMap.size > 0) accounts.push(dateMap);
+  }
+  if (allDates.size === 0 || accounts.length === 0) return [];
+
+  const sortedDates = [...allDates].sort();
+  const window = sortedDates.slice(-recentCount);
+
+  // Initialize carry-forward: null means "not seen yet"
+  const lastKnown: (number | null)[] = accounts.map(() => null);
+  for (const date of sortedDates) {
+    if (date >= window[0]) break;
+    for (let i = 0; i < accounts.length; i++) {
+      const val = accounts[i].get(date);
+      if (val !== undefined) lastKnown[i] = val;
+    }
+  }
+
+  return window.map((date) => {
+    let sum = 0;
+    for (let i = 0; i < accounts.length; i++) {
+      const val = accounts[i].get(date);
+      if (val !== undefined) lastKnown[i] = val;
+      if (lastKnown[i] !== null) sum += lastKnown[i] as number;
+    }
+    return sum;
+  });
+}
+
 function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): KpiData[] {
   const kpis: KpiData[] = [];
   const totalBalance = items.reduce((s, i) => s + i.account.currentBalance, 0);
@@ -347,17 +395,8 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
   // Build balance sparkline from recent balance history (last 12 entries for shape)
   let balanceSparkline: KpiSparkline | undefined;
   {
-    const byDate = new Map<string, number>();
-    for (const item of items) {
-      for (const bal of item.allBalances) {
-        const day = bal.date.slice(0, 10);
-        byDate.set(day, (byDate.get(day) ?? 0) + bal.balance);
-      }
-    }
-    const sorted = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    const recent = sorted.slice(-12);
-    if (recent.length >= 2) {
-      const data = recent.map(([, v]) => v);
+    const data = buildAggregatedSparkline(items, (bal) => bal.balance);
+    if (data.length >= 2) {
       const first = data[0];
       const last = data[data.length - 1];
       const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
@@ -370,32 +409,43 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
     }
   }
 
+  // For debt accounts, declining balance is positive — invert sparkline colors
+  const debtBalanceSparkline: KpiSparkline | undefined = balanceSparkline
+    ? { ...balanceSparkline, color: balanceSparkline.change <= 0 ? COLOR_GREEN : COLOR_RED, invertColor: true }
+    : undefined;
+
   const balanceTrend = computeBalanceTrend(items);
-  kpis.push({ title: "Total Balance", value: formatCurrency(totalBalance), trend: balanceTrend, sparkline: balanceSparkline });
+  // Tooltip text depends on account type — slug-specific sections may clear & re-push with their own tooltip
+  const balanceTooltipMap: Record<string, string> = {
+    checking: "Combined balance across all checking accounts",
+    savings: "Combined balance across all savings accounts",
+    loans: "Combined outstanding balance across all loans",
+  };
+  kpis.push({ title: "Total Balance", value: formatCurrency(totalBalance), tooltip: balanceTooltipMap[slug], trend: balanceTrend, sparkline: slug === "loans" ? debtBalanceSparkline : balanceSparkline });
 
   if (slug === "savings") {
     const apys = items
       .map((i) => i.latestBalance?.savingsProfile?.apy ?? i.account.interestRate)
       .filter((v): v is number => v != null);
     if (apys.length === 1) {
-      kpis.push({ title: "Current APY", value: formatPercent(apys[0]) });
+      kpis.push({ title: "Current APY", value: formatPercent(apys[0]), tooltip: "Annual percentage yield earned on deposits" });
     } else if (apys.length > 1) {
       const avg = apys.reduce((s, v) => s + v, 0) / apys.length;
-      kpis.push({ title: "Avg APY", value: formatPercent(avg) });
+      kpis.push({ title: "Avg APY", value: formatPercent(avg), tooltip: "Average APY across savings accounts" });
     }
 
     const interestEarned = items
       .map((i) => i.latestBalance?.savingsProfile?.interestEarned)
       .filter((v): v is number => v != null);
     if (interestEarned.length > 0) {
-      kpis.push({ title: "Interest Earned", value: formatCurrency(interestEarned.reduce((s, v) => s + v, 0)) });
+      kpis.push({ title: "Interest Earned", value: formatCurrency(interestEarned.reduce((s, v) => s + v, 0)), tooltip: "Interest earned in the latest statement period" });
     }
 
     const interestYtd = items
       .map((i) => i.latestBalance?.savingsProfile?.interestEarnedYtd)
       .filter((v): v is number => v != null);
     if (interestYtd.length > 0) {
-      kpis.push({ title: "Interest YTD", value: formatCurrency(interestYtd.reduce((s, v) => s + v, 0)) });
+      kpis.push({ title: "Interest YTD", value: formatCurrency(interestYtd.reduce((s, v) => s + v, 0)), tooltip: "Total interest earned year-to-date" });
     }
   }
 
@@ -406,9 +456,9 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
     const creditLimits = items
       .map((i) => i.latestBalance?.creditProfile?.creditLimit)
       .filter((v): v is number => v != null);
-    kpis.push({ title: "Total Credit Limit", value: formatCurrency(creditLimits.length > 0 ? creditLimits.reduce((s, v) => s + v, 0) : 0) });
+    kpis.push({ title: "Total Credit Limit", value: formatCurrency(creditLimits.length > 0 ? creditLimits.reduce((s, v) => s + v, 0) : 0), tooltip: "Combined credit limit across all cards" });
 
-    kpis.push({ title: "Total Balance", value: formatCurrency(totalBalance), trend: balanceTrend, sparkline: balanceSparkline });
+    kpis.push({ title: "Total Balance", value: formatCurrency(totalBalance), tooltip: "Combined outstanding balance across all cards", trend: balanceTrend, sparkline: debtBalanceSparkline });
 
     const limits = items
       .map((i) => i.latestBalance?.creditProfile?.creditLimit)
@@ -450,7 +500,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
       }
     }
 
-    kpis.push({ title: "Total Credit Utilization", value: `${utilization.toFixed(1)}%`, sparkline: utilizationSparkline });
+    kpis.push({ title: "Total Credit Utilization", value: `${utilization.toFixed(1)}%`, tooltip: "Percentage of total credit limit currently in use", sparkline: utilizationSparkline });
 
     const minPayments = items
       .map((i) => i.latestBalance?.creditProfile?.minimumPayment)
@@ -485,7 +535,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
       }
     }
 
-    kpis.push({ title: "Total Minimum Payment", value: formatCurrency(totalMinPayment), sparkline: minPaymentSparkline });
+    kpis.push({ title: "Total Minimum Payment", value: formatCurrency(totalMinPayment), tooltip: "Combined minimum payments due across all cards", sparkline: minPaymentSparkline });
   }
 
   if (slug === "loans") {
@@ -493,7 +543,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
       .map((i) => i.latestBalance?.loanProfile?.monthlyPayment)
       .filter((v): v is number => v != null);
     if (payments.length > 0) {
-      kpis.push({ title: "Total Monthly Payment", value: formatCurrency(payments.reduce((s, v) => s + v, 0)) });
+      kpis.push({ title: "Total Monthly Payment", value: formatCurrency(payments.reduce((s, v) => s + v, 0)), tooltip: "Combined monthly payments across all loans" });
     }
 
     // Total Interest Paid with sparkline
@@ -504,23 +554,13 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
 
     let interestPaidSparkline: KpiSparkline | undefined;
     {
-      const byDate = new Map<string, number>();
-      for (const item of items) {
-        for (const bal of item.allBalances) {
-          const day = bal.date.slice(0, 10);
-          const interest = bal.loanProfile?.interestPaid ?? 0;
-          byDate.set(day, (byDate.get(day) ?? 0) + interest);
-        }
-      }
-      const sorted = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-      const recent = sorted.slice(-12);
-      const points = recent.map(([, v]) => v);
-      if (points.length >= 2) {
-        const first = points[0];
-        const last = points[points.length - 1];
+      const data = buildAggregatedSparkline(items, (bal) => bal.loanProfile?.interestPaid ?? 0);
+      if (data.length >= 2) {
+        const first = data[0];
+        const last = data[data.length - 1];
         const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
         interestPaidSparkline = {
-          data: points,
+          data,
           change,
           label: "trend",
           color: last <= first ? COLOR_GREEN : COLOR_RED,
@@ -529,7 +569,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
       }
     }
 
-    kpis.push({ title: "Interest Paid (Period)", value: formatCurrency(totalInterestPaid), sparkline: interestPaidSparkline });
+    kpis.push({ title: "Interest Paid (Period)", value: formatCurrency(totalInterestPaid), tooltip: "Total interest paid in the latest statement period", sparkline: interestPaidSparkline });
 
     // Overall Payoff Progress with sparkline
     const totalOriginal = items.reduce((s, i) => s + (i.account.originalBalance ?? 0), 0);
@@ -538,40 +578,32 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
 
     let payoffSparkline: KpiSparkline | undefined;
     {
-      const byDate = new Map<string, number>();
-      for (const item of items) {
-        const orig = item.account.originalBalance ?? 0;
-        if (orig <= 0) continue;
-        for (const bal of item.allBalances) {
-          const day = bal.date.slice(0, 10);
-          const existing = byDate.get(day) ?? 0;
-          byDate.set(day, existing + ((orig - Math.abs(bal.balance)) / orig) * 100);
+      const validItems = items.filter((i) => (i.account.originalBalance ?? 0) > 0);
+      if (validItems.length > 0) {
+        const data = buildAggregatedSparkline(
+          validItems,
+          (bal, account) => {
+            const orig = account.originalBalance ?? 0;
+            return orig > 0 ? ((orig - Math.abs(bal.balance)) / orig) * 100 : 0;
+          },
+        );
+        // Average across accounts
+        const averaged = validItems.length > 1 ? data.map((v) => v / validItems.length) : data;
+        if (averaged.length >= 2) {
+          const first = averaged[0];
+          const last = averaged[averaged.length - 1];
+          const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
+          payoffSparkline = {
+            data: averaged,
+            change,
+            label: "trend",
+            color: last >= first ? COLOR_GREEN : COLOR_RED,
+          };
         }
-      }
-      // Average across accounts if multiple
-      const accountCount = items.filter((i) => (i.account.originalBalance ?? 0) > 0).length;
-      if (accountCount > 1) {
-        for (const [key, val] of byDate) {
-          byDate.set(key, val / accountCount);
-        }
-      }
-      const sorted = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-      const recent = sorted.slice(-12);
-      const points = recent.map(([, v]) => v);
-      if (points.length >= 2) {
-        const first = points[0];
-        const last = points[points.length - 1];
-        const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
-        payoffSparkline = {
-          data: points,
-          change,
-          label: "trend",
-          color: last >= first ? COLOR_GREEN : COLOR_RED,
-        };
       }
     }
 
-    kpis.push({ title: "Overall Payoff Progress", value: `${payoffPct.toFixed(1)}%`, sparkline: payoffSparkline });
+    kpis.push({ title: "Overall Payoff Progress", value: `${payoffPct.toFixed(1)}%`, tooltip: "Percentage of original loan balances paid off", sparkline: payoffSparkline });
   }
 
   if (slug === "investments") {
@@ -617,7 +649,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
       }
     }
 
-    kpis.push({ title: "YTD Return", value: formatPercent(avgYtd), sparkline: ytdSparkline });
+    kpis.push({ title: "YTD Return", value: formatPercent(avgYtd), tooltip: "Average year-to-date return across investment accounts", sparkline: ytdSparkline });
 
     // 2. Total Contributions with sparkline (use most recent non-null per account)
     const contributions = items
@@ -656,10 +688,10 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
       }
     }
 
-    kpis.push({ title: "Total Contributions", value: formatCurrency(totalContributions), sparkline: contribSparkline });
+    kpis.push({ title: "Total Contributions", value: formatCurrency(totalContributions), tooltip: "Combined contributions in the latest statement period", sparkline: contribSparkline });
 
     // 3. Total Balance (re-add with trend + sparkline)
-    kpis.push({ title: "Total Balance", value: formatCurrency(totalBalance), trend: balanceTrend, sparkline: balanceSparkline });
+    kpis.push({ title: "Total Balance", value: formatCurrency(totalBalance), tooltip: "Combined market value across all investment accounts", trend: balanceTrend, sparkline: balanceSparkline });
 
     // 4. Total Dividends with sparkline (use most recent non-null per account)
     const dividends = items
@@ -698,7 +730,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
       }
     }
 
-    kpis.push({ title: "Total Dividends", value: formatCurrency(totalDividends), sparkline: dividendSparkline });
+    kpis.push({ title: "Total Dividends", value: formatCurrency(totalDividends), tooltip: "Combined dividends in the latest statement period", sparkline: dividendSparkline });
   }
 
   if (slug === "real-estate") {
@@ -709,7 +741,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
     const totalCurrentBalance = Math.abs(totalBalance);
     const totalEquity = totalEstimatedValue - totalCurrentBalance;
 
-    kpis.push({ title: "Total Estimated Value", value: formatCurrency(totalEstimatedValue) });
+    kpis.push({ title: "Total Estimated Value", value: formatCurrency(totalEstimatedValue), tooltip: "Combined estimated market value of all properties" });
 
     // Total Equity with sparkline
     let equitySparkline: KpiSparkline | undefined;
@@ -737,7 +769,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
         };
       }
     }
-    kpis.push({ title: "Total Equity", value: formatCurrency(totalEquity), sparkline: equitySparkline });
+    kpis.push({ title: "Total Equity", value: formatCurrency(totalEquity), tooltip: "Estimated value minus outstanding mortgage balances", sparkline: equitySparkline });
 
     // Loan-to-Value Ratio with sparkline
     const ltv = totalEstimatedValue > 0 ? (totalCurrentBalance / totalEstimatedValue) * 100 : 0;
@@ -774,9 +806,9 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
         };
       }
     }
-    kpis.push({ title: "Loan-to-Value Ratio", value: `${ltv.toFixed(1)}%`, sparkline: ltvSparkline });
+    kpis.push({ title: "Loan-to-Value Ratio", value: `${ltv.toFixed(1)}%`, tooltip: "Outstanding balance as a percentage of property value. Below 80% is good — no PMI required. Lower is better.", sparkline: ltvSparkline });
 
-    kpis.push({ title: "Total Balance", value: formatCurrency(totalBalance), trend: balanceTrend, sparkline: balanceSparkline });
+    kpis.push({ title: "Total Balance", value: formatCurrency(totalBalance), tooltip: "Combined outstanding mortgage balances", trend: balanceTrend, sparkline: debtBalanceSparkline });
   }
 
   if (slug === "checking") {
@@ -784,7 +816,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
       .map((i) => i.account.interestRate)
       .filter((v): v is number => v != null);
     if (rates.length > 0) {
-      kpis.push({ title: "Avg Rate", value: formatPercent(rates.reduce((s, v) => s + v, 0) / rates.length) });
+      kpis.push({ title: "Avg Rate", value: formatPercent(rates.reduce((s, v) => s + v, 0) / rates.length), tooltip: "Average interest rate across checking accounts" });
     }
   }
 
@@ -801,7 +833,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
     const debitSparkline: KpiSparkline | undefined = debitSpark.length >= 2
       ? { data: debitSpark, change: debitChange, label: "MTD", color: debitChange <= 0 ? COLOR_GREEN : COLOR_RED, invertColor: true }
       : undefined;
-    kpis.push({ title: "Total Debits", value: formatCurrency(mtd.mtdDebits), sparkline: debitSparkline });
+    kpis.push({ title: "Total Debits", value: formatCurrency(mtd.mtdDebits), tooltip: "Total outgoing transactions this month", sparkline: debitSparkline });
 
     // Total Credits MTD
     const creditChange = mtd.prevMtdCredits > 0
@@ -810,7 +842,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
     const creditSparkline: KpiSparkline | undefined = creditSpark.length >= 2
       ? { data: creditSpark, change: creditChange, label: "MTD", color: creditChange >= 0 ? COLOR_GREEN : COLOR_RED }
       : undefined;
-    kpis.push({ title: "Total Credits", value: formatCurrency(mtd.mtdCredits), sparkline: creditSparkline });
+    kpis.push({ title: "Total Credits", value: formatCurrency(mtd.mtdCredits), tooltip: "Total incoming transactions this month", sparkline: creditSparkline });
 
     // Net Cash Flow MTD
     const netCashFlow = mtd.mtdCredits - mtd.mtdDebits;
@@ -821,7 +853,7 @@ function computeKpis(slug: string, items: AccountWithProfile[], mtd?: MtdData): 
     const netSparkline: KpiSparkline | undefined = netSpark.length >= 2
       ? { data: netSpark, change: netChange, label: "MTD", color: netChange >= 0 ? COLOR_GREEN : COLOR_RED }
       : undefined;
-    kpis.push({ title: "Net Cash Flow", value: formatCurrency(netCashFlow), sparkline: netSparkline });
+    kpis.push({ title: "Net Cash Flow", value: formatCurrency(netCashFlow), tooltip: "Credits minus debits for the current month", sparkline: netSparkline });
   }
 
   return kpis;
@@ -994,7 +1026,7 @@ export function AccountTypePage() {
       {kpis.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {kpis.map((kpi) => (
-            <KpiCard key={kpi.title} title={kpi.title} value={kpi.value} trend={kpi.trend} sparkline={kpi.sparkline} />
+            <KpiCard key={kpi.title} title={kpi.title} value={kpi.value} tooltip={kpi.tooltip} trend={kpi.trend} sparkline={kpi.sparkline} />
           ))}
         </div>
       )}

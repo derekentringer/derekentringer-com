@@ -44,6 +44,9 @@ export function loadConfig(): Config {
     encryptionKey: process.env.ENCRYPTION_KEY || "",
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
     fredApiKey: process.env.FRED_API_KEY || "",
+    fcmProjectId: process.env.FIREBASE_PROJECT_ID || "",
+    fcmClientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
+    fcmPrivateKey: process.env.FIREBASE_PRIVATE_KEY || "",
   };
 
   return cachedConfig;
@@ -64,6 +67,9 @@ export interface Config {
   encryptionKey: string;
   anthropicApiKey: string;
   fredApiKey: string;
+  fcmProjectId: string;
+  fcmClientEmail: string;
+  fcmPrivateKey: string;
 }
 
 /** Reset cached config (for testing only) */

@@ -1,10 +1,13 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Sparkline } from "@/components/ui/sparkline";
 import { cn } from "@/lib/utils";
+import { Info } from "lucide-react";
 
 interface KpiCardProps {
   title: string;
   value: string;
+  tooltip?: string;
   trend?: {
     direction: "up" | "down" | "neutral";
     value: string;
@@ -21,7 +24,7 @@ interface KpiCardProps {
   className?: string;
 }
 
-export function KpiCard({ title, value, trend, sparkline, className }: KpiCardProps) {
+export function KpiCard({ title, value, tooltip, trend, sparkline, className }: KpiCardProps) {
   // For text-based trend
   const isPositive = trend?.invertColor
     ? trend.direction === "down"
@@ -49,7 +52,19 @@ export function KpiCard({ title, value, trend, sparkline, className }: KpiCardPr
   return (
     <Card className={cn("", className)}>
       <CardContent className="p-4">
-        <p className="text-xs text-foreground">{title}</p>
+        <div className="flex items-center gap-1">
+          <p className="text-xs text-foreground">{title}</p>
+          {tooltip && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-3 w-3 text-muted-foreground cursor-help shrink-0" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[220px] text-xs">
+                {tooltip}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
         {sparkline && sparkline.data.length >= 2 ? (
           <div className="flex items-center gap-2 sm:gap-3 mt-1">
             <p className="text-lg sm:text-2xl font-bold">{value}</p>

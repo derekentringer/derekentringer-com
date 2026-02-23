@@ -3,10 +3,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { useSidebar } from "@/hooks/useSidebar";
+import { useBrowserNotifications } from "@/hooks/useBrowserNotifications";
 
 export function AppLayout() {
   const { isCollapsed, isMobileOpen, toggleCollapsed, toggleMobile, closeMobile } =
     useSidebar();
+
+  // Poll for new notifications and show browser popups
+  useBrowserNotifications();
 
   return (
     <TooltipProvider>

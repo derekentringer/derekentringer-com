@@ -754,3 +754,184 @@ export interface MortgageRatesResponse {
   rate15yr: number | null;
   asOf: string | null;
 }
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+
+export enum NotificationType {
+  BillDue = "bill_due",
+  CreditPaymentDue = "credit_payment_due",
+  LoanPaymentDue = "loan_payment_due",
+  HighCreditUtilization = "high_credit_utilization",
+  BudgetOverspend = "budget_overspend",
+  LargeTransaction = "large_transaction",
+  StatementReminder = "statement_reminder",
+  Milestones = "milestones",
+}
+
+export type NotificationPhase = 1 | 2 | 3;
+
+export const NOTIFICATION_PHASES: Record<NotificationType, NotificationPhase> = {
+  [NotificationType.BillDue]: 1,
+  [NotificationType.CreditPaymentDue]: 1,
+  [NotificationType.LoanPaymentDue]: 1,
+  [NotificationType.HighCreditUtilization]: 2,
+  [NotificationType.BudgetOverspend]: 2,
+  [NotificationType.LargeTransaction]: 2,
+  [NotificationType.StatementReminder]: 3,
+  [NotificationType.Milestones]: 3,
+};
+
+export type NotificationCategory = "reminders" | "alerts" | "milestones";
+
+export const NOTIFICATION_CATEGORIES: Record<NotificationType, NotificationCategory> = {
+  [NotificationType.BillDue]: "reminders",
+  [NotificationType.CreditPaymentDue]: "reminders",
+  [NotificationType.LoanPaymentDue]: "reminders",
+  [NotificationType.HighCreditUtilization]: "alerts",
+  [NotificationType.BudgetOverspend]: "alerts",
+  [NotificationType.LargeTransaction]: "alerts",
+  [NotificationType.StatementReminder]: "reminders",
+  [NotificationType.Milestones]: "milestones",
+};
+
+export const NOTIFICATION_LABELS: Record<NotificationType, string> = {
+  [NotificationType.BillDue]: "Bill Due",
+  [NotificationType.CreditPaymentDue]: "Credit Payment Due",
+  [NotificationType.LoanPaymentDue]: "Loan Payment Due",
+  [NotificationType.HighCreditUtilization]: "High Credit Utilization",
+  [NotificationType.BudgetOverspend]: "Budget Overspend",
+  [NotificationType.LargeTransaction]: "Large Transaction",
+  [NotificationType.StatementReminder]: "Statement Reminder",
+  [NotificationType.Milestones]: "Milestones",
+};
+
+export const NOTIFICATION_DESCRIPTIONS: Record<NotificationType, string> = {
+  [NotificationType.BillDue]: "Get reminded when bills are due",
+  [NotificationType.CreditPaymentDue]: "Get reminded when credit card payments are due",
+  [NotificationType.LoanPaymentDue]: "Get reminded when loan payments are due",
+  [NotificationType.HighCreditUtilization]: "Alert when credit utilization exceeds thresholds",
+  [NotificationType.BudgetOverspend]: "Alert when spending approaches or exceeds budget",
+  [NotificationType.LargeTransaction]: "Alert for transactions over a set amount",
+  [NotificationType.StatementReminder]: "Remind to upload new statement data",
+  [NotificationType.Milestones]: "Celebrate net worth and loan payoff milestones",
+};
+
+// Per-type configuration interfaces
+export interface BillDueConfig {
+  reminderDaysBefore: number;
+}
+
+export interface CreditPaymentDueConfig {
+  reminderDaysBefore: number;
+}
+
+export interface LoanPaymentDueConfig {
+  reminderDaysBefore: number;
+}
+
+export interface HighCreditUtilizationConfig {
+  thresholds: number[];
+}
+
+export interface BudgetOverspendConfig {
+  warnAtPercent: number;
+  alertAtPercent: number;
+}
+
+export interface LargeTransactionConfig {
+  threshold: number;
+}
+
+export interface StatementReminderConfig {
+  reminderDaysBefore: number;
+  fallbackDayOfMonth: number;
+}
+
+export interface MilestonesConfig {
+  netWorthMilestones: number[];
+  loanPayoffPercentMilestones: number[];
+}
+
+export type NotificationConfig =
+  | BillDueConfig
+  | CreditPaymentDueConfig
+  | LoanPaymentDueConfig
+  | HighCreditUtilizationConfig
+  | BudgetOverspendConfig
+  | LargeTransactionConfig
+  | StatementReminderConfig
+  | MilestonesConfig;
+
+export const DEFAULT_NOTIFICATION_CONFIGS: Record<NotificationType, NotificationConfig> = {
+  [NotificationType.BillDue]: { reminderDaysBefore: 3 } as BillDueConfig,
+  [NotificationType.CreditPaymentDue]: { reminderDaysBefore: 3 } as CreditPaymentDueConfig,
+  [NotificationType.LoanPaymentDue]: { reminderDaysBefore: 3 } as LoanPaymentDueConfig,
+  [NotificationType.HighCreditUtilization]: { thresholds: [30, 70] } as HighCreditUtilizationConfig,
+  [NotificationType.BudgetOverspend]: { warnAtPercent: 80, alertAtPercent: 100 } as BudgetOverspendConfig,
+  [NotificationType.LargeTransaction]: { threshold: 500 } as LargeTransactionConfig,
+  [NotificationType.StatementReminder]: { reminderDaysBefore: 3, fallbackDayOfMonth: 28 } as StatementReminderConfig,
+  [NotificationType.Milestones]: {
+    netWorthMilestones: [50000, 100000, 250000, 500000, 1000000],
+    loanPayoffPercentMilestones: [25, 50, 75, 90, 100],
+  } as MilestonesConfig,
+};
+
+// Device token types
+export type DevicePlatform = "web" | "ios" | "android";
+
+export interface DeviceToken {
+  id: string;
+  platform: DevicePlatform;
+  name: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RegisterDeviceRequest {
+  token: string;
+  platform: DevicePlatform;
+  name?: string;
+}
+
+export interface DeviceTokenListResponse {
+  devices: DeviceToken[];
+}
+
+// Notification preference types
+export interface NotificationPreference {
+  id: string;
+  type: NotificationType;
+  enabled: boolean;
+  config: NotificationConfig | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateNotificationPreferenceRequest {
+  enabled?: boolean;
+  config?: NotificationConfig | null;
+}
+
+export interface NotificationPreferenceListResponse {
+  preferences: NotificationPreference[];
+}
+
+// Notification log types
+export interface NotificationLogEntry {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  isRead: boolean;
+  sentAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface NotificationHistoryResponse {
+  notifications: NotificationLogEntry[];
+  total: number;
+}
+
+export interface UnreadCountResponse {
+  count: number;
+}

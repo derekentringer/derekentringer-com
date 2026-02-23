@@ -39,6 +39,7 @@ import { CategoryRuleForm } from "../components/CategoryRuleForm.tsx";
 import { IncomeSourceForm } from "../components/IncomeSourceForm.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { PdfImportDialog } from "../components/PdfImportDialog.tsx";
+import { NotificationSettings } from "../components/NotificationSettings.tsx";
 import { useAccountTypes } from "../context/AccountTypesContext.tsx";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,15 +84,16 @@ import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"accounts" | "categories" | "rules" | "income">(
+  const [activeTab, setActiveTab] = useState<"accounts" | "categories" | "rules" | "income" | "notifications">(
     "accounts",
   );
 
-  const TABS: { value: "accounts" | "categories" | "rules" | "income"; label: string }[] = [
+  const TABS: { value: "accounts" | "categories" | "rules" | "income" | "notifications"; label: string }[] = [
     { value: "accounts", label: "Accounts" },
     { value: "categories", label: "Categories" },
     { value: "rules", label: "Category Rules" },
     { value: "income", label: "Income Sources" },
+    { value: "notifications", label: "Notifications" },
   ];
 
   return (
@@ -108,8 +110,10 @@ export function SettingsPage() {
         <CategoriesSection />
       ) : activeTab === "rules" ? (
         <RulesSection />
-      ) : (
+      ) : activeTab === "income" ? (
         <IncomeSourcesSection />
+      ) : (
+        <NotificationSettings />
       )}
     </div>
   );

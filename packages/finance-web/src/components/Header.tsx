@@ -1,6 +1,7 @@
 import { Menu, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "./NotificationBell.tsx";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -26,6 +27,7 @@ export function Header({ onMenuClick }: HeaderProps) {
         {user && (
           <span className="text-sm text-muted">{user.username}</span>
         )}
+        <NotificationBell />
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={logout}>
           <LogOut className="h-4 w-4" />
         </Button>
