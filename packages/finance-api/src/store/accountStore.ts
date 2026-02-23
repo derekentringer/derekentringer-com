@@ -56,11 +56,15 @@ export async function getAccount(id: string): Promise<Account | null> {
 
 export async function listAccounts(filter?: {
   isActive?: boolean;
+  type?: string;
 }): Promise<Account[]> {
   const prisma = getPrisma();
   const where: Record<string, unknown> = {};
   if (filter?.isActive !== undefined) {
     where.isActive = filter.isActive;
+  }
+  if (filter?.type !== undefined) {
+    where.type = filter.type;
   }
   const rows = await prisma.account.findMany({
     where,

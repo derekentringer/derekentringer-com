@@ -47,7 +47,7 @@ export function buildApp(opts?: BuildAppOptions) {
   });
   if (!opts?.disableRateLimit) {
     app.register(rateLimit, {
-      max: 60,
+      max: 200,
       timeWindow: "1 minute",
     });
   }

@@ -6,8 +6,9 @@ import type {
 } from "@derekentringer/shared/finance";
 import { apiFetch } from "./client.ts";
 
-export async function fetchAccounts(): Promise<AccountListResponse> {
-  const res = await apiFetch("/accounts");
+export async function fetchAccounts(type?: string): Promise<AccountListResponse> {
+  const query = type ? `?type=${type}` : "";
+  const res = await apiFetch(`/accounts${query}`);
   if (!res.ok) throw new Error("Failed to fetch accounts");
   return res.json();
 }

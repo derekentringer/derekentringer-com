@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { MortgageRatesResponse } from "@derekentringer/shared/finance";
 import {
   computeNetWorthSummary,
   computeNetWorthHistory,
@@ -10,6 +11,24 @@ import {
 } from "../store/dashboardStore.js";
 import { listBills, getPaymentsInRange, computeUpcomingInstances } from "../store/billStore.js";
 import { listExcludedAccountIds } from "../store/accountStore.js";
+import { loadConfig } from "../config.js";
+
+// In-memory cache for mortgage rates
+let mortgageRateCache: { data: MortgageRatesResponse; fetchedAt: number } | null = null;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function fetchFredRate(seriesId: string, apiKey: string): Promise<{ value: number | null; date: string | null }> {
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=1`;
+  const res = await fetch(url);
+  if (!res.ok) return { value: null, date: null };
+  const json = await res.json();
+  const obs = json.observations?.[0];
+  const val = obs?.value;
+  return {
+    value: val && val !== "." ? parseFloat(val) : null,
+    date: obs?.date ?? null,
+  };
+}
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
@@ -277,6 +296,37 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
         error: "Internal Server Error",
         message: "Failed to compute DTI ratio",
       });
+    }
+  });
+
+  // GET /mortgage-rates — current market mortgage rates from FRED
+  fastify.get("/mortgage-rates", async (request, reply) => {
+    try {
+      const config = loadConfig();
+      if (!config.fredApiKey) {
+        return reply.send({ rate30yr: null, rate15yr: null, asOf: null });
+      }
+
+      if (mortgageRateCache && Date.now() - mortgageRateCache.fetchedAt < CACHE_TTL_MS) {
+        return reply.send(mortgageRateCache.data);
+      }
+
+      const [r30, r15] = await Promise.all([
+        fetchFredRate("MORTGAGE30US", config.fredApiKey),
+        fetchFredRate("MORTGAGE15US", config.fredApiKey),
+      ]);
+
+      const data: MortgageRatesResponse = {
+        rate30yr: r30.value,
+        rate15yr: r15.value,
+        asOf: r30.date ?? r15.date,
+      };
+
+      mortgageRateCache = { data, fetchedAt: Date.now() };
+      return reply.send(data);
+    } catch (e) {
+      request.log.error(e, "Failed to fetch mortgage rates");
+      return reply.send({ rate30yr: null, rate15yr: null, asOf: null });
     }
   });
 }
