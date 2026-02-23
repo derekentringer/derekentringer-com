@@ -34,6 +34,16 @@ const EXPENSE_LOOKBACK_MONTHS = 3;
 const TRANSFER_PATTERN =
   /transfer|xfer|zelle|venmo|cashapp|paypal.*transfer|ach.*(?:from|to) (?:savings|checking)|internal/i;
 
+// ─── Income Pattern Cache ────────────────────────────────────────────────────
+
+let incomePatternCache: { data: DetectedIncomePattern[]; fetchedAt: number } | null = null;
+const INCOME_CACHE_TTL_MS = 60_000; // 60 seconds
+
+/** Reset the income pattern cache (for tests). */
+export function resetIncomePatternCache(): void {
+  incomePatternCache = null;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 export function frequencyToMonthlyMultiplier(freq: Frequency): number {
@@ -84,6 +94,14 @@ function countDistinctMonths(dates: Date[]): number {
 export async function detectIncomePatterns(
   lookbackMonths = INCOME_DETECTION_LOOKBACK_MONTHS,
 ): Promise<DetectedIncomePattern[]> {
+  if (
+    lookbackMonths === INCOME_DETECTION_LOOKBACK_MONTHS &&
+    incomePatternCache &&
+    Date.now() - incomePatternCache.fetchedAt < INCOME_CACHE_TTL_MS
+  ) {
+    return incomePatternCache.data;
+  }
+
   const prisma = getPrisma();
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - lookbackMonths);
@@ -167,6 +185,10 @@ export async function detectIncomePatterns(
 
   // Sort by monthlyEquivalent descending
   patterns.sort((a, b) => b.monthlyEquivalent - a.monthlyEquivalent);
+
+  if (lookbackMonths === INCOME_DETECTION_LOOKBACK_MONTHS) {
+    incomePatternCache = { data: patterns, fetchedAt: Date.now() };
+  }
 
   return patterns;
 }

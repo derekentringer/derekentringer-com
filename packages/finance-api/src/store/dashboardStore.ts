@@ -91,8 +91,10 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
   const now = new Date();
   const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
+  const activeAccountIds = rows.map((r) => r.id);
   const prevBalanceRows = await prisma.balance.findMany({
     where: {
+      accountId: { in: activeAccountIds },
       date: { lte: prevMonthEnd },
     },
     orderBy: { date: "desc" },
@@ -164,36 +166,22 @@ export async function computeNetWorthHistory(
   const prisma = getPrisma();
   const now = new Date();
 
-  // Fetch balance records (optionally filtered by startDate)
-  const balanceRows = await prisma.balance.findMany({
-    where: startDate ? { date: { gte: startDate } } : undefined,
-    orderBy: { date: "desc" },
-    select: { accountId: true, balance: true, date: true },
-  });
+  // Fetch balance records and active accounts in parallel
+  const [balanceRows, accountRows] = await Promise.all([
+    prisma.balance.findMany({
+      where: startDate ? { date: { gte: startDate } } : undefined,
+      orderBy: { date: "desc" },
+      select: { accountId: true, balance: true, date: true },
+    }),
+    prisma.account.findMany({
+      where: { isActive: true },
+      select: { id: true, type: true, estimatedValue: true },
+    }),
+  ]);
 
   if (balanceRows.length === 0) return { history: [], accountHistory: [] };
 
-  // If we have a startDate, also fetch the latest balance per account BEFORE
-  // that date so carry-forward starts from a known value.
-  const initialBalances = new Map<string, number>();
-  if (startDate) {
-    const preRows = await prisma.balance.findMany({
-      where: { date: { lt: startDate } },
-      orderBy: { date: "desc" },
-      select: { accountId: true, balance: true },
-    });
-    for (const row of preRows) {
-      if (!initialBalances.has(row.accountId)) {
-        initialBalances.set(row.accountId, decryptNumber(row.balance));
-      }
-    }
-  }
-
-  // Fetch all active accounts to know their types and estimated values
-  const accountRows = await prisma.account.findMany({
-    where: { isActive: true },
-    select: { id: true, type: true, estimatedValue: true },
-  });
+  const activeAccountIds = accountRows.map((a) => a.id);
 
   const accountTypeMap = new Map<string, string>();
   const accountEstimatedValueMap = new Map<string, number>();
@@ -201,6 +189,25 @@ export async function computeNetWorthHistory(
     accountTypeMap.set(a.id, a.type);
     if (a.type === AccountType.RealEstate && a.estimatedValue) {
       accountEstimatedValueMap.set(a.id, decryptNumber(a.estimatedValue));
+    }
+  }
+
+  // If we have a startDate, fetch the latest balance per account BEFORE
+  // that date so carry-forward starts from a known value.
+  const initialBalances = new Map<string, number>();
+  if (startDate) {
+    const preRows = await prisma.balance.findMany({
+      where: {
+        accountId: { in: activeAccountIds },
+        date: { lt: startDate },
+      },
+      orderBy: { date: "desc" },
+      select: { accountId: true, balance: true },
+    });
+    for (const row of preRows) {
+      if (!initialBalances.has(row.accountId)) {
+        initialBalances.set(row.accountId, decryptNumber(row.balance));
+      }
     }
   }
 
@@ -582,48 +589,59 @@ export async function computeDTI(): Promise<DTIResponse> {
   // so we can avoid double-counting if a bill also targets the same account.
   const loanAccountIdsWithPayment = new Set<string>();
 
-  let loanPaymentsTotal = 0;
-  await Promise.all(
-    debtBearingAccounts.map(async (account) => {
-      const latestBalance = await prisma.balance.findFirst({
-        where: { accountId: account.id },
-        orderBy: { date: "desc" },
-        include: { loanProfile: true },
-      });
-      if (latestBalance?.loanProfile) {
-        const profile = decryptLoanProfile(latestBalance.loanProfile);
-        if (profile.monthlyPayment) {
-          const adjusted = profile.monthlyPayment * (account.dtiPercentage / 100);
-          const amount = Math.round(adjusted * 100) / 100;
-          loanPaymentsTotal += adjusted;
-          debtComponents.push({ name: account.name, amount, type: "loan", ...(account.dtiPercentage !== 100 && { dtiPercentage: account.dtiPercentage }) });
-          loanAccountIdsWithPayment.add(account.id);
-        }
-      }
-    }),
-  );
-
   // 2. Minimum payments from credit card profiles
   const creditAccounts = allAccounts.filter((a) => a.type === AccountType.Credit);
-  let creditPaymentsTotal = 0;
-  await Promise.all(
-    creditAccounts.map(async (account) => {
-      const latestBalance = await prisma.balance.findFirst({
-        where: { accountId: account.id },
+
+  // Batch-fetch latest balance per account for all debt-bearing + credit accounts
+  const debtAndCreditIds = [
+    ...debtBearingAccounts.map((a) => a.id),
+    ...creditAccounts.map((a) => a.id),
+  ];
+
+  const allRelevantBalances = debtAndCreditIds.length > 0
+    ? await prisma.balance.findMany({
+        where: { accountId: { in: debtAndCreditIds } },
         orderBy: { date: "desc" },
-        include: { creditProfile: true },
-      });
-      if (latestBalance?.creditProfile) {
-        const profile = decryptCreditProfile(latestBalance.creditProfile);
-        if (profile.minimumPayment) {
-          const adjusted = profile.minimumPayment * (account.dtiPercentage / 100);
-          const amount = Math.round(adjusted * 100) / 100;
-          creditPaymentsTotal += adjusted;
-          debtComponents.push({ name: account.name, amount, type: "credit", ...(account.dtiPercentage !== 100 && { dtiPercentage: account.dtiPercentage }) });
-        }
+        include: { loanProfile: true, creditProfile: true },
+      })
+    : [];
+
+  // Deduplicate: first per accountId = latest by date
+  const latestBalanceByAccount = new Map<string, typeof allRelevantBalances[0]>();
+  for (const b of allRelevantBalances) {
+    if (!latestBalanceByAccount.has(b.accountId)) {
+      latestBalanceByAccount.set(b.accountId, b);
+    }
+  }
+
+  let loanPaymentsTotal = 0;
+  for (const account of debtBearingAccounts) {
+    const latestBalance = latestBalanceByAccount.get(account.id);
+    if (latestBalance?.loanProfile) {
+      const profile = decryptLoanProfile(latestBalance.loanProfile);
+      if (profile.monthlyPayment) {
+        const adjusted = profile.monthlyPayment * (account.dtiPercentage / 100);
+        const amount = Math.round(adjusted * 100) / 100;
+        loanPaymentsTotal += adjusted;
+        debtComponents.push({ name: account.name, amount, type: "loan", ...(account.dtiPercentage !== 100 && { dtiPercentage: account.dtiPercentage }) });
+        loanAccountIdsWithPayment.add(account.id);
       }
-    }),
-  );
+    }
+  }
+
+  let creditPaymentsTotal = 0;
+  for (const account of creditAccounts) {
+    const latestBalance = latestBalanceByAccount.get(account.id);
+    if (latestBalance?.creditProfile) {
+      const profile = decryptCreditProfile(latestBalance.creditProfile);
+      if (profile.minimumPayment) {
+        const adjusted = profile.minimumPayment * (account.dtiPercentage / 100);
+        const amount = Math.round(adjusted * 100) / 100;
+        creditPaymentsTotal += adjusted;
+        debtComponents.push({ name: account.name, amount, type: "credit", ...(account.dtiPercentage !== 100 && { dtiPercentage: account.dtiPercentage }) });
+      }
+    }
+  }
 
   // 3. Bills that represent debt obligations, frequency-normalized.
   //    Include bills linked to a debt-bearing account (Credit/Loan/RealEstate).
