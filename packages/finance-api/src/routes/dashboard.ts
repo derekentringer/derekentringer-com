@@ -242,7 +242,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        const days = Math.min(parseInt(request.query.days || "30", 10) || 30, 365);
+        const days = Math.max(1, Math.min(parseInt(request.query.days || "30", 10) || 30, 365));
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const startDate = new Date(today);

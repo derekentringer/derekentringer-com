@@ -270,7 +270,7 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
               return reply.status(502).send({
                 statusCode: 502,
                 error: "Bad Gateway",
-                message: body,
+                message: "AI service configuration error — check API key and billing status",
               });
             }
           }
