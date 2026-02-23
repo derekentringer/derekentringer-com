@@ -1,5 +1,8 @@
 import { useEffect, useRef } from "react";
-import { fetchNotificationHistory } from "../api/notifications.ts";
+import {
+  fetchNotificationHistory,
+  fetchUnreadCount,
+} from "../api/notifications.ts";
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
 
@@ -13,26 +16,29 @@ export function useBrowserNotifications() {
   const isFirstCheck = useRef(true);
 
   useEffect(() => {
-    if (Notification.permission !== "granted") return;
-
     async function check() {
       try {
-        const { notifications } = await fetchNotificationHistory(20, 0);
+        const [{ notifications }, { count: unreadCount }] = await Promise.all([
+          fetchNotificationHistory(20, 0),
+          fetchUnreadCount(),
+        ]);
 
-        const newUnread = notifications.filter((n) => {
-          if (n.isRead) return false;
-          if (shownIds.current.has(n.id)) return false;
-          // Skip on first load — only notify for truly new items
-          if (isFirstCheck.current) return false;
-          return true;
-        });
-
-        for (const n of newUnread) {
-          new Notification(n.title, {
-            body: n.body,
-            tag: `notification-${n.id}`,
+        if (Notification.permission === "granted") {
+          const newUnread = notifications.filter((n) => {
+            if (n.isRead) return false;
+            if (shownIds.current.has(n.id)) return false;
+            // Skip on first load — only notify for truly new items
+            if (isFirstCheck.current) return false;
+            return true;
           });
-          shownIds.current.add(n.id);
+
+          for (const n of newUnread) {
+            new Notification(n.title, {
+              body: n.body,
+              tag: `notification-${n.id}`,
+            });
+            shownIds.current.add(n.id);
+          }
         }
 
         // Seed shown set on first load to prevent duplicate popups
@@ -43,8 +49,12 @@ export function useBrowserNotifications() {
           isFirstCheck.current = false;
         }
 
-        // Refresh bell badge
-        window.dispatchEvent(new Event("notification-refresh"));
+        // Refresh bell badge with unread count
+        window.dispatchEvent(
+          new CustomEvent("notification-refresh", {
+            detail: { unreadCount },
+          }),
+        );
       } catch {
         // Silent failure for polling
       }
