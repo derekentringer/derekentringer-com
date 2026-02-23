@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { NotificationLogEntry } from "@derekentringer/shared/finance";
 import { NOTIFICATION_LABELS } from "@derekentringer/shared/finance";
 import {
@@ -35,10 +35,13 @@ export function NotificationBell() {
     }
   }, []);
 
+  const notificationsLengthRef = useRef(0);
+  notificationsLengthRef.current = notifications.length;
+
   const loadNotifications = useCallback(async (append = false) => {
     setIsLoading(true);
     try {
-      const offset = append ? notifications.length : 0;
+      const offset = append ? notificationsLengthRef.current : 0;
       const { notifications: items, total: t } = await fetchNotificationHistory(
         PAGE_SIZE,
         offset,
@@ -54,7 +57,7 @@ export function NotificationBell() {
     } finally {
       setIsLoading(false);
     }
-  }, [notifications.length]);
+  }, []);
 
   // Initial load + listen for consolidated polling refresh events
   useEffect(() => {

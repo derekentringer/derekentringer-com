@@ -40,12 +40,12 @@ export async function listTransactions(filter?: {
   const limit = filter?.limit ?? 50;
   const offset = filter?.offset ?? 0;
 
-  // When search is active, fetch all SQL-matching rows, decrypt, filter in-memory, then paginate
+  // When search is active, fetch SQL-matching rows, decrypt, filter in-memory, then paginate
   if (filter?.search) {
     const rows = await prisma.transaction.findMany({
       where,
       orderBy: { date: "desc" },
-      take: 10000,
+      take: 5000,
     });
 
     const searchLower = filter.search.toLowerCase();
@@ -168,36 +168,49 @@ export async function applyRuleToTransactions(
 ): Promise<number> {
   const prisma = getPrisma();
   const patternLower = rule.pattern.toLowerCase();
+  const BATCH_SIZE = 1000;
 
-  // Load all transactions that don't already have this category
-  // Use OR to include null categories (NOT excludes nulls in SQL)
-  const rows = await prisma.transaction.findMany({
-    where: {
-      OR: [
-        { category: null },
-        { NOT: { category: rule.category } },
-      ],
-    },
-    select: { id: true, description: true },
-  });
+  // Process in batches to avoid loading all transactions into memory
+  let totalMatched = 0;
+  let skip = 0;
 
-  // Decrypt descriptions and find matches
-  const matchingIds: string[] = [];
-  for (const row of rows) {
-    const description = decryptField(row.description).toLowerCase();
-    const matches =
-      rule.matchType === "exact"
-        ? description === patternLower
-        : description.includes(patternLower);
-    if (matches) matchingIds.push(row.id);
+  for (;;) {
+    const rows = await prisma.transaction.findMany({
+      where: {
+        OR: [
+          { category: null },
+          { NOT: { category: rule.category } },
+        ],
+      },
+      select: { id: true, description: true },
+      take: BATCH_SIZE,
+      skip,
+    });
+
+    if (rows.length === 0) break;
+
+    // Decrypt descriptions and find matches
+    const matchingIds: string[] = [];
+    for (const row of rows) {
+      const description = decryptField(row.description).toLowerCase();
+      const matches =
+        rule.matchType === "exact"
+          ? description === patternLower
+          : description.includes(patternLower);
+      if (matches) matchingIds.push(row.id);
+    }
+
+    if (matchingIds.length > 0) {
+      const result = await prisma.transaction.updateMany({
+        where: { id: { in: matchingIds } },
+        data: { category: rule.category },
+      });
+      totalMatched += result.count;
+    }
+
+    if (rows.length < BATCH_SIZE) break;
+    skip += BATCH_SIZE;
   }
 
-  if (matchingIds.length === 0) return 0;
-
-  const result = await prisma.transaction.updateMany({
-    where: { id: { in: matchingIds } },
-    data: { category: rule.category },
-  });
-
-  return result.count;
+  return totalMatched;
 }

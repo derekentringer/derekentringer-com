@@ -346,26 +346,51 @@ export async function computeAccountProjections(params: {
   const contribCutoff = new Date();
   contribCutoff.setMonth(contribCutoff.getMonth() - EXPENSE_LOOKBACK_MONTHS);
 
-  const accountLines: AccountProjectionLine[] = await Promise.all(
-    accounts.map(async (account) => {
-      // Fetch latest balance with profile data + recent transactions in parallel
-      const [latestBalance, txns] = await Promise.all([
-        prisma.balance.findFirst({
-          where: { accountId: account.id },
-          orderBy: { date: "desc" },
-          include: {
-            savingsProfile: true,
-            investmentProfile: true,
-            loanProfile: true,
-          },
-        }),
-        prisma.transaction.findMany({
-          where: {
-            accountId: account.id,
-            date: { gte: contribCutoff },
-          },
-        }),
-      ]);
+  // Batch-fetch latest balances and recent transactions for all accounts
+  const accountIds = accounts.map((a) => a.id);
+  const balanceQuery = prisma.balance.findMany({
+    where: { accountId: { in: accountIds } },
+    orderBy: { date: "desc" },
+    include: {
+      savingsProfile: true,
+      investmentProfile: true,
+      loanProfile: true,
+    },
+  });
+
+  const txnQuery = prisma.transaction.findMany({
+    where: {
+      accountId: { in: accountIds },
+      date: { gte: contribCutoff },
+    },
+  });
+
+  const [allBalances, allTxns] = accountIds.length > 0
+    ? await Promise.all([balanceQuery, txnQuery])
+    : [[] as Awaited<typeof balanceQuery>, [] as Awaited<typeof txnQuery>];
+
+  // Deduplicate: latest balance per account
+  const latestBalanceByAccount = new Map<string, typeof allBalances[0]>();
+  for (const b of allBalances) {
+    if (!latestBalanceByAccount.has(b.accountId)) {
+      latestBalanceByAccount.set(b.accountId, b);
+    }
+  }
+
+  // Group transactions by account
+  const txnsByAccount = new Map<string, typeof allTxns>();
+  for (const t of allTxns) {
+    const list = txnsByAccount.get(t.accountId);
+    if (list) {
+      list.push(t);
+    } else {
+      txnsByAccount.set(t.accountId, [t]);
+    }
+  }
+
+  const accountLines: AccountProjectionLine[] = accounts.map((account) => {
+      const latestBalance = latestBalanceByAccount.get(account.id) ?? null;
+      const txns = txnsByAccount.get(account.id) ?? [];
 
       const currentBalance = account.currentBalance;
       const projection: AccountProjectionPoint[] = [];
@@ -537,8 +562,7 @@ export async function computeAccountProjections(params: {
         isFavorite: account.isFavorite,
         projection,
       } satisfies AccountProjectionLine;
-    }),
-  );
+  });
 
   // Compute overall line: sum balances (liabilities subtracted)
   const overall: AccountProjectionPoint[] = [];

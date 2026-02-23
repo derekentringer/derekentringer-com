@@ -92,7 +92,7 @@ export function TransactionsPage() {
   const [sortField, setSortField] = useState<SortField | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const accountMap = new Map(accounts.map((a) => [a.id, a.name]));
+  const accountMap = useMemo(() => new Map(accounts.map((a) => [a.id, a.name])), [accounts]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
