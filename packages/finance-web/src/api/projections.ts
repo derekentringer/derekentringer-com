@@ -3,6 +3,8 @@ import type {
   AccountProjectionsResponse,
   SavingsAccountSummary,
   SavingsProjectionResponse,
+  DebtAccountSummary,
+  DebtPayoffResponse,
 } from "@derekentringer/shared/finance";
 import { apiFetch } from "./client.ts";
 
@@ -52,5 +54,38 @@ export async function fetchSavingsProjection(
   const qs = query.toString();
   const res = await apiFetch(`/projections/savings/${accountId}${qs ? `?${qs}` : ""}`, { signal });
   if (!res.ok) throw new Error("Failed to fetch savings projection");
+  return res.json();
+}
+
+export async function fetchDebtAccounts(
+  params: { includeMortgages?: boolean },
+): Promise<{ accounts: DebtAccountSummary[] }> {
+  const query = new URLSearchParams();
+  if (params.includeMortgages) query.set("includeMortgages", "true");
+  const qs = query.toString();
+  const res = await apiFetch(`/projections/debt-payoff/accounts${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error("Failed to fetch debt accounts");
+  return res.json();
+}
+
+export async function fetchDebtPayoff(
+  params: {
+    extraPayment?: number;
+    includeMortgages?: boolean;
+    accountIds?: string[];
+    customOrder?: string[];
+    maxMonths?: number;
+  },
+  signal?: AbortSignal,
+): Promise<DebtPayoffResponse> {
+  const query = new URLSearchParams();
+  if (params.extraPayment !== undefined) query.set("extraPayment", String(params.extraPayment));
+  if (params.includeMortgages) query.set("includeMortgages", "true");
+  if (params.accountIds && params.accountIds.length > 0) query.set("accountIds", params.accountIds.join(","));
+  if (params.customOrder && params.customOrder.length > 0) query.set("customOrder", params.customOrder.join(","));
+  if (params.maxMonths !== undefined) query.set("maxMonths", String(params.maxMonths));
+  const qs = query.toString();
+  const res = await apiFetch(`/projections/debt-payoff${qs ? `?${qs}` : ""}`, { signal });
+  if (!res.ok) throw new Error("Failed to fetch debt payoff projection");
   return res.json();
 }

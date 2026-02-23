@@ -17,6 +17,11 @@ export const CHART_COLORS = {
   savingsPrincipal: "#3b82f6",
   savingsInterest: "#10b981",
   overall: "#94a3b8",
+  debtAvalanche: "#ef4444",
+  debtSnowball: "#f59e0b",
+  debtCustom: "#8b5cf6",
+  debtPlanned: "#6366f1",
+  debtActual: "#22c55e",
 } as const;
 
 // Category color palette (13 colors, avoids red/green collision with chart colors)

@@ -8,6 +8,14 @@ import type {
   AccountProjectionLine,
   AccountProjectionPoint,
   AccountProjectionsResponse,
+  DebtAccountSummary,
+  DebtPayoffStrategy,
+  DebtPayoffMonthPoint,
+  DebtPayoffAccountTimeline,
+  DebtPayoffAggregatePoint,
+  DebtPayoffStrategyResult,
+  DebtActualVsPlanned,
+  DebtPayoffResponse,
 } from "@derekentringer/shared";
 import { AccountType, classifyAccountType } from "@derekentringer/shared";
 import { getPrisma } from "../lib/prisma.js";
@@ -17,6 +25,7 @@ import {
   decryptSavingsProfile,
   decryptInvestmentProfile,
   decryptLoanProfile,
+  decryptCreditProfile,
 } from "../lib/mappers.js";
 import { listAccounts } from "./accountStore.js";
 import { listIncomeSources } from "./incomeSourceStore.js";
@@ -809,4 +818,469 @@ export async function listSavingsAccounts(): Promise<SavingsAccountSummary[]> {
   );
 
   return results;
+}
+
+// ─── Debt Payoff Planning ────────────────────────────────────────────────────
+
+export async function listDebtAccounts(
+  includeMortgages: boolean,
+): Promise<DebtAccountSummary[]> {
+  const prisma = getPrisma();
+
+  // Fetch active liability accounts
+  const accountRows = await prisma.account.findMany({
+    where: {
+      isActive: true,
+      type: { in: ["credit", "loan"] },
+    },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  if (accountRows.length === 0) return [];
+
+  const accountIds = accountRows.map((a) => a.id);
+
+  // Batch-fetch latest balances with loan/credit profiles
+  const allBalances = await prisma.balance.findMany({
+    where: { accountId: { in: accountIds } },
+    orderBy: { date: "desc" },
+    include: {
+      loanProfile: true,
+      creditProfile: true,
+    },
+  });
+
+  // Deduplicate: latest balance per account
+  const latestBalanceByAccount = new Map<string, (typeof allBalances)[0]>();
+  for (const b of allBalances) {
+    if (!latestBalanceByAccount.has(b.accountId)) {
+      latestBalanceByAccount.set(b.accountId, b);
+    }
+  }
+
+  const results: DebtAccountSummary[] = [];
+
+  for (const row of accountRows) {
+    const account = decryptAccount(row);
+    if (account.currentBalance <= 0) continue;
+
+    const latestBalance = latestBalanceByAccount.get(account.id);
+    let interestRate = 0;
+    let minimumPayment = 0;
+    let isMortgage = false;
+
+    if (account.type === AccountType.Loan) {
+      // Check if mortgage
+      isMortgage = account.loanType
+        ? account.loanType.includes("mortgage")
+        : false;
+
+      if (latestBalance?.loanProfile) {
+        const profile = decryptLoanProfile(latestBalance.loanProfile);
+        interestRate = profile.interestRate ?? account.interestRate ?? 0;
+        minimumPayment = profile.monthlyPayment ?? 0;
+      } else {
+        interestRate = account.interestRate ?? 0;
+      }
+    } else if (account.type === AccountType.Credit) {
+      if (latestBalance?.creditProfile) {
+        const profile = decryptCreditProfile(latestBalance.creditProfile);
+        interestRate = profile.apr ?? account.interestRate ?? 0;
+        minimumPayment = profile.minimumPayment ?? 0;
+      } else {
+        interestRate = account.interestRate ?? 0;
+      }
+
+      // Fallback minimum payment for credit cards
+      if (minimumPayment <= 0) {
+        minimumPayment = Math.max(account.currentBalance * 0.02, 25);
+      }
+    }
+
+    if (!includeMortgages && isMortgage) continue;
+
+    results.push({
+      accountId: account.id,
+      name: account.name,
+      type: account.type,
+      currentBalance: Math.round(account.currentBalance * 100) / 100,
+      interestRate: Math.round(interestRate * 1000) / 1000,
+      minimumPayment: Math.round(minimumPayment * 100) / 100,
+      isMortgage,
+    });
+  }
+
+  return results;
+}
+
+export function computeDebtPayoffStrategy(
+  debts: DebtAccountSummary[],
+  extraPayment: number,
+  strategy: DebtPayoffStrategy,
+  customOrder?: string[],
+  maxMonths = 360,
+): DebtPayoffStrategyResult {
+  if (debts.length === 0) {
+    return {
+      strategy,
+      debtFreeDate: null,
+      totalInterestPaid: 0,
+      totalPaid: 0,
+      timelines: [],
+      aggregateSchedule: [],
+    };
+  }
+
+  // Sort debts by strategy
+  let sorted: DebtAccountSummary[];
+  if (strategy === "avalanche") {
+    sorted = [...debts].sort((a, b) => b.interestRate - a.interestRate);
+  } else if (strategy === "snowball") {
+    sorted = [...debts].sort((a, b) => a.currentBalance - b.currentBalance);
+  } else if (customOrder && customOrder.length > 0) {
+    const orderMap = new Map(customOrder.map((id, i) => [id, i]));
+    sorted = [...debts].sort(
+      (a, b) =>
+        (orderMap.get(a.accountId) ?? 999) - (orderMap.get(b.accountId) ?? 999),
+    );
+  } else {
+    sorted = [...debts];
+  }
+
+  // Initialize per-debt state
+  const balances = sorted.map((d) => d.currentBalance);
+  const schedules: DebtPayoffMonthPoint[][] = sorted.map(() => []);
+  const now = new Date();
+
+  let debtFreeDate: string | null = null;
+
+  for (let month = 0; month < maxMonths; month++) {
+    const monthDate = new Date(now.getFullYear(), now.getMonth() + month, 1);
+    const monthStr = formatMonth(monthDate);
+
+    // Check if all debts are paid off
+    const allPaid = balances.every((b) => b <= 0.005);
+    if (allPaid) break;
+
+    let availableExtra = extraPayment;
+
+    // First pass: apply interest and minimum payments
+    for (let i = 0; i < sorted.length; i++) {
+      if (balances[i] <= 0.005) {
+        // Debt already paid off — freed minimum goes to extra pool
+        availableExtra += sorted[i].minimumPayment;
+        schedules[i].push({
+          month: monthStr,
+          balance: 0,
+          principal: 0,
+          interest: 0,
+          payment: 0,
+          extraPayment: 0,
+        });
+        continue;
+      }
+
+      const rate = sorted[i].interestRate;
+      const interest = rate > 0 ? balances[i] * (rate / 100 / 12) : 0;
+      const balancePlusInterest = balances[i] + interest;
+      const minPay = Math.min(sorted[i].minimumPayment, balancePlusInterest);
+      const principalFromMin = Math.max(minPay - interest, 0);
+      balances[i] = balancePlusInterest - minPay;
+
+      schedules[i].push({
+        month: monthStr,
+        balance: Math.round(balances[i] * 100) / 100,
+        principal: Math.round(principalFromMin * 100) / 100,
+        interest: Math.round(interest * 100) / 100,
+        payment: Math.round(minPay * 100) / 100,
+        extraPayment: 0,
+      });
+    }
+
+    // Second pass: apply extra payment to highest-priority active debt
+    for (let i = 0; i < sorted.length && availableExtra > 0.005; i++) {
+      if (balances[i] <= 0.005) continue;
+
+      const extra = Math.min(availableExtra, balances[i]);
+      balances[i] -= extra;
+      availableExtra -= extra;
+
+      const point = schedules[i][schedules[i].length - 1];
+      point.extraPayment = Math.round(extra * 100) / 100;
+      point.principal = Math.round((point.principal + extra) * 100) / 100;
+      point.payment = Math.round((point.payment + extra) * 100) / 100;
+      point.balance = Math.round(balances[i] * 100) / 100;
+    }
+
+    // Check if we just finished
+    if (balances.every((b) => b <= 0.005) && !debtFreeDate) {
+      debtFreeDate = monthStr;
+    }
+  }
+
+  // Build per-account timelines
+  let totalInterestPaid = 0;
+  let totalPaid = 0;
+  const timelines: DebtPayoffAccountTimeline[] = sorted.map((debt, i) => {
+    const schedule = schedules[i];
+    const acctInterest = schedule.reduce((s, p) => s + p.interest, 0);
+    const acctPaid = schedule.reduce((s, p) => s + p.payment, 0);
+    totalInterestPaid += acctInterest;
+    totalPaid += acctPaid;
+
+    // Find payoff date
+    let payoffDate: string | null = null;
+    let monthsToPayoff = schedule.length;
+    for (let m = 0; m < schedule.length; m++) {
+      if (schedule[m].balance <= 0.005) {
+        payoffDate = schedule[m].month;
+        monthsToPayoff = m + 1;
+        break;
+      }
+    }
+
+    return {
+      accountId: debt.accountId,
+      name: debt.name,
+      payoffDate,
+      totalInterestPaid: Math.round(acctInterest * 100) / 100,
+      totalPaid: Math.round(acctPaid * 100) / 100,
+      monthsToPayoff,
+      schedule,
+    };
+  });
+
+  // Build aggregate schedule
+  const maxLen = Math.max(...schedules.map((s) => s.length), 0);
+  const aggregateSchedule: DebtPayoffAggregatePoint[] = [];
+  for (let m = 0; m < maxLen; m++) {
+    let totalBalance = 0;
+    let totalPayment = 0;
+    let totalInterest = 0;
+    let totalPrincipal = 0;
+    for (let i = 0; i < schedules.length; i++) {
+      const point = schedules[i][m];
+      if (point) {
+        totalBalance += point.balance;
+        totalPayment += point.payment;
+        totalInterest += point.interest;
+        totalPrincipal += point.principal;
+      }
+    }
+    aggregateSchedule.push({
+      month: schedules[0][m].month,
+      totalBalance: Math.round(totalBalance * 100) / 100,
+      totalPayment: Math.round(totalPayment * 100) / 100,
+      totalInterest: Math.round(totalInterest * 100) / 100,
+      totalPrincipal: Math.round(totalPrincipal * 100) / 100,
+    });
+  }
+
+  return {
+    strategy,
+    debtFreeDate,
+    totalInterestPaid: Math.round(totalInterestPaid * 100) / 100,
+    totalPaid: Math.round(totalPaid * 100) / 100,
+    timelines,
+    aggregateSchedule,
+  };
+}
+
+export async function computeActualVsPlanned(
+  debts: DebtAccountSummary[],
+  extraPayment: number,
+): Promise<DebtActualVsPlanned[]> {
+  if (debts.length === 0) return [];
+
+  const prisma = getPrisma();
+  const accountIds = debts.map((d) => d.accountId);
+
+  // Fetch all balance records for debt accounts
+  const allBalances = await prisma.balance.findMany({
+    where: { accountId: { in: accountIds } },
+    orderBy: { date: "asc" },
+  });
+
+  // Group by account
+  const balancesByAccount = new Map<string, (typeof allBalances)>();
+  for (const b of allBalances) {
+    const list = balancesByAccount.get(b.accountId);
+    if (list) list.push(b);
+    else balancesByAccount.set(b.accountId, [b]);
+  }
+
+  const results: DebtActualVsPlanned[] = [];
+
+  for (const debt of debts) {
+    const balances = balancesByAccount.get(debt.accountId);
+    if (!balances || balances.length === 0) continue;
+
+    // Build actual: group by month, take last balance per month
+    const monthlyActual = new Map<string, number>();
+    for (const b of balances) {
+      const monthStr = formatMonth(b.date);
+      monthlyActual.set(monthStr, decryptNumber(b.balance));
+    }
+
+    const actual = [...monthlyActual.entries()].map(([month, balance]) => ({
+      month,
+      balance: Math.round(balance * 100) / 100,
+    }));
+
+    if (actual.length === 0) continue;
+
+    // Build planned: project forward from latest actual balance (today)
+    const lastActual = actual[actual.length - 1];
+    const startBalance = lastActual.balance;
+    const rate = debt.interestRate;
+    const monthlyRate = rate > 0 ? rate / 100 / 12 : 0;
+    const totalMinPayment = debt.minimumPayment + extraPayment;
+    const maxProjectionMonths = 360;
+
+    const planned: Array<{ month: string; balance: number }> = [];
+    let balance = startBalance;
+    const startDate = new Date(lastActual.month + "-15");
+
+    for (let i = 0; i < maxProjectionMonths; i++) {
+      const monthDate = new Date(
+        startDate.getFullYear(),
+        startDate.getMonth() + i,
+        1,
+      );
+      const monthStr = formatMonth(monthDate);
+
+      if (i > 0 && balance > 0.005) {
+        const interest = balance * monthlyRate;
+        const payment = Math.min(totalMinPayment, balance + interest);
+        balance = balance + interest - payment;
+        if (balance < 0) balance = 0;
+      }
+
+      planned.push({
+        month: monthStr,
+        balance: Math.round(balance * 100) / 100,
+      });
+
+      if (balance <= 0.005) break;
+    }
+
+    // Build minimumOnly: project forward with just minimum payment (no extra)
+    const minimumOnly: Array<{ month: string; balance: number }> = [];
+    let minBalance = startBalance;
+
+    for (let i = 0; i < maxProjectionMonths; i++) {
+      const monthDate = new Date(
+        startDate.getFullYear(),
+        startDate.getMonth() + i,
+        1,
+      );
+      const monthStr = formatMonth(monthDate);
+
+      if (i > 0 && minBalance > 0.005) {
+        const interest = minBalance * monthlyRate;
+        const payment = Math.min(debt.minimumPayment, minBalance + interest);
+        minBalance = minBalance + interest - payment;
+        if (minBalance < 0) minBalance = 0;
+      }
+
+      minimumOnly.push({
+        month: monthStr,
+        balance: Math.round(minBalance * 100) / 100,
+      });
+
+      if (minBalance <= 0.005) break;
+    }
+
+    results.push({
+      accountId: debt.accountId,
+      name: debt.name,
+      actual,
+      planned,
+      minimumOnly,
+    });
+  }
+
+  return results;
+}
+
+export async function computeDebtPayoff(params: {
+  extraPayment: number;
+  includeMortgages: boolean;
+  accountIds?: string[];
+  customOrder?: string[];
+  maxMonths: number;
+}): Promise<DebtPayoffResponse> {
+  const { extraPayment, includeMortgages, accountIds, customOrder, maxMonths } = params;
+
+  let debtAccounts = await listDebtAccounts(includeMortgages);
+
+  // Filter to specific accounts if provided
+  if (accountIds && accountIds.length > 0) {
+    const idSet = new Set(accountIds);
+    debtAccounts = debtAccounts.filter((a) => idSet.has(a.accountId));
+  }
+
+  if (debtAccounts.length === 0) {
+    return {
+      debtAccounts: [],
+      avalanche: {
+        strategy: "avalanche",
+        debtFreeDate: null,
+        totalInterestPaid: 0,
+        totalPaid: 0,
+        timelines: [],
+        aggregateSchedule: [],
+      },
+      snowball: {
+        strategy: "snowball",
+        debtFreeDate: null,
+        totalInterestPaid: 0,
+        totalPaid: 0,
+        timelines: [],
+        aggregateSchedule: [],
+      },
+      custom: null,
+      actualVsPlanned: [],
+    };
+  }
+
+  const avalanche = computeDebtPayoffStrategy(
+    debtAccounts,
+    extraPayment,
+    "avalanche",
+    undefined,
+    maxMonths,
+  );
+
+  const snowball = computeDebtPayoffStrategy(
+    debtAccounts,
+    extraPayment,
+    "snowball",
+    undefined,
+    maxMonths,
+  );
+
+  const custom =
+    customOrder && customOrder.length > 0
+      ? computeDebtPayoffStrategy(
+          debtAccounts,
+          extraPayment,
+          "custom",
+          customOrder,
+          maxMonths,
+        )
+      : null;
+
+  const actualVsPlanned = await computeActualVsPlanned(
+    debtAccounts,
+    extraPayment,
+  );
+
+  return {
+    debtAccounts,
+    avalanche,
+    snowball,
+    custom,
+    actualVsPlanned,
+  };
 }
