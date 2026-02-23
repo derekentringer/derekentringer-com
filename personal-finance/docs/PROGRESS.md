@@ -62,7 +62,7 @@
 
 - [x] [09 — Net Income Projections](features/09-net-income-projections.md)
 - [x] [10 — Savings Projections](features/10-savings-projections.md)
-- [ ] [11 — Debt Payoff Planning](feature_planning/11-debt-payoff-planning.md)
+- [x] [11 — Debt Payoff Planning](features/11-debt-payoff-planning.md)
 - [ ] [12 — Financial Goal Planning](feature_planning/12-financial-goal-planning.md)
 
 ### Phase 6: Advanced Features — Medium Priority
