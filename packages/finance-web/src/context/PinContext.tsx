@@ -47,12 +47,15 @@ export function PinProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    const handleLogout = () => clearPin();
+    window.addEventListener("auth:logout", handleLogout);
     return () => {
+      window.removeEventListener("auth:logout", handleLogout);
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
     };
-  }, []);
+  }, [clearPin]);
 
   return (
     <PinContext.Provider

@@ -30,6 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearAuth = useCallback(() => {
     setUser(null);
+    window.dispatchEvent(new Event("auth:logout"));
   }, []);
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await apiLogout();
     setUser(null);
+    window.dispatchEvent(new Event("auth:logout"));
   }, []);
 
   return (
