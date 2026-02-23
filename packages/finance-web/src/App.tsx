@@ -23,13 +23,13 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route element={<ProtectedRoute><AccountTypesProvider><AppLayout /></AccountTypesProvider></ProtectedRoute>}>
             <Route index element={<DashboardPage />} />
-            <Route path="projections" element={<ProjectionsPage />} />
+            <Route path="projections/:tab?" element={<ProjectionsPage />} />
             <Route path="accounts/:typeSlug" element={<AccountTypePage />} />
             <Route path="transactions" element={<TransactionsPage />} />
             <Route path="budgets" element={<BudgetsPage />} />
-            <Route path="bills" element={<BillsPage />} />
+            <Route path="bills/:tab?" element={<BillsPage />} />
             <Route path="reports" element={<ReportsPage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/:tab?" element={<SettingsPage />} />
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

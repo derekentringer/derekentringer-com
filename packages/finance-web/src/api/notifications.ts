@@ -90,7 +90,7 @@ export async function markAllNotificationsRead(): Promise<{ updated: number }> {
   return res.json();
 }
 
-export async function clearNotificationHistory(): Promise<{ deleted: number }> {
+export async function clearNotificationHistory(): Promise<{ cleared: number }> {
   const res = await apiFetch("/notifications/history", {
     method: "DELETE",
   });
