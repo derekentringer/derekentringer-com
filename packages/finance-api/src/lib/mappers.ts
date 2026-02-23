@@ -10,6 +10,9 @@ import type {
   Bill as PrismaBill,
   BillPayment as PrismaBillPayment,
   IncomeSource as PrismaIncomeSource,
+  DeviceToken as PrismaDeviceToken,
+  NotificationPreference as PrismaNotificationPreference,
+  NotificationLog as PrismaNotificationLog,
 } from "../generated/prisma/client.js";
 import type {
   Account,
@@ -27,8 +30,13 @@ import type {
   BillFrequency,
   IncomeSource,
   IncomeSourceFrequency,
+  DeviceToken,
+  NotificationPreference,
+  NotificationLogEntry,
+  NotificationConfig,
+  DevicePlatform,
 } from "@derekentringer/shared";
-import { AccountType } from "@derekentringer/shared";
+import { AccountType, NotificationType, DEFAULT_NOTIFICATION_CONFIGS } from "@derekentringer/shared";
 import {
   encryptField,
   decryptField,
@@ -783,4 +791,138 @@ export function encryptIncomeSourceForUpdate(input: {
     data.notes = encryptOptionalField(input.notes);
 
   return data;
+}
+
+// --- Device Token ---
+
+export function decryptDeviceToken(row: PrismaDeviceToken): DeviceToken {
+  return {
+    id: row.id,
+    platform: row.platform as DevicePlatform,
+    name: decryptOptionalField(row.name) ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function encryptDeviceTokenForCreate(input: {
+  token: string;
+  platform: string;
+  name?: string;
+}): {
+  token: string;
+  platform: string;
+  name: string | null;
+} {
+  return {
+    token: encryptField(input.token),
+    platform: input.platform,
+    name: encryptOptionalField(input.name),
+  };
+}
+
+// --- Notification Preference ---
+
+export function decryptNotificationPreference(
+  row: PrismaNotificationPreference,
+): NotificationPreference {
+  const type = row.type as NotificationType;
+  let config: NotificationConfig | null = null;
+  if (row.config) {
+    try {
+      config = JSON.parse(decryptField(row.config)) as NotificationConfig;
+    } catch {
+      config = null;
+    }
+  }
+
+  return {
+    id: row.id,
+    type,
+    enabled: row.enabled,
+    config: config ?? DEFAULT_NOTIFICATION_CONFIGS[type] ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function encryptNotificationPreferenceForCreate(input: {
+  type: string;
+  enabled?: boolean;
+  config?: NotificationConfig | null;
+}): {
+  type: string;
+  enabled?: boolean;
+  config: string | null;
+} {
+  const data: {
+    type: string;
+    enabled?: boolean;
+    config: string | null;
+  } = {
+    type: input.type,
+    config: input.config ? encryptField(JSON.stringify(input.config)) : null,
+  };
+  if (input.enabled !== undefined) data.enabled = input.enabled;
+  return data;
+}
+
+export function encryptNotificationPreferenceForUpdate(input: {
+  enabled?: boolean;
+  config?: NotificationConfig | null;
+}): {
+  enabled?: boolean;
+  config?: string | null;
+} {
+  const data: { enabled?: boolean; config?: string | null } = {};
+  if (input.enabled !== undefined) data.enabled = input.enabled;
+  if (input.config !== undefined) {
+    data.config = input.config ? encryptField(JSON.stringify(input.config)) : null;
+  }
+  return data;
+}
+
+// --- Notification Log ---
+
+export function decryptNotificationLog(row: PrismaNotificationLog): NotificationLogEntry {
+  let metadata: Record<string, unknown> | null = null;
+  if (row.metadata) {
+    try {
+      metadata = JSON.parse(decryptField(row.metadata)) as Record<string, unknown>;
+    } catch {
+      metadata = null;
+    }
+  }
+
+  return {
+    id: row.id,
+    type: row.type as NotificationType,
+    title: decryptField(row.title),
+    body: decryptField(row.body),
+    isRead: row.isRead,
+    sentAt: row.sentAt.toISOString(),
+    metadata,
+  };
+}
+
+export function encryptNotificationLogForCreate(input: {
+  type: string;
+  title: string;
+  body: string;
+  dedupeKey: string;
+  metadata?: Record<string, unknown> | null;
+}): {
+  type: string;
+  title: string;
+  body: string;
+  dedupeKey: string;
+  metadata: string | null;
+} {
+  return {
+    type: input.type,
+    title: encryptField(input.title),
+    body: encryptField(input.body),
+    dedupeKey: input.dedupeKey,
+    metadata: input.metadata ? encryptField(JSON.stringify(input.metadata)) : null,
+  };
 }

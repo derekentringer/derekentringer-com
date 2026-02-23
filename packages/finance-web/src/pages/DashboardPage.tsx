@@ -266,7 +266,7 @@ export function DashboardPage() {
         ) : netWorthError ? (
           <ErrorCard message={netWorthError} onRetry={loadNetWorth} />
         ) : netWorth ? (
-          <KpiCard title="Net Worth" value={formatCurrency(netWorth.summary.netWorth)} sparkline={netWorthSparkline} />
+          <KpiCard title="Net Worth" value={formatCurrency(netWorth.summary.netWorth)} tooltip="Total assets minus total liabilities" sparkline={netWorthSparkline} />
         ) : null}
 
         {spendingLoading ? (
@@ -274,7 +274,7 @@ export function DashboardPage() {
         ) : spendingError ? (
           <ErrorCard message={spendingError} onRetry={loadSpending} />
         ) : spending ? (
-          <KpiCard title="Monthly Spending" value={formatCurrency(spending.total)} sparkline={spendingSparkline} />
+          <KpiCard title="Monthly Spending" value={formatCurrency(spending.total)} tooltip="Total spending for the current month" sparkline={spendingSparkline} />
         ) : null}
 
         {dtiLoading ? (
@@ -286,6 +286,7 @@ export function DashboardPage() {
             <KpiCard
               title="DTI"
               value={`${dti.ratio.toFixed(1)}%`}
+              tooltip="Debt-to-income ratio — monthly debt payments divided by gross monthly income"
               trend={{
                 direction: dti.ratio > 43 ? "down" : dti.ratio > 36 ? "neutral" : "up",
                 value: dti.ratio > 43 ? "High" : dti.ratio > 36 ? "Moderate" : "Good",
@@ -303,6 +304,7 @@ export function DashboardPage() {
           <KpiCard
             title="Upcoming Bills"
             value={formatCurrency(restOfMonthBills.totalDue)}
+            tooltip="Unpaid bills due for the rest of the current month"
             trend={
               restOfMonthBills.overdueCount > 0
                 ? {

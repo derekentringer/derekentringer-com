@@ -17,6 +17,7 @@
 | Auth | JWT + bcrypt | Single-user gated access |
 | AI Extraction | Anthropic Claude API | PDF statement parsing via tool use |
 | PDF Parsing | pdf-parse | Text extraction from PDF statements |
+| Push Notifications | Firebase Admin SDK | FCM for mobile push (web uses polling) |
 
 ## Architecture Decisions
 
@@ -29,6 +30,7 @@
 - **Account-type profiles** — LoanProfile, InvestmentProfile, SavingsProfile as separate models attached to Balance records; extensible without schema bloat
 - **Favorite accounts** — `isFavorite` flag on accounts drives dashboard balance history charts and per-account projection charts on the Projections page
 - **Expense projections** — Monthly expenses calculated from Bills + Budgets (not historical average spending), giving users explicit control over projected expenses
+- **Notifications: polling for web, FCM for mobile** — Web uses 30s polling + browser Notification API (Firebase client SDK tokens unreliable on web); mobile will use FCM push via firebase-admin server SDK
 
 ## Phases
 
@@ -54,6 +56,7 @@
 - [x] [07 — Budgeting & Expense Tracking](features/07-budgeting-expense-tracking.md)
 - [x] [08 — Bill Management](features/08-bill-management.md)
 - [x] [11 — Account Type Pages & Chart Improvements](features/11-account-type-pages.md) — market mortgage rate badges (FRED API), investments inline layout with KPI sparklines (YTD Return, Contributions, Balance, Dividends), snapshot-driven chart rendering for investment/real-estate/loan accounts, YAxis domain fix
+- [x] [12 — Notification System (Phase 1)](features/12-notification-system.md) — scheduler-based evaluators (Bill Due, Credit Payment Due, Loan Payment Due), browser notifications via polling, FCM for future mobile push, notification center bell icon, per-type preferences with config dialogs, 90-day log retention
 
 ### Phase 5: Projections & Planning — Medium Priority
 

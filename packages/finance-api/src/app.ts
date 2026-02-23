@@ -21,6 +21,9 @@ import billRoutes from "./routes/bills.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import incomeSourceRoutes from "./routes/incomeSources.js";
 import projectionRoutes from "./routes/projections.js";
+import notificationRoutes from "./routes/notifications.js";
+import { startNotificationScheduler, stopNotificationScheduler } from "./lib/notificationScheduler.js";
+import { cleanupOldNotificationLogs } from "./store/notificationStore.js";
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -93,6 +96,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(dashboardRoutes, { prefix: "/dashboard" });
   app.register(incomeSourceRoutes, { prefix: "/income-sources" });
   app.register(projectionRoutes, { prefix: "/projections" });
+  app.register(notificationRoutes, { prefix: "/notifications" });
 
   app.get("/health", async () => {
     return { status: "ok" };
@@ -106,11 +110,14 @@ export function buildApp(opts?: BuildAppOptions) {
     seedDefaultCategories().catch(() => {});
     cleanupTimer = setInterval(() => {
       cleanupExpiredTokens().catch(() => {});
+      cleanupOldNotificationLogs().catch(() => {});
     }, TOKEN_CLEANUP_INTERVAL_MS);
+    startNotificationScheduler(app.log);
   });
 
   app.addHook("onClose", async () => {
     if (cleanupTimer) clearInterval(cleanupTimer);
+    stopNotificationScheduler();
     await getPrisma().$disconnect();
   });
 
