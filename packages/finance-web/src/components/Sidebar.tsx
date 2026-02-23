@@ -36,6 +36,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAccountTypes } from "../context/AccountTypesContext.tsx";
+import { FinLogo } from "./FinLogo.tsx";
 
 const SLUG_ICONS: Record<string, LucideIcon> = {
   checking: Banknote,
@@ -248,8 +249,13 @@ export function Sidebar({
             isCollapsed ? "justify-center" : "justify-between",
           )}
         >
-          {!isCollapsed && (
-            <span className="text-lg font-thin text-foreground">fin</span>
+          {isCollapsed ? (
+            <FinLogo className="h-5 w-5" />
+          ) : (
+            <div className="flex items-center gap-2">
+              <FinLogo className="h-5 w-5" />
+              <span className="text-lg font-normal text-foreground">fin</span>
+            </div>
           )}
           <Button
             variant="ghost"
@@ -273,8 +279,9 @@ export function Sidebar({
       <Sheet open={isMobileOpen} onOpenChange={(open) => !open && onCloseMobile()}>
         <SheetContent side="left" className="w-3/4 max-w-[240px] p-0">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <div className="flex items-center h-14 px-4">
-            <span className="text-lg font-thin text-foreground">fin</span>
+          <div className="flex items-center gap-2 h-14 px-4">
+            <FinLogo className="h-5 w-5" />
+            <span className="text-lg font-normal text-foreground">fin</span>
           </div>
           <div className="py-4">
             <NavItems isCollapsed={false} onNavClick={onCloseMobile} />

@@ -4,6 +4,7 @@ import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.tsx";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { FinLogo } from "@/components/FinLogo.tsx";
 
 export function LoginPage() {
   const { isAuthenticated, isLoading, login } = useAuth();
@@ -35,7 +36,10 @@ export function LoginPage() {
         className="flex flex-col gap-4 w-full max-w-[360px] px-4"
         onSubmit={handleSubmit}
       >
-        <h1 className="font-thin text-3xl text-foreground text-center mb-2">fin</h1>
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <FinLogo className="h-9 w-9" />
+          <h1 className="font-normal text-3xl text-foreground">fin</h1>
+        </div>
         <Input
           type="text"
           placeholder="Username"
