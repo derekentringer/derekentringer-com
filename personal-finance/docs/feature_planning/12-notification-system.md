@@ -1,6 +1,6 @@
 # 12 — Notification System
 
-**Status:** Phase 1 Complete (see [features/12-notification-system.md](../features/12-notification-system.md))
+**Status:** Complete (see [features/12-notification-system.md](../features/12-notification-system.md))
 **Phase:** 4 — Dashboard & Tracking
 **Priority:** High
 
@@ -23,9 +23,9 @@ Notification system for financial alerts — bill due dates, credit/loan payment
 
 **Phase 1 (Complete):** Core infrastructure + 3 date-based reminder types (Bill Due, Credit Payment Due, Loan Payment Due)
 
-**Phase 2 (Planned):** Threshold-based alerts (High Credit Utilization, Budget Overspend, Large Transaction)
+**Phase 2 (Complete):** Threshold-based alerts (High Credit Utilization, Budget Overspend, Large Transaction)
 
-**Phase 3 (Planned):** Pattern detection + milestones (Statement Reminder, Milestones)
+**Phase 3 (Complete):** Statement Reminder + Milestones (net worth milestones, loan payoff milestones)
 
 ## Notification Types
 
@@ -34,11 +34,11 @@ Notification system for financial alerts — bill due dates, credit/loan payment
 | Bill Due | 1 | `generateDueDates()` in billStore | `bill_due:{billId}:{YYYY-MM-DD}` |
 | Credit Payment Due | 1 | `CreditProfile.paymentDueDate` | `credit_payment_due:{accountId}:{date}` |
 | Loan Payment Due | 1 | `LoanProfile.nextPaymentDate` | `loan_payment_due:{accountId}:{date}` |
-| High Credit Utilization | 2 | `currentBalance / creditLimit` | `high_credit_util:{accountId}:{threshold}:{YYYY-MM}` |
+| High Credit Utilization | 2 | `(creditLimit - availableCredit) / creditLimit` | `high_credit_util:{accountId}:{threshold}:{YYYY-MM}` |
 | Budget Overspend | 2 | Budget amount vs. spending summary | `budget_overspend:{category}:{level}:{YYYY-MM}` |
-| Large Transaction | 2 | Event-driven on import/create | `large_txn:{transactionId}` |
-| Statement Reminder | 3 | Profile `periodEnd` dates cadence detection | `statement_reminder:{accountId}:{YYYY-MM}` |
-| Milestones | 3 | Net worth total, loan payoff % | `milestone:{type}:{value}:{YYYY}` |
+| Large Transaction | 2 | Scheduler-based, last 7 days | `large_txn:{transactionId}` |
+| Statement Reminder | 3 | Profile `periodEnd` + fallback day | `statement_reminder:{accountId}:{YYYY-MM}` |
+| Milestones | 3 | `computeNetWorthSummary()`, loan `originalBalance` vs current | `milestone_nw:{amount}`, `milestone_payoff:{accountId}:{percent}` |
 
 ## Per-Type Configuration
 

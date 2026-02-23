@@ -1,4 +1,4 @@
-# 12 — Notification System (Phase 1)
+# 12 — Notification System
 
 **Status:** Complete
 **Phase:** 4 — Dashboard & Tracking
@@ -6,7 +6,7 @@
 
 ## Summary
 
-Notification system with scheduler-based evaluation, per-type preferences, browser notifications via polling, and FCM infrastructure for future mobile push. Phase 1 implements core infrastructure and three date-based reminder types: Bill Due, Credit Payment Due, and Loan Payment Due.
+Notification system with scheduler-based evaluation, per-type preferences, browser notifications via polling, and FCM infrastructure for future mobile push. All 8 notification types are implemented across 3 phases: date-based reminders (Phase 1), threshold-based alerts (Phase 2), and statement reminders + milestones (Phase 3).
 
 ## Architecture
 
@@ -104,11 +104,24 @@ CRUD operations for all three models:
 
 #### Notification Evaluator (`src/lib/notificationEvaluator.ts`)
 
-Phase 1 evaluators:
+**Phase 1 evaluators (date-based reminders):**
 
 - **Bill Due**: Reuses `generateDueDates()` from billStore, checks payment records, fires within reminder window for unpaid bills
 - **Credit Payment Due**: Reads `paymentDueDate` from latest CreditProfile, fires within reminder window
 - **Loan Payment Due**: Reads `nextPaymentDate` from latest LoanProfile, fires within reminder window
+
+**Phase 2 evaluators (threshold-based alerts):**
+
+- **High Credit Utilization**: Queries active credit accounts, decrypts `creditLimit` and `availableCredit` from latest balance's CreditProfile, computes `(creditLimit - availableCredit) / creditLimit * 100`. Fires at highest exceeded threshold from configurable list (default: [30, 70]). Deduped per account/threshold/month.
+- **Budget Overspend**: Reuses `getActiveBudgetsForMonth()` and `computeSpendingSummary()` to compare actual spending against budgets. Fires "exceeded" at `alertAtPercent` (default 100%) or "warning" at `warnAtPercent` (default 80%). Deduped per category/level/month.
+- **Large Transaction**: Scheduler-based with 7-day lookback window. Queries recent transactions, decrypts amounts, fires for `abs(amount) >= threshold` (default $500). 7-day window prevents alerts for historical imports. Deduped per transaction ID.
+
+**Phase 3 evaluators (statement reminders + milestones):**
+
+- **Statement Reminder**: For each active account, estimates next statement close from `periodEnd` in CreditProfile/LoanProfile (adds 1 month). Falls back to configurable `fallbackDayOfMonth` (default 28th) when no period data exists. Fires within `reminderDaysBefore` (default 3) of close date. Deduped per account/month.
+- **Milestones**: Two sub-checks:
+  - *Net worth*: Uses `computeNetWorthSummary()`, fires at highest crossed milestone from configurable list (default: $50k, $100k, $250k, $500k, $1M). Deduped per milestone amount (fires once ever).
+  - *Loan payoff*: For each active loan with `originalBalance`, computes payoff percentage. Fires at highest crossed milestone (default: 25%, 50%, 75%, 90%, 100%). Special messaging for 100% (fully paid off). Deduped per account/milestone.
 
 All evaluators: check preference enabled, check dedupe key, skip if already sent.
 
@@ -173,9 +186,8 @@ Two cards in Settings > Notifications tab:
 - Mobile device list (for future React Native devices)
 
 **Notification Preferences card:**
-- Grouped by category (Reminders / Alerts / Milestones)
-- Per-type toggle switch (enabled/disabled)
-- "Coming soon" badge for Phase 2-3 types
+- Grouped by category (Reminders / Alerts / Milestones) with explicit display ordering (Statement Reminder first in Reminders)
+- Per-type toggle switch (enabled/disabled) — all 8 types active
 - Configure button opens dialog with type-specific fields:
   - Bill/Credit/Loan Due: reminder days before
   - Credit Utilization: threshold list
@@ -256,6 +268,10 @@ Two cards in Settings > Notifications tab:
 - **Log retention: 90 days** — Cleanup runs on existing hourly timer in app.ts.
 - **Scheduler interval: 15 minutes** — Date-based checks are lightweight; frequent enough for timely reminders.
 - **Import guard** — Scheduler skips evaluation when statement import is in progress to avoid alerting on partially imported data.
+- **Large Transaction: scheduler-based, not event-driven** — Simpler than wiring into import code paths. 7-day lookback window prevents alerts for historical imports; 15-minute scheduler is fast enough.
+- **Credit utilization: highest threshold only** — When multiple thresholds are exceeded, only fires for the highest one to avoid notification spam.
+- **Milestone dedupe: permanent** — Net worth milestones deduped per amount (no date suffix), so they fire only once ever. Loan payoff milestones deduped per account/percentage.
+- **Statement Reminder: periodEnd extrapolation** — Estimates next close date by adding 1 month to last `periodEnd` from credit/loan profiles. Falls back to configurable day of month when no profile data exists.
 
 ## Resolved Open Questions
 
