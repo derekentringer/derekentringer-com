@@ -4,6 +4,8 @@ import {
   type CreateAccountRequest,
   type UpdateAccountRequest,
 } from "@derekentringer/shared";
+import { requirePin } from "@derekentringer/shared/auth/pinVerify";
+import { loadConfig } from "../config.js";
 import {
   createAccount,
   getAccount,
@@ -72,6 +74,9 @@ const updateAccountSchema = {
 export default async function accountRoutes(fastify: FastifyInstance) {
   // All routes require auth
   fastify.addHook("onRequest", fastify.authenticate);
+
+  const config = loadConfig();
+  const pinGuard = requirePin(config.pinTokenSecret);
 
   // GET / — list accounts
   fastify.get<{ Querystring: { active?: string; type?: string } }>(
@@ -344,9 +349,10 @@ export default async function accountRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete account
+  // DELETE /:id — delete account (PIN-protected: cascades to transactions, balances, bills)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
+    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,

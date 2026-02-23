@@ -56,6 +56,13 @@ describe("Account routes", () => {
     return res.json().accessToken;
   }
 
+  function getPinToken(): string {
+    return app.jwt.sign(
+      { sub: "admin-001", type: "pin" },
+      { key: "dev-pin-secret-do-not-use-in-prod", expiresIn: 900 },
+    );
+  }
+
   function makeMockAccountRow(overrides: Record<string, unknown> = {}) {
     const encrypted = encryptAccountForCreate({
       name: "Test Account",
@@ -422,7 +429,20 @@ describe("Account routes", () => {
   describe("DELETE /accounts/:id", () => {
     it("deletes account (204)", async () => {
       const token = await getAccessToken();
+      const pinToken = getPinToken();
       mockPrisma.account.delete.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/accounts/${VALID_CUID}`,
+        headers: { authorization: `Bearer ${token}`, "x-pin-token": pinToken },
+      });
+
+      expect(res.statusCode).toBe(204);
+    });
+
+    it("returns 403 without PIN token", async () => {
+      const token = await getAccessToken();
 
       const res = await app.inject({
         method: "DELETE",
@@ -430,11 +450,13 @@ describe("Account routes", () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      expect(res.statusCode).toBe(204);
+      expect(res.statusCode).toBe(403);
+      expect(res.json().message).toBe("PIN verification required");
     });
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
+      const pinToken = getPinToken();
       const notFoundError = new Error("Not found") as P2025Error;
       notFoundError.code = "P2025";
       mockPrisma.account.delete.mockRejectedValue(notFoundError);
@@ -442,7 +464,7 @@ describe("Account routes", () => {
       const res = await app.inject({
         method: "DELETE",
         url: `/accounts/${VALID_CUID_2}`,
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, "x-pin-token": pinToken },
       });
 
       expect(res.statusCode).toBe(404);
@@ -479,13 +501,26 @@ describe("Account routes", () => {
       expect(res.json().message).toBe("Invalid account ID format");
     });
 
-    it("DELETE /:id returns 400 for invalid ID format", async () => {
+    it("DELETE /:id returns 403 without PIN token", async () => {
       const token = await getAccessToken();
 
       const res = await app.inject({
         method: "DELETE",
         url: "/accounts/invalid-id",
         headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("DELETE /:id returns 400 for invalid ID format with PIN", async () => {
+      const token = await getAccessToken();
+      const pinToken = getPinToken();
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/accounts/invalid-id",
+        headers: { authorization: `Bearer ${token}`, "x-pin-token": pinToken },
       });
 
       expect(res.statusCode).toBe(400);

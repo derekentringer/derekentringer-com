@@ -44,7 +44,7 @@ function initializeFirebase(): boolean {
     isInitialized = true;
     return true;
   } catch (e) {
-    console.error("[FCM] Failed to initialize Firebase:", e);
+    console.error("[FCM] Failed to initialize Firebase:", e instanceof Error ? e.message : "unknown error");
     return false;
   }
 }
