@@ -226,6 +226,18 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const CATEGORY_ORDER = ["reminders", "alerts", "milestones"];
 
+// Explicit display order within each category
+const NOTIFICATION_SORT_ORDER: Record<string, number> = {
+  [NotificationType.StatementReminder]: 0,
+  [NotificationType.BillDue]: 1,
+  [NotificationType.CreditPaymentDue]: 2,
+  [NotificationType.LoanPaymentDue]: 3,
+  [NotificationType.HighCreditUtilization]: 0,
+  [NotificationType.BudgetOverspend]: 1,
+  [NotificationType.LargeTransaction]: 2,
+  [NotificationType.Milestones]: 0,
+};
+
 function NotificationPreferencesCard() {
   const [preferences, setPreferences] = useState<NotificationPreference[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -267,8 +279,8 @@ function NotificationPreferencesCard() {
       .filter((p) => NOTIFICATION_CATEGORIES[p.type] === cat)
       .sort(
         (a, b) =>
-          Object.values(NotificationType).indexOf(a.type) -
-          Object.values(NotificationType).indexOf(b.type),
+          (NOTIFICATION_SORT_ORDER[a.type] ?? 99) -
+          (NOTIFICATION_SORT_ORDER[b.type] ?? 99),
       ),
   })).filter((g) => g.items.length > 0);
 
@@ -295,7 +307,7 @@ function NotificationPreferencesCard() {
                 <div className="flex flex-col gap-2">
                   {items.map((pref) => {
                     const phase = NOTIFICATION_PHASES[pref.type];
-                    const isPhase1 = phase === 1;
+                    const isEnabled = phase <= 3;
 
                     return (
                       <div
@@ -307,7 +319,7 @@ function NotificationPreferencesCard() {
                             <span className="text-sm font-medium text-foreground">
                               {NOTIFICATION_LABELS[pref.type]}
                             </span>
-                            {!isPhase1 && (
+                            {!isEnabled && (
                               <Badge variant="outline" className="text-xs">
                                 Coming soon
                               </Badge>
@@ -318,7 +330,7 @@ function NotificationPreferencesCard() {
                           </span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {isPhase1 && (
+                          {isEnabled && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -333,7 +345,7 @@ function NotificationPreferencesCard() {
                             onCheckedChange={(checked) =>
                               handleToggle(pref.type, checked)
                             }
-                            disabled={!isPhase1}
+                            disabled={!isEnabled}
                           />
                         </div>
                       </div>
