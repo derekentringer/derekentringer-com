@@ -58,7 +58,7 @@ describe("Account routes", () => {
 
   function getPinToken(): string {
     return app.jwt.sign(
-      { sub: "admin-001", type: "pin" },
+      { sub: "admin-001", type: "pin" } as unknown as { sub: string; username: string },
       { key: "dev-pin-secret-do-not-use-in-prod", expiresIn: 900 },
     );
   }
