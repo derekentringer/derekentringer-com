@@ -18,6 +18,7 @@ Notification system for financial alerts — bill due dates, credit/loan payment
 - Notification center (bell icon + popover) with unread count, mark-all-read, clear-all
 - Settings UI with per-type toggles and configuration dialogs
 - 90-day log retention with automatic cleanup
+- Soft-delete on clear: "Clear All" sets `isCleared = true` instead of deleting rows, preserving dedup keys to prevent re-firing
 
 ## Phased Delivery
 

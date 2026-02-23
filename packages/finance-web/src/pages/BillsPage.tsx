@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import type {
   Bill,
   CreateBillRequest,
@@ -36,7 +37,13 @@ type FilterTab = "all" | "upcoming" | "paid" | "overdue";
 type SortField = "name" | "amount" | "frequency" | "nextDue";
 type SortDir = "asc" | "desc";
 
+const VALID_FILTERS: FilterTab[] = ["all", "upcoming", "paid", "overdue"];
+
 export function BillsPage() {
+  const { tab: tabParam } = useParams();
+  const navigate = useNavigate();
+  const filter: FilterTab = VALID_FILTERS.includes(tabParam as FilterTab) ? (tabParam as FilterTab) : "all";
+
   const [bills, setBills] = useState<Bill[]>([]);
   const [upcoming, setUpcoming] = useState<UpcomingBillInstance[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,7 +52,6 @@ export function BillsPage() {
   const [editBill, setEditBill] = useState<Bill | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Bill | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [filter, setFilter] = useState<FilterTab>("all");
   const [payingId, setPayingId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField | null>("amount");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -192,6 +198,10 @@ export function BillsPage() {
     }
   }
 
+  function handleFilterChange(tab: FilterTab) {
+    navigate(`/bills/${tab}`, { replace: true });
+  }
+
   const FILTER_TABS: { value: FilterTab; label: string }[] = [
     { value: "all", label: "All" },
     { value: "upcoming", label: "Upcoming" },
@@ -216,13 +226,11 @@ export function BillsPage() {
           Add Bill
         </Button>
       </div>
+      <TabSwitcher options={FILTER_TABS} value={filter} onChange={handleFilterChange} />
+
       <Card>
         <CardContent>
           {error && <p className="text-sm text-error mb-4">{error}</p>}
-
-          <div className="mb-4">
-            <TabSwitcher options={FILTER_TABS} value={filter} onChange={setFilter} size="sm" />
-          </div>
 
           {filteredBills.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">

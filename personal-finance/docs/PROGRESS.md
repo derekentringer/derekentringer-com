@@ -56,7 +56,7 @@
 - [x] [07 — Budgeting & Expense Tracking](features/07-budgeting-expense-tracking.md)
 - [x] [08 — Bill Management](features/08-bill-management.md)
 - [x] [11 — Account Type Pages & Chart Improvements](features/11-account-type-pages.md) — market mortgage rate badges (FRED API), investments inline layout with KPI sparklines (YTD Return, Contributions, Balance, Dividends), snapshot-driven chart rendering for investment/real-estate/loan accounts, YAxis domain fix
-- [x] [12 — Notification System](features/12-notification-system.md) — all 8 notification types: date-based reminders (Bill Due, Credit Payment Due, Loan Payment Due), threshold-based alerts (High Credit Utilization, Budget Overspend, Large Transaction), statement reminders, and milestones (net worth + loan payoff); browser notifications via polling, FCM for future mobile push, notification center bell icon, per-type preferences with config dialogs, 90-day log retention
+- [x] [12 — Notification System](features/12-notification-system.md) — all 8 notification types: date-based reminders (Bill Due, Credit Payment Due, Loan Payment Due), threshold-based alerts (High Credit Utilization, Budget Overspend, Large Transaction), statement reminders, and milestones (net worth + loan payoff); browser notifications via polling, FCM for future mobile push, notification center bell icon, per-type preferences with config dialogs, 90-day log retention, soft-delete on clear (preserves dedup keys)
 
 ### Phase 5: Projections & Planning — Medium Priority
 

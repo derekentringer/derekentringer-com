@@ -253,7 +253,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const count = await clearNotificationHistory();
-        return reply.send({ deleted: count });
+        return reply.send({ cleared: count });
       } catch (e) {
         request.log.error(e, "Failed to clear notification history");
         return reply.status(500).send({
