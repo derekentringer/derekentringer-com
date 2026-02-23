@@ -96,7 +96,16 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
           offset?: number;
         } = {};
 
-        if (accountId) filter.accountId = accountId;
+        if (accountId) {
+          if (!CUID_PATTERN.test(accountId)) {
+            return reply.status(400).send({
+              statusCode: 400,
+              error: "Bad Request",
+              message: "Invalid accountId format",
+            });
+          }
+          filter.accountId = accountId;
+        }
         if (category) filter.category = category;
         if (search) filter.search = search.slice(0, 200);
         if (startDate) filter.startDate = new Date(startDate.includes("T") ? startDate : startDate + "T00:00:00");
@@ -336,7 +345,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
           return reply.status(400).send({
             statusCode: 400,
             error: "Bad Request",
-            message: `Unknown CSV parser: ${parserId}`,
+            message: "Unknown CSV parser ID",
           });
         }
 
