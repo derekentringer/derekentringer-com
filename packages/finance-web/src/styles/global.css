@@ -60,4 +60,53 @@
     color: var(--color-foreground);
     text-decoration: underline;
   }
+
+  /* Range slider — two-tone track via --range-pct custom property */
+  input[type="range"] {
+    --range-pct: 0%;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(
+      to right,
+      var(--color-primary) var(--range-pct),
+      #3a3d48 var(--range-pct)
+    );
+    outline: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  input[type="range"]::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: #3a3d48;
+  }
+
+  input[type="range"]::-moz-range-progress {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--color-primary);
+  }
 }

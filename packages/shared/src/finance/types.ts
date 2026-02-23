@@ -732,6 +732,72 @@ export interface SavingsProjectionResponse {
   milestones: Array<{ targetAmount: number; targetDate: string | null }>;
 }
 
+// ─── Debt Payoff Planning ────────────────────────────────────────────────────
+
+export type DebtPayoffStrategy = "avalanche" | "snowball" | "custom";
+
+export interface DebtAccountSummary {
+  accountId: string;
+  name: string;
+  type: AccountType;
+  currentBalance: number;
+  interestRate: number;
+  minimumPayment: number;
+  isMortgage: boolean;
+}
+
+export interface DebtPayoffMonthPoint {
+  month: string;
+  balance: number;
+  principal: number;
+  interest: number;
+  payment: number;
+  extraPayment: number;
+}
+
+export interface DebtPayoffAccountTimeline {
+  accountId: string;
+  name: string;
+  payoffDate: string | null;
+  totalInterestPaid: number;
+  totalPaid: number;
+  monthsToPayoff: number;
+  schedule: DebtPayoffMonthPoint[];
+}
+
+export interface DebtActualVsPlanned {
+  accountId: string;
+  name: string;
+  actual: Array<{ month: string; balance: number }>;
+  planned: Array<{ month: string; balance: number }>;
+  minimumOnly: Array<{ month: string; balance: number }>;
+}
+
+export interface DebtPayoffAggregatePoint {
+  month: string;
+  totalBalance: number;
+  totalPayment: number;
+  totalInterest: number;
+  totalPrincipal: number;
+}
+
+export interface DebtPayoffStrategyResult {
+  strategy: DebtPayoffStrategy;
+  debtFreeDate: string | null;
+  totalInterestPaid: number;
+  totalPaid: number;
+  timelines: DebtPayoffAccountTimeline[];
+  aggregateSchedule: DebtPayoffAggregatePoint[];
+}
+
+export interface DebtPayoffResponse {
+  debtAccounts: DebtAccountSummary[];
+  avalanche: DebtPayoffStrategyResult;
+  snowball: DebtPayoffStrategyResult;
+  custom: DebtPayoffStrategyResult | null;
+  actualVsPlanned: DebtActualVsPlanned[];
+}
+
 // DTI (Debt-to-Income) Ratio
 export interface DTIComponent {
   name: string;
