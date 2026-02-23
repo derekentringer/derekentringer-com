@@ -244,6 +244,17 @@ export async function checkDedupeKeyExists(dedupeKey: string): Promise<boolean> 
   return row !== null;
 }
 
+/** Batch check: returns the set of dedupeKeys that already exist in the log */
+export async function checkDedupeKeysExist(dedupeKeys: string[]): Promise<Set<string>> {
+  if (dedupeKeys.length === 0) return new Set();
+  const prisma = getPrisma();
+  const rows = await prisma.notificationLog.findMany({
+    where: { dedupeKey: { in: dedupeKeys } },
+    select: { dedupeKey: true },
+  });
+  return new Set(rows.map((r) => r.dedupeKey));
+}
+
 /** Delete notification logs older than the given number of days */
 export async function cleanupOldNotificationLogs(retentionDays = 90): Promise<number> {
   const prisma = getPrisma();

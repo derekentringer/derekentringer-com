@@ -268,6 +268,11 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
   // POST /test — send test push to all devices
   fastify.post(
     "/test",
+    {
+      config: {
+        rateLimit: { max: 5, timeWindow: "15 minutes" },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const logEntry = await createNotificationLog({
