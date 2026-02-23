@@ -90,7 +90,7 @@ packages/
   - `prisma/schema.prisma` — Database schema (RefreshToken, Account, Transaction, Balance)
   - `prisma.config.ts` — Prisma CLI config (datasource URL, migrations path)
   - `src/generated/prisma/` — Generated Prisma client (gitignored)
-  - `src/lib/prisma.ts` — PrismaClient singleton with `@prisma/adapter-pg` (SSL with certificate verification in production)
+  - `src/lib/prisma.ts` — PrismaClient singleton with `@prisma/adapter-pg` (SSL without certificate verification in production — Railway Postgres does not support verified SSL)
   - `src/lib/encryption.ts` — AES-256-GCM field-level encryption (wraps shared crypto)
   - `src/lib/mappers.ts` — Prisma row ↔ API type mappers with encrypt/decrypt
 - **Prisma commands** (run from `packages/finance-api/`):
