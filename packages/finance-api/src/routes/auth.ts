@@ -72,16 +72,14 @@ export default async function authRoutes(fastify: FastifyInstance) {
     async (request: FastifyRequest<{ Body: LoginRequest }>, reply: FastifyReply) => {
       const { username, password } = request.body;
 
-      if (username !== config.adminUsername) {
-        return reply.status(401).send({
-          statusCode: 401,
-          error: "Unauthorized",
-          message: "Invalid credentials",
-        });
-      }
+      // Always run bcrypt.compare to prevent timing-based username enumeration.
+      // Use a dummy hash when username doesn't match so both paths take equal time.
+      const DUMMY_HASH = "$2b$10$0000000000000000000000000000000000000000000000000000";
+      const isUsernameValid = username === config.adminUsername;
+      const hashToCompare = isUsernameValid ? config.adminPasswordHash : DUMMY_HASH;
+      const isPasswordValid = await bcrypt.compare(password, hashToCompare);
 
-      const valid = await bcrypt.compare(password, config.adminPasswordHash);
-      if (!valid) {
+      if (!isUsernameValid || !isPasswordValid) {
         return reply.status(401).send({
           statusCode: 401,
           error: "Unauthorized",
