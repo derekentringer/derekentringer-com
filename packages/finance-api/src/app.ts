@@ -46,7 +46,12 @@ export function buildApp(opts?: BuildAppOptions) {
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
   app.register(helmet, {
-    contentSecurityPolicy: config.isProduction,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
   });
   if (!opts?.disableRateLimit) {
     app.register(rateLimit, {

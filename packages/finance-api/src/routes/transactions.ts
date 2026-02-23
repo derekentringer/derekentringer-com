@@ -302,7 +302,10 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
     Querystring: { accountId: string; csvParserId?: string };
   }>(
     "/import/preview",
-    { preHandler: pinGuard },
+    {
+      preHandler: pinGuard,
+      config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
+    },
     async (
       request: FastifyRequest<{
         Querystring: { accountId: string; csvParserId?: string };
@@ -364,6 +367,13 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
 
         // Parse CSV
         const rawRows = parser.parse(csvContent);
+        if (rawRows.length > 5000) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: "CSV file too large (maximum 5000 rows)",
+          });
+        }
         if (rawRows.length === 0) {
           return reply.send({
             transactions: [],

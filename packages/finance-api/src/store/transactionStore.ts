@@ -40,18 +40,38 @@ export async function listTransactions(filter?: {
   const limit = filter?.limit ?? 50;
   const offset = filter?.offset ?? 0;
 
-  // When search is active, fetch SQL-matching rows, decrypt, filter in-memory, then paginate
+  // When search is active, fetch rows in batches, decrypt, filter in-memory, then paginate.
+  // Batching avoids decrypting thousands of rows at once and allows early termination.
   if (filter?.search) {
-    const rows = await prisma.transaction.findMany({
-      where,
-      orderBy: { date: "desc" },
-      take: 5000,
-    });
-
+    const SEARCH_BATCH = 500;
+    const MAX_SEARCH_ROWS = 2000;
     const searchLower = filter.search.toLowerCase();
-    const filtered = rows
-      .map(decryptTransaction)
-      .filter((t) => t.description.toLowerCase().includes(searchLower));
+    const filtered: Transaction[] = [];
+    let skip = 0;
+    let totalScanned = 0;
+
+    while (totalScanned < MAX_SEARCH_ROWS) {
+      const batchSize = Math.min(SEARCH_BATCH, MAX_SEARCH_ROWS - totalScanned);
+      const rows = await prisma.transaction.findMany({
+        where,
+        orderBy: { date: "desc" },
+        take: batchSize,
+        skip,
+      });
+      if (rows.length === 0) break;
+
+      for (const row of rows) {
+        const t = decryptTransaction(row);
+        if (t.description.toLowerCase().includes(searchLower)) {
+          filtered.push(t);
+        }
+      }
+
+      totalScanned += rows.length;
+      skip += rows.length;
+      if (filtered.length >= offset + limit) break;
+      if (rows.length < batchSize) break;
+    }
 
     return {
       transactions: filtered.slice(offset, offset + limit),

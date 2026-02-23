@@ -14,7 +14,7 @@ import {
   DEFAULT_NOTIFICATION_CONFIGS,
 } from "@derekentringer/shared";
 import { listBills, getPaymentsInRange, generateDueDates } from "../store/billStore.js";
-import { listNotificationPreferences, checkDedupeKeyExists } from "../store/notificationStore.js";
+import { listNotificationPreferences, checkDedupeKeysExist } from "../store/notificationStore.js";
 import { getActiveBudgetsForMonth } from "../store/budgetStore.js";
 import { computeSpendingSummary, computeNetWorthSummary } from "../store/dashboardStore.js";
 import { getPrisma } from "../lib/prisma.js";
@@ -119,13 +119,24 @@ async function evaluateCreditPaymentDue(
     select: { id: true, name: true },
   });
 
+  // Batch-fetch latest balance per account to avoid N+1 queries
+  const creditAccountIds = creditAccounts.map((a) => a.id);
+  const allCreditBalances = creditAccountIds.length > 0
+    ? await prisma.balance.findMany({
+        where: { accountId: { in: creditAccountIds } },
+        orderBy: { date: "desc" },
+        include: { creditProfile: true },
+      })
+    : [];
+  const latestCreditBalanceByAccount = new Map<string, typeof allCreditBalances[0]>();
+  for (const b of allCreditBalances) {
+    if (!latestCreditBalanceByAccount.has(b.accountId)) {
+      latestCreditBalanceByAccount.set(b.accountId, b);
+    }
+  }
+
   for (const account of creditAccounts) {
-    // Get the latest balance with credit profile
-    const latestBalance = await prisma.balance.findFirst({
-      where: { accountId: account.id },
-      orderBy: { date: "desc" },
-      include: { creditProfile: true },
-    });
+    const latestBalance = latestCreditBalanceByAccount.get(account.id);
 
     if (!latestBalance?.creditProfile?.paymentDueDate) continue;
 
@@ -183,13 +194,24 @@ async function evaluateLoanPaymentDue(
     select: { id: true, name: true },
   });
 
+  // Batch-fetch latest balance per account to avoid N+1 queries
+  const loanAccountIds = loanAccounts.map((a) => a.id);
+  const allLoanBalances = loanAccountIds.length > 0
+    ? await prisma.balance.findMany({
+        where: { accountId: { in: loanAccountIds } },
+        orderBy: { date: "desc" },
+        include: { loanProfile: true },
+      })
+    : [];
+  const latestLoanBalanceByAccount = new Map<string, typeof allLoanBalances[0]>();
+  for (const b of allLoanBalances) {
+    if (!latestLoanBalanceByAccount.has(b.accountId)) {
+      latestLoanBalanceByAccount.set(b.accountId, b);
+    }
+  }
+
   for (const account of loanAccounts) {
-    // Get the latest balance with loan profile
-    const latestBalance = await prisma.balance.findFirst({
-      where: { accountId: account.id },
-      orderBy: { date: "desc" },
-      include: { loanProfile: true },
-    });
+    const latestBalance = latestLoanBalanceByAccount.get(account.id);
 
     if (!latestBalance?.loanProfile?.nextPaymentDate) continue;
 
@@ -249,12 +271,24 @@ async function evaluateHighCreditUtilization(
     select: { id: true, name: true },
   });
 
+  // Batch-fetch latest balance per account to avoid N+1 queries
+  const utilCreditIds = creditAccounts.map((a) => a.id);
+  const allUtilBalances = utilCreditIds.length > 0
+    ? await prisma.balance.findMany({
+        where: { accountId: { in: utilCreditIds } },
+        orderBy: { date: "desc" },
+        include: { creditProfile: true },
+      })
+    : [];
+  const latestUtilBalanceByAccount = new Map<string, typeof allUtilBalances[0]>();
+  for (const b of allUtilBalances) {
+    if (!latestUtilBalanceByAccount.has(b.accountId)) {
+      latestUtilBalanceByAccount.set(b.accountId, b);
+    }
+  }
+
   for (const account of creditAccounts) {
-    const latestBalance = await prisma.balance.findFirst({
-      where: { accountId: account.id },
-      orderBy: { date: "desc" },
-      include: { creditProfile: true },
-    });
+    const latestBalance = latestUtilBalanceByAccount.get(account.id);
 
     if (!latestBalance?.creditProfile) continue;
 
@@ -423,15 +457,27 @@ async function evaluateStatementReminder(
     select: { id: true, name: true, type: true },
   });
 
+  // Batch-fetch latest balance per account to avoid N+1 queries
+  const allAccountIds = accounts.map((a) => a.id);
+  const allStmtBalances = allAccountIds.length > 0
+    ? await prisma.balance.findMany({
+        where: { accountId: { in: allAccountIds } },
+        orderBy: { date: "desc" },
+        include: { creditProfile: true, loanProfile: true },
+      })
+    : [];
+  const latestStmtBalanceByAccount = new Map<string, typeof allStmtBalances[0]>();
+  for (const b of allStmtBalances) {
+    if (!latestStmtBalanceByAccount.has(b.accountId)) {
+      latestStmtBalanceByAccount.set(b.accountId, b);
+    }
+  }
+
   for (const account of accounts) {
     let statementCloseDate: Date | null = null;
 
     // Try to get the statement close date from the latest balance profile
-    const latestBalance = await prisma.balance.findFirst({
-      where: { accountId: account.id },
-      orderBy: { date: "desc" },
-      include: { creditProfile: true, loanProfile: true },
-    });
+    const latestBalance = latestStmtBalanceByAccount.get(account.id);
 
     if (latestBalance) {
       const decrypted = decryptBalance({
@@ -602,14 +648,10 @@ export async function evaluateAllNotifications(): Promise<PendingNotification[]>
     }
   }
 
-  // Deduplicate: filter out notifications whose dedupeKey already exists in the log
-  const deduped: PendingNotification[] = [];
-  for (const notification of allPending) {
-    const exists = await checkDedupeKeyExists(notification.dedupeKey);
-    if (!exists) {
-      deduped.push(notification);
-    }
-  }
+  // Deduplicate: batch-check all dedupeKeys in a single query
+  const allDedupeKeys = allPending.map((n) => n.dedupeKey);
+  const existingKeys = await checkDedupeKeysExist(allDedupeKeys);
+  const deduped = allPending.filter((n) => !existingKeys.has(n.dedupeKey));
 
   return deduped;
 }

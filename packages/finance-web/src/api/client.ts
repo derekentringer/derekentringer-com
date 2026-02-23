@@ -79,11 +79,18 @@ export async function apiFetch(
     if (refreshed) {
       headers.set("Authorization", `Bearer ${accessToken}`);
 
-      return fetch(`${BASE_URL}${path}`, {
+      const retryResponse = await fetch(`${BASE_URL}${path}`, {
         ...options,
         headers,
         credentials: "include",
       });
+
+      // If the retry also fails with 401, force logout
+      if (retryResponse.status === 401 && onAuthFailure) {
+        onAuthFailure();
+      }
+
+      return retryResponse;
     }
   }
 
