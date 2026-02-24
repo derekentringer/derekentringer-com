@@ -31,7 +31,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center h-full">
+    <div className="flex items-center justify-center h-full overflow-hidden">
       <form
         className="flex flex-col gap-4 w-full max-w-[360px] px-4"
         onSubmit={handleSubmit}
