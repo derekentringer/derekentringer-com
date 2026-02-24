@@ -312,8 +312,9 @@ export function DashboardPage() {
               value={`${dti.ratio.toFixed(1)}%`}
               tooltip="Debt-to-income ratio — monthly debt payments divided by gross monthly income"
               trend={{
-                direction: dti.ratio > 43 ? "down" : dti.ratio > 36 ? "neutral" : "up",
+                direction: dti.ratio > 43 ? "up" : dti.ratio > 36 ? "neutral" : "down",
                 value: dti.ratio > 43 ? "High" : dti.ratio > 36 ? "Moderate" : "Good",
+                invertColor: true,
               }}
               className="cursor-pointer hover:border-border/80 transition-colors"
             />
