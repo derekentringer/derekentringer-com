@@ -1,6 +1,6 @@
 # 12 — Financial Goal Planning
 
-**Status:** Not Started
+**Status:** Complete — see [features/12-financial-goal-planning.md](../features/12-financial-goal-planning.md)
 **Phase:** 5 — Projections & Planning
 **Priority:** Medium
 

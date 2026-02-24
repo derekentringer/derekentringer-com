@@ -7,6 +7,7 @@ import type {
   UpcomingBillInstance,
 } from "@derekentringer/shared/finance";
 import { BILL_FREQUENCY_LABELS } from "@derekentringer/shared/finance";
+import type { BillFrequency } from "@derekentringer/shared/finance";
 import {
   fetchBills,
   fetchUpcomingBills,
@@ -32,6 +33,17 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Plus, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { formatCurrencyFull } from "@/lib/chartTheme";
+
+function frequencyToMonthlyMultiplier(freq: BillFrequency): number {
+  switch (freq) {
+    case "weekly": return 52 / 12;
+    case "biweekly": return 26 / 12;
+    case "monthly": return 1;
+    case "quarterly": return 1 / 3;
+    case "yearly": return 1 / 12;
+    default: return 1;
+  }
+}
 
 type FilterTab = "all" | "upcoming" | "paid" | "overdue";
 type SortField = "name" | "amount" | "frequency" | "nextDue";
@@ -221,10 +233,15 @@ export function BillsPage() {
     <div className="p-4 md:p-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl sm:text-2xl md:text-3xl text-foreground">Bills</h1>
-        <Button size="sm" onClick={() => setShowForm(true)}>
-          <Plus className="h-4 w-4" />
-          Add Bill
-        </Button>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground">
+            Total Monthly: <span className="font-medium text-foreground">{formatCurrencyFull(filteredBills.reduce((sum, b) => sum + b.amount * frequencyToMonthlyMultiplier(b.frequency), 0))}</span>
+          </span>
+          <Button size="sm" onClick={() => setShowForm(true)}>
+            <Plus className="h-4 w-4" />
+            Add Bill
+          </Button>
+        </div>
       </div>
       <TabSwitcher options={FILTER_TABS} value={filter} onChange={handleFilterChange} />
 

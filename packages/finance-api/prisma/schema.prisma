@@ -276,6 +276,33 @@ model NotificationPreference {
   @@map("notification_preferences")
 }
 
+model Goal {
+  id            String    @id @default(cuid())
+  name          String
+  type          String
+  targetAmount  String
+  currentAmount String?
+  targetDate    String?
+  priority      Int       @default(0)
+  accountIds    String?
+  extraPayment        String?
+  monthlyContribution String?
+  startDate           String?
+  startAmount         String?
+  notes               String?
+  isActive      Boolean   @default(true)
+  isCompleted   Boolean   @default(false)
+  completedAt   DateTime?
+  sortOrder     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([type])
+  @@index([sortOrder])
+  @@map("goals")
+}
+
 model NotificationLog {
   id           String   @id @default(cuid())
   type         String
