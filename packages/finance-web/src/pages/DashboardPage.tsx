@@ -75,6 +75,7 @@ export function DashboardPage() {
     useState<DashboardUpcomingBillsResponse | null>(null);
   const [incomeSpending, setIncomeSpending] =
     useState<IncomeSpendingResponse | null>(null);
+  const [mtdIncome, setMtdIncome] = useState<IncomeSpendingResponse | null>(null);
   const [dti, setDti] = useState<DTIResponse | null>(null);
   const [dtiDialogOpen, setDtiDialogOpen] = useState(false);
 
@@ -145,8 +146,12 @@ export function DashboardPage() {
     setIncomeSpendingLoading(true);
     setIncomeSpendingError("");
     try {
-      const data = await fetchIncomeSpending("12m", "monthly", "sources");
+      const [data, mtdData] = await Promise.all([
+        fetchIncomeSpending("12m", "monthly", "sources"),
+        fetchIncomeSpending("1m", "daily", "all"),
+      ]);
       setIncomeSpending(data);
+      setMtdIncome(mtdData);
     } catch {
       setIncomeSpendingError("Failed to load income vs spending");
     } finally {
@@ -213,21 +218,31 @@ export function DashboardPage() {
     };
   }, [dailySpending]);
 
-  // Compute rest-of-month unpaid bills total for the KPI card
-  const restOfMonthBills = useMemo(() => {
-    if (!upcomingBills) return { totalDue: 0, overdueCount: 0 };
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    const totalDue = upcomingBills.bills
-      .filter((b) => {
-        const due = new Date(b.dueDate + "T00:00:00");
-        return !b.isPaid && due >= today && due <= endOfMonth;
-      })
-      .reduce((sum, b) => sum + b.amount, 0);
-    const overdueCount = upcomingBills.bills.filter((b) => b.isOverdue && !b.isPaid).length;
-    return { totalDue: Math.round(totalDue * 100) / 100, overdueCount };
-  }, [upcomingBills]);
+  // Compute MTD income total and sparkline from daily transaction data
+  const mtdIncomeTotal = useMemo(() => {
+    if (!mtdIncome || mtdIncome.points.length === 0) return 0;
+    return mtdIncome.points.reduce((sum, p) => sum + p.income, 0);
+  }, [mtdIncome]);
+
+  const incomeSparkline = useMemo(() => {
+    if (!mtdIncome || mtdIncome.points.length < 2) return undefined;
+    const data = mtdIncome.points.map((p) => p.income);
+    const cumulative: number[] = [];
+    let sum = 0;
+    for (const v of data) {
+      sum += v;
+      cumulative.push(sum);
+    }
+    const first = cumulative[0];
+    const last = cumulative[cumulative.length - 1];
+    const change = first !== 0 ? ((last - first) / Math.abs(first)) * 100 : 0;
+    return {
+      data: cumulative,
+      change,
+      label: "MTD",
+      color: change >= 0 ? "hsl(142.1 76.2% 36.3%)" : "hsl(0 84.2% 60.2%)",
+    };
+  }, [mtdIncome]);
 
   // Find favorited account IDs once netWorth loads
   const favoriteAccountIds = useMemo(() => {
@@ -270,6 +285,14 @@ export function DashboardPage() {
           <KpiCard title="Net Worth" value={formatCurrency(netWorth.summary.netWorth)} tooltip="Total assets minus total liabilities" sparkline={netWorthSparkline} />
         ) : null}
 
+        {incomeSpendingLoading ? (
+          <SkeletonCard />
+        ) : incomeSpendingError ? (
+          <ErrorCard message={incomeSpendingError} onRetry={loadIncomeSpending} />
+        ) : (
+          <KpiCard title="Monthly Income" value={formatCurrency(mtdIncomeTotal)} tooltip="Total income received this month from all accounts" sparkline={incomeSparkline} />
+        )}
+
         {spendingLoading ? (
           <SkeletonCard />
         ) : spendingError ? (
@@ -295,26 +318,6 @@ export function DashboardPage() {
               className="cursor-pointer hover:border-border/80 transition-colors"
             />
           </button>
-        ) : null}
-
-        {billsLoading ? (
-          <SkeletonCard />
-        ) : billsError ? (
-          <ErrorCard message={billsError} onRetry={loadBills} />
-        ) : upcomingBills ? (
-          <KpiCard
-            title="Upcoming Bills"
-            value={formatCurrency(restOfMonthBills.totalDue)}
-            tooltip="Unpaid bills due for the rest of the current month"
-            trend={
-              restOfMonthBills.overdueCount > 0
-                ? {
-                    direction: "down",
-                    value: `${restOfMonthBills.overdueCount} overdue`,
-                  }
-                : undefined
-            }
-          />
         ) : null}
       </div>
 
