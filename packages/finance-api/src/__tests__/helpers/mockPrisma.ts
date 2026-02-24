@@ -23,6 +23,7 @@ export interface MockPrisma {
   balance: Omit<MockModel, "update">;
   category: MockModel;
   categoryRule: MockModel;
+  goal: MockModel;
   $disconnect: Mock;
   $transaction: Mock;
 }
@@ -50,6 +51,7 @@ export function createMockPrisma(): MockPrisma {
     balance: createMockModel(),
     category: createMockModel(),
     categoryRule: createMockModel(),
+    goal: createMockModel(),
     $disconnect: vi.fn(),
     $transaction: vi.fn(),
   };

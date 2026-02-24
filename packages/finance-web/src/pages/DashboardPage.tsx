@@ -16,6 +16,7 @@ import { SpendingCard } from "@/components/dashboard/SpendingCard";
 import { IncomeSpendingCard } from "@/components/dashboard/IncomeSpendingCard";
 import { UpcomingBillsCard } from "@/components/dashboard/UpcomingBillsCard";
 import { DTIDetailDialog } from "@/components/dashboard/DTIDetailDialog";
+import { GoalsSummaryCard } from "@/components/dashboard/GoalsSummaryCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/chartTheme";
@@ -358,6 +359,9 @@ export function DashboardPage() {
           <UpcomingBillsCard data={upcomingBills} />
         ) : null}
       </div>
+
+      {/* Goals summary */}
+      <GoalsSummaryCard />
 
       {/* Favorite account balance charts */}
       {favoriteAccountIds.map((id, i) => (

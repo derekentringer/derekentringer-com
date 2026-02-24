@@ -97,6 +97,7 @@ function LoanProfileTiered({ profile, account, className, marketRates }: { profi
       <CardContent className="flex flex-col gap-4 flex-1">
         {/* Tier 1: Key metrics */}
         <div className="grid grid-cols-2 gap-4">
+          <TierOneMetric label="Balance Owed" value={formatCurrencyFull(Math.abs(account.currentBalance))} />
           {profile.interestRate != null && (
             <div>
               <TierOneMetric label="Interest Rate" value={formatPercent(profile.interestRate)} />
