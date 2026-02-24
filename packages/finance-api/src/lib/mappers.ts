@@ -13,6 +13,7 @@ import type {
   DeviceToken as PrismaDeviceToken,
   NotificationPreference as PrismaNotificationPreference,
   NotificationLog as PrismaNotificationLog,
+  Goal as PrismaGoal,
 } from "../generated/prisma/client.js";
 import type {
   Account,
@@ -35,6 +36,8 @@ import type {
   NotificationLogEntry,
   NotificationConfig,
   DevicePlatform,
+  Goal,
+  GoalType,
 } from "@derekentringer/shared";
 import { AccountType, NotificationType, DEFAULT_NOTIFICATION_CONFIGS } from "@derekentringer/shared";
 import {
@@ -925,4 +928,187 @@ export function encryptNotificationLogForCreate(input: {
     dedupeKey: input.dedupeKey,
     metadata: input.metadata ? encryptField(JSON.stringify(input.metadata)) : null,
   };
+}
+
+// --- Goal ---
+
+export function decryptGoal(row: PrismaGoal): Goal {
+  let accountIds: string[] | undefined;
+  if (row.accountIds) {
+    try {
+      accountIds = JSON.parse(decryptField(row.accountIds)) as string[];
+    } catch {
+      accountIds = undefined;
+    }
+  }
+
+  return {
+    id: row.id,
+    name: decryptField(row.name),
+    type: row.type as GoalType,
+    targetAmount: decryptNumber(row.targetAmount),
+    currentAmount: decryptOptionalNumber(row.currentAmount),
+    targetDate: decryptOptionalField(row.targetDate),
+    priority: row.priority,
+    accountIds,
+    extraPayment: decryptOptionalNumber(row.extraPayment),
+    monthlyContribution: decryptOptionalNumber(row.monthlyContribution),
+    startDate: decryptOptionalField(row.startDate),
+    startAmount: decryptOptionalNumber(row.startAmount),
+    notes: decryptOptionalField(row.notes),
+    isActive: row.isActive,
+    isCompleted: row.isCompleted,
+    completedAt: row.completedAt?.toISOString(),
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function encryptGoalForCreate(input: {
+  name: string;
+  type: string;
+  targetAmount: number;
+  currentAmount?: number | null;
+  targetDate?: string | null;
+  startDate?: string | null;
+  startAmount?: number | null;
+  priority?: number;
+  accountIds?: string[] | null;
+  extraPayment?: number | null;
+  monthlyContribution?: number | null;
+  notes?: string | null;
+}): {
+  name: string;
+  type: string;
+  targetAmount: string;
+  currentAmount: string | null;
+  targetDate: string | null;
+  startDate: string | null;
+  startAmount: string | null;
+  priority?: number;
+  accountIds: string | null;
+  extraPayment: string | null;
+  monthlyContribution: string | null;
+  notes: string | null;
+} {
+  const data: {
+    name: string;
+    type: string;
+    targetAmount: string;
+    currentAmount: string | null;
+    targetDate: string | null;
+    startDate: string | null;
+    startAmount: string | null;
+    priority?: number;
+    accountIds: string | null;
+    extraPayment: string | null;
+    monthlyContribution: string | null;
+    notes: string | null;
+  } = {
+    name: encryptField(input.name),
+    type: input.type,
+    targetAmount: encryptNumber(input.targetAmount),
+    currentAmount: encryptOptionalNumber(input.currentAmount),
+    targetDate: encryptOptionalField(input.targetDate),
+    startDate: encryptOptionalField(input.startDate),
+    startAmount: encryptOptionalNumber(input.startAmount),
+    accountIds: input.accountIds && input.accountIds.length > 0
+      ? encryptField(JSON.stringify(input.accountIds))
+      : null,
+    extraPayment: encryptOptionalNumber(input.extraPayment),
+    monthlyContribution: encryptOptionalNumber(input.monthlyContribution),
+    notes: encryptOptionalField(input.notes),
+  };
+  if (input.priority !== undefined) data.priority = input.priority;
+  return data;
+}
+
+export function encryptGoalForUpdate(input: {
+  name?: string;
+  type?: string;
+  targetAmount?: number;
+  currentAmount?: number | null;
+  targetDate?: string | null;
+  startDate?: string | null;
+  startAmount?: number | null;
+  priority?: number;
+  accountIds?: string[] | null;
+  extraPayment?: number | null;
+  monthlyContribution?: number | null;
+  notes?: string | null;
+  isActive?: boolean;
+  isCompleted?: boolean;
+}): {
+  name?: string;
+  type?: string;
+  targetAmount?: string;
+  currentAmount?: string | null;
+  targetDate?: string | null;
+  startDate?: string | null;
+  startAmount?: string | null;
+  priority?: number;
+  accountIds?: string | null;
+  extraPayment?: string | null;
+  monthlyContribution?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+  isCompleted?: boolean;
+  completedAt?: Date | null;
+} {
+  const data: {
+    name?: string;
+    type?: string;
+    targetAmount?: string;
+    currentAmount?: string | null;
+    targetDate?: string | null;
+    startDate?: string | null;
+    startAmount?: string | null;
+    priority?: number;
+    accountIds?: string | null;
+    extraPayment?: string | null;
+    monthlyContribution?: string | null;
+    notes?: string | null;
+    isActive?: boolean;
+    isCompleted?: boolean;
+    completedAt?: Date | null;
+  } = {};
+
+  if (input.name !== undefined) data.name = encryptField(input.name);
+  if (input.type !== undefined) data.type = input.type;
+  if (input.targetAmount !== undefined) data.targetAmount = encryptNumber(input.targetAmount);
+  if (input.currentAmount !== undefined) {
+    data.currentAmount = encryptOptionalNumber(input.currentAmount);
+  }
+  if (input.targetDate !== undefined) {
+    data.targetDate = encryptOptionalField(input.targetDate);
+  }
+  if (input.startDate !== undefined) {
+    data.startDate = encryptOptionalField(input.startDate);
+  }
+  if (input.startAmount !== undefined) {
+    data.startAmount = encryptOptionalNumber(input.startAmount);
+  }
+  if (input.priority !== undefined) data.priority = input.priority;
+  if (input.accountIds !== undefined) {
+    data.accountIds = input.accountIds && input.accountIds.length > 0
+      ? encryptField(JSON.stringify(input.accountIds))
+      : null;
+  }
+  if (input.extraPayment !== undefined) {
+    data.extraPayment = encryptOptionalNumber(input.extraPayment);
+  }
+  if (input.monthlyContribution !== undefined) {
+    data.monthlyContribution = encryptOptionalNumber(input.monthlyContribution);
+  }
+  if (input.notes !== undefined) {
+    data.notes = encryptOptionalField(input.notes);
+  }
+  if (input.isActive !== undefined) data.isActive = input.isActive;
+  if (input.isCompleted !== undefined) {
+    data.isCompleted = input.isCompleted;
+    data.completedAt = input.isCompleted ? new Date() : null;
+  }
+
+  return data;
 }

@@ -40,6 +40,7 @@ export {
   NOTIFICATION_LABELS,
   NOTIFICATION_DESCRIPTIONS,
   DEFAULT_NOTIFICATION_CONFIGS,
+  GOAL_TYPE_LABELS,
 } from "./finance/types.js";
 export type {
   AccountTypeGroup,
@@ -156,4 +157,14 @@ export type {
   NotificationLogEntry,
   NotificationHistoryResponse,
   UnreadCountResponse,
+  GoalType,
+  Goal,
+  CreateGoalRequest,
+  UpdateGoalRequest,
+  GoalListResponse,
+  GoalResponse,
+  GoalProgressPoint,
+  GoalProgress,
+  GoalProgressResponse,
+  ReorderGoalsRequest,
 } from "./finance/types.js";

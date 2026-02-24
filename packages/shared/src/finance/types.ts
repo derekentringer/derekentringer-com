@@ -821,6 +821,113 @@ export interface MortgageRatesResponse {
   asOf: string | null;
 }
 
+// ─── Financial Goal Planning ─────────────────────────────────────────────────
+
+export type GoalType = "savings" | "debt_payoff" | "net_worth" | "custom";
+
+export const GOAL_TYPE_LABELS: Record<GoalType, string> = {
+  savings: "Savings",
+  debt_payoff: "Debt Payoff",
+  net_worth: "Net Worth",
+  custom: "Custom Milestone",
+};
+
+export interface Goal {
+  id: string;
+  name: string;
+  type: GoalType;
+  targetAmount: number;
+  currentAmount?: number;
+  targetDate?: string;
+  startDate?: string;
+  startAmount?: number;
+  priority: number;
+  accountIds?: string[];
+  extraPayment?: number;
+  monthlyContribution?: number;
+  notes?: string;
+  isActive: boolean;
+  isCompleted: boolean;
+  completedAt?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateGoalRequest {
+  name: string;
+  type: GoalType;
+  targetAmount: number;
+  currentAmount?: number;
+  targetDate?: string;
+  startDate?: string;
+  startAmount?: number;
+  priority?: number;
+  accountIds?: string[];
+  extraPayment?: number;
+  monthlyContribution?: number;
+  notes?: string;
+}
+
+export interface UpdateGoalRequest {
+  name?: string;
+  type?: GoalType;
+  targetAmount?: number;
+  currentAmount?: number | null;
+  targetDate?: string | null;
+  startDate?: string | null;
+  startAmount?: number | null;
+  priority?: number;
+  accountIds?: string[] | null;
+  extraPayment?: number | null;
+  monthlyContribution?: number | null;
+  notes?: string | null;
+  isActive?: boolean;
+  isCompleted?: boolean;
+}
+
+export interface GoalListResponse {
+  goals: Goal[];
+}
+
+export interface GoalResponse {
+  goal: Goal;
+}
+
+export interface GoalProgressPoint {
+  month: string;
+  projected: number;
+  actual?: number;
+  target: number;
+  minimumOnly?: number;
+}
+
+export interface GoalProgress {
+  goalId: string;
+  goalName: string;
+  goalType: GoalType;
+  targetAmount: number;
+  currentAmount: number;
+  percentComplete: number;
+  monthlyContribution: number;
+  targetDate: string | null;
+  projectedCompletionDate: string | null;
+  onTrack: boolean;
+  projection: GoalProgressPoint[];
+}
+
+export interface GoalProgressResponse {
+  goals: GoalProgress[];
+  monthlySurplus: number;
+  monthlyIncome: number;
+  monthlyExpenses: number;
+  monthlyDebtPayments: number;
+}
+
+export interface ReorderGoalsRequest {
+  order: Array<{ id: string; sortOrder: number }>;
+}
+
 // ─── Notifications ──────────────────────────────────────────────────────────
 
 export enum NotificationType {

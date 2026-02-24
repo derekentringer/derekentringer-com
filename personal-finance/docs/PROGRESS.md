@@ -63,7 +63,7 @@
 - [x] [09 — Net Income Projections](features/09-net-income-projections.md)
 - [x] [10 — Savings Projections](features/10-savings-projections.md)
 - [x] [11 — Debt Payoff Planning](features/11-debt-payoff-planning.md)
-- [ ] [12 — Financial Goal Planning](feature_planning/12-financial-goal-planning.md)
+- [x] [12 — Financial Goal Planning](features/12-financial-goal-planning.md) — four goal types (savings, debt payoff, net worth, custom milestone) with progress tracking, mini projection charts with history, linked accounts, monthly contributions, drag-and-drop reordering, dashboard summary card, on-track/at-risk status badges
 
 ### Phase 6: Advanced Features — Medium Priority
 

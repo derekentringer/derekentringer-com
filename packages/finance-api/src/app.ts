@@ -22,6 +22,7 @@ import dashboardRoutes from "./routes/dashboard.js";
 import incomeSourceRoutes from "./routes/incomeSources.js";
 import projectionRoutes from "./routes/projections.js";
 import notificationRoutes from "./routes/notifications.js";
+import goalRoutes from "./routes/goals.js";
 import { startNotificationScheduler, stopNotificationScheduler } from "./lib/notificationScheduler.js";
 import { cleanupOldNotificationLogs } from "./store/notificationStore.js";
 
@@ -102,6 +103,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(incomeSourceRoutes, { prefix: "/income-sources" });
   app.register(projectionRoutes, { prefix: "/projections" });
   app.register(notificationRoutes, { prefix: "/notifications" });
+  app.register(goalRoutes, { prefix: "/goals" });
 
   app.get("/health", async () => {
     return { status: "ok" };
