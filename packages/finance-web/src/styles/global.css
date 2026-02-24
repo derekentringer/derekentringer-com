@@ -35,7 +35,11 @@
     border-color: var(--color-border);
   }
 
-  html,
+  html {
+    height: 100%;
+    scrollbar-gutter: stable;
+  }
+
   body,
   #root {
     height: 100%;
