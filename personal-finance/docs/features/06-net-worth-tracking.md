@@ -95,9 +95,9 @@ Three-section layout with independent loading/error/retry states:
 
 1. **KPI Cards Row** (4-column grid):
    - Net Worth — value + inline sparkline chart showing 30-day daily net worth trend with percentage change
+   - Monthly Income — MTD income total from actual transactions (all accounts)
    - Monthly Spending — value + inline sparkline chart showing MTD cumulative spending trend with percentage change
    - DTI — clickable card showing current DTI ratio with Good/Moderate/High rating; opens DTI detail dialog
-   - Bills Due — value + overdue count indicator (text-based trend, no sparkline)
 2. **Net Worth Chart** — full-width area chart with per-card time range/granularity controls
 3. **Checking Balance Chart** — full-width area chart (self-managed data fetching) with per-card time range/granularity controls; renders when a checking account exists
 4. **Bottom Row** — Spending pie chart + Upcoming Bills list (2-column on desktop, stacked on mobile)
