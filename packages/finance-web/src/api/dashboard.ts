@@ -55,7 +55,7 @@ export async function fetchDailySpending(
 
 export async function fetchIncomeSpending(
   range?: ChartTimeRange,
-  granularity?: "weekly" | "monthly",
+  granularity?: "daily" | "weekly" | "monthly",
   incomeFilter?: "all" | "sources",
 ): Promise<IncomeSpendingResponse> {
   const params = new URLSearchParams();
