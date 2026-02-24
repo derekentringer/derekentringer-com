@@ -365,7 +365,7 @@ export function DashboardPage() {
 
       {/* Favorite account balance charts */}
       {favoriteAccountIds.map((id, i) => (
-        <AccountBalanceCard key={id} accountId={id} colorIndex={i} />
+        <AccountBalanceCard key={id} accountId={id} colorIndex={i} defaultRange="12m" />
       ))}
     </div>
   );
