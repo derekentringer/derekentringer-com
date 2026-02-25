@@ -41,6 +41,7 @@ import { IncomeSourceForm } from "../components/IncomeSourceForm.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { PdfImportDialog } from "../components/PdfImportDialog.tsx";
 import { NotificationSettings } from "../components/NotificationSettings.tsx";
+import { AiInsightSettings } from "../components/AiInsightSettings.tsx";
 import { useAccountTypes } from "../context/AccountTypesContext.tsx";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -84,7 +85,7 @@ import {
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 
-type SettingsSlug = "accounts" | "categories" | "category-rules" | "income-sources" | "notifications";
+type SettingsSlug = "accounts" | "categories" | "category-rules" | "income-sources" | "notifications" | "ai-insights";
 
 const SLUG_TO_VALUE: Record<SettingsSlug, string> = {
   "accounts": "accounts",
@@ -92,9 +93,10 @@ const SLUG_TO_VALUE: Record<SettingsSlug, string> = {
   "category-rules": "rules",
   "income-sources": "income",
   "notifications": "notifications",
+  "ai-insights": "ai-insights",
 };
 
-const VALID_SLUGS: SettingsSlug[] = ["accounts", "categories", "category-rules", "income-sources", "notifications"];
+const VALID_SLUGS: SettingsSlug[] = ["accounts", "categories", "category-rules", "income-sources", "notifications", "ai-insights"];
 
 const TABS: { value: SettingsSlug; label: string }[] = [
   { value: "accounts", label: "Accounts" },
@@ -102,6 +104,7 @@ const TABS: { value: SettingsSlug; label: string }[] = [
   { value: "category-rules", label: "Category Rules" },
   { value: "income-sources", label: "Income Sources" },
   { value: "notifications", label: "Notifications" },
+  { value: "ai-insights", label: "AI Insights" },
 ];
 
 export function SettingsPage() {
@@ -130,8 +133,10 @@ export function SettingsPage() {
         <RulesSection />
       ) : activeValue === "income" ? (
         <IncomeSourcesSection />
-      ) : (
+      ) : activeValue === "notifications" ? (
         <NotificationSettings />
+      ) : (
+        <AiInsightSettings />
       )}
     </div>
   );

@@ -40,6 +40,7 @@ import {
   formatCurrency,
   formatCurrencyFull,
 } from "@/lib/chartTheme";
+import { AiInsightBanner } from "@/components/AiInsightBanner";
 
 function getCurrentMonth(): string {
   const now = new Date();
@@ -240,6 +241,7 @@ export function BudgetsPage() {
           </Button>
         </div>
       </div>
+      <AiInsightBanner scope="budget" />
       <Card>
         <CardContent>
           {error && <p className="text-sm text-error mb-4">{error}</p>}

@@ -948,6 +948,7 @@ export enum NotificationType {
   LargeTransaction = "large_transaction",
   StatementReminder = "statement_reminder",
   Milestones = "milestones",
+  AiAlert = "ai_alert",
 }
 
 export type NotificationPhase = 1 | 2 | 3;
@@ -961,6 +962,7 @@ export const NOTIFICATION_PHASES: Record<NotificationType, NotificationPhase> = 
   [NotificationType.LargeTransaction]: 2,
   [NotificationType.StatementReminder]: 3,
   [NotificationType.Milestones]: 3,
+  [NotificationType.AiAlert]: 3,
 };
 
 export type NotificationCategory = "reminders" | "alerts" | "milestones";
@@ -974,6 +976,7 @@ export const NOTIFICATION_CATEGORIES: Record<NotificationType, NotificationCateg
   [NotificationType.LargeTransaction]: "alerts",
   [NotificationType.StatementReminder]: "reminders",
   [NotificationType.Milestones]: "milestones",
+  [NotificationType.AiAlert]: "alerts",
 };
 
 export const NOTIFICATION_LABELS: Record<NotificationType, string> = {
@@ -985,6 +988,7 @@ export const NOTIFICATION_LABELS: Record<NotificationType, string> = {
   [NotificationType.LargeTransaction]: "Large Transaction",
   [NotificationType.StatementReminder]: "Statement Reminder",
   [NotificationType.Milestones]: "Milestones",
+  [NotificationType.AiAlert]: "AI Smart Alerts",
 };
 
 export const NOTIFICATION_DESCRIPTIONS: Record<NotificationType, string> = {
@@ -996,6 +1000,7 @@ export const NOTIFICATION_DESCRIPTIONS: Record<NotificationType, string> = {
   [NotificationType.LargeTransaction]: "Alert for transactions over a set amount",
   [NotificationType.StatementReminder]: "Remind to upload new statement data",
   [NotificationType.Milestones]: "Celebrate net worth and loan payoff milestones",
+  [NotificationType.AiAlert]: "AI-powered anomaly detection and pattern insights",
 };
 
 // Per-type configuration interfaces
@@ -1034,6 +1039,8 @@ export interface MilestonesConfig {
   loanPayoffPercentMilestones: number[];
 }
 
+export type AiAlertConfig = Record<string, never>;
+
 export type NotificationConfig =
   | BillDueConfig
   | CreditPaymentDueConfig
@@ -1042,7 +1049,8 @@ export type NotificationConfig =
   | BudgetOverspendConfig
   | LargeTransactionConfig
   | StatementReminderConfig
-  | MilestonesConfig;
+  | MilestonesConfig
+  | AiAlertConfig;
 
 export const DEFAULT_NOTIFICATION_CONFIGS: Record<NotificationType, NotificationConfig> = {
   [NotificationType.BillDue]: { reminderDaysBefore: 3 } as BillDueConfig,
@@ -1056,6 +1064,7 @@ export const DEFAULT_NOTIFICATION_CONFIGS: Record<NotificationType, Notification
     netWorthMilestones: [50000, 100000, 250000, 500000, 1000000],
     loanPayoffPercentMilestones: [25, 50, 75, 90, 100],
   } as MilestonesConfig,
+  [NotificationType.AiAlert]: {} as AiAlertConfig,
 };
 
 // Device token types
@@ -1283,6 +1292,70 @@ export interface QuoteResponse {
   low: number;
   open: number;
   previousClose: number;
+}
+
+// ─── AI Insights ────────────────────────────────────────────────────────────
+
+export type AiInsightScope =
+  | "dashboard" | "budget" | "goals" | "spending" | "accounts"
+  | "projections" | "decision-tools" | "monthly-digest" | "quarterly-digest" | "alerts";
+
+export type AiInsightType = "observation" | "recommendation" | "alert" | "celebration";
+export type AiInsightSeverity = "info" | "warning" | "success";
+
+export interface AiInsight {
+  id: string;
+  scope: AiInsightScope;
+  type: AiInsightType;
+  severity: AiInsightSeverity;
+  title: string;
+  body: string;
+  relatedPage?: string;
+  generatedAt: string;
+  expiresAt: string;
+}
+
+export type AiRefreshFrequency = "weekly" | "daily" | "on_data_change";
+
+export interface AiInsightPreferences {
+  masterEnabled: boolean;
+  dashboardCard: boolean;
+  monthlyDigest: boolean;
+  quarterlyDigest: boolean;
+  pageNudges: boolean;
+  smartAlerts: boolean;
+  refreshFrequency: AiRefreshFrequency;
+}
+
+export const DEFAULT_AI_INSIGHT_PREFERENCES: AiInsightPreferences = {
+  masterEnabled: false,
+  dashboardCard: true,
+  monthlyDigest: true,
+  quarterlyDigest: true,
+  pageNudges: true,
+  smartAlerts: true,
+  refreshFrequency: "weekly",
+};
+
+export interface AiInsightPreferencesResponse {
+  preferences: AiInsightPreferences;
+  dailyRequestsUsed: number;
+  dailyRequestsLimit: number;
+}
+
+export type UpdateAiInsightPreferencesRequest = Partial<AiInsightPreferences>;
+
+export interface AiInsightsResponse {
+  insights: AiInsight[];
+  cached: boolean;
+  dailyRequestsUsed: number;
+  dailyRequestsLimit: number;
+}
+
+export interface AiInsightsRequest {
+  scope: AiInsightScope;
+  month?: string;
+  quarter?: string;
 }
 
 // ─── Decision Tools ─────────────────────────────────────────────────────────

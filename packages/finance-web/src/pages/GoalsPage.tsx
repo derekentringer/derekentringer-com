@@ -21,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/chartTheme";
+import { AiInsightBanner } from "@/components/AiInsightBanner";
 import {
   Tooltip,
   TooltipContent,
@@ -275,6 +276,8 @@ export function GoalsPage() {
           Add Goal
         </Button>
       </div>
+
+      <AiInsightBanner scope="goals" />
 
       {/* Financial Summary KPIs */}
       {progressData && (

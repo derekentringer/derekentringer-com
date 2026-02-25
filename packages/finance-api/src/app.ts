@@ -28,6 +28,8 @@ import portfolioRoutes from "./routes/portfolio.js";
 import { startNotificationScheduler, stopNotificationScheduler } from "./lib/notificationScheduler.js";
 import { startPriceFetchScheduler, stopPriceFetchScheduler } from "./lib/priceFetchScheduler.js";
 import { cleanupOldNotificationLogs } from "./store/notificationStore.js";
+import { cleanupExpiredCache } from "./store/aiInsightStore.js";
+import aiRoutes from "./routes/ai.js";
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -109,6 +111,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(goalRoutes, { prefix: "/goals" });
   app.register(holdingRoutes, { prefix: "/holdings" });
   app.register(portfolioRoutes, { prefix: "/portfolio" });
+  app.register(aiRoutes, { prefix: "/ai" });
 
   app.get("/health", async () => {
     return { status: "ok" };
@@ -123,6 +126,7 @@ export function buildApp(opts?: BuildAppOptions) {
     cleanupTimer = setInterval(() => {
       cleanupExpiredTokens().catch(() => {});
       cleanupOldNotificationLogs().catch(() => {});
+      cleanupExpiredCache().catch(() => {});
     }, TOKEN_CLEANUP_INTERVAL_MS);
     startNotificationScheduler(app.log);
     startPriceFetchScheduler(app.log);

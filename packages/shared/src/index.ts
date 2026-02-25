@@ -45,6 +45,7 @@ export {
   GOAL_TYPE_LABELS,
   ASSET_CLASSES,
   ASSET_CLASS_LABELS,
+  DEFAULT_AI_INSIGHT_PREFERENCES,
 } from "./finance/types.js";
 export type {
   AccountTypeGroup,
@@ -196,4 +197,14 @@ export type {
   FourOhOneKInputs,
   FourOhOneKYearPoint,
   FourOhOneKResult,
+  AiInsightScope,
+  AiInsightType,
+  AiInsightSeverity,
+  AiInsight,
+  AiRefreshFrequency,
+  AiInsightPreferences,
+  AiInsightPreferencesResponse,
+  UpdateAiInsightPreferencesRequest,
+  AiInsightsResponse,
+  AiInsightsRequest,
 } from "./finance/types.js";

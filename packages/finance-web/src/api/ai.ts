@@ -1,0 +1,51 @@
+import type {
+  AiInsightPreferencesResponse,
+  UpdateAiInsightPreferencesRequest,
+  AiInsightsResponse,
+  AiInsightScope,
+} from "@derekentringer/shared/finance";
+import { apiFetch } from "./client.ts";
+
+export async function fetchAiPreferences(): Promise<AiInsightPreferencesResponse> {
+  const res = await apiFetch("/ai/preferences");
+  if (!res.ok) throw new Error("Failed to fetch AI preferences");
+  return res.json();
+}
+
+export async function updateAiPreferences(
+  data: UpdateAiInsightPreferencesRequest,
+): Promise<AiInsightPreferencesResponse> {
+  const res = await apiFetch("/ai/preferences", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.message || "Failed to update AI preferences");
+  }
+  return res.json();
+}
+
+export async function fetchAiInsights(
+  scope: AiInsightScope,
+  options?: { month?: string; quarter?: string },
+): Promise<AiInsightsResponse> {
+  const res = await apiFetch("/ai/insights", {
+    method: "POST",
+    body: JSON.stringify({ scope, ...options }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.message || "Failed to fetch AI insights");
+  }
+  return res.json();
+}
+
+export async function clearAiCache(
+  scope?: string,
+): Promise<{ cleared: number }> {
+  const url = scope ? `/ai/cache?scope=${scope}` : "/ai/cache";
+  const res = await apiFetch(url, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to clear AI cache");
+  return res.json();
+}

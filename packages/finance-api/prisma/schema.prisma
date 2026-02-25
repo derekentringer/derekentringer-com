@@ -377,3 +377,36 @@ model BenchmarkHistory {
   @@unique([symbol, date])
   @@map("benchmark_history")
 }
+
+model AiInsightPreference {
+  id        String   @id @default(cuid())
+  config    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ai_insight_preferences")
+}
+
+model AiInsightCache {
+  id          String   @id @default(cuid())
+  scope       String
+  contentHash String
+  response    String
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([scope, contentHash])
+  @@index([scope])
+  @@index([expiresAt])
+  @@map("ai_insight_cache")
+}
+
+model AiInsightUsage {
+  id        String   @id @default(cuid())
+  date      String   @unique
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ai_insight_usage")
+}

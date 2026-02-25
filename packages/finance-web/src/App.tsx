@@ -32,7 +32,7 @@ export function App() {
             <Route path="bills/:tab?" element={<BillsPage />} />
             <Route path="goals" element={<GoalsPage />} />
             <Route path="decision-tools/:tab?" element={<DecisionToolsPage />} />
-            <Route path="reports" element={<ReportsPage />} />
+            <Route path="reports/:tab?" element={<ReportsPage />} />
             <Route path="settings/:tab?" element={<SettingsPage />} />
           </Route>
           <Route path="*" element={<NotFoundPage />} />
