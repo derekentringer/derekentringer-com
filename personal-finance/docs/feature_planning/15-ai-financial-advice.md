@@ -137,25 +137,59 @@ interface AiInsight {
 ### Privacy & Disclosure
 
 - AI insights disabled by default — explicit opt-in in Settings
-- "AI Insights" toggle in Settings with clear description of what data is sent
 - All insights display a subtle "AI-generated" badge
 - Disclaimer: "AI-generated insights — not professional financial advice"
 - No raw transaction descriptions sent to API — only category-level summaries and amounts
 - All API calls server-side (finance-api), never client-side
+
+## Settings > AI Insights Tab
+
+New "AI Insights" tab in Settings (added to existing tab routing at `/settings/ai-insights`). Provides granular control over each insight feature:
+
+### Master Toggle
+
+- **Enable AI Insights** — global on/off switch, disabled by default
+- When off, no API calls are made and no insight components render
+- Clear description: "When enabled, your financial data (category-level summaries, balances, goal progress) is sent to the Anthropic API to generate personalized insights. No raw transaction descriptions are shared."
+
+### Per-Feature Toggles
+
+Each feature has an independent enable/disable switch (all default to enabled when master toggle is on). Disabling a feature prevents the API call entirely — no Claude API request is made for disabled scopes, not just hidden in the UI:
+
+| Feature | Toggle label | Description |
+|---------|-------------|-------------|
+| Dashboard Insights | "Dashboard card" | Show AI observations on the dashboard |
+| Monthly Digest | "Monthly digest" | Generate monthly financial summary in Reports |
+| Quarterly Digest | "Quarterly digest" | Generate quarterly financial summary in Reports |
+| Page Nudges | "Page-level insights" | Show contextual tips on Budgets, Goals, Accounts, etc. |
+| Smart Alerts | "AI-powered alerts" | Anomaly detection and pattern recognition via notifications |
+
+### Additional Settings
+
+- **Refresh frequency** — How often to regenerate dashboard insights: "Weekly" (default) / "Daily" / "On data change"
+- **Clear cache** button — Force regenerate all insights on next load
+- **Usage stats** — Show API calls used today (e.g., "3 of 10 daily requests used")
+
+### Storage
+
+- Preferences stored in DB via new `AiInsightPreference` model (or extend existing settings pattern)
+- API endpoint: `GET/PUT /ai/preferences`
+- Frontend reads preferences on app load to conditionally render insight components
 
 ## Frontend Components
 
 - **`<AiInsightCard>`** — Reusable card for dashboard and page nudges, handles loading/cached/empty/error states
 - **`<AiDigest>`** — Full-page digest renderer for Reports tab (monthly/quarterly tabs)
 - **`<AiInsightBanner>`** — Inline banner variant for page-level nudges
-- Settings toggle: "Enable AI Insights" in Settings > Preferences
+- **`<AiInsightSettings>`** — Settings tab component with master toggle, per-feature switches, refresh config
 
 ## Implementation Order
 
-1. **Dashboard insights card** — highest visibility, proves the concept, validates caching
-2. **Monthly & quarterly digests in Reports** — high value, predictable call pattern, easy cache
-3. **Page-level nudges** — budget + goals pages first, then expand
-4. **Smart alerts via notifications** — leverages existing notification infrastructure
+1. **Settings tab + preferences API** — build the controls first so features can check enabled state from day one
+2. **Dashboard insights card** — highest visibility, proves the concept, validates caching
+3. **Monthly & quarterly digests in Reports** — high value, predictable call pattern, easy cache
+4. **Page-level nudges** — budget + goals pages first, then expand
+5. **Smart alerts via notifications** — leverages existing notification infrastructure
 
 ## Dependencies
 
