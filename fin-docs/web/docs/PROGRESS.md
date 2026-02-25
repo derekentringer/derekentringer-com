@@ -84,6 +84,6 @@
 
 ## Workflow
 
-1. Feature docs live in `docs/feature_planning/` while in backlog or in-progress
-2. When a feature is fully implemented, move its doc to `docs/features/`
+1. Feature docs live in `feature_planning/` while in backlog or in-progress
+2. When a feature is fully implemented, move its doc to `features/`
 3. Update the checkbox and link path in this file
