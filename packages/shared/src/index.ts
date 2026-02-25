@@ -190,4 +190,10 @@ export type {
   RebalanceSuggestion,
   RebalanceResponse,
   QuoteResponse,
+  HysVsDebtInputs,
+  HysVsDebtMonthPoint,
+  HysVsDebtResult,
+  FourOhOneKInputs,
+  FourOhOneKYearPoint,
+  FourOhOneKResult,
 } from "./finance/types.js";

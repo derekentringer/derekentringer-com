@@ -14,6 +14,7 @@ import { ReportsPage } from "./pages/ReportsPage.tsx";
 import { ProjectionsPage } from "./pages/ProjectionsPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { GoalsPage } from "./pages/GoalsPage.tsx";
+import { DecisionToolsPage } from "./pages/DecisionToolsPage.tsx";
 import { NotFoundPage } from "./pages/NotFoundPage.tsx";
 
 export function App() {
@@ -30,6 +31,7 @@ export function App() {
             <Route path="budgets" element={<BudgetsPage />} />
             <Route path="bills/:tab?" element={<BillsPage />} />
             <Route path="goals" element={<GoalsPage />} />
+            <Route path="decision-tools/:tab?" element={<DecisionToolsPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="settings/:tab?" element={<SettingsPage />} />
           </Route>

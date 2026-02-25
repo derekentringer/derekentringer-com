@@ -20,6 +20,7 @@ import {
   Home,
   LineChart,
   Target,
+  Calculator,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,8 @@ const NAV_ITEMS: NavEntry[] = [
   { type: "link", to: "/goals", icon: Target, label: "Goals" },
   { type: "separator" },
   { type: "link", to: "/reports", icon: BarChart3, label: "Reports" },
+  { type: "link", to: "/decision-tools", icon: Calculator, label: "Decision Tools" },
+  { type: "separator" },
   { type: "link", to: "/settings", icon: Settings, label: "Settings" },
 ];
 
