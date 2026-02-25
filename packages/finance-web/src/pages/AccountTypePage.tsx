@@ -1,21 +1,41 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import type {
   Account,
   Balance,
+  Holding,
   LoanProfileData,
   InvestmentProfileData,
   CreditProfileData,
   MortgageRatesResponse,
+  AssetAllocationResponse,
+  PerformanceResponse,
+  PerformancePeriod,
+  RebalanceResponse,
+  TargetAllocation,
 } from "@derekentringer/shared/finance";
 import { ACCOUNT_TYPE_GROUPS } from "@derekentringer/shared/finance";
 import { fetchAccounts } from "../api/accounts.ts";
 import { fetchBalances } from "../api/balances.ts";
 import { fetchTransactions } from "../api/transactions.ts";
 import { fetchMortgageRates } from "../api/dashboard.ts";
+import { fetchHoldings } from "../api/holdings.ts";
+import {
+  fetchAssetAllocation,
+  fetchPerformance,
+  fetchRebalanceSuggestions,
+  fetchTargetAllocations,
+} from "../api/portfolio.ts";
 import { AccountBalanceCard } from "../components/dashboard/AccountBalanceCard.tsx";
 import { RecentTransactionsCard } from "../components/dashboard/RecentTransactionsCard.tsx";
 import { PdfImportDialog } from "../components/PdfImportDialog.tsx";
+import { HoldingsTable } from "../components/holdings/HoldingsTable.tsx";
+import { HoldingForm } from "../components/holdings/HoldingForm.tsx";
+import { AllocationChart } from "../components/portfolio/AllocationChart.tsx";
+import { TargetAllocationForm } from "../components/portfolio/TargetAllocationForm.tsx";
+import { PerformanceChart } from "../components/portfolio/PerformanceChart.tsx";
+import { PerformanceSummary } from "../components/portfolio/PerformanceSummary.tsx";
+import { RebalanceCard } from "../components/portfolio/RebalanceCard.tsx";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { TabSwitcher } from "@/components/ui/tab-switcher";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -847,6 +867,15 @@ const VIEW_OPTIONS = [
   { value: "grid" as const, label: "Grid" },
 ];
 
+type InvestmentTab = "overview" | "holdings" | "allocation" | "performance";
+const VALID_INVESTMENT_TABS: InvestmentTab[] = ["overview", "holdings", "allocation", "performance"];
+const INVESTMENT_TAB_OPTIONS = [
+  { value: "overview" as const, label: "Overview" },
+  { value: "holdings" as const, label: "Holdings" },
+  { value: "allocation" as const, label: "Allocation" },
+  { value: "performance" as const, label: "Performance" },
+];
+
 // --- Main ---
 
 interface AccountWithProfile {
@@ -856,7 +885,8 @@ interface AccountWithProfile {
 }
 
 export function AccountTypePage() {
-  const { typeSlug } = useParams<{ typeSlug: string }>();
+  const { typeSlug, tab: tabParam } = useParams<{ typeSlug: string; tab?: string }>();
+  const navigate = useNavigate();
   const [accountsWithProfiles, setAccountsWithProfiles] = useState<AccountWithProfile[]>([]);
   const [mtdData, setMtdData] = useState<MtdData | undefined>(undefined);
   const [marketRates, setMarketRates] = useState<MortgageRatesResponse | null>(null);
@@ -864,6 +894,21 @@ export function AccountTypePage() {
   const [error, setError] = useState("");
   const [showPdfImport, setShowPdfImport] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+
+  // Investment-specific state — tab driven by route param
+  const investmentTab: InvestmentTab = VALID_INVESTMENT_TABS.includes(tabParam as InvestmentTab)
+    ? (tabParam as InvestmentTab)
+    : "overview";
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [selectedHoldingAccountId, setSelectedHoldingAccountId] = useState<string>("");
+  const [showHoldingForm, setShowHoldingForm] = useState(false);
+  const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
+  const [allocationData, setAllocationData] = useState<AssetAllocationResponse | null>(null);
+  const [performanceData, setPerformanceData] = useState<PerformanceResponse | null>(null);
+  const [performancePeriod, setPerformancePeriod] = useState<PerformancePeriod>("12m");
+  const [rebalanceData, setRebalanceData] = useState<RebalanceResponse | null>(null);
+  const [targetAllocations, setTargetAllocations] = useState<TargetAllocation[]>([]);
+  const [showTargetForm, setShowTargetForm] = useState(false);
 
   const group = ACCOUNT_TYPE_GROUPS.find((g) => g.slug === typeSlug);
 
@@ -947,9 +992,63 @@ export function AccountTypePage() {
     }
   }, [group]);
 
+  // Investment data loaders
+  const investmentAccounts = useMemo(
+    () => accountsWithProfiles.filter((a) => a.account.type === "investment").map((a) => a.account),
+    [accountsWithProfiles],
+  );
+
+  const loadHoldings = useCallback(async (accountId: string) => {
+    try {
+      const res = await fetchHoldings(accountId);
+      setHoldings(res.holdings);
+    } catch {
+      setHoldings([]);
+    }
+  }, []);
+
+  const loadAllocationData = useCallback(async () => {
+    try {
+      const [allocation, targets, rebalance] = await Promise.all([
+        fetchAssetAllocation(),
+        fetchTargetAllocations(null),
+        fetchRebalanceSuggestions(),
+      ]);
+      setAllocationData(allocation);
+      setTargetAllocations(targets.allocations);
+      setRebalanceData(rebalance);
+    } catch {
+      // Silently fail
+    }
+  }, []);
+
+  const loadPerformanceData = useCallback(async (period: PerformancePeriod) => {
+    try {
+      const perf = await fetchPerformance(period);
+      setPerformanceData(perf);
+    } catch {
+      // Silently fail
+    }
+  }, []);
+
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Load investment data when tab changes
+  useEffect(() => {
+    if (group?.slug !== "investments") return;
+    if (investmentTab === "holdings" && investmentAccounts.length > 0) {
+      const accountId = selectedHoldingAccountId || investmentAccounts[0].id;
+      if (!selectedHoldingAccountId) setSelectedHoldingAccountId(accountId);
+      loadHoldings(accountId);
+    } else if (investmentTab === "allocation") {
+      loadAllocationData();
+    } else if (investmentTab === "performance") {
+      loadPerformanceData(performancePeriod);
+      loadAllocationData();
+    }
+  }, [group?.slug, investmentTab, investmentAccounts, selectedHoldingAccountId, loadHoldings, loadAllocationData, loadPerformanceData, performancePeriod]);
 
   useEffect(() => {
     if (group?.slug === "real-estate") {
@@ -985,10 +1084,12 @@ export function AccountTypePage() {
   return (
     <div className="p-4 md:p-8 flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl sm:text-2xl md:text-3xl text-foreground">{group.label}</h1>
         <div className="flex items-center gap-2">
-          <TabSwitcher options={VIEW_OPTIONS} value={viewMode} onChange={setViewMode} size="sm" />
+          {(group.slug !== "investments" || investmentTab === "overview") && (
+            <TabSwitcher options={VIEW_OPTIONS} value={viewMode} onChange={setViewMode} size="sm" />
+          )}
           <Button
             size="sm"
             variant="secondary"
@@ -1000,10 +1101,96 @@ export function AccountTypePage() {
         </div>
       </div>
 
+      {group.slug === "investments" && (
+        <TabSwitcher
+          options={INVESTMENT_TAB_OPTIONS}
+          value={investmentTab}
+          onChange={(tab) => navigate(`/accounts/investments/${tab}`, { replace: true })}
+        />
+      )}
+
       {error && <p className="text-sm text-error">{error}</p>}
 
-      {/* KPI row */}
-      {kpis.length > 0 && (
+      {/* Investment non-overview tabs */}
+      {group.slug === "investments" && investmentTab === "holdings" && (
+        <>
+          <HoldingsTable
+            accounts={investmentAccounts}
+            selectedAccountId={selectedHoldingAccountId}
+            onSelectAccount={(id) => {
+              setSelectedHoldingAccountId(id);
+              loadHoldings(id);
+            }}
+            onAddHolding={() => {
+              setEditingHolding(null);
+              setShowHoldingForm(true);
+            }}
+            onEditHolding={(h) => {
+              setEditingHolding(h);
+              setShowHoldingForm(true);
+            }}
+            holdings={holdings}
+            onRefresh={() => loadHoldings(selectedHoldingAccountId)}
+          />
+          {showHoldingForm && (
+            <HoldingForm
+              holding={editingHolding}
+              accounts={investmentAccounts}
+              defaultAccountId={selectedHoldingAccountId}
+              onClose={() => setShowHoldingForm(false)}
+              onSaved={() => {
+                setShowHoldingForm(false);
+                loadHoldings(selectedHoldingAccountId);
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {group.slug === "investments" && investmentTab === "allocation" && (
+        <div className="flex flex-col gap-6">
+          <div className="flex justify-end">
+            <Button size="sm" variant="secondary" onClick={() => setShowTargetForm(true)}>
+              Set Targets
+            </Button>
+          </div>
+          {allocationData && <AllocationChart data={allocationData} />}
+          {rebalanceData && <RebalanceCard data={rebalanceData} />}
+          {showTargetForm && (
+            <TargetAllocationForm
+              accounts={investmentAccounts}
+              existingAllocations={targetAllocations}
+              onClose={() => setShowTargetForm(false)}
+              onSaved={() => {
+                setShowTargetForm(false);
+                loadAllocationData();
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {group.slug === "investments" && investmentTab === "performance" && (
+        <div className="flex flex-col gap-6">
+          {performanceData && (
+            <>
+              <PerformanceSummary data={performanceData.summary} />
+              <PerformanceChart
+                data={performanceData}
+                period={performancePeriod}
+                onPeriodChange={(p) => {
+                  setPerformancePeriod(p);
+                  loadPerformanceData(p);
+                }}
+              />
+            </>
+          )}
+          {rebalanceData && <RebalanceCard data={rebalanceData} />}
+        </div>
+      )}
+
+      {/* KPI row — show for non-investment pages, or investment overview tab */}
+      {(group.slug !== "investments" || investmentTab === "overview") && kpis.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {kpis.map((kpi) => (
             <KpiCard key={kpi.title} title={kpi.title} value={kpi.value} tooltip={kpi.tooltip} trend={kpi.trend} sparkline={kpi.sparkline} />
@@ -1011,7 +1198,7 @@ export function AccountTypePage() {
         </div>
       )}
 
-      {accountsWithProfiles.length === 0 ? (
+      {(group.slug !== "investments" || investmentTab === "overview") && (accountsWithProfiles.length === 0 ? (
         <Card>
           <CardContent className="py-12">
             <p className="text-center text-muted-foreground">
@@ -1152,7 +1339,7 @@ export function AccountTypePage() {
           </div>
           );
         })
-      )}
+      ))}
 
       {showPdfImport && (
         <PdfImportDialog

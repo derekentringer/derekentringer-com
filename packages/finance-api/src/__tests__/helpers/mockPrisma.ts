@@ -24,6 +24,10 @@ export interface MockPrisma {
   category: MockModel;
   categoryRule: MockModel;
   goal: MockModel;
+  holding: MockModel;
+  targetAllocation: MockModel;
+  priceHistory: MockModel;
+  benchmarkHistory: MockModel;
   $disconnect: Mock;
   $transaction: Mock;
 }
@@ -52,6 +56,10 @@ export function createMockPrisma(): MockPrisma {
     category: createMockModel(),
     categoryRule: createMockModel(),
     goal: createMockModel(),
+    holding: createMockModel(),
+    targetAllocation: createMockModel(),
+    priceHistory: createMockModel(),
+    benchmarkHistory: createMockModel(),
     $disconnect: vi.fn(),
     $transaction: vi.fn(),
   };

@@ -14,6 +14,9 @@ import type {
   NotificationPreference as PrismaNotificationPreference,
   NotificationLog as PrismaNotificationLog,
   Goal as PrismaGoal,
+  Holding as PrismaHolding,
+  TargetAllocation as PrismaTargetAllocation,
+  PriceHistory as PrismaPriceHistory,
 } from "../generated/prisma/client.js";
 import type {
   Account,
@@ -38,6 +41,9 @@ import type {
   DevicePlatform,
   Goal,
   GoalType,
+  Holding,
+  AssetClass,
+  TargetAllocation,
 } from "@derekentringer/shared";
 import { AccountType, NotificationType, DEFAULT_NOTIFICATION_CONFIGS } from "@derekentringer/shared";
 import {
@@ -1111,4 +1117,155 @@ export function encryptGoalForUpdate(input: {
   }
 
   return data;
+}
+
+// --- Holding ---
+
+export function decryptHolding(row: PrismaHolding): Holding {
+  const name = decryptField(row.name);
+  const ticker = decryptOptionalField(row.ticker);
+  const shares = decryptOptionalNumber(row.shares);
+  const costBasis = decryptOptionalNumber(row.costBasis);
+  const currentPrice = decryptOptionalNumber(row.currentPrice);
+
+  let marketValue: number | undefined;
+  let gainLoss: number | undefined;
+  let gainLossPct: number | undefined;
+
+  if (shares != null && currentPrice != null) {
+    marketValue = shares * currentPrice;
+    if (costBasis != null) {
+      const totalCost = shares * costBasis;
+      gainLoss = marketValue - totalCost;
+      gainLossPct = totalCost !== 0 ? (gainLoss / totalCost) * 100 : 0;
+    }
+  }
+
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    name,
+    ticker,
+    shares,
+    costBasis,
+    currentPrice,
+    assetClass: row.assetClass as AssetClass,
+    notes: decryptOptionalField(row.notes),
+    sortOrder: row.sortOrder,
+    marketValue,
+    gainLoss,
+    gainLossPct,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function encryptHoldingForCreate(input: {
+  accountId: string;
+  name: string;
+  ticker?: string | null;
+  shares?: number | null;
+  costBasis?: number | null;
+  currentPrice?: number | null;
+  assetClass: string;
+  notes?: string | null;
+}): {
+  accountId: string;
+  name: string;
+  ticker: string | null;
+  shares: string | null;
+  costBasis: string | null;
+  currentPrice: string | null;
+  assetClass: string;
+  notes: string | null;
+} {
+  return {
+    accountId: input.accountId,
+    name: encryptField(input.name),
+    ticker: encryptOptionalField(input.ticker),
+    shares: encryptOptionalNumber(input.shares),
+    costBasis: encryptOptionalNumber(input.costBasis),
+    currentPrice: encryptOptionalNumber(input.currentPrice),
+    assetClass: input.assetClass,
+    notes: encryptOptionalField(input.notes),
+  };
+}
+
+export interface EncryptedHoldingUpdate {
+  name?: string;
+  ticker?: string | null;
+  shares?: string | null;
+  costBasis?: string | null;
+  currentPrice?: string | null;
+  assetClass?: string;
+  notes?: string | null;
+}
+
+export function encryptHoldingForUpdate(input: {
+  name?: string;
+  ticker?: string | null;
+  shares?: number | null;
+  costBasis?: number | null;
+  currentPrice?: number | null;
+  assetClass?: string;
+  notes?: string | null;
+}): EncryptedHoldingUpdate {
+  const data: EncryptedHoldingUpdate = {};
+
+  if (input.name !== undefined) data.name = encryptField(input.name);
+  if (input.ticker !== undefined) data.ticker = encryptOptionalField(input.ticker);
+  if (input.shares !== undefined) data.shares = encryptOptionalNumber(input.shares);
+  if (input.costBasis !== undefined) data.costBasis = encryptOptionalNumber(input.costBasis);
+  if (input.currentPrice !== undefined) data.currentPrice = encryptOptionalNumber(input.currentPrice);
+  if (input.assetClass !== undefined) data.assetClass = input.assetClass;
+  if (input.notes !== undefined) data.notes = encryptOptionalField(input.notes);
+
+  return data;
+}
+
+// --- Target Allocation ---
+
+export function decryptTargetAllocation(row: PrismaTargetAllocation): TargetAllocation {
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    assetClass: row.assetClass as AssetClass,
+    targetPct: decryptNumber(row.targetPct),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function encryptTargetAllocationForCreate(input: {
+  accountId?: string | null;
+  assetClass: string;
+  targetPct: number;
+}): {
+  accountId: string | null;
+  assetClass: string;
+  targetPct: string;
+} {
+  return {
+    accountId: input.accountId ?? null,
+    assetClass: input.assetClass,
+    targetPct: encryptNumber(input.targetPct),
+  };
+}
+
+// --- Price History ---
+
+export function decryptPriceHistory(row: PrismaPriceHistory): {
+  id: string;
+  ticker: string;
+  price: number;
+  date: string;
+  source: string;
+} {
+  return {
+    id: row.id,
+    ticker: row.ticker,
+    price: decryptNumber(row.price),
+    date: row.date.toISOString(),
+    source: row.source,
+  };
 }

@@ -23,7 +23,10 @@ import incomeSourceRoutes from "./routes/incomeSources.js";
 import projectionRoutes from "./routes/projections.js";
 import notificationRoutes from "./routes/notifications.js";
 import goalRoutes from "./routes/goals.js";
+import holdingRoutes from "./routes/holdings.js";
+import portfolioRoutes from "./routes/portfolio.js";
 import { startNotificationScheduler, stopNotificationScheduler } from "./lib/notificationScheduler.js";
+import { startPriceFetchScheduler, stopPriceFetchScheduler } from "./lib/priceFetchScheduler.js";
 import { cleanupOldNotificationLogs } from "./store/notificationStore.js";
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -104,6 +107,8 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(projectionRoutes, { prefix: "/projections" });
   app.register(notificationRoutes, { prefix: "/notifications" });
   app.register(goalRoutes, { prefix: "/goals" });
+  app.register(holdingRoutes, { prefix: "/holdings" });
+  app.register(portfolioRoutes, { prefix: "/portfolio" });
 
   app.get("/health", async () => {
     return { status: "ok" };
@@ -120,11 +125,13 @@ export function buildApp(opts?: BuildAppOptions) {
       cleanupOldNotificationLogs().catch(() => {});
     }, TOKEN_CLEANUP_INTERVAL_MS);
     startNotificationScheduler(app.log);
+    startPriceFetchScheduler(app.log);
   });
 
   app.addHook("onClose", async () => {
     if (cleanupTimer) clearInterval(cleanupTimer);
     stopNotificationScheduler();
+    stopPriceFetchScheduler();
     await getPrisma().$disconnect();
   });
 
