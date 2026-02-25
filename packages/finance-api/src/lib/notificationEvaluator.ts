@@ -20,6 +20,7 @@ import { computeSpendingSummary, computeNetWorthSummary } from "../store/dashboa
 import { getPrisma } from "../lib/prisma.js";
 import { decryptBalance, decryptAccount } from "../lib/mappers.js";
 import { decryptNumber } from "../lib/encryption.js";
+import { evaluateAiAlerts } from "./aiAlertEvaluator.js";
 
 export interface PendingNotification {
   type: NotificationType;
@@ -635,6 +636,14 @@ export async function evaluateAllNotifications(): Promise<PendingNotification[]>
     { type: NotificationType.StatementReminder, fn: evaluateStatementReminder },
     { type: NotificationType.Milestones, fn: evaluateMilestones },
   ];
+
+  // AI alerts (runs independently, catches own errors)
+  try {
+    const aiAlerts = await evaluateAiAlerts();
+    allPending.push(...aiAlerts);
+  } catch {
+    // AI alerts are non-critical — skip silently
+  }
 
   for (const { type, fn } of evaluators) {
     const pref = prefMap.get(type);
