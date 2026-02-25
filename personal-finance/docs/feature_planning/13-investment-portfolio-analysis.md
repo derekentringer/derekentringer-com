@@ -1,6 +1,6 @@
 # 13 — Investment Portfolio Analysis
 
-**Status:** Not Started
+**Status:** Complete (see [features/13-investment-portfolio-analysis.md](../features/13-investment-portfolio-analysis.md))
 **Phase:** 6 — Advanced Features
 **Priority:** Medium
 

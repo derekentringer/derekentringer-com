@@ -67,7 +67,7 @@
 
 ### Phase 6: Advanced Features — Medium Priority
 
-- [ ] [13 — Investment Portfolio Analysis](feature_planning/13-investment-portfolio-analysis.md)
+- [x] [13 — Investment Portfolio Analysis](features/13-investment-portfolio-analysis.md) — holdings CRUD with Finnhub live pricing, daily price scheduler, asset allocation donut chart with target comparison, portfolio vs. SPY benchmark performance tracking (parallelized fetches), drift-based rebalancing suggestions, savings/HYS cash inclusion in portfolio totals, 4-tab investments page (Overview, Holdings, Allocation, Performance), encrypted storage for all financial fields
 - [ ] [14 — Financial Decision Tools](feature_planning/14-financial-decision-tools.md)
 - [ ] [15 — AI Financial Advice](feature_planning/15-ai-financial-advice.md)
 

@@ -25,7 +25,7 @@ export function App() {
           <Route element={<ProtectedRoute><AccountTypesProvider><AppLayout /></AccountTypesProvider></ProtectedRoute>}>
             <Route index element={<DashboardPage />} />
             <Route path="projections/:tab?" element={<ProjectionsPage />} />
-            <Route path="accounts/:typeSlug" element={<AccountTypePage />} />
+            <Route path="accounts/:typeSlug/:tab?" element={<AccountTypePage />} />
             <Route path="transactions" element={<TransactionsPage />} />
             <Route path="budgets" element={<BudgetsPage />} />
             <Route path="bills/:tab?" element={<BillsPage />} />
