@@ -33,7 +33,7 @@
 
 ### Phase 0: Project Setup & Auth
 
-- [ ] [00 — Project Setup & Auth](feature_planning/00-project-setup-and-auth.md)
+- [x] [00 — Project Setup & Auth](features/00-project-setup-and-auth.md)
 
 ### Phase 1: Dashboard
 

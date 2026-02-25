@@ -47,7 +47,12 @@ export function buildApp(opts?: BuildAppOptions) {
 
   app.register(cookie);
   app.register(cors, {
-    origin: config.corsOrigin,
+    origin: (origin, cb) => {
+      // Allow requests with no origin (mobile apps, non-browser clients)
+      if (!origin) return cb(null, true);
+      if (origin === config.corsOrigin) return cb(null, true);
+      cb(new Error("Not allowed"), false);
+    },
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });

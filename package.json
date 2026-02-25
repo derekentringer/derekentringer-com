@@ -12,6 +12,9 @@
     "test": "turbo run test",
     "type-check": "turbo run type-check"
   },
+  "overrides": {
+    "react": "19.1.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "eslint": "^9.39.2",

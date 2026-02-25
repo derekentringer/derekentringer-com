@@ -115,6 +115,38 @@ describe("Auth routes", () => {
       const body = res.json();
       expect(body.message).toContain("required");
     });
+
+    it("returns refreshToken in body for mobile clients", async () => {
+      setupTokenMocks();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/auth/login",
+        headers: { "x-client-type": "mobile" },
+        payload: { username: "admin", password: TEST_PASSWORD },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.accessToken).toBeDefined();
+      expect(body.refreshToken).toBeDefined();
+      expect(typeof body.refreshToken).toBe("string");
+      expect(body.refreshToken.length).toBeGreaterThan(0);
+    });
+
+    it("does NOT return refreshToken in body for web clients", async () => {
+      setupTokenMocks();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/auth/login",
+        payload: { username: "admin", password: TEST_PASSWORD },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.refreshToken).toBeUndefined();
+    });
   });
 
   // --- Refresh ---
@@ -175,6 +207,39 @@ describe("Auth routes", () => {
       const body = res.json();
       expect(body.message).toBe("Invalid or expired refresh token");
     });
+
+    it("accepts refreshToken in body for mobile clients", async () => {
+      setupTokenMocks();
+
+      // Login as mobile to get refreshToken in body
+      const loginRes = await app.inject({
+        method: "POST",
+        url: "/auth/login",
+        headers: { "x-client-type": "mobile" },
+        payload: { username: "admin", password: TEST_PASSWORD },
+      });
+
+      const { refreshToken } = loginRes.json();
+      expect(refreshToken).toBeDefined();
+
+      // Set up lookup using the hashed token stored in the mock
+      // (storeRefreshToken hashes tokens before persisting)
+      const storedHash = mockPrisma.refreshToken.create.mock.calls[0][0].data.token;
+      setupTokenLookup(storedHash, "admin-001");
+
+      const refreshRes = await app.inject({
+        method: "POST",
+        url: "/auth/refresh",
+        headers: { "x-client-type": "mobile" },
+        payload: { refreshToken },
+      });
+
+      expect(refreshRes.statusCode).toBe(200);
+      const body = refreshRes.json();
+      expect(body.accessToken).toBeDefined();
+      expect(body.expiresIn).toBe(900);
+      expect(body.refreshToken).toBeDefined();
+    });
   });
 
   // --- Logout ---
@@ -214,6 +279,33 @@ describe("Auth routes", () => {
       });
 
       expect(res.statusCode).toBe(401);
+    });
+
+    it("accepts refreshToken in body for mobile clients", async () => {
+      setupTokenMocks();
+
+      const loginRes = await app.inject({
+        method: "POST",
+        url: "/auth/login",
+        headers: { "x-client-type": "mobile" },
+        payload: { username: "admin", password: TEST_PASSWORD },
+      });
+
+      const { accessToken, refreshToken } = loginRes.json();
+
+      const logoutRes = await app.inject({
+        method: "POST",
+        url: "/auth/logout",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "x-client-type": "mobile",
+        },
+        payload: { refreshToken },
+      });
+
+      expect(logoutRes.statusCode).toBe(200);
+      const body = logoutRes.json();
+      expect(body.message).toBe("Logged out successfully");
     });
   });
 

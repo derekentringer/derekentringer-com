@@ -21,11 +21,13 @@ export interface LoginResponse {
   accessToken: string;
   expiresIn: number;
   user: User;
+  refreshToken?: string;
 }
 
 export interface RefreshResponse {
   accessToken: string;
   expiresIn: number;
+  refreshToken?: string;
 }
 
 export interface PinVerifyRequest {
