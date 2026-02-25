@@ -22,6 +22,11 @@ export const CHART_COLORS = {
   debtCustom: "#8b5cf6",
   debtPlanned: "#6366f1",
   debtActual: "#22c55e",
+  scenarioA: "#f59e0b",
+  scenarioB: "#22c55e",
+  fourOhOneKCurrent: "#3b82f6",
+  fourOhOneKOptimal: "#22c55e",
+  fourOhOneKMax: "#8b5cf6",
 } as const;
 
 // Category color palette (13 colors, avoids red/green collision with chart colors)

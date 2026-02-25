@@ -1284,3 +1284,67 @@ export interface QuoteResponse {
   open: number;
   previousClose: number;
 }
+
+// ─── Decision Tools ─────────────────────────────────────────────────────────
+
+// HYS vs. Debt Payoff
+export interface HysVsDebtInputs {
+  hysBalance: number;
+  hysApy: number;
+  loanBalance: number;
+  loanApr: number;
+  monthlyPayment: number;
+  hysAccountId?: string;
+  loanAccountId?: string;
+}
+
+export interface HysVsDebtMonthPoint {
+  month: number;
+  label: string;
+  scenarioA_hysBalance: number;
+  scenarioA_loanBalance: number;
+  scenarioA_netPosition: number;
+  scenarioB_hysBalance: number;
+  scenarioB_loanBalance: number;
+  scenarioB_netPosition: number;
+}
+
+export interface HysVsDebtResult {
+  schedule: HysVsDebtMonthPoint[];
+  scenarioA_totalInterestEarned: number;
+  scenarioA_totalInterestPaid: number;
+  scenarioB_totalInterestEarned: number;
+  scenarioB_totalInterestPaid: number;
+  netBenefit: number;
+  breakEvenMonth: number | null;
+  recommendation: "keep-hys" | "pay-loan";
+}
+
+// 401(k) Contribution Optimizer
+export interface FourOhOneKInputs {
+  annualSalary: number;
+  currentContributionPct: number;
+  employerMatchPct: number;
+  employerMatchCapPct: number;
+  expectedAnnualReturnPct: number;
+  currentBalance: number;
+  investmentAccountId?: string;
+}
+
+export interface FourOhOneKYearPoint {
+  year: number;
+  label: string;
+  currentBalance: number;
+  optimalBalance: number;
+  maxBalance: number;
+}
+
+export interface FourOhOneKResult {
+  currentAnnualContribution: number;
+  currentEmployerMatch: number;
+  optimalContributionPct: number;
+  optimalAnnualContribution: number;
+  optimalEmployerMatch: number;
+  moneyLeftOnTable: number;
+  projection: FourOhOneKYearPoint[];
+}
