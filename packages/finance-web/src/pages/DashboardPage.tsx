@@ -16,6 +16,7 @@ import { SpendingCard } from "@/components/dashboard/SpendingCard";
 import { IncomeSpendingCard } from "@/components/dashboard/IncomeSpendingCard";
 import { UpcomingBillsCard } from "@/components/dashboard/UpcomingBillsCard";
 import { DTIDetailDialog } from "@/components/dashboard/DTIDetailDialog";
+import { AiInsightCard } from "@/components/dashboard/AiInsightCard";
 import { GoalsSummaryCard } from "@/components/dashboard/GoalsSummaryCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -321,6 +322,9 @@ export function DashboardPage() {
           </button>
         ) : null}
       </div>
+
+      {/* AI Insights */}
+      <AiInsightCard />
 
       {/* DTI detail dialog */}
       {dtiDialogOpen && dti && (

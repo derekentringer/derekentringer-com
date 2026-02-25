@@ -69,7 +69,7 @@
 
 - [x] [13 — Investment Portfolio Analysis](features/13-investment-portfolio-analysis.md) — holdings CRUD with Finnhub live pricing, daily price scheduler, asset allocation donut chart with target comparison, portfolio vs. SPY benchmark performance tracking (parallelized fetches), drift-based rebalancing suggestions, savings/HYS cash inclusion in portfolio totals, 4-tab investments page (Overview, Holdings, Allocation, Performance), encrypted storage for all financial fields
 - [x] [14 — Financial Decision Tools](features/14-financial-decision-tools.md) — HYS vs. Debt Payoff calculator (two-scenario comparison with break-even analysis, account pre-population, LineChart), 401(k) Contribution Optimizer (income-source salary estimation, employer match optimization, 30-year AreaChart projections), info tooltips on all KPI cards, localStorage persistence, frontend-only computation; Emergency Fund and Opportunity Cost calculators deferred
-- [ ] [15 — AI Financial Advice](feature_planning/15-ai-financial-advice.md)
+- [x] [15 — AI Financial Insights](features/15-ai-financial-insights.md) — contextual AI-powered insights (not chat) via Claude API with tool_use structured output; collapsible dashboard card with unseen-indicator, page-level nudges (Budgets, Goals), permanent monthly/quarterly digest reports for completed periods, AI-powered smart alerts via notification system; server-side only with SHA-256 content-hash caching, encrypted preferences, 10 daily request limit; disabled by default with granular per-feature opt-in in Settings > AI Insights tab
 
 ### Phase 7: Mobile & PWA — Low Priority
 
