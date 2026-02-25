@@ -68,7 +68,7 @@
 ### Phase 6: Advanced Features — Medium Priority
 
 - [x] [13 — Investment Portfolio Analysis](features/13-investment-portfolio-analysis.md) — holdings CRUD with Finnhub live pricing, daily price scheduler, asset allocation donut chart with target comparison, portfolio vs. SPY benchmark performance tracking (parallelized fetches), drift-based rebalancing suggestions, savings/HYS cash inclusion in portfolio totals, 4-tab investments page (Overview, Holdings, Allocation, Performance), encrypted storage for all financial fields
-- [ ] [14 — Financial Decision Tools](feature_planning/14-financial-decision-tools.md)
+- [x] [14 — Financial Decision Tools](features/14-financial-decision-tools.md) — HYS vs. Debt Payoff calculator (two-scenario comparison with break-even analysis, account pre-population, LineChart), 401(k) Contribution Optimizer (income-source salary estimation, employer match optimization, 30-year AreaChart projections), info tooltips on all KPI cards, localStorage persistence, frontend-only computation; Emergency Fund and Opportunity Cost calculators deferred
 - [ ] [15 — AI Financial Advice](feature_planning/15-ai-financial-advice.md)
 
 ### Phase 7: Mobile & PWA — Low Priority
