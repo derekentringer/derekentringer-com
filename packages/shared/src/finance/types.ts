@@ -368,6 +368,11 @@ export const ASSET_ACCOUNT_TYPES: readonly AccountType[] = [
   AccountType.RealEstate,
 ] as const;
 
+export const CASH_ACCOUNT_TYPES: readonly AccountType[] = [
+  AccountType.Savings,
+  AccountType.HighYieldSavings,
+] as const;
+
 export const LIABILITY_ACCOUNT_TYPES: readonly AccountType[] = [
   AccountType.Credit,
   AccountType.Loan,
@@ -382,6 +387,10 @@ export function classifyAccountType(
   if ((ASSET_ACCOUNT_TYPES as readonly string[]).includes(type)) return "asset";
   if ((LIABILITY_ACCOUNT_TYPES as readonly string[]).includes(type)) return "liability";
   return "other";
+}
+
+export function isCashAccountType(type: AccountType): boolean {
+  return (CASH_ACCOUNT_TYPES as readonly string[]).includes(type);
 }
 
 // Shared frequency type used by bills and income sources
@@ -1107,4 +1116,171 @@ export interface NotificationHistoryResponse {
 
 export interface UnreadCountResponse {
   count: number;
+}
+
+// ─── Investment Portfolio Analysis ───────────────────────────────────────────
+
+export type AssetClass = "stocks" | "bonds" | "real_estate" | "cash" | "crypto" | "other";
+
+export const ASSET_CLASSES: AssetClass[] = [
+  "stocks",
+  "bonds",
+  "real_estate",
+  "cash",
+  "crypto",
+  "other",
+];
+
+export const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
+  stocks: "Stocks",
+  bonds: "Bonds",
+  real_estate: "Real Estate",
+  cash: "Cash",
+  crypto: "Crypto",
+  other: "Other",
+};
+
+export interface Holding {
+  id: string;
+  accountId: string;
+  name: string;
+  ticker?: string;
+  shares?: number;
+  costBasis?: number;
+  currentPrice?: number;
+  assetClass: AssetClass;
+  notes?: string;
+  sortOrder: number;
+  marketValue?: number;
+  gainLoss?: number;
+  gainLossPct?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateHoldingRequest {
+  accountId: string;
+  name: string;
+  ticker?: string;
+  shares?: number;
+  costBasis?: number;
+  currentPrice?: number;
+  assetClass: AssetClass;
+  notes?: string;
+}
+
+export interface UpdateHoldingRequest {
+  name?: string;
+  ticker?: string | null;
+  shares?: number | null;
+  costBasis?: number | null;
+  currentPrice?: number | null;
+  assetClass?: AssetClass;
+  notes?: string | null;
+}
+
+export interface ReorderHoldingsRequest {
+  order: Array<{ id: string; sortOrder: number }>;
+}
+
+export interface HoldingListResponse {
+  holdings: Holding[];
+}
+
+export interface HoldingResponse {
+  holding: Holding;
+}
+
+// Target allocations
+
+export interface TargetAllocation {
+  id: string;
+  accountId: string | null;
+  assetClass: AssetClass;
+  targetPct: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SetTargetAllocationsRequest {
+  accountId?: string | null;
+  allocations: Array<{
+    assetClass: AssetClass;
+    targetPct: number;
+  }>;
+}
+
+export interface TargetAllocationListResponse {
+  allocations: TargetAllocation[];
+}
+
+// Asset allocation
+
+export interface AssetAllocationSlice {
+  assetClass: AssetClass;
+  label: string;
+  marketValue: number;
+  percentage: number;
+  targetPct?: number;
+  drift?: number;
+}
+
+export interface AssetAllocationResponse {
+  slices: AssetAllocationSlice[];
+  totalMarketValue: number;
+}
+
+// Performance
+
+/** Portfolio performance periods. Differs from ChartTimeRange (used by dashboard net-worth charts) which also includes "ytd". */
+export type PerformancePeriod = "1m" | "3m" | "6m" | "12m" | "all";
+
+export interface PerformancePoint {
+  date: string;
+  portfolioValue: number;
+  benchmarkValue?: number;
+}
+
+export interface PerformanceSummary {
+  totalValue: number;
+  totalCost: number;
+  totalReturn: number;
+  totalReturnPct: number;
+  benchmarkReturnPct?: number;
+}
+
+export interface PerformanceResponse {
+  summary: PerformanceSummary;
+  series: PerformancePoint[];
+  period: PerformancePeriod;
+}
+
+// Rebalancing
+
+export interface RebalanceSuggestion {
+  assetClass: AssetClass;
+  label: string;
+  currentPct: number;
+  targetPct: number;
+  drift: number;
+  action: "buy" | "sell" | "hold";
+  amount: number;
+}
+
+export interface RebalanceResponse {
+  suggestions: RebalanceSuggestion[];
+  totalMarketValue: number;
+}
+
+// Finnhub quote
+
+export interface QuoteResponse {
+  ticker: string;
+  currentPrice: number;
+  change: number;
+  changePercent: number;
+  high: number;
+  low: number;
+  open: number;
+  previousClose: number;
 }

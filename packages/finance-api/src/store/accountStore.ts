@@ -1,4 +1,5 @@
 import type { Account, AccountType, LoanStaticData } from "@derekentringer/shared";
+import { AccountType as AccountTypeEnum } from "@derekentringer/shared";
 import { getPrisma } from "../lib/prisma.js";
 import { decryptNumber, encryptNumber, encryptOptionalField } from "../lib/encryption.js";
 import {
@@ -212,6 +213,26 @@ export async function updateAccountEmployerName(
     data: { employerName: encryptOptionalField(name) },
   });
   return true;
+}
+
+/**
+ * Return total balance of active savings/HYS accounts.
+ * Avoids decrypting all account fields when only cash balance is needed.
+ */
+export async function getCashBalance(): Promise<number> {
+  const prisma = getPrisma();
+  const rows = await prisma.account.findMany({
+    where: {
+      isActive: true,
+      type: { in: [AccountTypeEnum.Savings, AccountTypeEnum.HighYieldSavings] },
+    },
+    select: { currentBalance: true },
+  });
+  let total = 0;
+  for (const r of rows) {
+    total += decryptNumber(r.currentBalance);
+  }
+  return total;
 }
 
 /**

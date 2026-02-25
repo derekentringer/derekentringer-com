@@ -43,6 +43,7 @@ model Account {
   transactions    Transaction[]
   balances        Balance[]
   bills           Bill[]
+  holdings        Holding[]
 
   @@index([isActive])
   @@index([sortOrder])
@@ -320,4 +321,59 @@ model NotificationLog {
   @@index([isRead])
   @@index([isCleared])
   @@map("notification_logs")
+}
+
+model Holding {
+  id           String   @id @default(cuid())
+  accountId    String
+  name         String
+  ticker       String?
+  shares       String?
+  costBasis    String?
+  currentPrice String?
+  assetClass   String
+  notes        String?
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([assetClass])
+  @@map("holdings")
+}
+
+model TargetAllocation {
+  id        String   @id @default(cuid())
+  accountId String?
+  assetClass String
+  targetPct String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountId, assetClass])
+  @@map("target_allocations")
+}
+
+model PriceHistory {
+  id        String   @id @default(cuid())
+  ticker    String
+  price     String
+  date      DateTime
+  source    String
+  createdAt DateTime @default(now())
+
+  @@unique([ticker, date])
+  @@map("price_history")
+}
+
+model BenchmarkHistory {
+  id        String   @id @default(cuid())
+  symbol    String
+  price     String
+  date      DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@map("benchmark_history")
 }
