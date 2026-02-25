@@ -8,3 +8,12 @@ generated/
 !.env.example
 *.log
 .DS_Store
+
+# React Native / Expo
+.expo/
+ios/
+android/
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist

@@ -21,6 +21,10 @@ import type {
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
 const ADMIN_USER_ID = "admin-001";
 
+function isMobileClient(request: FastifyRequest): boolean {
+  return request.headers["x-client-type"] === "mobile";
+}
+
 function refreshCookieOptions(nodeEnv: string) {
   return {
     httpOnly: true,
@@ -108,6 +112,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
             createdAt: now,
             updatedAt: now,
           },
+          ...(isMobileClient(request) && { refreshToken }),
         };
 
         return reply.send(response);
@@ -134,7 +139,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const token = request.cookies?.refreshToken;
+      const token =
+        request.cookies?.refreshToken ||
+        (request.body as { refreshToken?: string })?.refreshToken;
 
       if (!token) {
         return reply.status(401).send({
@@ -170,6 +177,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         const response: RefreshResponse = {
           accessToken,
           expiresIn: 900,
+          ...(isMobileClient(request) && { refreshToken: newRefreshToken }),
         };
 
         return reply.send(response);
@@ -190,7 +198,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
     { onRequest: [fastify.authenticate] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const token = request.cookies?.refreshToken;
+        const token =
+          request.cookies?.refreshToken ||
+          (request.body as { refreshToken?: string })?.refreshToken;
         if (token) {
           await revokeRefreshToken(token);
         }
