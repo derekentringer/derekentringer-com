@@ -68,17 +68,6 @@ function makePriceHistoryRow(ticker: string, price: number, dateStr: string) {
   };
 }
 
-function makeBenchmarkHistoryRow(price: number, dateStr: string) {
-  return {
-    id: `bh-${dateStr}`,
-    symbol: "SPY",
-    price: encryptNumber(price),
-    date: new Date(dateStr),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  };
-}
-
 describe("portfolioStore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
