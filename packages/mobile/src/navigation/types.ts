@@ -14,4 +14,7 @@ export type PlanningStackParamList = {
   BillsList: undefined;
   BillDetail: { billId: string; billName: string };
   BudgetsList: undefined;
+  GoalsList: undefined;
+  GoalDetail: { goalId: string; goalName: string };
+  Projections: undefined;
 };

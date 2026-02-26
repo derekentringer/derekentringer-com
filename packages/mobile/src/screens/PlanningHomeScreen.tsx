@@ -10,9 +10,11 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import { useBills, useUpcomingBills } from "@/hooks/useBills";
 import { useBudgetSummary } from "@/hooks/useBudgets";
+import { useGoalProgress } from "@/hooks/useDashboard";
 import { SectionHeader } from "@/components/common/SectionHeader";
 import { Card } from "@/components/common/Card";
 import { SkeletonChartCard } from "@/components/common/SkeletonLoader";
@@ -44,6 +46,7 @@ export function PlanningHomeScreen() {
   const billsQuery = useUpcomingBills(60);
   const allBillsQuery = useBills();
   const budgetQuery = useBudgetSummary(currentMonth);
+  const goalProgressQuery = useGoalProgress(60);
 
   // Filter upcoming bills for current month only
   const upcomingBills = useMemo(() => {
@@ -93,6 +96,8 @@ export function PlanningHomeScreen() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["bills"] }),
       queryClient.invalidateQueries({ queryKey: ["budgets"] }),
+      queryClient.invalidateQueries({ queryKey: ["goals"] }),
+      queryClient.invalidateQueries({ queryKey: ["projections"] }),
     ]);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setRefreshing(false);
@@ -279,6 +284,103 @@ export function PlanningHomeScreen() {
         </Card>
       ) : null}
 
+      {/* Goals Section */}
+      <SectionHeader
+        title="Goals"
+        actionLabel="See All"
+        onAction={() => navigation.navigate("GoalsList")}
+      />
+      {goalProgressQuery.isLoading ? (
+        <SkeletonChartCard height={120} />
+      ) : goalProgressQuery.error ? (
+        <ErrorCard
+          message="Failed to load goals"
+          onRetry={() => goalProgressQuery.refetch()}
+        />
+      ) : (
+        <Card>
+          {!goalProgressQuery.data || goalProgressQuery.data.goals.length === 0 ? (
+            <Text style={styles.emptyText}>No goals set yet.</Text>
+          ) : (
+            <>
+              <View style={styles.budgetSummaryRow}>
+                <View>
+                  <Text style={styles.budgetSummaryLabel}>Monthly Surplus</Text>
+                  <Text style={[styles.budgetSummaryValue, goalProgressQuery.data.monthlySurplus < 0 && styles.budgetOverValue]}>
+                    {formatCurrencyFull(goalProgressQuery.data.monthlySurplus)}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.budgetSummaryLabel}>On Track</Text>
+                  <Text style={styles.budgetSummaryValue}>
+                    {goalProgressQuery.data.goals.filter(g => g.onTrack).length}/{goalProgressQuery.data.goals.length}
+                  </Text>
+                </View>
+              </View>
+              {goalProgressQuery.data.goals.slice(0, 3).map((goal) => {
+                const pct = Math.min(100, goal.percentComplete);
+                return (
+                  <View key={goal.goalId} style={styles.miniRow}>
+                    <Text style={styles.miniCategory} numberOfLines={1}>
+                      {goal.goalName}
+                    </Text>
+                    <View style={styles.miniBarContainer}>
+                      <View
+                        style={[
+                          styles.miniBarFill,
+                          { width: `${pct}%`, backgroundColor: goal.onTrack ? colors.success : colors.error },
+                        ]}
+                      />
+                    </View>
+                    <Text style={styles.miniAmount}>
+                      {Math.round(pct)}%
+                    </Text>
+                  </View>
+                );
+              })}
+              {goalProgressQuery.data.goals.length > 3 && (
+                <Text style={styles.moreText}>
+                  +{goalProgressQuery.data.goals.length - 3} more
+                </Text>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* Projections Section */}
+      <SectionHeader
+        title="Projections"
+        actionLabel="Explore"
+        onAction={() => navigation.navigate("Projections")}
+      />
+      <Card>
+        <Pressable
+          style={styles.projectionRow}
+          onPress={() => navigation.navigate("Projections")}
+          accessibilityRole="button"
+        >
+          <Text style={styles.projectionRowText}>Net Income Forecast</Text>
+          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
+        </Pressable>
+        <Pressable
+          style={styles.projectionRow}
+          onPress={() => navigation.navigate("Projections")}
+          accessibilityRole="button"
+        >
+          <Text style={styles.projectionRowText}>Savings Growth</Text>
+          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
+        </Pressable>
+        <Pressable
+          style={[styles.projectionRow, styles.projectionRowLast]}
+          onPress={() => navigation.navigate("Projections")}
+          accessibilityRole="button"
+        >
+          <Text style={styles.projectionRowText}>Debt Payoff Plan</Text>
+          <MaterialCommunityIcons name="chevron-right" size={18} color={colors.muted} />
+        </Pressable>
+      </Card>
+
       <View style={styles.bottomSpacer} />
     </ScrollView>
   );
@@ -419,6 +521,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     width: 100,
     textAlign: "right",
+  },
+  projectionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: spacing.sm + 4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  projectionRowLast: {
+    borderBottomWidth: 0,
+  },
+  projectionRowText: {
+    color: colors.foreground,
+    fontSize: 14,
   },
   bottomSpacer: {
     height: spacing.xl,
