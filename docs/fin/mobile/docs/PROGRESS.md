@@ -11,7 +11,10 @@
 | Local state | Zustand v5 | Lightweight store for auth and preferences |
 | HTTP | Axios | Auth interceptor with body-based refresh tokens |
 | Token storage | expo-secure-store | Secure credential storage |
-| Charts | react-native-chart-kit + react-native-svg | Native chart rendering |
+| Charts | react-native-gifted-charts + react-native-svg | SVG-based charts (no Skia dependency), New Architecture compatible |
+| Bottom Sheet | @gorhom/bottom-sheet v5 | Native bottom sheets with pull-to-dismiss |
+| Haptics | expo-haptics | Tactile feedback on interactions |
+| Local Storage | @react-native-async-storage/async-storage | AI insight seen-IDs storage |
 | Push | expo-notifications + FCM | Android only (iOS excluded — requires paid Apple Developer account) |
 | Fonts | @expo-google-fonts/roboto | Matches web app |
 | Testing | Jest + jest-expo + @testing-library/react-native | Unit and component tests |
@@ -37,7 +40,7 @@
 
 ### Phase 1: Dashboard
 
-- [ ] [01 — Dashboard](feature_planning/01-dashboard.md)
+- [x] [01 — Dashboard](features/01-dashboard.md)
 
 ### Phase 2: Accounts & Transactions
 
