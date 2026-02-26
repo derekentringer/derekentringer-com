@@ -52,7 +52,7 @@
 
 ### Phase 4: Goals & Projections
 
-- [ ] [04 — Goals & Projections](feature_planning/04-goals-and-projections.md)
+- [x] [04 — Goals & Projections](features/04-goals-and-projections.md)
 
 ### Phase 5: Portfolio & Decision Tools
 

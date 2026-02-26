@@ -16,6 +16,9 @@ import { PlanningHomeScreen } from "@/screens/PlanningHomeScreen";
 import { BillsScreen } from "@/screens/BillsScreen";
 import { BillDetailScreen } from "@/screens/BillDetailScreen";
 import { BudgetsScreen } from "@/screens/BudgetsScreen";
+import { GoalsScreen } from "@/screens/GoalsScreen";
+import { GoalDetailScreen } from "@/screens/GoalDetailScreen";
+import { ProjectionsScreen } from "@/screens/ProjectionsScreen";
 import { MoreScreen } from "@/screens/MoreScreen";
 import type { PlanningStackParamList } from "@/navigation/types";
 import { colors } from "@/theme";
@@ -112,6 +115,21 @@ function PlanningStackNavigator() {
         name="BudgetsList"
         component={BudgetsScreen}
         options={{ title: "Budgets" }}
+      />
+      <PlanningStack.Screen
+        name="GoalsList"
+        component={GoalsScreen}
+        options={{ title: "Goals" }}
+      />
+      <PlanningStack.Screen
+        name="GoalDetail"
+        component={GoalDetailScreen}
+        options={({ route }) => ({ title: route.params.goalName })}
+      />
+      <PlanningStack.Screen
+        name="Projections"
+        component={ProjectionsScreen}
+        options={{ title: "Projections" }}
       />
     </PlanningStack.Navigator>
   );

@@ -1,6 +1,6 @@
 # Phase 4 — Goals & Projections
 
-**Status:** Not Started
+**Status:** Complete (moved to [features/04-goals-and-projections.md](../features/04-goals-and-projections.md))
 **Priority:** Medium
 
 ## Summary
