@@ -39,7 +39,7 @@ export function TransactionRow({ transaction, onPress, onEdit }: TransactionRowP
         <Text
           style={[
             styles.amount,
-            { color: isPositive ? colors.success : colors.foreground },
+            { color: isPositive ? colors.success : colors.error },
           ]}
         >
           {formatCurrencyFull(transaction.amount)}
@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
   },
   left: {
     flex: 1,
-    marginRight: spacing.sm,
+    marginRight: spacing.xl + 16,
   },
   date: {
     color: colors.muted,

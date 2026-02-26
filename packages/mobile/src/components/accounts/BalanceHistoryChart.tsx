@@ -54,7 +54,8 @@ export function BalanceHistoryChart({
   if (error) return <ErrorCard message="Failed to load chart" onRetry={() => refetch()} />;
   if (!data || chartData.length < 2) return null;
 
-  const chartWidth = SCREEN_WIDTH - 64;
+  const yAxisWidth = 40;
+  const chartWidth = SCREEN_WIDTH - 32 - yAxisWidth;
   const lineColor = getAccountColor(accountId);
 
   const values = chartData.map((d) => d.value);
@@ -62,6 +63,7 @@ export function BalanceHistoryChart({
   const maxVal = Math.max(...values);
   const padding = Math.max((maxVal - minVal) * 0.1, 1);
   const yAxisOffset = Math.floor(minVal - padding);
+  const chartMaxValue = Math.ceil(maxVal + padding) - yAxisOffset;
 
   return (
     <View style={styles.container}>
@@ -78,6 +80,8 @@ export function BalanceHistoryChart({
         startOpacity={0.15}
         endOpacity={0}
         yAxisOffset={yAxisOffset}
+        maxValue={chartMaxValue}
+        yAxisLabelWidth={yAxisWidth}
         yAxisTextStyle={styles.yAxisText}
         xAxisLabelTextStyle={styles.xAxisText}
         rulesColor={colors.border}

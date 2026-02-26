@@ -10,7 +10,9 @@ import { CHART_COLORS, formatCurrency } from "@/lib/chartTheme";
 import type { ChartTimeRange, ChartGranularity } from "@derekentringer/shared/finance";
 import { colors, spacing } from "@/theme";
 
-const CHART_WIDTH = Dimensions.get("window").width - 80;
+// screen width - outer padding (16*2) - card padding (16*2) - yAxisLabelWidth (55)
+const Y_AXIS_WIDTH = 40;
+const CHART_WIDTH = Dimensions.get("window").width - 64 - Y_AXIS_WIDTH;
 
 export function NetWorthChart() {
   const [range, setRange] = useState<ChartTimeRange>("12m");
@@ -42,6 +44,13 @@ export function NetWorthChart() {
       i % step === 0 ? formatLabel(p.date, granularity) : ""
     );
   }, [data, granularity]);
+
+  const chartMaxValue = useMemo(() => {
+    if (!data) return undefined;
+    const allValues = data.history.flatMap((p) => [p.assets, p.liabilities, p.netWorth]);
+    const max = Math.max(...allValues);
+    return max * 1.1;
+  }, [data]);
 
   // Add labels to the netWorth dataset for x-axis
   const netWorthWithLabels = useMemo(() => {
@@ -100,6 +109,7 @@ export function NetWorthChart() {
             endOpacity={0}
             endOpacity2={0}
             endOpacity3={0}
+            yAxisLabelWidth={Y_AXIS_WIDTH}
             yAxisTextStyle={styles.axisText}
             xAxisLabelTextStyle={styles.axisText}
             rulesColor={CHART_COLORS.grid}
@@ -107,6 +117,7 @@ export function NetWorthChart() {
             xAxisColor="transparent"
             formatYLabel={(v) => formatCurrency(Number(v))}
             noOfSections={4}
+            maxValue={chartMaxValue}
             disableScroll
             adjustToWidth
             isAnimated={false}
@@ -158,9 +169,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "600",
   },
-  chartContainer: {
-    marginLeft: -16,
-  },
+  chartContainer: {},
   loading: {
     opacity: 0.4,
   },
