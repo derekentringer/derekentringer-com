@@ -143,8 +143,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 4,
   },
-  miniChart: {
-    marginLeft: -16,
-    marginBottom: -16,
-  },
+  miniChart: {},
 });

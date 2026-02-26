@@ -10,7 +10,8 @@ import { CHART_COLORS, formatCurrency } from "@/lib/chartTheme";
 import type { ChartTimeRange, ChartGranularity } from "@derekentringer/shared/finance";
 import { colors, spacing } from "@/theme";
 
-const CHART_WIDTH = Dimensions.get("window").width - 80;
+const Y_AXIS_WIDTH = 40;
+const CHART_WIDTH = Dimensions.get("window").width - 64 - Y_AXIS_WIDTH;
 
 export function IncomeSpendingChart() {
   const [range, setRange] = useState<ChartTimeRange>("12m");
@@ -65,6 +66,12 @@ export function IncomeSpendingChart() {
     return items;
   }, [data, granularity]);
 
+  const barMaxValue = useMemo(() => {
+    if (!data) return undefined;
+    const max = Math.max(...data.points.flatMap((p) => [p.income, p.spending]));
+    return max * 1.1;
+  }, [data]);
+
   const handleRangeChange = useCallback((r: ChartTimeRange) => setRange(r), []);
   const handleGranularityChange = useCallback((g: ChartGranularity) => {
     if (g === "weekly" || g === "monthly") setGranularity(g);
@@ -96,6 +103,8 @@ export function IncomeSpendingChart() {
             height={220}
             barWidth={8}
             noOfSections={4}
+            maxValue={barMaxValue}
+            yAxisLabelWidth={Y_AXIS_WIDTH}
             yAxisTextStyle={styles.axisText}
             xAxisLabelTextStyle={styles.axisText}
             rulesColor={CHART_COLORS.grid}
@@ -150,9 +159,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "600",
   },
-  chartContainer: {
-    marginLeft: -16,
-  },
+  chartContainer: {},
   loading: {
     opacity: 0.4,
   },

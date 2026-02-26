@@ -6,7 +6,7 @@
 |-------|--------|-------|
 | Framework | Expo ~54 | Managed workflow, new architecture enabled |
 | Language | TypeScript ~5.9 | Shared types with API and web |
-| Navigation | React Navigation 7 | Native stack + bottom tabs + material top tabs |
+| Navigation | React Navigation 7 | Native stack + bottom tabs |
 | Server state | TanStack React Query v5 | Consistent with web app |
 | Local state | Zustand v5 | Lightweight store for auth and preferences |
 | HTTP | Axios | Auth interceptor with body-based refresh tokens |
@@ -48,7 +48,7 @@
 
 ### Phase 3: Bills & Budgets
 
-- [ ] [03 — Bills & Budgets](feature_planning/03-bills-and-budgets.md)
+- [x] [03 — Bills & Budgets](features/03-bills-and-budgets.md)
 
 ### Phase 4: Goals & Projections
 

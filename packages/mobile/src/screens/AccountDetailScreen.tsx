@@ -338,7 +338,7 @@ const styles = StyleSheet.create({
   },
   txLeft: {
     flex: 1,
-    marginRight: spacing.sm,
+    marginRight: spacing.xl + 16,
   },
   txDesc: {
     color: colors.foreground,

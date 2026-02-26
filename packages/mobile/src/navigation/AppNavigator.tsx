@@ -12,8 +12,12 @@ import { AccountTypeScreen } from "@/screens/AccountTypeScreen";
 import { AccountDetailScreen } from "@/screens/AccountDetailScreen";
 import { TransactionsScreen } from "@/screens/TransactionsScreen";
 import { TransactionDetailScreen } from "@/screens/TransactionDetailScreen";
-import { PlanningScreen } from "@/screens/PlanningScreen";
+import { PlanningHomeScreen } from "@/screens/PlanningHomeScreen";
+import { BillsScreen } from "@/screens/BillsScreen";
+import { BillDetailScreen } from "@/screens/BillDetailScreen";
+import { BudgetsScreen } from "@/screens/BudgetsScreen";
 import { MoreScreen } from "@/screens/MoreScreen";
+import type { PlanningStackParamList } from "@/navigation/types";
 import { colors } from "@/theme";
 
 type AccountsStackParamList = {
@@ -31,6 +35,7 @@ const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
 const AccountsStack = createNativeStackNavigator<AccountsStackParamList>();
 const ActivityStack = createNativeStackNavigator<ActivityStackParamList>();
+const PlanningStack = createNativeStackNavigator<PlanningStackParamList>();
 
 const stackScreenOptions = {
   headerStyle: { backgroundColor: colors.background },
@@ -85,6 +90,33 @@ function ActivityStackNavigator() {
   );
 }
 
+function PlanningStackNavigator() {
+  return (
+    <PlanningStack.Navigator screenOptions={stackScreenOptions}>
+      <PlanningStack.Screen
+        name="PlanningHome"
+        component={PlanningHomeScreen}
+        options={{ title: "Planning" }}
+      />
+      <PlanningStack.Screen
+        name="BillsList"
+        component={BillsScreen}
+        options={{ title: "Bills" }}
+      />
+      <PlanningStack.Screen
+        name="BillDetail"
+        component={BillDetailScreen}
+        options={({ route }) => ({ title: route.params.billName })}
+      />
+      <PlanningStack.Screen
+        name="BudgetsList"
+        component={BudgetsScreen}
+        options={{ title: "Budgets" }}
+      />
+    </PlanningStack.Navigator>
+  );
+}
+
 function MainTabNavigator() {
   return (
     <MainTab.Navigator
@@ -127,8 +159,9 @@ function MainTabNavigator() {
       />
       <MainTab.Screen
         name="Planning"
-        component={PlanningScreen}
+        component={PlanningStackNavigator}
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="chart-line" color={color} size={size} />
           ),

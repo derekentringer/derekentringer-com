@@ -1,39 +1,13 @@
 # Phase 3 — Bills & Budgets
 
-**Status:** Not Started
+**Status:** Complete — See [features/03-bills-and-budgets.md](../features/03-bills-and-budgets.md)
 **Priority:** Medium
+**Completed:** v1.21.0
 
 ## Summary
 
-Bill tracking with upcoming/paid views and budget overview with monthly navigation.
-
-## Screens
-
-- `BillsScreen` — top tabs: Upcoming, All Bills; mark paid via swipe
-- `BillDetailScreen`, `CreateBillScreen`, `EditBillScreen`
-- `BudgetsScreen` — month selector, category rows with progress bars, copy previous month
-- `CreateBudgetScreen`, `BudgetDetailScreen`
-
-## Components
-
-- `src/components/bills/BillInstanceRow.tsx` (swipe to mark paid), `BillDefinitionRow.tsx`
-- `src/components/budgets/BudgetCategoryRow.tsx` (progress bar with color thresholds), `MonthSelector.tsx`
-
-## Hooks
-
-`src/hooks/useBills.ts`:
-- `useBills`, `useUpcomingBills`, `useCreateBill`, `useUpdateBill`, `useDeleteBill`, `useMarkBillPaid`, `useUnmarkBillPaid`
-
-`src/hooks/useBudgets.ts`:
-- `useBudgetSummary`, `useBudgets`, `useCreateBudget`, `useUpdateBudget`, `useDeleteBudget`
-
-## Verification
-
-- Bill mark-paid swipe action works
-- Budget progress bars reflect correct spending
-- Month selector navigates between months
-- Bill CRUD and budget CRUD with PIN verification for deletes
+Bill tracking with upcoming/paid views and budget overview with monthly navigation. Implemented with custom tab bar, SectionList month grouping, swipe actions, and PIN-gated deletes. Planning tab replaced with PlanningStackNavigator containing overview hub, bill management, and budget tracking screens.
 
 ## Dependencies
 
-- [Phase 2 — Accounts & Transactions](02-accounts-and-transactions.md)
+- [Phase 2 — Accounts & Transactions](../features/02-accounts-and-transactions.md)
