@@ -44,7 +44,7 @@
 
 ### Phase 2: Accounts & Transactions
 
-- [ ] [02 — Accounts & Transactions](feature_planning/02-accounts-and-transactions.md)
+- [x] [02 — Accounts & Transactions](features/02-accounts-and-transactions.md)
 
 ### Phase 3: Bills & Budgets
 

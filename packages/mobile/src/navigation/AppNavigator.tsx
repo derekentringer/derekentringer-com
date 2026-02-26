@@ -8,19 +8,80 @@ import useAuthStore from "@/store/authStore";
 import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { AccountsScreen } from "@/screens/AccountsScreen";
-import { ActivityScreen } from "@/screens/ActivityScreen";
+import { AccountTypeScreen } from "@/screens/AccountTypeScreen";
+import { AccountDetailScreen } from "@/screens/AccountDetailScreen";
+import { TransactionsScreen } from "@/screens/TransactionsScreen";
+import { TransactionDetailScreen } from "@/screens/TransactionDetailScreen";
 import { PlanningScreen } from "@/screens/PlanningScreen";
 import { MoreScreen } from "@/screens/MoreScreen";
 import { colors } from "@/theme";
 
+type AccountsStackParamList = {
+  AccountsList: undefined;
+  AccountType: { groupSlug: string; groupLabel: string };
+  AccountDetail: { accountId: string; accountName: string };
+};
+
+type ActivityStackParamList = {
+  TransactionsList: { accountId?: string } | undefined;
+  TransactionDetail: { transactionId: string };
+};
+
 const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
+const AccountsStack = createNativeStackNavigator<AccountsStackParamList>();
+const ActivityStack = createNativeStackNavigator<ActivityStackParamList>();
+
+const stackScreenOptions = {
+  headerStyle: { backgroundColor: colors.background },
+  headerTintColor: colors.foreground,
+  headerShadowVisible: false,
+} as const;
 
 function AuthNavigator() {
   return (
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
     </AuthStack.Navigator>
+  );
+}
+
+function AccountsStackNavigator() {
+  return (
+    <AccountsStack.Navigator screenOptions={stackScreenOptions}>
+      <AccountsStack.Screen
+        name="AccountsList"
+        component={AccountsScreen}
+        options={{ title: "Accounts" }}
+      />
+      <AccountsStack.Screen
+        name="AccountType"
+        component={AccountTypeScreen}
+        options={{ title: "Accounts" }}
+      />
+      <AccountsStack.Screen
+        name="AccountDetail"
+        component={AccountDetailScreen}
+        options={{ title: "Account" }}
+      />
+    </AccountsStack.Navigator>
+  );
+}
+
+function ActivityStackNavigator() {
+  return (
+    <ActivityStack.Navigator screenOptions={stackScreenOptions}>
+      <ActivityStack.Screen
+        name="TransactionsList"
+        component={TransactionsScreen}
+        options={{ title: "Activity" }}
+      />
+      <ActivityStack.Screen
+        name="TransactionDetail"
+        component={TransactionDetailScreen}
+        options={{ title: "Transaction" }}
+      />
+    </ActivityStack.Navigator>
   );
 }
 
@@ -46,8 +107,9 @@ function MainTabNavigator() {
       />
       <MainTab.Screen
         name="Accounts"
-        component={AccountsScreen}
+        component={AccountsStackNavigator}
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="bank" color={color} size={size} />
           ),
@@ -55,8 +117,9 @@ function MainTabNavigator() {
       />
       <MainTab.Screen
         name="Activity"
-        component={ActivityScreen}
+        component={ActivityStackNavigator}
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="swap-horizontal" color={color} size={size} />
           ),
