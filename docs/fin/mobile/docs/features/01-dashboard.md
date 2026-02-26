@@ -44,8 +44,8 @@ Full-featured mobile dashboard matching the web app's `DashboardPage.tsx`, adapt
 
 - `src/components/dashboard/KpiCard.tsx` — Metric card with SVG Polyline sparkline, trend badge, vertical divider layout matching web
 - `src/components/dashboard/KpiGrid.tsx` — 2x2 grid with unified loading state, sparkline computation (net worth 30-day, spending MTD cumulative, income MTD cumulative), all cards tappable with haptic feedback
-- `src/components/dashboard/NetWorthChart.tsx` — AreaChart with 3 series (assets, liabilities, net worth), self-managed range/granularity state with TimeRangeSelector, legend row
-- `src/components/dashboard/IncomeSpendingChart.tsx` — Grouped BarChart with self-managed range/granularity state
+- `src/components/dashboard/NetWorthChart.tsx` — AreaChart with 3 series (assets, liabilities, net worth), self-managed range/granularity state with TimeRangeSelector, legend row, touch interaction disabled for mobile UX
+- `src/components/dashboard/IncomeSpendingChart.tsx` — Grouped BarChart with self-managed range/granularity state, bar press disabled for mobile UX
 - `src/components/dashboard/SpendingChart.tsx` — PieChart donut with category legend
 - `src/components/dashboard/UpcomingBillsList.tsx` — Bill rows with overdue badges, filtered to current month unpaid
 - `src/components/dashboard/GoalsSummaryCard.tsx` — Progress bars for top 5 goals with type badges

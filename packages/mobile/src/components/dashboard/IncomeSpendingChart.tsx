@@ -103,6 +103,7 @@ export function IncomeSpendingChart() {
             xAxisColor="transparent"
             formatYLabel={(v) => formatCurrency(Number(v))}
             disableScroll
+            disablePress
             adjustToWidth
             isAnimated={false}
           />
