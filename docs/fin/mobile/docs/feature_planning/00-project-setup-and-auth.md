@@ -47,7 +47,7 @@ The finance-api delivers refresh tokens exclusively via HttpOnly cookies. React 
 - `src/screens/AccountsScreen.tsx` — placeholder stub
 - `src/screens/ActivityScreen.tsx` — placeholder stub
 - `src/screens/PlanningScreen.tsx` — placeholder stub
-- `src/screens/MoreScreen.tsx` — placeholder stub
+- `src/screens/MoreScreen.tsx` — sectioned menu (Settings, Notifications, AI Insights, Reports, About) with working Sign Out button and "Coming Soon" badges for unbuilt features
 - `src/components/FinLogo.tsx` — react-native-svg two-peaks logo (green `#46A851`, blue `#3586C8`)
 - `src/__mocks__/` — mocks for react-native, @expo/vector-icons, react-native-svg
 

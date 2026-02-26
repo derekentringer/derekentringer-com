@@ -2,6 +2,7 @@
 
 **Status:** Not Started
 **Priority:** Medium
+**Note:** The More screen shell is already in place (v1.19.1) with placeholder menu rows for Settings, Notifications, AI Insights, Reports, and About. This phase replaces the placeholders with full functionality.
 
 ## Summary
 

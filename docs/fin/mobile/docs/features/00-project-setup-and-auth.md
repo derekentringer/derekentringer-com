@@ -17,7 +17,8 @@ Bootstrapped the Expo React Native project in `packages/mobile/`, integrated wit
 - Axios API client with `X-Client-Type: mobile` header, request interceptor (Bearer auth), response interceptor (401 retry)
 - React Navigation bottom tab navigator (5 tabs: Dashboard, Accounts, Activity, Planning, More) with auth-conditional routing
 - Login screen with FinLogo SVG, username/password form, error handling, and loading states
-- Placeholder stub screens for all five bottom tabs
+- Placeholder stub screens for Accounts, Activity, and Planning tabs
+- **More screen** with working Sign Out button (confirmation alert, haptic feedback, calls auth store logout), sectioned menu rows for Settings, Notifications, AI Insights, Reports, and About (all placeholder with "Coming Soon" badges), app version display
 - React Query v5 configured (5-min staleTime, 30-min gcTime, 2 retries)
 - EAS Build profiles (development/preview/production) configured for APK sideload distribution
 - Jest test infrastructure with mocks for react-native, expo-secure-store, react-native-reanimated, react-native-svg, and @expo/vector-icons
