@@ -110,23 +110,6 @@ export function NetWorthChart() {
             disableScroll
             adjustToWidth
             isAnimated={false}
-            pointerConfig={{
-              pointerStripColor: colors.muted,
-              pointerStripWidth: 1,
-              pointerColor: CHART_COLORS.netWorth,
-              radius: 4,
-              pointerLabelWidth: 120,
-              pointerLabelHeight: 60,
-              pointerLabelComponent: (items: Array<{ value: number }>) => {
-                return (
-                  <View style={styles.tooltip}>
-                    <Text style={[styles.tooltipText, { color: CHART_COLORS.netWorth }]}>
-                      NW: {formatCurrency(items[0]?.value ?? 0)}
-                    </Text>
-                  </View>
-                );
-              },
-            }}
           />
         )}
       </View>
@@ -184,17 +167,6 @@ const styles = StyleSheet.create({
   axisText: {
     color: colors.muted,
     fontSize: 9,
-  },
-  tooltip: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    padding: 6,
-  },
-  tooltipText: {
-    fontSize: 11,
-    fontWeight: "500",
   },
   legendRow: {
     flexDirection: "row",
