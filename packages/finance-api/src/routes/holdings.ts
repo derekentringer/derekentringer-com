@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { CreateHoldingRequest, UpdateHoldingRequest, ReorderHoldingsRequest } from "@derekentringer/shared";
 import { ASSET_CLASSES } from "@derekentringer/shared";
+import { requirePin } from "@derekentringer/shared/auth/pinVerify";
 import { loadConfig } from "../config.js";
 import {
   createHolding,
@@ -90,7 +91,8 @@ async function validateInvestmentAccount(accountId: string): Promise<{ valid: bo
 export default async function holdingRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  loadConfig();
+  const config = loadConfig();
+  const pinGuard = requirePin(config.pinTokenSecret);
 
   // GET / — list holdings for an account
   fastify.get<{ Querystring: { accountId?: string } }>(
@@ -305,9 +307,10 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete holding
+  // DELETE /:id — delete holding (PIN-protected)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
+    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,

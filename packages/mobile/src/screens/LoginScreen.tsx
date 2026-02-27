@@ -7,6 +7,8 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
   ActivityIndicator,
 } from "react-native";
 import { FinLogo } from "@/components/FinLogo";
@@ -38,53 +40,56 @@ export function LoginScreen() {
     }
   };
 
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <View style={styles.inner}>
-        <View style={styles.logoContainer}>
-          <FinLogo width={80} height={49} />
-          <Text style={styles.title}>fin</Text>
-        </View>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <TextInput
-          style={styles.input}
-          placeholder="Username"
-          placeholderTextColor={colors.mutedForeground}
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor={colors.mutedForeground}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color={colors.foreground} />
-          ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
-          )}
-        </TouchableOpacity>
+  const content = (
+    <View style={styles.inner}>
+      <View style={styles.logoContainer}>
+        <FinLogo width={80} height={49} />
+        <Text style={styles.title}>fin</Text>
       </View>
-    </KeyboardAvoidingView>
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <TextInput
+        style={styles.input}
+        placeholder="Username"
+        placeholderTextColor={colors.mutedForeground}
+        value={username}
+        onChangeText={setUsername}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        placeholderTextColor={colors.mutedForeground}
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+
+      <TouchableOpacity
+        style={[styles.button, loading && styles.buttonDisabled]}
+        onPress={handleLogin}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.foreground} />
+        ) : (
+          <Text style={styles.buttonText}>Sign In</Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView style={styles.container} behavior="padding">
+        {content}
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
