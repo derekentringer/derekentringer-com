@@ -15,7 +15,7 @@ Full-featured mobile dashboard matching the web app's `DashboardPage.tsx`, adapt
 
 - `react-native-gifted-charts` — SVG-based charts (line, area, bar, pie), no Skia dependency, New Architecture compatible
 - `@gorhom/bottom-sheet` v5 — Native bottom sheets with pull-to-dismiss (uses react-native-reanimated + gesture-handler)
-- `@react-native-async-storage/async-storage` — AI insight seen-IDs storage (expo-secure-store has 2KB limit)
+- `@react-native-async-storage/async-storage` — General key-value storage (expo-secure-store has 2KB limit); AI insight seen-IDs now tracked server-side
 - `expo-haptics` — Haptic feedback on KPI taps, time range toggles, pull-to-refresh
 - `expo-linear-gradient` — Required by react-native-gifted-charts for gradient fills
 
@@ -49,7 +49,7 @@ Full-featured mobile dashboard matching the web app's `DashboardPage.tsx`, adapt
 - `src/components/dashboard/SpendingChart.tsx` — PieChart donut with category legend
 - `src/components/dashboard/UpcomingBillsList.tsx` — Bill rows with overdue badges, filtered to current month unpaid
 - `src/components/dashboard/GoalsSummaryCard.tsx` — Progress bars for top 5 goals with type badges
-- `src/components/dashboard/AiInsightCard.tsx` — Collapsible insight list, AsyncStorage for seen IDs
+- `src/components/dashboard/AiInsightCard.tsx` — Collapsible insight list, server-side read tracking via `useUnseenInsightCounts` / `useMarkInsightsRead` hooks
 - `src/components/dashboard/TimeRangeSelector.tsx` — Horizontal ScrollView with pill buttons, 44pt touch targets, haptic feedback
 - `src/components/dashboard/FavoriteAccountCards.tsx` — Horizontal FlatList with snap behavior, per-account sparkline area charts
 
