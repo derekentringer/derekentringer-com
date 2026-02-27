@@ -10,10 +10,12 @@ process.env.ADMIN_USERNAME = "admin";
 process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-holding-tests-min32ch";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
+process.env.PIN_TOKEN_SECRET = "dev-pin-secret-do-not-use-in-prod";
 process.env.CORS_ORIGIN = "http://localhost:3003";
 process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
 import { describe, it, expect, afterAll, afterEach, vi, beforeAll } from "vitest";
+import { signPinToken } from "@derekentringer/shared/auth/pinVerify";
 import { createMockPrisma } from "./helpers/mockPrisma.js";
 import type { MockPrisma } from "./helpers/mockPrisma.js";
 import { encryptHoldingForCreate, encryptAccountForCreate } from "../lib/mappers.js";
@@ -93,6 +95,10 @@ describe("Holding routes", () => {
       payload: { username: "admin", password: TEST_PASSWORD },
     });
     return res.json().accessToken;
+  }
+
+  function getPinToken(): string {
+    return signPinToken({ sub: "admin-001", type: "pin" }, "dev-pin-secret-do-not-use-in-prod");
   }
 
   // --- POST /holdings ---
@@ -464,10 +470,23 @@ describe("Holding routes", () => {
       const res = await app.inject({
         method: "DELETE",
         url: `/holdings/${VALID_CUID}`,
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
       });
 
       expect(res.statusCode).toBe(204);
+    });
+
+    it("returns 403 without PIN token", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/holdings/${VALID_CUID}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json().message).toBe("PIN verification required");
     });
 
     it("returns 404 if not found", async () => {
@@ -479,7 +498,7 @@ describe("Holding routes", () => {
       const res = await app.inject({
         method: "DELETE",
         url: `/holdings/${VALID_CUID_2}`,
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
       });
 
       expect(res.statusCode).toBe(404);
@@ -491,7 +510,7 @@ describe("Holding routes", () => {
       const res = await app.inject({
         method: "DELETE",
         url: "/holdings/invalid-id",
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
       });
 
       expect(res.statusCode).toBe(400);
