@@ -67,7 +67,7 @@ Full settings CRUD screens (categories, category rules, income sources), notific
 
 ## Services
 
-`src/services/pushNotifications.ts` — `registerForPushNotifications()` (device check, permissions, FCM token, register API), `unregisterPushNotifications(deviceId)`, foreground notification handler
+`src/services/pushNotifications.ts` — `registerForPushNotifications()` (device check, permissions, native FCM device token via `getDevicePushTokenAsync`, register API), `unregisterPushNotifications(deviceId)`, foreground notification handler with `shouldShowBanner`/`shouldShowList` (not deprecated `shouldShowAlert`), Android channel `finance_notifications` matching backend's `fcm.ts`
 
 ## Navigation Changes
 
@@ -102,7 +102,7 @@ Full settings CRUD screens (categories, category rules, income sources), notific
 - AI Insights settings: master toggle disables features, refresh frequency changes, cache clears
 - Reports: Monthly/Quarterly tabs, period navigation, insights display, disabled state links to settings
 - About screen: shows logo and version
-- Push notifications (Android): registers device token, test notification received
+- Push notifications (Android): registers native FCM device token, test notification received, foreground display without deprecation warnings
 - Date section headers appear on all date-based lists
 - Row heights consistent across all list screens
 - Pull-to-refresh works on all new screens
