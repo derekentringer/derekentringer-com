@@ -19,6 +19,8 @@ import { BudgetsScreen } from "@/screens/BudgetsScreen";
 import { GoalsScreen } from "@/screens/GoalsScreen";
 import { GoalDetailScreen } from "@/screens/GoalDetailScreen";
 import { ProjectionsScreen } from "@/screens/ProjectionsScreen";
+import { PortfolioScreen } from "@/screens/PortfolioScreen";
+import { DecisionToolsScreen } from "@/screens/DecisionToolsScreen";
 import { MoreScreen } from "@/screens/MoreScreen";
 import type { PlanningStackParamList } from "@/navigation/types";
 import { colors } from "@/theme";
@@ -27,6 +29,7 @@ type AccountsStackParamList = {
   AccountsList: undefined;
   AccountType: { groupSlug: string; groupLabel: string };
   AccountDetail: { accountId: string; accountName: string };
+  Portfolio: { accountId?: string } | undefined;
 };
 
 type ActivityStackParamList = {
@@ -71,6 +74,11 @@ function AccountsStackNavigator() {
         name="AccountDetail"
         component={AccountDetailScreen}
         options={{ title: "Account" }}
+      />
+      <AccountsStack.Screen
+        name="Portfolio"
+        component={PortfolioScreen}
+        options={{ title: "Portfolio" }}
       />
     </AccountsStack.Navigator>
   );
@@ -130,6 +138,11 @@ function PlanningStackNavigator() {
         name="Projections"
         component={ProjectionsScreen}
         options={{ title: "Projections" }}
+      />
+      <PlanningStack.Screen
+        name="DecisionTools"
+        component={DecisionToolsScreen}
+        options={{ title: "Decision Tools" }}
       />
     </PlanningStack.Navigator>
   );

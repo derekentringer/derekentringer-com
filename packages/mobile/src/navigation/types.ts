@@ -2,6 +2,7 @@ export type AccountsStackParamList = {
   AccountsList: undefined;
   AccountType: { groupSlug: string; groupLabel: string };
   AccountDetail: { accountId: string; accountName: string };
+  Portfolio: { accountId?: string } | undefined;
 };
 
 export type ActivityStackParamList = {
@@ -17,4 +18,5 @@ export type PlanningStackParamList = {
   GoalsList: undefined;
   GoalDetail: { goalId: string; goalName: string };
   Projections: undefined;
+  DecisionTools: undefined;
 };
