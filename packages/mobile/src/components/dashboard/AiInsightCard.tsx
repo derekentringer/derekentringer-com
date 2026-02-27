@@ -1,13 +1,11 @@
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Card } from "@/components/common/Card";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { useAiPreferences, useAiInsights } from "@/hooks/useDashboard";
+import { useUnseenInsightCounts, useMarkInsightsRead } from "@/hooks/useAiSettings";
 import type { AiInsight } from "@derekentringer/shared/finance";
 import { colors, spacing, borderRadius } from "@/theme";
-
-const SEEN_KEY = "ai-insights-seen-ids";
 
 const TYPE_ICONS: Record<string, string> = {
   observation: "\uD83D\uDC41",
@@ -22,55 +20,28 @@ const SEVERITY_COLORS: Record<string, string> = {
   success: "#4ade80",
 };
 
-async function getSeenIds(): Promise<Set<string>> {
-  try {
-    const raw = await AsyncStorage.getItem(SEEN_KEY);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch {
-    // ignore
-  }
-  return new Set();
-}
-
-async function markSeen(ids: string[]) {
-  try {
-    await AsyncStorage.setItem(SEEN_KEY, JSON.stringify(ids));
-  } catch {
-    // non-critical
-  }
-}
-
 export function AiInsightCard() {
   const { data: prefData, isLoading: prefLoading } = useAiPreferences();
   const enabled = prefData?.preferences?.masterEnabled && prefData?.preferences?.dashboardCard;
   const { data: insightData, isLoading: insightLoading } = useAiInsights("dashboard", !!enabled);
+  const { data: unseenData } = useUnseenInsightCounts();
+  const markReadMutation = useMarkInsightsRead();
 
   const insights = insightData?.insights ?? [];
   const isLoading = prefLoading || (enabled && insightLoading);
+  const unseenCount = unseenData?.dashboard ?? 0;
 
   const [collapsed, setCollapsed] = useState(true);
-  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    getSeenIds().then(setSeenIds);
-  }, []);
-
-  const unseenCount = useMemo(
-    () => insights.filter((i) => !seenIds.has(i.id)).length,
-    [insights, seenIds],
-  );
 
   const handleToggle = useCallback(() => {
     setCollapsed((prev) => {
       const willExpand = prev;
-      if (willExpand && insights.length > 0) {
-        const allIds = insights.map((i) => i.id);
-        markSeen(allIds);
-        setSeenIds(new Set(allIds));
+      if (willExpand && insights.length > 0 && unseenCount > 0) {
+        markReadMutation.mutate(insights.map((i) => i.id));
       }
       return !prev;
     });
-  }, [insights]);
+  }, [insights, unseenCount, markReadMutation]);
 
   if (!enabled && !isLoading) return null;
   if (isLoading) return <SkeletonCard lines={2} />;
@@ -84,13 +55,13 @@ export function AiInsightCard() {
         accessibilityRole="button"
         accessibilityLabel={`AI Insights, ${insights.length} insights${unseenCount > 0 ? `, ${unseenCount} new` : ""}`}
       >
-        <Text style={styles.headerIcon}>🧠</Text>
+        <Text style={styles.headerIcon}>{"\uD83E\uDDE0"}</Text>
         <Text style={styles.headerTitle}>AI Insights</Text>
         <View style={styles.countBadge}>
           <Text style={styles.countText}>{insights.length}</Text>
         </View>
         {unseenCount > 0 && collapsed && <View style={styles.unseenDot} />}
-        <Text style={[styles.chevron, !collapsed && styles.chevronOpen]}>▸</Text>
+        <Text style={[styles.chevron, !collapsed && styles.chevronOpen]}>{"\u25B8"}</Text>
       </Pressable>
       {!collapsed && (
         <View style={styles.insightList}>

@@ -10,6 +10,14 @@ import {
   getDailyUsage,
   incrementDailyUsage,
 } from "../store/aiInsightStore.js";
+import {
+  ensureInsightStatuses,
+  markInsightsRead,
+  markInsightsDismissed,
+  getInsightStatuses,
+  getUnseenCounts,
+  getArchive,
+} from "../store/aiInsightStatusStore.js";
 import { buildContextForScope } from "../store/aiContextStore.js";
 import { generateInsights } from "../lib/anthropicService.js";
 
@@ -175,12 +183,17 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       // 6. Check cache
       const cached = await getCachedInsights(scope, context.contentHash);
       if (cached) {
-        const dailyRequestsUsed = await getDailyUsage();
+        await ensureInsightStatuses(cached);
+        const [dailyRequestsUsed, statuses] = await Promise.all([
+          getDailyUsage(),
+          getInsightStatuses(cached.map((i) => i.id)),
+        ]);
         return reply.send({
           insights: cached,
           cached: true,
           dailyRequestsUsed,
           dailyRequestsLimit: DAILY_LIMIT,
+          statuses,
         });
       }
 
@@ -201,15 +214,89 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       // 9. Cache the result
       await setCachedInsights(scope, context.contentHash, insights, expiresAt);
 
-      // 10. Increment usage
-      const dailyRequestsUsed = await incrementDailyUsage();
+      // 10. Increment usage & create status rows
+      const [dailyRequestsUsed] = await Promise.all([
+        incrementDailyUsage(),
+        ensureInsightStatuses(insights),
+      ]);
+
+      // 11. Get statuses for response
+      const statuses = await getInsightStatuses(insights.map((i) => i.id));
 
       return reply.send({
         insights,
         cached: false,
         dailyRequestsUsed,
         dailyRequestsLimit: DAILY_LIMIT,
+        statuses,
       });
+    },
+  );
+
+  // POST /insights/mark-read
+  fastify.post<{ Body: { insightIds: string[] } }>(
+    "/insights/mark-read",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["insightIds"],
+          properties: {
+            insightIds: { type: "array", items: { type: "string" } },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { insightIds: string[] } }>,
+      reply: FastifyReply,
+    ) => {
+      await markInsightsRead(request.body.insightIds);
+      return reply.send({ ok: true });
+    },
+  );
+
+  // POST /insights/mark-dismissed
+  fastify.post<{ Body: { insightIds: string[] } }>(
+    "/insights/mark-dismissed",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["insightIds"],
+          properties: {
+            insightIds: { type: "array", items: { type: "string" } },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { insightIds: string[] } }>,
+      reply: FastifyReply,
+    ) => {
+      await markInsightsDismissed(request.body.insightIds);
+      return reply.send({ ok: true });
+    },
+  );
+
+  // GET /insights/unseen-count
+  fastify.get(
+    "/insights/unseen-count",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const counts = await getUnseenCounts();
+      return reply.send(counts);
+    },
+  );
+
+  // GET /insights/archive
+  fastify.get(
+    "/insights/archive",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const query = request.query as Record<string, string>;
+      const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
+      const offset = Math.max(parseInt(query.offset, 10) || 0, 0);
+      const result = await getArchive(limit, offset);
+      return reply.send(result);
     },
   );
 }

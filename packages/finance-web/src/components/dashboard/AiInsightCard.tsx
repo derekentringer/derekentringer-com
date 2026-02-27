@@ -1,12 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import type { AiInsight } from "@derekentringer/shared/finance";
-import { fetchAiPreferences, fetchAiInsights } from "../../api/ai.ts";
+import { fetchAiPreferences, fetchAiInsights, fetchUnseenInsightCounts, markInsightsRead } from "../../api/ai.ts";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Brain, Eye, Lightbulb, AlertTriangle, PartyPopper, ChevronDown } from "lucide-react";
-
-const SEEN_KEY = "ai-insights-seen-ids";
 
 const TYPE_ICONS: Record<string, typeof Eye> = {
   observation: Eye,
@@ -21,30 +19,12 @@ const SEVERITY_COLORS: Record<string, string> = {
   success: "border-l-green-400",
 };
 
-function getSeenIds(): Set<string> {
-  try {
-    const raw = localStorage.getItem(SEEN_KEY);
-    if (raw) return new Set(JSON.parse(raw) as string[]);
-  } catch {
-    // ignore corrupt data
-  }
-  return new Set();
-}
-
-function markSeen(ids: string[]) {
-  try {
-    localStorage.setItem(SEEN_KEY, JSON.stringify(ids));
-  } catch {
-    // storage full — non-critical
-  }
-}
-
 export function AiInsightCard() {
   const [insights, setInsights] = useState<AiInsight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [enabled, setEnabled] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
-  const [seenIds, setSeenIds] = useState<Set<string>>(() => getSeenIds());
+  const [unseenCount, setUnseenCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,9 +40,13 @@ export function AiInsightCard() {
         }
         setEnabled(true);
 
-        const data = await fetchAiInsights("dashboard");
+        const [data, counts] = await Promise.all([
+          fetchAiInsights("dashboard"),
+          fetchUnseenInsightCounts(),
+        ]);
         if (cancelled) return;
         setInsights(data.insights);
+        setUnseenCount(counts.dashboard);
       } catch {
         // Non-blocking — silently fail
       } finally {
@@ -74,22 +58,17 @@ export function AiInsightCard() {
     return () => { cancelled = true; };
   }, []);
 
-  const unseenCount = useMemo(
-    () => insights.filter((i) => !seenIds.has(i.id)).length,
-    [insights, seenIds],
-  );
-
   const handleToggle = useCallback(() => {
     setCollapsed((prev) => {
       const willExpand = prev;
-      if (willExpand && insights.length > 0) {
+      if (willExpand && insights.length > 0 && unseenCount > 0) {
         const allIds = insights.map((i) => i.id);
-        markSeen(allIds);
-        setSeenIds(new Set(allIds));
+        markInsightsRead(allIds).catch(() => {});
+        setUnseenCount(0);
       }
       return !prev;
     });
-  }, [insights]);
+  }, [insights, unseenCount]);
 
   if (!enabled && !isLoading) return null;
 

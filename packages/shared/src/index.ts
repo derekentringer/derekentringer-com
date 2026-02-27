@@ -207,4 +207,7 @@ export type {
   UpdateAiInsightPreferencesRequest,
   AiInsightsResponse,
   AiInsightsRequest,
+  AiInsightStatusEntry,
+  AiInsightArchiveResponse,
+  AiInsightUnseenCountResponse,
 } from "./finance/types.js";

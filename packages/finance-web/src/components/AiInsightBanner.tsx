@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import type { AiInsight, AiInsightScope } from "@derekentringer/shared/finance";
-import { fetchAiPreferences, fetchAiInsights } from "../api/ai.ts";
+import { fetchAiPreferences, fetchAiInsights, markInsightsRead, markInsightsDismissed } from "../api/ai.ts";
 import { Badge } from "@/components/ui/badge";
 import { Eye, Lightbulb, AlertTriangle, PartyPopper, X } from "lucide-react";
 
@@ -20,7 +20,6 @@ const SEVERITY_COLORS: Record<string, string> = {
 
 export function AiInsightBanner({ scope }: { scope: AiInsightScope }) {
   const [insights, setInsights] = useState<AiInsight[]>([]);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -34,8 +33,19 @@ export function AiInsightBanner({ scope }: { scope: AiInsightScope }) {
 
         const data = await fetchAiInsights(scope);
         if (cancelled) return;
-        setInsights(data.insights.slice(0, 2));
-        setVisible(true);
+
+        // Filter out already-dismissed insights using server statuses
+        const dismissedIds = new Set(
+          (data.statuses ?? []).filter((s) => s.isDismissed).map((s) => s.insightId),
+        );
+        const visibleInsights = data.insights.filter((i) => !dismissedIds.has(i.id)).slice(0, 2);
+        setInsights(visibleInsights);
+
+        if (visibleInsights.length > 0) {
+          setVisible(true);
+          // Mark visible insights as read
+          markInsightsRead(visibleInsights.map((i) => i.id)).catch(() => {});
+        }
       } catch {
         // Silently fail — nudges are non-critical
       }
@@ -45,12 +55,11 @@ export function AiInsightBanner({ scope }: { scope: AiInsightScope }) {
     return () => { cancelled = true; };
   }, [scope]);
 
-  const visibleInsights = insights.filter((i) => !dismissed.has(i.id));
-  if (!visible || visibleInsights.length === 0) return null;
+  if (!visible || insights.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-2">
-      {visibleInsights.map((insight) => {
+      {insights.map((insight) => {
         const Icon = TYPE_ICONS[insight.type] ?? Eye;
         const borderColor = SEVERITY_COLORS[insight.severity] ?? "border-l-border";
 
@@ -78,7 +87,10 @@ export function AiInsightBanner({ scope }: { scope: AiInsightScope }) {
             <button
               type="button"
               className="text-muted-foreground hover:text-foreground p-0.5 shrink-0"
-              onClick={() => setDismissed((prev) => new Set(prev).add(insight.id))}
+              onClick={() => {
+                markInsightsDismissed([insight.id]).catch(() => {});
+                setInsights((prev) => prev.filter((i) => i.id !== insight.id));
+              }}
             >
               <X className="h-3.5 w-3.5" />
             </button>

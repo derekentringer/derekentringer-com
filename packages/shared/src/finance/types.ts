@@ -1350,12 +1350,38 @@ export interface AiInsightsResponse {
   cached: boolean;
   dailyRequestsUsed: number;
   dailyRequestsLimit: number;
+  statuses?: { insightId: string; isRead: boolean; isDismissed: boolean }[];
 }
 
 export interface AiInsightsRequest {
   scope: AiInsightScope;
   month?: string;
   quarter?: string;
+}
+
+export interface AiInsightStatusEntry {
+  insightId: string;
+  scope: AiInsightScope;
+  type: AiInsightType;
+  severity: AiInsightSeverity;
+  title: string;
+  body: string;
+  relatedPage?: string;
+  generatedAt: string;
+  isRead: boolean;
+  isDismissed: boolean;
+  readAt: string | null;
+  dismissedAt: string | null;
+}
+
+export interface AiInsightArchiveResponse {
+  insights: AiInsightStatusEntry[];
+  total: number;
+}
+
+export interface AiInsightUnseenCountResponse {
+  dashboard: number;
+  banners: number;
 }
 
 // ─── Decision Tools ─────────────────────────────────────────────────────────
