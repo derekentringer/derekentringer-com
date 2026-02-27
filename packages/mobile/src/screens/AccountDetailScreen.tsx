@@ -34,6 +34,7 @@ import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { ErrorCard } from "@/components/common/ErrorCard";
 import { SectionHeader } from "@/components/common/SectionHeader";
 import { formatCurrency, formatCurrencyFull } from "@/lib/chartTheme";
+import { DateSectionHeader, getMonthYearKey, getMonthYearLabel } from "@/components/common/DateSectionHeader";
 import { colors, spacing, borderRadius } from "@/theme";
 
 const ACCOUNT_TYPE_LABELS: Record<string, string> = {
@@ -232,24 +233,39 @@ export function AccountDetailScreen() {
           {transactions.length === 0 ? (
             <Text style={styles.emptyTx}>No transactions yet.</Text>
           ) : (
-            transactions.map((tx) => (
-              <View key={tx.id} style={styles.txRow}>
-                <View style={styles.txLeft}>
-                  <Text style={styles.txDesc} numberOfLines={1}>
-                    {tx.description}
-                  </Text>
-                  <Text style={styles.txDate}>{tx.date}</Text>
-                </View>
-                <Text
-                  style={[
-                    styles.txAmount,
-                    { color: tx.amount >= 0 ? colors.success : colors.error },
-                  ]}
-                >
-                  {formatCurrency(Math.abs(tx.amount))}
-                </Text>
-              </View>
-            ))
+            transactions.map((tx, idx) => {
+              const prevKey = idx > 0 ? getMonthYearKey(transactions[idx - 1].date) : null;
+              const curKey = getMonthYearKey(tx.date);
+              const showHeader = curKey !== prevKey;
+              return (
+                <React.Fragment key={tx.id}>
+                  {showHeader && (
+                    <DateSectionHeader title={getMonthYearLabel(tx.date)} />
+                  )}
+                  <View style={styles.txRow}>
+                    <View style={styles.txLeft}>
+                      <Text style={styles.txDesc} numberOfLines={1}>
+                        {tx.description}
+                      </Text>
+                      <Text style={styles.txDate}>
+                        {new Date(tx.date).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.txAmount,
+                        { color: tx.amount >= 0 ? colors.success : colors.error },
+                      ]}
+                    >
+                      {formatCurrency(Math.abs(tx.amount))}
+                    </Text>
+                  </View>
+                </React.Fragment>
+              );
+            })
           )}
         </View>
 

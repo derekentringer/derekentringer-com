@@ -22,7 +22,17 @@ import { ProjectionsScreen } from "@/screens/ProjectionsScreen";
 import { PortfolioScreen } from "@/screens/PortfolioScreen";
 import { DecisionToolsScreen } from "@/screens/DecisionToolsScreen";
 import { MoreScreen } from "@/screens/MoreScreen";
-import type { PlanningStackParamList } from "@/navigation/types";
+import { SettingsScreen } from "@/screens/SettingsScreen";
+import { CategoriesScreen } from "@/screens/CategoriesScreen";
+import { CategoryRulesScreen } from "@/screens/CategoryRulesScreen";
+import { IncomeSourcesScreen } from "@/screens/IncomeSourcesScreen";
+import { NotificationPreferencesScreen } from "@/screens/NotificationPreferencesScreen";
+import { NotificationHistoryScreen } from "@/screens/NotificationHistoryScreen";
+import { AiInsightsSettingsScreen } from "@/screens/AiInsightsSettingsScreen";
+import { ReportsScreen } from "@/screens/ReportsScreen";
+import { AboutScreen } from "@/screens/AboutScreen";
+import { NotificationBadge } from "@/components/notifications/NotificationBadge";
+import type { PlanningStackParamList, MoreStackParamList } from "@/navigation/types";
 import { colors } from "@/theme";
 
 type AccountsStackParamList = {
@@ -42,6 +52,7 @@ const MainTab = createBottomTabNavigator();
 const AccountsStack = createNativeStackNavigator<AccountsStackParamList>();
 const ActivityStack = createNativeStackNavigator<ActivityStackParamList>();
 const PlanningStack = createNativeStackNavigator<PlanningStackParamList>();
+const MoreStack = createNativeStackNavigator<MoreStackParamList>();
 
 const stackScreenOptions = {
   headerStyle: { backgroundColor: colors.background },
@@ -148,6 +159,63 @@ function PlanningStackNavigator() {
   );
 }
 
+function MoreStackNavigator() {
+  return (
+    <MoreStack.Navigator screenOptions={stackScreenOptions}>
+      <MoreStack.Screen
+        name="MoreHome"
+        component={MoreScreen}
+        options={{ title: "More" }}
+      />
+      <MoreStack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ title: "Settings" }}
+      />
+      <MoreStack.Screen
+        name="Categories"
+        component={CategoriesScreen}
+        options={{ title: "Categories" }}
+      />
+      <MoreStack.Screen
+        name="CategoryRules"
+        component={CategoryRulesScreen}
+        options={{ title: "Category Rules" }}
+      />
+      <MoreStack.Screen
+        name="IncomeSources"
+        component={IncomeSourcesScreen}
+        options={{ title: "Income Sources" }}
+      />
+      <MoreStack.Screen
+        name="NotificationPreferences"
+        component={NotificationPreferencesScreen}
+        options={{ title: "Notifications" }}
+      />
+      <MoreStack.Screen
+        name="NotificationHistory"
+        component={NotificationHistoryScreen}
+        options={{ title: "Notification History" }}
+      />
+      <MoreStack.Screen
+        name="AiInsightsSettings"
+        component={AiInsightsSettingsScreen}
+        options={{ title: "AI Insights" }}
+      />
+      <MoreStack.Screen
+        name="Reports"
+        component={ReportsScreen}
+        options={{ title: "Reports" }}
+      />
+      <MoreStack.Screen
+        name="About"
+        component={AboutScreen}
+        options={{ title: "About" }}
+      />
+    </MoreStack.Navigator>
+  );
+}
+
 function MainTabNavigator() {
   return (
     <MainTab.Navigator
@@ -163,6 +231,7 @@ function MainTabNavigator() {
         name="Dashboard"
         component={DashboardScreen}
         options={{
+          headerRight: () => <NotificationBadge />,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="view-dashboard" color={color} size={size} />
           ),
@@ -200,8 +269,9 @@ function MainTabNavigator() {
       />
       <MainTab.Screen
         name="More"
-        component={MoreScreen}
+        component={MoreStackNavigator}
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="dots-horizontal" color={color} size={size} />
           ),

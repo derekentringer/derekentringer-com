@@ -37,6 +37,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonChartCard } from "@/components/common/SkeletonLoader";
 import { ErrorCard } from "@/components/common/ErrorCard";
 import { formatCurrencyFull } from "@/lib/chartTheme";
+import { DateSectionHeader } from "@/components/common/DateSectionHeader";
 import type { PlanningStackParamList } from "@/navigation/types";
 import { colors, spacing, borderRadius } from "@/theme";
 
@@ -190,9 +191,7 @@ function UpcomingContent({ navigation }: { navigation: Nav }) {
       sections={sections}
       keyExtractor={(item, i) => `${item.billId}-${item.dueDate}-${i}`}
       renderSectionHeader={({ section: { title } }) => (
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionHeaderText}>{title}</Text>
-        </View>
+        <DateSectionHeader title={title} />
       )}
       renderItem={({ item }) => (
         <BillInstanceRow
@@ -465,20 +464,6 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-  },
-  sectionHeader: {
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  sectionHeaderText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
   totalBanner: {
     paddingHorizontal: spacing.md,

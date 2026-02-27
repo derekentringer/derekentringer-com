@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
-  FlatList,
+  SectionList,
   ActivityIndicator,
   RefreshControl,
   StyleSheet,
@@ -15,6 +15,7 @@ import { TransactionFilters } from "@/components/transactions/TransactionFilters
 import { TransactionRow } from "@/components/transactions/TransactionRow";
 import { TransactionEditSheet } from "@/components/transactions/TransactionEditSheet";
 import { EmptyState } from "@/components/common/EmptyState";
+import { DateSectionHeader, groupByMonth } from "@/components/common/DateSectionHeader";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import type { Transaction } from "@derekentringer/shared/finance";
 import { colors, spacing } from "@/theme";
@@ -71,6 +72,11 @@ export function TransactionsScreen() {
   const transactions = useMemo(
     () => transactionsQuery.data?.pages.flatMap((p) => p.transactions) ?? [],
     [transactionsQuery.data],
+  );
+
+  const sections = useMemo(
+    () => groupByMonth(transactions, (t) => t.date),
+    [transactions],
   );
 
   const accountOptions = useMemo(
@@ -189,10 +195,14 @@ export function TransactionsScreen() {
         />
       </View>
 
-      <FlatList
-        data={transactions}
+      <SectionList
+        sections={sections}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
+        renderSectionHeader={({ section: { title } }) => (
+          <DateSectionHeader title={title} />
+        )}
+        stickySectionHeadersEnabled
         onEndReached={() => {
           if (transactionsQuery.hasNextPage) {
             transactionsQuery.fetchNextPage();
