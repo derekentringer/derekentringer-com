@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { CreateGoalRequest, UpdateGoalRequest, ReorderGoalsRequest } from "@derekentringer/shared";
+import { requirePin } from "@derekentringer/shared/auth/pinVerify";
 import { loadConfig } from "../config.js";
 import {
   createGoal,
@@ -90,7 +91,8 @@ const reorderSchema = {
 export default async function goalRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  loadConfig();
+  const config = loadConfig();
+  const pinGuard = requirePin(config.pinTokenSecret);
 
   // GET / — list goals
   fastify.get<{ Querystring: { active?: string; type?: string } }>(
@@ -278,9 +280,10 @@ export default async function goalRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete goal
+  // DELETE /:id — delete goal (PIN-protected)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
+    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,

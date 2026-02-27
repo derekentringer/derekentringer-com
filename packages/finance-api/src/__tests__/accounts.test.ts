@@ -9,10 +9,12 @@ process.env.ADMIN_USERNAME = "admin";
 process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-account-tests-min32c";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
+process.env.PIN_TOKEN_SECRET = "dev-pin-secret-do-not-use-in-prod";
 process.env.CORS_ORIGIN = "http://localhost:3003";
 process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
 import { describe, it, expect, afterAll, afterEach, vi, beforeAll } from "vitest";
+import { signPinToken } from "@derekentringer/shared/auth/pinVerify";
 import { createMockPrisma } from "./helpers/mockPrisma.js";
 import type { MockPrisma } from "./helpers/mockPrisma.js";
 import { encryptAccountForCreate } from "../lib/mappers.js";
@@ -57,10 +59,7 @@ describe("Account routes", () => {
   }
 
   function getPinToken(): string {
-    return app.jwt.sign(
-      { sub: "admin-001", type: "pin" } as unknown as { sub: string; username: string },
-      { key: "dev-pin-secret-do-not-use-in-prod", expiresIn: 900 },
-    );
+    return signPinToken({ sub: "admin-001", type: "pin" }, "dev-pin-secret-do-not-use-in-prod");
   }
 
   function makeMockAccountRow(overrides: Record<string, unknown> = {}) {

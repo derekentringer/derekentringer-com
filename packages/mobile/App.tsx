@@ -6,8 +6,11 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Notifications from "expo-notifications";
 import { AppNavigator } from "@/navigation/AppNavigator";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { OfflineBanner } from "@/components/common/OfflineBanner";
 import useAuthStore from "@/store/authStore";
 import { registerForPushNotifications } from "@/services/pushNotifications";
+import { colors } from "@/theme";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,13 +45,18 @@ function PushNotificationSetup() {
 
 export default function App() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView
+      style={{ flex: 1, backgroundColor: colors.background }}
+    >
       <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
           <BottomSheetModalProvider>
             <StatusBar style="light" />
+            <OfflineBanner />
             <PushNotificationSetup />
-            <AppNavigator />
+            <ErrorBoundary>
+              <AppNavigator />
+            </ErrorBoundary>
           </BottomSheetModalProvider>
         </SafeAreaProvider>
       </QueryClientProvider>

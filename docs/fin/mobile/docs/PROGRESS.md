@@ -64,7 +64,7 @@
 
 ### Phase 7: Polish & Distribution
 
-- [ ] [07 — Polish & Distribution](feature_planning/07-polish-and-distribution.md)
+- [x] [07 — Polish & Distribution](features/07-polish-and-distribution.md)
 
 ## Status Key
 

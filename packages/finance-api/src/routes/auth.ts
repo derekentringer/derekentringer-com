@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import bcrypt from "bcryptjs";
+import { signPinToken } from "@derekentringer/shared/auth/pinVerify";
 import { loadConfig } from "../config.js";
 import {
   storeRefreshToken,
@@ -284,10 +285,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
         }
 
         const user = request.user;
-        // Pin tokens use a different payload shape than access tokens
-        const pinToken = fastify.jwt.sign(
-          { sub: user.sub, type: "pin" } as unknown as { sub: string; username: string },
-          { key: config.pinTokenSecret, expiresIn: 900 },
+        const pinToken = signPinToken(
+          { sub: user.sub, type: "pin" },
+          config.pinTokenSecret,
         );
 
         const response: PinVerifyResponse = {
