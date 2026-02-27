@@ -220,6 +220,79 @@ Updated sidebar order: Goals, Bills, Budgets (previously: Budgets, Bills, Goals)
 | 11 | `packages/finance-web/src/pages/GoalsPage.tsx` | Add AiInsightBanner |
 | 12 | `packages/finance-web/src/components/Sidebar.tsx` | Reorder nav: Goals/Bills/Budgets, Decision Tools above Reports |
 
+## AI Insight Read/Dismiss Sync & Archive (v1.26.0)
+
+Server-side tracking of insight read/dismissed state, replacing client-only `localStorage`/`AsyncStorage`. Enables cross-platform sync (web + mobile) and a persistent archive of past insights.
+
+### Shared Types
+
+- `AiInsightStatusEntry` — full insight status with encrypted snapshot (insightId, scope, type, severity, title, body, relatedPage, generatedAt, isRead, isDismissed, readAt, dismissedAt)
+- `AiInsightArchiveResponse` — paginated archive response (`{ insights, total }`)
+- `AiInsightUnseenCountResponse` — `{ dashboard, banners }` unseen counts
+- `AiInsightsResponse.statuses` — optional array of `{ insightId, isRead, isDismissed }` included in insight responses
+
+### Database
+
+New model `AiInsightStatus`:
+- `insightId` (unique) — maps to `AiInsight.id`
+- Encrypted `title` + `body` snapshots for archive display after cache expiry
+- `scope`, `type`, `severity`, `relatedPage`, `generatedAt` — metadata
+- `isRead`, `isDismissed` — tracking flags with timestamps (`readAt`, `dismissedAt`)
+- Indexes on `scope`, `isRead`, `isDismissed`, `generatedAt`
+
+Migration: `20260227000000_add_ai_insight_status`
+
+### API Store (`src/store/aiInsightStatusStore.ts`)
+
+- `ensureInsightStatuses(insights)` — upsert status rows when insights are returned
+- `markInsightsRead(insightIds)` — batch mark as read
+- `markInsightsDismissed(insightIds)` — batch mark as dismissed
+- `getInsightStatuses(insightIds)` — return read/dismissed flags
+- `getUnseenCounts()` — `{ dashboard, banners }` counts
+- `getArchive(limit, offset)` — paginated archive with decrypted snapshots
+- `cleanupOldStatuses(retentionDays)` — retention cleanup
+
+### API Routes
+
+- `POST /ai/insights` — now calls `ensureInsightStatuses()` and returns `statuses` array
+- `POST /ai/insights/mark-read` — marks insights as read
+- `POST /ai/insights/mark-dismissed` — marks insights as dismissed
+- `GET /ai/insights/unseen-count` — returns unseen counts
+- `GET /ai/insights/archive?limit=20&offset=0` — paginated archive
+
+### API Mappers
+
+- `encryptInsightStatusForCreate()` — encrypts title, body, relatedPage
+- `decryptInsightStatus()` — decrypts rows to `AiInsightStatusEntry`
+
+### Web Changes
+
+- **API client** (`src/api/ai.ts`) — 4 new functions: `markInsightsRead`, `markInsightsDismissed`, `fetchUnseenInsightCounts`, `fetchInsightArchive`
+- **AiInsightCard** — replaced `localStorage` seen-tracking with `fetchUnseenInsightCounts()` for red dot; calls `markInsightsRead()` on expand
+- **AiInsightBanner** — replaced session-only `dismissed` state with server-side; filters by `statuses.isDismissed`; calls `markInsightsDismissed()` on X click, `markInsightsRead()` on view
+- **AiInsightSettings** — added "Insight History" card: date-grouped archive with severity-colored borders, scope badges, muted styling for read/dismissed, "Load More" pagination
+
+### New Files
+
+| # | File | Purpose |
+|---|------|---------|
+| 1 | `packages/finance-api/src/store/aiInsightStatusStore.ts` | Insight status CRUD, unseen counts, archive |
+| 2 | `packages/finance-api/prisma/migrations/20260227000000_add_ai_insight_status/migration.sql` | Database migration |
+
+### Modified Files
+
+| # | File | Changes |
+|---|------|---------|
+| 1 | `packages/shared/src/finance/types.ts` | Added 3 new types, extended AiInsightsResponse |
+| 2 | `packages/shared/src/index.ts` | Export new types |
+| 3 | `packages/finance-api/prisma/schema.prisma` | Added AiInsightStatus model |
+| 4 | `packages/finance-api/src/lib/mappers.ts` | Added encrypt/decrypt for AiInsightStatus |
+| 5 | `packages/finance-api/src/routes/ai.ts` | 4 new endpoints + modified POST /insights |
+| 6 | `packages/finance-web/src/api/ai.ts` | 4 new API functions |
+| 7 | `packages/finance-web/src/components/dashboard/AiInsightCard.tsx` | Server-side read tracking |
+| 8 | `packages/finance-web/src/components/AiInsightBanner.tsx` | Server-side dismiss tracking |
+| 9 | `packages/finance-web/src/components/AiInsightSettings.tsx` | Added Insight History section |
+
 ## Deferred
 
 - **Chat interface** — may be revisited as an optional addition, but contextual insights are the primary interface

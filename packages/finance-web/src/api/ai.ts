@@ -3,6 +3,8 @@ import type {
   UpdateAiInsightPreferencesRequest,
   AiInsightsResponse,
   AiInsightScope,
+  AiInsightUnseenCountResponse,
+  AiInsightArchiveResponse,
 } from "@derekentringer/shared/finance";
 import { apiFetch } from "./client.ts";
 
@@ -47,5 +49,36 @@ export async function clearAiCache(
   const url = scope ? `/ai/cache?scope=${scope}` : "/ai/cache";
   const res = await apiFetch(url, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to clear AI cache");
+  return res.json();
+}
+
+export async function markInsightsRead(insightIds: string[]): Promise<void> {
+  const res = await apiFetch("/ai/insights/mark-read", {
+    method: "POST",
+    body: JSON.stringify({ insightIds }),
+  });
+  if (!res.ok) throw new Error("Failed to mark insights as read");
+}
+
+export async function markInsightsDismissed(insightIds: string[]): Promise<void> {
+  const res = await apiFetch("/ai/insights/mark-dismissed", {
+    method: "POST",
+    body: JSON.stringify({ insightIds }),
+  });
+  if (!res.ok) throw new Error("Failed to mark insights as dismissed");
+}
+
+export async function fetchUnseenInsightCounts(): Promise<AiInsightUnseenCountResponse> {
+  const res = await apiFetch("/ai/insights/unseen-count");
+  if (!res.ok) throw new Error("Failed to fetch unseen counts");
+  return res.json();
+}
+
+export async function fetchInsightArchive(
+  limit = 20,
+  offset = 0,
+): Promise<AiInsightArchiveResponse> {
+  const res = await apiFetch(`/ai/insights/archive?limit=${limit}&offset=${offset}`);
+  if (!res.ok) throw new Error("Failed to fetch insight archive");
   return res.json();
 }

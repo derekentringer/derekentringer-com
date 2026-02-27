@@ -410,3 +410,26 @@ model AiInsightUsage {
 
   @@map("ai_insight_usage")
 }
+
+model AiInsightStatus {
+  id          String    @id @default(cuid())
+  insightId   String    @unique
+  scope       String
+  title       String
+  body        String
+  type        String
+  severity    String
+  relatedPage String?
+  generatedAt DateTime
+  isRead      Boolean   @default(false)
+  isDismissed Boolean   @default(false)
+  readAt      DateTime?
+  dismissedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([scope])
+  @@index([isRead])
+  @@index([isDismissed])
+  @@index([generatedAt])
+  @@map("ai_insight_statuses")
+}

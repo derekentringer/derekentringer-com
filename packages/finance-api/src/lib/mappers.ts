@@ -17,6 +17,7 @@ import type {
   Holding as PrismaHolding,
   TargetAllocation as PrismaTargetAllocation,
   PriceHistory as PrismaPriceHistory,
+  AiInsightStatus as PrismaAiInsightStatus,
 } from "../generated/prisma/client.js";
 import type {
   Account,
@@ -44,6 +45,10 @@ import type {
   Holding,
   AssetClass,
   TargetAllocation,
+  AiInsightStatusEntry,
+  AiInsightScope,
+  AiInsightType,
+  AiInsightSeverity,
 } from "@derekentringer/shared";
 import { AccountType, NotificationType, DEFAULT_NOTIFICATION_CONFIGS } from "@derekentringer/shared";
 import {
@@ -1267,5 +1272,55 @@ export function decryptPriceHistory(row: PrismaPriceHistory): {
     price: decryptNumber(row.price),
     date: row.date.toISOString(),
     source: row.source,
+  };
+}
+
+// --- AI Insight Status ---
+
+export function encryptInsightStatusForCreate(input: {
+  insightId: string;
+  scope: string;
+  title: string;
+  body: string;
+  type: string;
+  severity: string;
+  relatedPage?: string;
+  generatedAt: Date;
+}): {
+  insightId: string;
+  scope: string;
+  title: string;
+  body: string;
+  type: string;
+  severity: string;
+  relatedPage: string | null;
+  generatedAt: Date;
+} {
+  return {
+    insightId: input.insightId,
+    scope: input.scope,
+    title: encryptField(input.title),
+    body: encryptField(input.body),
+    type: input.type,
+    severity: input.severity,
+    relatedPage: encryptOptionalField(input.relatedPage) ?? null,
+    generatedAt: input.generatedAt,
+  };
+}
+
+export function decryptInsightStatus(row: PrismaAiInsightStatus): AiInsightStatusEntry {
+  return {
+    insightId: row.insightId,
+    scope: row.scope as AiInsightScope,
+    type: row.type as AiInsightType,
+    severity: row.severity as AiInsightSeverity,
+    title: decryptField(row.title),
+    body: decryptField(row.body),
+    relatedPage: decryptOptionalField(row.relatedPage),
+    generatedAt: row.generatedAt.toISOString(),
+    isRead: row.isRead,
+    isDismissed: row.isDismissed,
+    readAt: row.readAt?.toISOString() ?? null,
+    dismissedAt: row.dismissedAt?.toISOString() ?? null,
   };
 }

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   ScrollView,
   View,
@@ -7,14 +7,15 @@ import {
   Pressable,
   RefreshControl,
   Alert,
+  ActivityIndicator,
   StyleSheet,
 } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
-import type { AiRefreshFrequency } from "@derekentringer/shared/finance";
+import type { AiRefreshFrequency, AiInsightStatusEntry } from "@derekentringer/shared/finance";
 import { Card } from "@/components/common/Card";
 import { useAiPreferences } from "@/hooks/useDashboard";
-import { useUpdateAiPreferences, useClearAiCache } from "@/hooks/useAiSettings";
+import { useUpdateAiPreferences, useClearAiCache, useInsightArchive } from "@/hooks/useAiSettings";
 import { colors, spacing, borderRadius } from "@/theme";
 
 const FREQUENCY_OPTIONS: Array<{ value: AiRefreshFrequency; label: string }> = [
@@ -23,6 +24,41 @@ const FREQUENCY_OPTIONS: Array<{ value: AiRefreshFrequency; label: string }> = [
   { value: "on_data_change", label: "On Data Change" },
 ];
 
+const TYPE_ICONS: Record<string, string> = {
+  observation: "\uD83D\uDC41",
+  recommendation: "\uD83D\uDCA1",
+  alert: "\u26A0\uFE0F",
+  celebration: "\uD83C\uDF89",
+};
+
+const SEVERITY_COLORS: Record<string, string> = {
+  info: "#60a5fa",
+  warning: "#facc15",
+  success: "#4ade80",
+};
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function groupByDate(insights: AiInsightStatusEntry[]): { date: string; items: AiInsightStatusEntry[] }[] {
+  const groups = new Map<string, AiInsightStatusEntry[]>();
+  for (const insight of insights) {
+    const date = formatDate(insight.generatedAt);
+    const existing = groups.get(date);
+    if (existing) {
+      existing.push(insight);
+    } else {
+      groups.set(date, [insight]);
+    }
+  }
+  return Array.from(groups.entries()).map(([date, items]) => ({ date, items }));
+}
+
 export function AiInsightsSettingsScreen() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useAiPreferences();
@@ -30,12 +66,33 @@ export function AiInsightsSettingsScreen() {
   const clearCacheMutation = useClearAiCache();
   const [refreshing, setRefreshing] = useState(false);
 
+  const {
+    data: archiveData,
+    isLoading: archiveLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInsightArchive();
+
   const prefs = data?.preferences;
   const masterEnabled = prefs?.masterEnabled ?? false;
 
+  const archiveInsights = useMemo(
+    () => archiveData?.pages.flatMap((p) => p.insights) ?? [],
+    [archiveData],
+  );
+
+  const archiveGroups = useMemo(
+    () => groupByDate(archiveInsights),
+    [archiveInsights],
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ["ai", "preferences"] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["ai", "preferences"] }),
+      queryClient.invalidateQueries({ queryKey: ["ai", "archive"] }),
+    ]);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setRefreshing(false);
   }, [queryClient]);
@@ -170,6 +227,63 @@ export function AiInsightsSettingsScreen() {
         </Text>
       </Pressable>
 
+      {/* Insight History */}
+      <Card>
+        <Text style={styles.sectionTitle}>Insight History</Text>
+        {archiveInsights.length === 0 && !archiveLoading ? (
+          <Text style={styles.emptyText}>No insight history yet</Text>
+        ) : (
+          <View style={styles.archiveList}>
+            {archiveGroups.map((group) => (
+              <View key={group.date}>
+                <Text style={styles.dateHeader}>{group.date}</Text>
+                {group.items.map((insight) => {
+                  const icon = TYPE_ICONS[insight.type] ?? "\uD83D\uDC41";
+                  const borderColor = SEVERITY_COLORS[insight.severity] ?? colors.border;
+                  const isMuted = insight.isRead || insight.isDismissed;
+
+                  return (
+                    <View
+                      key={insight.insightId}
+                      style={[
+                        styles.archiveRow,
+                        { borderLeftColor: borderColor },
+                        isMuted && styles.archiveRowMuted,
+                      ]}
+                    >
+                      <Text style={styles.archiveIcon}>{icon}</Text>
+                      <View style={styles.archiveContent}>
+                        <View style={styles.archiveTitleRow}>
+                          <Text style={styles.archiveTitle}>{insight.title}</Text>
+                          <View style={styles.scopeBadge}>
+                            <Text style={styles.scopeText}>{insight.scope}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.archiveBody}>{insight.body}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ))}
+            {hasNextPage && (
+              <Pressable
+                style={styles.loadMoreButton}
+                onPress={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                accessibilityRole="button"
+              >
+                {isFetchingNextPage ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Text style={styles.loadMoreText}>Load More</Text>
+                )}
+              </Pressable>
+            )}
+          </View>
+        )}
+      </Card>
+
       <View style={styles.bottomSpacer} />
     </ScrollView>
   );
@@ -265,6 +379,78 @@ const styles = StyleSheet.create({
   clearButtonText: {
     color: colors.destructive,
     fontSize: 14,
+    fontWeight: "500",
+  },
+  emptyText: {
+    color: colors.mutedForeground,
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: spacing.md,
+  },
+  archiveList: {
+    gap: spacing.sm,
+  },
+  dateHeader: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  archiveRow: {
+    flexDirection: "row",
+    gap: 8,
+    borderLeftWidth: 3,
+    paddingLeft: spacing.sm,
+    paddingVertical: 4,
+    marginBottom: spacing.xs,
+  },
+  archiveRowMuted: {
+    opacity: 0.5,
+  },
+  archiveIcon: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  archiveContent: {
+    flex: 1,
+  },
+  archiveTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  archiveTitle: {
+    color: colors.foreground,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  scopeBadge: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  scopeText: {
+    color: colors.muted,
+    fontSize: 9,
+  },
+  archiveBody: {
+    color: colors.muted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  loadMoreButton: {
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+  },
+  loadMoreText: {
+    color: colors.primary,
+    fontSize: 13,
     fontWeight: "500",
   },
   bottomSpacer: {

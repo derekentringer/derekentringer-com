@@ -17,7 +17,7 @@ Full settings CRUD screens (categories, category rules, income sources), notific
 - `IncomeSourcesScreen` — FlatList with amount, frequency badge, active/inactive badge; delete uses PinGateModal; IncomeSourceFormSheet with detected income suggestions
 - `NotificationPreferencesScreen` — groups by NOTIFICATION_CATEGORIES (reminders, alerts, milestones); per-type toggles with gear icon → NotificationConfigSheet; "View History" link and "Send Test Notification" button
 - `NotificationHistoryScreen` — SectionList with month/year sticky headers, infinite scroll, type badge, title, body, relative time, unread dot; header: "Mark Read" + "Clear" buttons
-- `AiInsightsSettingsScreen` — master toggle, per-feature toggles (disabled when master off), refresh frequency pills, daily usage counter, clear cache button
+- `AiInsightsSettingsScreen` — master toggle, per-feature toggles (disabled when master off), refresh frequency pills, daily usage counter, clear cache button, "Insight History" section with date-grouped archive (infinite scroll, severity-colored borders, scope badges, muted styling for read/dismissed)
 - `ReportsScreen` — SegmentedControl (Monthly / Quarterly) with AiDigestSection below
 - `AboutScreen` — centered FinLogo, "Fin" text, version from expo-constants
 
@@ -49,7 +49,7 @@ Full settings CRUD screens (categories, category rules, income sources), notific
 
 `src/api/notifications.ts` — 10 functions: `registerDevice`, `fetchDevices`, `removeDevice`, `fetchNotificationPreferences`, `updateNotificationPreference`, `fetchNotificationHistory`, `fetchUnreadCount`, `markAllNotificationsRead`, `clearNotificationHistory`, `sendTestNotification`
 
-`src/api/ai.ts` — added 2 functions: `updateAiPreferences`, `clearAiCache`; updated `fetchAiInsights` to accept optional `{ month?, quarter? }` options
+`src/api/ai.ts` — added 6 functions: `updateAiPreferences`, `clearAiCache`, `markInsightsRead`, `markInsightsDismissed`, `fetchUnseenInsightCounts`, `fetchInsightArchive`; updated `fetchAiInsights` to accept optional `{ month?, quarter? }` options
 
 ## Hooks
 
@@ -61,7 +61,7 @@ Full settings CRUD screens (categories, category rules, income sources), notific
 
 `src/hooks/useNotifications.ts` — `useNotificationPreferences`, `useUpdateNotificationPreference`, `useNotificationHistory(limit)` (useInfiniteQuery), `useUnreadCount` (refetchInterval: 60_000), `useMarkAllRead`, `useClearHistory`, `useSendTestNotification`, `useRegisterDevice`
 
-`src/hooks/useAiSettings.ts` — `useUpdateAiPreferences`, `useClearAiCache`
+`src/hooks/useAiSettings.ts` — `useUpdateAiPreferences`, `useClearAiCache`, `useMarkInsightsRead`, `useMarkInsightsDismissed`, `useUnseenInsightCounts`, `useInsightArchive` (infinite query)
 
 `src/hooks/useReports.ts` — `useAiDigest(scope, options?, enabled?)` with queryKey `["ai", "digest", scope, period]`
 

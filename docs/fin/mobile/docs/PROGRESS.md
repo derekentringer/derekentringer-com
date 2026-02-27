@@ -14,7 +14,7 @@
 | Charts | react-native-gifted-charts + react-native-svg | SVG-based charts (no Skia dependency), New Architecture compatible |
 | Bottom Sheet | @gorhom/bottom-sheet v5 | Native bottom sheets with pull-to-dismiss |
 | Haptics | expo-haptics | Tactile feedback on interactions |
-| Local Storage | @react-native-async-storage/async-storage | AI insight seen-IDs storage |
+| Local Storage | @react-native-async-storage/async-storage | General key-value storage (AI insight tracking now server-side) |
 | Push | expo-notifications + FCM | Android only (iOS excluded — requires paid Apple Developer account) |
 | Fonts | @expo-google-fonts/roboto | Matches web app |
 | Testing | Jest + jest-expo + @testing-library/react-native | Unit and component tests |

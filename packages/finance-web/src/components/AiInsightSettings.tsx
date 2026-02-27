@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
-import type { AiInsightPreferences, AiRefreshFrequency } from "@derekentringer/shared/finance";
+import type { AiInsightPreferences, AiRefreshFrequency, AiInsightStatusEntry } from "@derekentringer/shared/finance";
 import { DEFAULT_AI_INSIGHT_PREFERENCES } from "@derekentringer/shared/finance";
-import { fetchAiPreferences, updateAiPreferences, clearAiCache } from "../api/ai.ts";
+import { fetchAiPreferences, updateAiPreferences, clearAiCache, fetchInsightArchive } from "../api/ai.ts";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Trash2 } from "lucide-react";
+import { Brain, Trash2, Eye, Lightbulb, AlertTriangle, PartyPopper } from "lucide-react";
 
 const FREQUENCY_OPTIONS: { value: AiRefreshFrequency; label: string }[] = [
   { value: "weekly", label: "Weekly" },
@@ -22,6 +22,41 @@ const FEATURE_TOGGLES: { key: keyof AiInsightPreferences; label: string; descrip
   { key: "smartAlerts", label: "AI-powered alerts", description: "AI anomaly detection through the notification system" },
 ];
 
+const TYPE_ICONS: Record<string, typeof Eye> = {
+  observation: Eye,
+  recommendation: Lightbulb,
+  alert: AlertTriangle,
+  celebration: PartyPopper,
+};
+
+const SEVERITY_BORDER: Record<string, string> = {
+  info: "border-l-blue-400",
+  warning: "border-l-yellow-400",
+  success: "border-l-green-400",
+};
+
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function groupByDate(insights: AiInsightStatusEntry[]): { date: string; items: AiInsightStatusEntry[] }[] {
+  const groups = new Map<string, AiInsightStatusEntry[]>();
+  for (const insight of insights) {
+    const date = formatDate(insight.generatedAt);
+    const existing = groups.get(date);
+    if (existing) {
+      existing.push(insight);
+    } else {
+      groups.set(date, [insight]);
+    }
+  }
+  return Array.from(groups.entries()).map(([date, items]) => ({ date, items }));
+}
+
 export function AiInsightSettings() {
   const [prefs, setPrefs] = useState<AiInsightPreferences>(DEFAULT_AI_INSIGHT_PREFERENCES);
   const [dailyUsed, setDailyUsed] = useState(0);
@@ -29,6 +64,13 @@ export function AiInsightSettings() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [isClearing, setIsClearing] = useState(false);
+
+  // Archive state
+  const [archive, setArchive] = useState<AiInsightStatusEntry[]>([]);
+  const [archiveTotal, setArchiveTotal] = useState(0);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveOffset, setArchiveOffset] = useState(0);
+  const ARCHIVE_PAGE_SIZE = 20;
 
   const loadPrefs = useCallback(async () => {
     try {
@@ -44,9 +86,24 @@ export function AiInsightSettings() {
     }
   }, []);
 
+  const loadArchive = useCallback(async (offset: number, append: boolean) => {
+    setArchiveLoading(true);
+    try {
+      const data = await fetchInsightArchive(ARCHIVE_PAGE_SIZE, offset);
+      setArchive((prev) => append ? [...prev, ...data.insights] : data.insights);
+      setArchiveTotal(data.total);
+      setArchiveOffset(offset + data.insights.length);
+    } catch {
+      // Non-critical
+    } finally {
+      setArchiveLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadPrefs();
-  }, [loadPrefs]);
+    loadArchive(0, false);
+  }, [loadPrefs, loadArchive]);
 
   async function handleToggle(key: keyof AiInsightPreferences, value: boolean) {
     try {
@@ -84,6 +141,8 @@ export function AiInsightSettings() {
   if (isLoading) {
     return <p className="text-center text-muted py-8">Loading...</p>;
   }
+
+  const archiveGroups = groupByDate(archive);
 
   return (
     <div className="flex flex-col gap-6">
@@ -173,6 +232,62 @@ export function AiInsightSettings() {
               {isClearing ? "Clearing..." : "Clear insight cache"}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Insight History */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-xl text-foreground">Insight History</h2>
+        </CardHeader>
+        <CardContent>
+          {archive.length === 0 && !archiveLoading ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No insight history yet</p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {archiveGroups.map((group) => (
+                <div key={group.date}>
+                  <div className="text-xs font-medium text-muted-foreground mb-2">{group.date}</div>
+                  <div className="flex flex-col gap-2">
+                    {group.items.map((insight) => {
+                      const Icon = TYPE_ICONS[insight.type] ?? Eye;
+                      const borderColor = SEVERITY_BORDER[insight.severity] ?? "border-l-border";
+                      const isMuted = insight.isRead || insight.isDismissed;
+
+                      return (
+                        <div
+                          key={insight.insightId}
+                          className={`border-l-4 ${borderColor} pl-3 py-2 ${isMuted ? "opacity-60" : ""}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <Icon className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-foreground">{insight.title}</span>
+                                <Badge variant="outline" className="text-xs">{insight.scope}</Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-0.5">{insight.body}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              {archive.length < archiveTotal && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-fit mx-auto"
+                  onClick={() => loadArchive(archiveOffset, true)}
+                  disabled={archiveLoading}
+                >
+                  {archiveLoading ? "Loading..." : "Load More"}
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
