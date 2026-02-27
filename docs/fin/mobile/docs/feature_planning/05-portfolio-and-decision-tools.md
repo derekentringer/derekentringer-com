@@ -1,6 +1,6 @@
 # Phase 5 — Portfolio & Decision Tools
 
-**Status:** Not Started
+**Status:** Complete (v1.23.0)
 **Priority:** Medium
 
 ## Summary

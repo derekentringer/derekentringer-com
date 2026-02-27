@@ -56,7 +56,7 @@
 
 ### Phase 5: Portfolio & Decision Tools
 
-- [ ] [05 — Portfolio & Decision Tools](feature_planning/05-portfolio-and-decision-tools.md)
+- [x] [05 — Portfolio & Decision Tools](features/05-portfolio-and-decision-tools.md)
 
 ### Phase 6: Reports, Settings & Notifications
 
