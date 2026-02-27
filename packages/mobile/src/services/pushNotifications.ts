@@ -1,13 +1,11 @@
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
-import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { registerDevice, removeDevice } from "@/api/notifications";
 
 // Configure foreground notification display
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
     shouldShowBanner: true,
@@ -33,20 +31,18 @@ export async function registerForPushNotifications(): Promise<string | null> {
     return null;
   }
 
-  // Android notification channel
+  // Android notification channel — must match backend's channelId in fcm.ts
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "Default",
+    await Notifications.setNotificationChannelAsync("finance_notifications", {
+      name: "Finance Notifications",
       importance: Notifications.AndroidImportance.MAX,
+      sound: "default",
     });
   }
 
-  const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-  const tokenData = await Notifications.getExpoPushTokenAsync({
-    projectId,
-  });
-
-  const token = tokenData.data;
+  // Get native FCM device token (not Expo push token)
+  const tokenData = await Notifications.getDevicePushTokenAsync();
+  const token = tokenData.data as string;
 
   // Register with backend
   await registerDevice({
