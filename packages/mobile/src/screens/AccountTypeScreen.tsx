@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useMemo, useEffect } from "react";
-import { View, FlatList, RefreshControl, StyleSheet } from "react-native";
+import { View, Text, Pressable, FlatList, RefreshControl, StyleSheet } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { ACCOUNT_TYPE_GROUPS } from "@derekentringer/shared/finance";
 import type { AccountsStackParamList } from "@/navigation/types";
 import { useAccounts } from "@/hooks/useAccounts";
@@ -11,7 +12,7 @@ import { AccountCard } from "@/components/accounts/AccountCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { ErrorCard } from "@/components/common/ErrorCard";
 import { EmptyState } from "@/components/common/EmptyState";
-import { colors, spacing } from "@/theme";
+import { colors, spacing, borderRadius } from "@/theme";
 
 export function AccountTypeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AccountsStackParamList>>();
@@ -89,6 +90,27 @@ export function AccountTypeScreen() {
       <FlatList
         data={accounts}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={
+          groupSlug === "investments" ? (
+            <Pressable
+              style={styles.portfolioButton}
+              onPress={() => navigation.navigate("Portfolio")}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons
+                name="chart-pie"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.portfolioButtonText}>Portfolio Overview</Text>
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={18}
+                color={colors.muted}
+              />
+            </Pressable>
+          ) : null
+        }
         renderItem={({ item }) => (
           <AccountCard
             account={item}
@@ -126,5 +148,20 @@ const styles = StyleSheet.create({
   },
   errorContainer: {
     padding: spacing.md,
+  },
+  portfolioButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  portfolioButtonText: {
+    color: colors.foreground,
+    fontSize: 14,
+    fontWeight: "500",
+    flex: 1,
   },
 });
