@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, FlatList, StyleSheet, Dimensions } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Dimensions } from "react-native";
 import { LineChart } from "react-native-gifted-charts";
 import { Card } from "@/components/common/Card";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
@@ -90,19 +90,19 @@ export function FavoriteAccountCards({ accountIds }: FavoriteAccountCardsProps) 
   return (
     <View>
       <Text style={styles.sectionTitle}>Favorite Accounts</Text>
-      <FlatList
-        data={accountIds}
-        keyExtractor={(id) => id}
-        renderItem={({ item, index }) => (
-          <FavoriteAccountCard accountId={item} colorIndex={index} />
-        )}
+      <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={CARD_WIDTH + spacing.sm}
         decelerationRate="fast"
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={{ width: spacing.sm }} />}
-      />
+      >
+        {accountIds.map((id, index) => (
+          <View key={id} style={index > 0 ? { marginLeft: spacing.sm } : undefined}>
+            <FavoriteAccountCard accountId={id} colorIndex={index} />
+          </View>
+        ))}
+      </ScrollView>
     </View>
   );
 }
