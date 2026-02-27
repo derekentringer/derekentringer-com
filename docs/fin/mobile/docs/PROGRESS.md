@@ -60,7 +60,7 @@
 
 ### Phase 6: Reports, Settings & Notifications
 
-- [ ] [06 — Reports, Settings & Notifications](feature_planning/06-reports-settings-and-notifications.md)
+- [x] [06 — Reports, Settings & Notifications](features/06-reports-settings-and-notifications.md)
 
 ### Phase 7: Polish & Distribution
 

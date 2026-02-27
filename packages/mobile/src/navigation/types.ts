@@ -20,3 +20,16 @@ export type PlanningStackParamList = {
   Projections: undefined;
   DecisionTools: undefined;
 };
+
+export type MoreStackParamList = {
+  MoreHome: undefined;
+  Settings: undefined;
+  Categories: undefined;
+  CategoryRules: undefined;
+  IncomeSources: undefined;
+  NotificationPreferences: undefined;
+  NotificationHistory: undefined;
+  AiInsightsSettings: undefined;
+  Reports: undefined;
+  About: undefined;
+};
