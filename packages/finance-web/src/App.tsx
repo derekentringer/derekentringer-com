@@ -4,6 +4,7 @@ import { PinProvider } from "./context/PinContext.tsx";
 import { AccountTypesProvider } from "./context/AccountTypesContext.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
 import { AppLayout } from "./components/AppLayout.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { DashboardPage } from "./pages/DashboardPage.tsx";
 import { AccountTypePage } from "./pages/AccountTypePage.tsx";
@@ -19,6 +20,7 @@ import { NotFoundPage } from "./pages/NotFoundPage.tsx";
 
 export function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <PinProvider>
         <Routes>
@@ -39,5 +41,6 @@ export function App() {
         </Routes>
       </PinProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }

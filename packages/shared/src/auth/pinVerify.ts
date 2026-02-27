@@ -1,7 +1,8 @@
+import jwt from "jsonwebtoken";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { PinJwtPayload } from "../types/auth.js";
 
-export function requirePin(jwtSecret: string) {
+export function requirePin(pinTokenSecret: string) {
   return async function (request: FastifyRequest, reply: FastifyReply) {
     const pinToken = request.headers["x-pin-token"] as string;
 
@@ -14,9 +15,7 @@ export function requirePin(jwtSecret: string) {
     }
 
     try {
-      const decoded = request.server.jwt.verify<PinJwtPayload>(pinToken, {
-        key: jwtSecret,
-      });
+      const decoded = jwt.verify(pinToken, pinTokenSecret) as PinJwtPayload;
       if (decoded.type !== "pin") {
         throw new Error("Invalid token type");
       }
@@ -28,4 +27,12 @@ export function requirePin(jwtSecret: string) {
       });
     }
   };
+}
+
+export function signPinToken(
+  payload: { sub: string; type: "pin" },
+  pinTokenSecret: string,
+  expiresIn: number = 900,
+): string {
+  return jwt.sign(payload, pinTokenSecret, { expiresIn });
 }
