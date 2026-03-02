@@ -32,6 +32,15 @@ export async function uploadPdfPreview(
   );
 
   if (!res.ok) {
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("retry-after") || "60", 10);
+      const err: Error & { status?: number; retryAfter?: number } = new Error(
+        "Rate limited by AI service. Please wait and try again.",
+      );
+      err.status = 429;
+      err.retryAfter = retryAfter;
+      throw err;
+    }
     const err = await res.json().catch(() => null);
     throw new Error(err?.message || "Failed to preview PDF import");
   }
