@@ -122,6 +122,10 @@ export function buildApp(opts?: BuildAppOptions) {
     return { status: "ok" };
   });
 
+  app.get("/robots.txt", async (_request, reply) => {
+    reply.type("text/plain").send("User-agent: *\nDisallow: /\n");
+  });
+
   // Periodic cleanup of expired refresh tokens
   let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 

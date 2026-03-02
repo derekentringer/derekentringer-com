@@ -79,6 +79,8 @@ packages/
 - `src/components/Sidebar.tsx` — Navigation sidebar with logo in header (expanded + collapsed)
 - `src/components/Header.tsx` — Top header with logo on mobile
 - `public/` — Favicon (ICO + PNG), apple-touch-icon, Android Chrome icons, `site.webmanifest`, `logo.svg`
+- `public/robots.txt` — Blocks all crawlers and AI agents (blanket `Disallow: /` plus explicit AI bot rules)
+- `index.html` includes `<meta name="robots" content="noindex, nofollow" />` as defense-in-depth
 - API URL configured via `VITE_API_URL` env var (build-time)
 - Production domain: `fin.derekentringer.com`
 
@@ -87,6 +89,7 @@ packages/
 - Fastify server with JWT auth (access + refresh tokens)
 - `src/index.ts` — Server entry, CORS via `CORS_ORIGIN` env var
 - `src/routes/auth.ts` — Login, refresh, logout endpoints
+- `GET /robots.txt` — Blocks all crawlers (blanket `Disallow: /`)
 - `src/plugins/auth.ts` — JWT verification, cookie handling
 - Passwords/PINs verified via bcrypt hashes from env vars
 - Production domain: `fin-api.derekentringer.com`
