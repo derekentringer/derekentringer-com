@@ -104,6 +104,8 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
   const cancelledRef = useRef(false);
   const autoImportActiveRef = useRef(false);
 
+  const [retryCountdown, setRetryCountdown] = useState(0);
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -158,24 +160,39 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
     setError("");
     setIsLoading(true);
 
-    try {
-      const data = await uploadPdfPreview(accountId, file, pinToken);
-      setPreview(data);
-      setEditedBalance(String(data.balance));
-      setEditedDate(data.date);
+    let succeeded = false;
+    while (!succeeded) {
+      try {
+        const data = await uploadPdfPreview(accountId, file, pinToken);
+        setPreview(data);
+        setEditedBalance(String(data.balance));
+        setEditedDate(data.date);
 
-      if (data.loanProfile) setLoanProfile(data.loanProfile);
-      if (data.loanStatic) setLoanStatic(data.loanStatic);
-      if (data.investmentProfile) setInvestmentProfile(data.investmentProfile);
-      if (data.savingsProfile) setSavingsProfile(data.savingsProfile);
-      if (data.creditProfile) setCreditProfile(data.creditProfile);
+        if (data.loanProfile) setLoanProfile(data.loanProfile);
+        if (data.loanStatic) setLoanStatic(data.loanStatic);
+        if (data.investmentProfile) setInvestmentProfile(data.investmentProfile);
+        if (data.savingsProfile) setSavingsProfile(data.savingsProfile);
+        if (data.creditProfile) setCreditProfile(data.creditProfile);
 
-      setStep("preview");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to extract PDF");
-    } finally {
-      setIsLoading(false);
+        setStep("preview");
+        succeeded = true;
+      } catch (err: unknown) {
+        const e = err as Error & { status?: number; retryAfter?: number };
+        if (e.status === 429) {
+          const wait = e.retryAfter || 60;
+          for (let s = wait; s > 0; s--) {
+            setRetryCountdown(s);
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+          setRetryCountdown(0);
+          // Loop retries the same file
+        } else {
+          setError(e instanceof Error ? e.message : "Failed to extract PDF");
+          succeeded = true;
+        }
+      }
     }
+    setIsLoading(false);
   }
 
   async function handleUpload() {
@@ -197,19 +214,35 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
     setIsLoading(true);
 
     const nextFile = files[nextIndex];
-    try {
-      const data = await uploadPdfPreview(accountId, nextFile, pinToken!);
-      setPreview(data);
-      setEditedBalance(String(data.balance));
-      setEditedDate(data.date);
-      if (data.loanProfile) setLoanProfile(data.loanProfile);
-      if (data.loanStatic) setLoanStatic(data.loanStatic);
-      if (data.investmentProfile) setInvestmentProfile(data.investmentProfile);
-      if (data.savingsProfile) setSavingsProfile(data.savingsProfile);
-      if (data.creditProfile) setCreditProfile(data.creditProfile);
-    } catch (err) {
-      // Extraction failed — show retry/skip dialog
-      setError(err instanceof Error ? err.message : "Failed to extract PDF");
+    let succeeded = false;
+    while (!succeeded) {
+      try {
+        const data = await uploadPdfPreview(accountId, nextFile, pinToken!);
+        setPreview(data);
+        setEditedBalance(String(data.balance));
+        setEditedDate(data.date);
+        if (data.loanProfile) setLoanProfile(data.loanProfile);
+        if (data.loanStatic) setLoanStatic(data.loanStatic);
+        if (data.investmentProfile) setInvestmentProfile(data.investmentProfile);
+        if (data.savingsProfile) setSavingsProfile(data.savingsProfile);
+        if (data.creditProfile) setCreditProfile(data.creditProfile);
+        succeeded = true;
+      } catch (err: unknown) {
+        const e = err as Error & { status?: number; retryAfter?: number };
+        if (e.status === 429) {
+          const wait = e.retryAfter || 60;
+          for (let s = wait; s > 0; s--) {
+            setRetryCountdown(s);
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+          setRetryCountdown(0);
+          // Loop retries the same file
+        } else {
+          // Extraction failed — show retry/skip dialog
+          setError(e instanceof Error ? e.message : "Failed to extract PDF");
+          succeeded = true;
+        }
+      }
     }
     setIsLoading(false);
     setStep("preview");
@@ -320,11 +353,27 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
       const file = files[i];
       setAutoProgress({ current: i + 1, total, fileName: file.name, phase: "extracting" });
 
-      try {
-        const data = await uploadPdfPreview(accountId, file, token);
-        extracted.push({ file, data });
-      } catch {
-        setSkippedFiles((prev) => [...prev, file.name]);
+      let succeeded = false;
+      while (!succeeded && !cancelledRef.current) {
+        try {
+          const data = await uploadPdfPreview(accountId, file, token);
+          extracted.push({ file, data });
+          succeeded = true;
+        } catch (err: unknown) {
+          const e = err as Error & { status?: number; retryAfter?: number };
+          if (e.status === 429) {
+            const wait = e.retryAfter || 60;
+            for (let s = wait; s > 0 && !cancelledRef.current; s--) {
+              setRetryCountdown(s);
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+            setRetryCountdown(0);
+            // Loop retries the same file
+          } else {
+            setSkippedFiles((prev) => [...prev, file.name]);
+            succeeded = true;
+          }
+        }
       }
     }
 
@@ -492,9 +541,15 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
               </p>
             )}
 
-            {isLoading && (
+            {isLoading && retryCountdown === 0 && (
               <p className="text-sm text-muted-foreground">
                 Analyzing statement with AI — this may take a few seconds.
+              </p>
+            )}
+
+            {retryCountdown > 0 && (
+              <p className="text-sm text-yellow-400">
+                Rate limited by AI service. Retrying in {retryCountdown}s...
               </p>
             )}
 
@@ -632,6 +687,12 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
                 />
               </div>
             </div>
+
+            {retryCountdown > 0 && (
+              <p className="text-sm text-yellow-400">
+                Rate limited by AI service. Retrying in {retryCountdown}s...
+              </p>
+            )}
 
             {(completedResults.length > 0 || skippedFiles.length > 0) && (
               <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
