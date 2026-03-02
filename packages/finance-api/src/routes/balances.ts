@@ -23,6 +23,9 @@ const CUID_PATTERN = /^c[a-z0-9]{20,}$/;
 const OVERLOADED_MESSAGE =
   "The AI service is currently overloaded. Please try again in a few minutes.";
 
+const RATE_LIMITED_MESSAGE =
+  "Rate limited by AI service. Please wait and try again.";
+
 const KNOWN_EXTRACTION_ERRORS = new Set([
   "File does not appear to be a valid PDF",
   "No text could be extracted from the PDF. This may be a scanned document — only text-based PDFs are supported.",
@@ -30,6 +33,7 @@ const KNOWN_EXTRACTION_ERRORS = new Set([
   "AI extraction returned incomplete data",
   "AI extraction returned an invalid date format",
   "PDF import is not configured",
+  RATE_LIMITED_MESSAGE,
 ]);
 
 const confirmSchema = {
@@ -262,6 +266,17 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
             statusCode: 503,
             error: "Service Unavailable",
             message: OVERLOADED_MESSAGE,
+          });
+        }
+        // Surface rate-limit errors so the client can retry after a delay
+        if (e instanceof Error && "status" in e && (e as Record<string, unknown>).status === 429) {
+          const headers = (e as Record<string, unknown>).headers as Record<string, string> | undefined;
+          const retryAfter = headers?.["retry-after"] ?? "60";
+          reply.header("retry-after", retryAfter);
+          return reply.status(429).send({
+            statusCode: 429,
+            error: "Too Many Requests",
+            message: RATE_LIMITED_MESSAGE,
           });
         }
         // Surface billing/auth errors from the AI provider
