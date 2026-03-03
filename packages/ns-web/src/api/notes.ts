@@ -3,6 +3,8 @@ import type {
   CreateNoteRequest,
   UpdateNoteRequest,
   NoteListResponse,
+  NoteSortField,
+  SortOrder,
 } from "@derekentringer/shared/ns";
 import { apiFetch } from "./client.ts";
 
@@ -11,12 +13,16 @@ export async function fetchNotes(params?: {
   search?: string;
   page?: number;
   pageSize?: number;
+  sortBy?: NoteSortField;
+  sortOrder?: SortOrder;
 }): Promise<NoteListResponse> {
   const qs = new URLSearchParams();
   if (params?.folder) qs.set("folder", params.folder);
   if (params?.search) qs.set("search", params.search);
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
 
   const query = qs.toString();
   const path = query ? `/notes?${query}` : "/notes";
@@ -80,5 +86,47 @@ export async function deleteNote(id: string): Promise<void> {
 
   if (!response.ok) {
     throw new Error(`Failed to delete note: ${response.status}`);
+  }
+}
+
+export async function fetchTrash(params?: {
+  page?: number;
+  pageSize?: number;
+}): Promise<NoteListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+
+  const query = qs.toString();
+  const path = query ? `/notes/trash?${query}` : "/notes/trash";
+  const response = await apiFetch(path);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch trash: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function restoreNote(id: string): Promise<Note> {
+  const response = await apiFetch(`/notes/${id}/restore`, {
+    method: "PATCH",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to restore note: ${response.status}`);
+  }
+
+  const result = await response.json();
+  return result.note;
+}
+
+export async function permanentDeleteNote(id: string): Promise<void> {
+  const response = await apiFetch(`/notes/${id}/permanent`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to permanently delete note: ${response.status}`);
   }
 }

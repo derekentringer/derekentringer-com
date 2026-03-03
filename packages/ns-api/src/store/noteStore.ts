@@ -1,5 +1,5 @@
 import { getPrisma } from "../lib/prisma.js";
-import type { CreateNoteRequest, UpdateNoteRequest } from "@derekentringer/shared/ns";
+import type { CreateNoteRequest, UpdateNoteRequest, NoteSortField, SortOrder } from "@derekentringer/shared/ns";
 import type { Note as PrismaNote } from "../generated/prisma/client.js";
 
 function isNotFoundError(error: unknown): boolean {
@@ -37,6 +37,8 @@ export interface ListNotesFilter {
   search?: string;
   page?: number;
   pageSize?: number;
+  sortBy?: NoteSortField;
+  sortOrder?: SortOrder;
 }
 
 export async function listNotes(
@@ -46,6 +48,8 @@ export async function listNotes(
   const page = filter?.page ?? 1;
   const pageSize = filter?.pageSize ?? 50;
   const skip = (page - 1) * pageSize;
+  const sortBy = filter?.sortBy ?? "updatedAt";
+  const sortOrder = filter?.sortOrder ?? "desc";
 
   const where: Record<string, unknown> = { deletedAt: null };
 
@@ -63,7 +67,35 @@ export async function listNotes(
   const [notes, total] = await Promise.all([
     prisma.note.findMany({
       where,
-      orderBy: { updatedAt: "desc" },
+      orderBy: { [sortBy]: sortOrder },
+      skip,
+      take: pageSize,
+    }),
+    prisma.note.count({ where }),
+  ]);
+
+  return { notes, total };
+}
+
+export interface ListTrashedFilter {
+  page?: number;
+  pageSize?: number;
+}
+
+export async function listTrashedNotes(
+  filter?: ListTrashedFilter,
+): Promise<{ notes: PrismaNote[]; total: number }> {
+  const prisma = getPrisma();
+  const page = filter?.page ?? 1;
+  const pageSize = filter?.pageSize ?? 50;
+  const skip = (page - 1) * pageSize;
+
+  const where = { deletedAt: { not: null } };
+
+  const [notes, total] = await Promise.all([
+    prisma.note.findMany({
+      where,
+      orderBy: { deletedAt: "desc" },
       skip,
       take: pageSize,
     }),
@@ -107,4 +139,44 @@ export async function softDeleteNote(id: string): Promise<boolean> {
     if (isNotFoundError(error)) return false;
     throw error;
   }
+}
+
+export async function restoreNote(id: string): Promise<PrismaNote | null> {
+  const prisma = getPrisma();
+  try {
+    return await prisma.note.update({
+      where: { id },
+      data: { deletedAt: null },
+    });
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+export async function permanentDeleteNote(id: string): Promise<boolean> {
+  const prisma = getPrisma();
+  try {
+    await prisma.note.delete({
+      where: { id },
+    });
+    return true;
+  } catch (error) {
+    if (isNotFoundError(error)) return false;
+    throw error;
+  }
+}
+
+export async function purgeOldTrash(days = 30): Promise<number> {
+  const prisma = getPrisma();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+
+  const result = await prisma.note.deleteMany({
+    where: {
+      deletedAt: { lt: cutoff },
+    },
+  });
+
+  return result.count;
 }

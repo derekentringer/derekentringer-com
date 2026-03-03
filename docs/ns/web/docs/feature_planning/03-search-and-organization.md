@@ -1,85 +1,107 @@
 # 03 — Search & Organization
 
-**Status:** Not Started
+**Status:** In Progress
 **Phase:** 2 — Notes Core
 **Priority:** High
 
 ## Summary
 
-Full-text search across all notes using PostgreSQL tsvector, plus a folder and tag system with drag-and-drop reorganization and sort/filter capabilities.
+Full-text search across all notes using PostgreSQL tsvector, plus a folder and tag system with drag-and-drop reorganization and sort/filter capabilities. Implemented incrementally across three sub-releases.
 
-## Requirements
+## Incremental Releases
 
-- **Full-text search**:
-  - PostgreSQL tsvector index on note title and content
-  - Search bar at the top of the app (Ctrl+K / Cmd+K to focus)
-  - Real-time results as you type (debounced, via API)
-  - Results show note title, folder, and a snippet with highlighted matching terms (PostgreSQL `ts_headline`)
-  - API endpoint: `GET /notes/search?q={query}`
-- **Folder system**:
-  - Hierarchical folders displayed as a tree in the sidebar
-  - Create, rename, delete folders
-  - Drag-and-drop notes between folders
-  - Drag-and-drop folders to nest them
-  - "All Notes" view showing everything
-  - "Unfiled" section for notes without a folder
-  - Folder note counts
-  - API endpoints:
+| Release | Branch | Summary | Status |
+|---------|--------|---------|--------|
+| **03a** | `feature/ns-03a-trash-sort` | Trash view (list/restore/permanent delete), sort controls, auto-purge | In Progress |
+| **03b** | `feature/ns-03b-folders-dnd` | Flat folders, folder CRUD, @dnd-kit drag-and-drop reordering | Not Started |
+| **03c** | `feature/ns-03c-tags-fts` | Tag browser, tag CRUD, PostgreSQL tsvector full-text search with snippets | Not Started |
 
-    | Method | Path | Auth | Description |
-    |--------|------|------|-------------|
-    | GET | `/folders` | Yes | List all folders (tree structure) |
-    | POST | `/folders` | Yes | Create a folder |
-    | PATCH | `/folders/:id` | Yes | Rename or move a folder |
-    | DELETE | `/folders/:id` | Yes | Delete a folder (move notes to Unfiled) |
+Each release includes: API changes, frontend changes, shared type updates, tests, and doc updates.
 
-- **Tag system**:
-  - Notes can have multiple tags
-  - Tag browser in the sidebar (list of all tags with note counts)
-  - Click a tag to filter notes
-  - Multi-tag filtering (AND/OR toggle)
-  - Create tags inline from the note editor
-  - Delete/rename tags globally
-  - Tag autocomplete when adding tags
-  - API endpoints:
+---
 
-    | Method | Path | Auth | Description |
-    |--------|------|------|-------------|
-    | GET | `/tags` | Yes | List all tags with note counts |
-    | PATCH | `/tags/:name` | Yes | Rename a tag globally |
-    | DELETE | `/tags/:name` | Yes | Remove a tag from all notes |
+## Release 03a: Trash View + Sort
 
-- **Sort & filter**:
-  - Sort by: title, created date, modified date (ascending/descending)
-  - Filter by: folder, tag, date range
-  - Persistent sort/filter preferences per session
-- **Trash**:
-  - Soft-deleted notes in a "Trash" view
-  - Restore or permanently delete
-  - Auto-purge after 30 days (server-side cron or on-request cleanup)
+**No schema migration needed** — `deletedAt` column already exists.
+
+### API Changes
+- Modify `listNotes`: add `sortBy` (title|createdAt|updatedAt) and `sortOrder` (asc|desc) params, default `updatedAt desc`
+- `listTrashedNotes(filter?)` — where `deletedAt IS NOT NULL`, paginated, default sort by `deletedAt desc`
+- `restoreNote(id)` — set `deletedAt` back to null
+- `permanentDeleteNote(id)` — hard delete (must be in trash)
+- `purgeOldTrash(days=30)` — `deleteMany` where `deletedAt < cutoff`
+
+### Routes
+- `GET /notes/trash` → 200 `{ notes, total }`
+- `PATCH /notes/:id/restore` → 200 `{ note }`
+- `DELETE /notes/:id/permanent` → 204
+- Modify `GET /notes` → add `sortBy`, `sortOrder` query params
+
+### Frontend
+- Sort controls (field dropdown + direction toggle) between search and note list
+- Trash button in sidebar footer with count badge
+- Trash view: list deleted notes, read-only preview, Restore + Delete Permanently buttons
+- "Back to notes" link when in trash view
+
+---
+
+## Release 03b: Flat Folders + Drag-and-Drop
+
+**Prisma migration needed** — add `sortOrder` field.
+
+### Schema Changes
+- Add `sortOrder Int @default(0)` to Note model
+- Add `@@index([sortOrder])`
+
+### API Changes
+- `listFolders()` — `groupBy` on folder, return names + counts
+- `reorderNotes(order[])` — batch `$transaction` update
+- `renameFolder(old, new)` — `updateMany` all notes in folder
+- `deleteFolder(name)` — `updateMany` set folder to null
+- Auto-assign `sortOrder` on create (max + 1)
+- Add `sortOrder` as valid sort field
+
+### Frontend
+- FolderList component in sidebar with create, rename, delete
+- NoteList component with @dnd-kit drag-and-drop reordering
+- Drag-to-folder support
+- activeFolder state for filtering
+
+---
+
+## Release 03c: Tags + Full-Text Search (tsvector)
+
+**Prisma migration needed** — add tsvector column + trigger + GIN index.
+
+### Schema Changes
+- Add `search_vector tsvector` column (managed by trigger, not in Prisma schema)
+- GIN index on `search_vector`
+- Auto-update trigger on title/content changes
+
+### API Changes
+- `listTags()` — raw SQL: `jsonb_array_elements_text(tags)` with GROUP BY + COUNT
+- `renameTag(old, new)` — batch update via `$transaction`
+- `removeTag(name)` — batch remove via `$transaction`
+- Full-text search: switch to raw SQL with `plainto_tsquery`, `ts_rank`, `ts_headline`
+- Tag filtering: JSONB `@>` containment (AND logic)
+
+### Frontend
+- TagBrowser component in sidebar with counts, click to filter, rename/delete
+- TagInput component below title with type-ahead autocomplete
+- SearchSnippet component for `ts_headline` HTML in search results
+
+---
 
 ## Technical Considerations
 
-- PostgreSQL tsvector setup:
-  ```sql
-  ALTER TABLE "Note" ADD COLUMN tsv tsvector
-    GENERATED ALWAYS AS (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, ''))) STORED;
-  CREATE INDEX notes_tsv_idx ON "Note" USING GIN(tsv);
-  ```
-- `ts_headline()` for search result snippets with `<mark>` tags
-- Drag-and-drop via `@dnd-kit` (already used in the fin app)
-- Folder hierarchy: stored as a separate `Folder` model with parent reference, or as path strings on notes
+- Route ordering: Static routes (`/trash`, `/folders`, `/tags`, `/reorder`) MUST be registered before `/:id`
+- Local DB migrations: `prisma migrate dev` doesn't work locally — run SQL manually via `psql`
+- tsvector is invisible to Prisma — managed entirely by trigger + raw queries
 - Tags stored as JSON array in the `tags` column; GIN index for efficient tag queries
-- Debounce search input: 200ms before sending API request
+- Drag-and-drop via `@dnd-kit`
 
 ## Dependencies
 
-- [00 — Project Scaffolding](00-project-scaffolding.md) — needs PostgreSQL database
-- [01 — Auth](01-auth.md) — all endpoints require authentication
-- [02 — Note Management](02-note-management.md) — needs notes to exist
-
-## Open Questions
-
-- Should folders be a separate Prisma model or path strings on the Note model?
-- Should search include soft-deleted notes (with a toggle)?
-- Pagination strategy for search results: cursor-based or offset?
+- [00 — Project Scaffolding](../features/00-project-scaffolding.md) — needs PostgreSQL database
+- [01 — Auth](../features/01-auth.md) — all endpoints require authentication
+- [02 — Note Management](../features/02-note-management.md) — needs notes to exist

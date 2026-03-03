@@ -142,10 +142,96 @@ describe("Note routes", () => {
       expect(body.total).toBe(2);
     });
 
+    it("accepts sortBy and sortOrder query params", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes?sortBy=title&sortOrder=asc",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("returns 400 for invalid sortBy value", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes?sortBy=invalid",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toContain("Invalid sortBy");
+    });
+
+    it("returns 400 for invalid sortOrder value", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes?sortOrder=invalid",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toContain("Invalid sortOrder");
+    });
+
     it("returns 401 without auth", async () => {
       const res = await app.inject({
         method: "GET",
         url: "/notes",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- GET /notes/trash ---
+
+  describe("GET /notes/trash", () => {
+    it("returns trashed notes (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([
+        makeMockNoteRow({ id: VALID_UUID, deletedAt: new Date() }),
+      ]);
+      mockPrisma.note.count.mockResolvedValue(1);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/trash",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.notes).toHaveLength(1);
+      expect(body.total).toBe(1);
+    });
+
+    it("accepts pagination params", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/trash?page=2&pageSize=10",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/trash",
       });
 
       expect(res.statusCode).toBe(401);
@@ -196,6 +282,64 @@ describe("Note routes", () => {
 
       expect(res.statusCode).toBe(400);
       expect(res.json().message).toBe("Invalid note ID format");
+    });
+  });
+
+  // --- PATCH /notes/:id/restore ---
+
+  describe("PATCH /notes/:id/restore", () => {
+    it("restores a trashed note (200)", async () => {
+      const token = await getAccessToken();
+      const row = makeMockNoteRow({ deletedAt: null });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/${VALID_UUID}/restore`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.note).toBeDefined();
+      expect(body.note.deletedAt).toBeNull();
+    });
+
+    it("returns 404 if note not found", async () => {
+      const token = await getAccessToken();
+      const notFoundError = new Error("Not found") as Error & { code: string };
+      notFoundError.code = "P2025";
+      mockPrisma.note.update.mockRejectedValue(notFoundError);
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/${VALID_UUID}/restore`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it("returns 400 for invalid UUID format", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/notes/invalid-id/restore",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toBe("Invalid note ID format");
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/${VALID_UUID}/restore`,
+      });
+
+      expect(res.statusCode).toBe(401);
     });
   });
 
@@ -277,6 +421,61 @@ describe("Note routes", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().note.folder).toBeNull();
+    });
+  });
+
+  // --- DELETE /notes/:id/permanent ---
+
+  describe("DELETE /notes/:id/permanent", () => {
+    it("permanently deletes a note (204)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.delete.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/notes/${VALID_UUID}/permanent`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(204);
+    });
+
+    it("returns 404 if note not found", async () => {
+      const token = await getAccessToken();
+      const notFoundError = new Error("Not found") as Error & { code: string };
+      notFoundError.code = "P2025";
+      mockPrisma.note.delete.mockRejectedValue(notFoundError);
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/notes/${VALID_UUID}/permanent`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().message).toBe("Note not found");
+    });
+
+    it("returns 400 for invalid UUID format", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/notes/invalid-id/permanent",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toBe("Invalid note ID format");
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/notes/${VALID_UUID}/permanent`,
+      });
+
+      expect(res.statusCode).toBe(401);
     });
   });
 

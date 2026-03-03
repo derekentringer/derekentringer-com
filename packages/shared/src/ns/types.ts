@@ -29,6 +29,9 @@ export interface NoteListResponse {
   total: number;
 }
 
+export type NoteSortField = "title" | "createdAt" | "updatedAt";
+export type SortOrder = "asc" | "desc";
+
 export interface SyncChange {
   id: string;
   action: "create" | "update" | "delete";

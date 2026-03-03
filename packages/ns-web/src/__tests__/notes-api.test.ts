@@ -5,6 +5,9 @@ import {
   createNote,
   updateNote,
   deleteNote,
+  fetchTrash,
+  restoreNote,
+  permanentDeleteNote,
 } from "../api/notes.ts";
 
 const mockApiFetch = vi.fn();
@@ -67,6 +70,19 @@ describe("fetchNotes", () => {
     await fetchNotes({ folder: "work" });
 
     expect(mockApiFetch).toHaveBeenCalledWith("/notes?folder=work");
+  });
+
+  it("fetches notes with sortBy and sortOrder params", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ notes: [], total: 0 }),
+    });
+
+    await fetchNotes({ sortBy: "title", sortOrder: "asc" });
+
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      "/notes?sortBy=title&sortOrder=asc",
+    );
   });
 
   it("throws on non-ok response", async () => {
@@ -165,6 +181,84 @@ describe("deleteNote", () => {
 
     await expect(deleteNote("note-1")).rejects.toThrow(
       "Failed to delete note: 403",
+    );
+  });
+});
+
+describe("fetchTrash", () => {
+  it("fetches trashed notes without params", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ notes: [mockNote], total: 1 }),
+    });
+
+    const result = await fetchTrash();
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/trash");
+    expect(result).toEqual({ notes: [mockNote], total: 1 });
+  });
+
+  it("fetches trashed notes with pagination params", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ notes: [], total: 0 }),
+    });
+
+    await fetchTrash({ page: 2, pageSize: 10 });
+
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      "/notes/trash?page=2&pageSize=10",
+    );
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(fetchTrash()).rejects.toThrow("Failed to fetch trash: 500");
+  });
+});
+
+describe("restoreNote", () => {
+  it("sends PATCH to restore endpoint and extracts .note", async () => {
+    const restored = { ...mockNote, deletedAt: null };
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ note: restored }),
+    });
+
+    const result = await restoreNote("note-1");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/note-1/restore", {
+      method: "PATCH",
+    });
+    expect(result).toEqual(restored);
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 404 });
+
+    await expect(restoreNote("note-1")).rejects.toThrow(
+      "Failed to restore note: 404",
+    );
+  });
+});
+
+describe("permanentDeleteNote", () => {
+  it("sends DELETE to permanent endpoint", async () => {
+    mockApiFetch.mockResolvedValue({ ok: true });
+
+    await permanentDeleteNote("note-1");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/note-1/permanent", {
+      method: "DELETE",
+    });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 404 });
+
+    await expect(permanentDeleteNote("note-1")).rejects.toThrow(
+      "Failed to permanently delete note: 404",
     );
   });
 });

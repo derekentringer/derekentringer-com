@@ -44,7 +44,10 @@
 ### Phase 2: Notes Core — High Priority
 
 - [x] [02 — Note Management](features/02-note-management.md) — CRUD (create, list, search, update, soft delete), sidebar with note list + search, CodeMirror 6 markdown editor with syntax highlighting + formatting shortcuts (Mod-b/i) + Mod-s save, editor toolbar with view mode toggle (Editor/Split/Preview) + line numbers, split-pane markdown preview (react-markdown + remark-gfm), delete confirmation flow, error toast, Vitest test suites for both ns-api (61 tests) and ns-web (31 tests)
-- [ ] [03 — Search & Organization](feature_planning/03-search-and-organization.md)
+- [~] [03 — Search & Organization](feature_planning/03-search-and-organization.md)
+  - [~] 03a — Trash View + Sort (trash list/restore/permanent delete, sort controls, auto-purge)
+  - [ ] 03b — Flat Folders + Drag-and-Drop (folder CRUD, @dnd-kit reordering)
+  - [ ] 03c — Tags + Full-Text Search (tag browser/CRUD, PostgreSQL tsvector with snippets)
 
 ### Phase 3: AI & Offline — Medium Priority
 

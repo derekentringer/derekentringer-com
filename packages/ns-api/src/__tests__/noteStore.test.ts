@@ -12,8 +12,12 @@ import {
   createNote,
   getNote,
   listNotes,
+  listTrashedNotes,
   updateNote,
   softDeleteNote,
+  restoreNote,
+  permanentDeleteNote,
+  purgeOldTrash,
 } from "../store/noteStore.js";
 
 interface P2025Error extends Error {
@@ -175,6 +179,81 @@ describe("noteStore", () => {
         }),
       );
     });
+
+    it("sorts by title ascending", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      await listNotes({ sortBy: "title", sortOrder: "asc" });
+
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: { title: "asc" },
+        }),
+      );
+    });
+
+    it("sorts by createdAt descending", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      await listNotes({ sortBy: "createdAt", sortOrder: "desc" });
+
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: { createdAt: "desc" },
+        }),
+      );
+    });
+
+    it("defaults to updatedAt desc when no sort params", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      await listNotes();
+
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: { updatedAt: "desc" },
+        }),
+      );
+    });
+  });
+
+  describe("listTrashedNotes", () => {
+    it("returns trashed notes with default pagination", async () => {
+      const rows = [
+        makeMockNoteRow({ id: "note-1", deletedAt: new Date() }),
+        makeMockNoteRow({ id: "note-2", deletedAt: new Date() }),
+      ];
+      mockPrisma.note.findMany.mockResolvedValue(rows);
+      mockPrisma.note.count.mockResolvedValue(2);
+
+      const result = await listTrashedNotes();
+
+      expect(result.notes).toHaveLength(2);
+      expect(result.total).toBe(2);
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith({
+        where: { deletedAt: { not: null } },
+        orderBy: { deletedAt: "desc" },
+        skip: 0,
+        take: 50,
+      });
+    });
+
+    it("applies pagination", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      await listTrashedNotes({ page: 2, pageSize: 10 });
+
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 10,
+          take: 10,
+        }),
+      );
+    });
   });
 
   describe("updateNote", () => {
@@ -244,6 +323,97 @@ describe("noteStore", () => {
       await expect(softDeleteNote("note-1")).rejects.toThrow(
         "DB connection failed",
       );
+    });
+  });
+
+  describe("restoreNote", () => {
+    it("restores and returns the note", async () => {
+      const row = makeMockNoteRow({ deletedAt: null });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      const result = await restoreNote("note-1");
+
+      expect(result).toEqual(row);
+      expect(mockPrisma.note.update).toHaveBeenCalledWith({
+        where: { id: "note-1" },
+        data: { deletedAt: null },
+      });
+    });
+
+    it("returns null when not found (P2025)", async () => {
+      mockPrisma.note.update.mockRejectedValue(makeP2025Error());
+
+      const result = await restoreNote("nonexistent");
+      expect(result).toBeNull();
+    });
+
+    it("re-throws non-P2025 errors", async () => {
+      mockPrisma.note.update.mockRejectedValue(new Error("DB connection failed"));
+
+      await expect(restoreNote("note-1")).rejects.toThrow(
+        "DB connection failed",
+      );
+    });
+  });
+
+  describe("permanentDeleteNote", () => {
+    it("returns true when permanently deleted", async () => {
+      mockPrisma.note.delete.mockResolvedValue({});
+
+      const result = await permanentDeleteNote("note-1");
+      expect(result).toBe(true);
+      expect(mockPrisma.note.delete).toHaveBeenCalledWith({
+        where: { id: "note-1" },
+      });
+    });
+
+    it("returns false when not found (P2025)", async () => {
+      mockPrisma.note.delete.mockRejectedValue(makeP2025Error());
+
+      const result = await permanentDeleteNote("nonexistent");
+      expect(result).toBe(false);
+    });
+
+    it("re-throws non-P2025 errors", async () => {
+      mockPrisma.note.delete.mockRejectedValue(new Error("DB connection failed"));
+
+      await expect(permanentDeleteNote("note-1")).rejects.toThrow(
+        "DB connection failed",
+      );
+    });
+  });
+
+  describe("purgeOldTrash", () => {
+    it("deletes notes older than 30 days by default", async () => {
+      mockPrisma.note.deleteMany.mockResolvedValue({ count: 3 });
+
+      const result = await purgeOldTrash();
+
+      expect(result).toBe(3);
+      expect(mockPrisma.note.deleteMany).toHaveBeenCalledWith({
+        where: {
+          deletedAt: { lt: expect.any(Date) },
+        },
+      });
+    });
+
+    it("uses custom days parameter", async () => {
+      mockPrisma.note.deleteMany.mockResolvedValue({ count: 0 });
+
+      await purgeOldTrash(7);
+
+      expect(mockPrisma.note.deleteMany).toHaveBeenCalledWith({
+        where: {
+          deletedAt: { lt: expect.any(Date) },
+        },
+      });
+    });
+
+    it("returns 0 when no notes to purge", async () => {
+      mockPrisma.note.deleteMany.mockResolvedValue({ count: 0 });
+
+      const result = await purgeOldTrash();
+      expect(result).toBe(0);
     });
   });
 });
