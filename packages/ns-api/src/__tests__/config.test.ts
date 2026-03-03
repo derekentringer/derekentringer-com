@@ -50,6 +50,7 @@ describe("loadConfig", () => {
     process.env.REFRESH_TOKEN_SECRET = "refresh-secret";
     process.env.CORS_ORIGIN = "https://app.example.com";
     process.env.DATABASE_URL = "postgresql://localhost/test";
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
 
     const config = loadConfig();
 

@@ -76,6 +76,23 @@ vi.mock("../context/AuthContext.tsx", () => ({
   useAuth: () => ({ logout: mockLogout }),
 }));
 
+vi.mock("../hooks/useAiSettings.ts", () => ({
+  useAiSettings: () => ({
+    settings: { completions: false, summarize: false, tagSuggestions: false },
+    updateSetting: vi.fn(),
+  }),
+}));
+
+vi.mock("../editor/ghostText.ts", () => ({
+  ghostTextExtension: vi.fn(() => []),
+}));
+
+vi.mock("../api/ai.ts", () => ({
+  fetchCompletion: vi.fn(),
+  summarizeNote: vi.fn(),
+  suggestTags: vi.fn(),
+}));
+
 const mockNote = {
   id: "note-1",
   title: "Test Note",
@@ -249,7 +266,7 @@ describe("NotesPage", () => {
 
       renderNotesPage();
 
-      const trashButton = await screen.findByTitle("View trash");
+      const trashButton = await screen.findByTitle("Trash");
       expect(trashButton).toBeInTheDocument();
       expect(screen.getByText("3")).toBeInTheDocument();
     });
@@ -264,7 +281,7 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      const trashButton = screen.getByTitle("View trash");
+      const trashButton = screen.getByTitle("Trash");
       await userEvent.click(trashButton);
 
       await screen.findByText("Trashed Note");
@@ -277,7 +294,7 @@ describe("NotesPage", () => {
       renderNotesPage();
       await screen.findByText("No notes yet");
 
-      const trashButton = screen.getByTitle("View trash");
+      const trashButton = screen.getByTitle("Trash");
       await userEvent.click(trashButton);
 
       await screen.findByText("Trash is empty");
@@ -292,7 +309,7 @@ describe("NotesPage", () => {
       renderNotesPage();
       await screen.findByText("No notes yet");
 
-      const trashButton = screen.getByTitle("View trash");
+      const trashButton = screen.getByTitle("Trash");
       await userEvent.click(trashButton);
 
       const noteButton = await screen.findByText("Trashed Note");
@@ -316,7 +333,7 @@ describe("NotesPage", () => {
       renderNotesPage();
       await screen.findByText("No notes yet");
 
-      const trashButton = screen.getByTitle("View trash");
+      const trashButton = screen.getByTitle("Trash");
       await userEvent.click(trashButton);
 
       const noteButton = await screen.findByText("Trashed Note");
@@ -339,7 +356,7 @@ describe("NotesPage", () => {
       renderNotesPage();
       await screen.findByText("No notes yet");
 
-      const trashButton = screen.getByTitle("View trash");
+      const trashButton = screen.getByTitle("Trash");
       await userEvent.click(trashButton);
 
       const noteButton = await screen.findByText("Trashed Note");
@@ -363,7 +380,7 @@ describe("NotesPage", () => {
       renderNotesPage();
       await screen.findByText("No notes yet");
 
-      const trashButton = screen.getByTitle("View trash");
+      const trashButton = screen.getByTitle("Trash");
       await userEvent.click(trashButton);
 
       await screen.findByText("Trash is empty");
@@ -381,7 +398,7 @@ describe("NotesPage", () => {
 
       expect(screen.getAllByTitle("New note").length).toBeGreaterThan(0);
 
-      const trashButton = screen.getByTitle("View trash");
+      const trashButton = screen.getByTitle("Trash");
       await userEvent.click(trashButton);
 
       await screen.findByText("Trash is empty");

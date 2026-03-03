@@ -51,7 +51,13 @@
 
 ### Phase 3: AI & Offline — Medium Priority
 
-- [ ] [04 — AI Features](feature_planning/04-ai-features.md)
+- [~] [04 — AI Features](features/04-ai-features.md)
+  - [x] 04a — Summarize, Auto-Tag, Inline Completions (Anthropic Claude API via ns-api, SSE streaming ghost text, AI settings page with toggles, sidebar footer redesign)
+  - [ ] 04b — Select-and-Rewrite
+  - [ ] 04c — Semantic Search (pgvector)
+  - [ ] 04d — Q&A Over Notes
+  - [ ] 04e — Duplicate Detection
+  - [ ] 04f — Continue Writing, Structure Suggestions
 - [ ] [05 — Offline Cache](feature_planning/05-offline-cache.md)
 
 ### Phase 4: Polish — Low Priority
