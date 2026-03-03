@@ -1,0 +1,42 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Note {
+  id        String    @id @default(uuid())
+  title     String
+  content   String
+  folder    String?
+  tags      Json      @default("[]")
+  summary   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([folder])
+  @@index([deletedAt])
+  @@map("notes")
+}
+
+model SyncCursor {
+  deviceId     String   @id
+  lastSyncedAt DateTime
+
+  @@map("sync_cursors")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}

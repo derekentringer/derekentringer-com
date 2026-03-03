@@ -1,6 +1,6 @@
 # 01 — Auth
 
-**Status:** Not Started
+**Status:** Complete (moved to [features/01-auth.md](../features/01-auth.md))
 **Phase:** 1 — Foundation
 **Priority:** High
 

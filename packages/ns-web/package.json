@@ -1,0 +1,34 @@
+{
+  "name": "@derekentringer/ns-web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --port 3005",
+    "start": "serve dist -s -l tcp://0.0.0.0:${PORT:-3005}",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@derekentringer/shared": "*",
+    "@tailwindcss/vite": "^4.2.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-router-dom": "^7.1.0",
+    "serve": "^14.2.0",
+    "tailwindcss": "^4.2.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^28.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
