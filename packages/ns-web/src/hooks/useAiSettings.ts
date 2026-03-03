@@ -1,7 +1,12 @@
 import { useState, useCallback } from "react";
 
+export type CompletionStyle = "continue" | "markdown" | "brief";
+
+const VALID_COMPLETION_STYLES: CompletionStyle[] = ["continue", "markdown", "brief"];
+
 export interface AiSettings {
   completions: boolean;
+  completionStyle: CompletionStyle;
   summarize: boolean;
   tagSuggestions: boolean;
 }
@@ -10,6 +15,7 @@ const STORAGE_KEY = "ns-ai-settings";
 
 const DEFAULT_SETTINGS: AiSettings = {
   completions: false,
+  completionStyle: "continue",
   summarize: false,
   tagSuggestions: false,
 };
@@ -21,6 +27,9 @@ function loadSettings(): AiSettings {
     const parsed = JSON.parse(raw);
     return {
       completions: typeof parsed.completions === "boolean" ? parsed.completions : false,
+      completionStyle: VALID_COMPLETION_STYLES.includes(parsed.completionStyle)
+        ? parsed.completionStyle
+        : "continue",
       summarize: typeof parsed.summarize === "boolean" ? parsed.summarize : false,
       tagSuggestions: typeof parsed.tagSuggestions === "boolean" ? parsed.tagSuggestions : false,
     };
@@ -31,12 +40,12 @@ function loadSettings(): AiSettings {
 
 export function useAiSettings(): {
   settings: AiSettings;
-  updateSetting: (key: keyof AiSettings, value: boolean) => void;
+  updateSetting: <K extends keyof AiSettings>(key: K, value: AiSettings[K]) => void;
 } {
   const [settings, setSettings] = useState<AiSettings>(loadSettings);
 
   const updateSetting = useCallback(
-    (key: keyof AiSettings, value: boolean) => {
+    <K extends keyof AiSettings>(key: K, value: AiSettings[K]) => {
       setSettings((prev) => {
         const next = { ...prev, [key]: value };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));

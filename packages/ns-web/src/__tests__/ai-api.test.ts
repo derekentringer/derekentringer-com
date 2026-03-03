@@ -53,6 +53,44 @@ describe("AI API client", () => {
       });
     });
 
+    it("sends style in request body when provided", async () => {
+      const sseData = 'data: {"text":"Hello"}\n\ndata: [DONE]\n\n';
+      const encoder = new TextEncoder();
+
+      const mockReader = {
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: encoder.encode(sseData),
+          })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        releaseLock: vi.fn(),
+      };
+
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      });
+
+      const abortController = new AbortController();
+      const chunks: string[] = [];
+
+      for await (const chunk of fetchCompletion(
+        "test context",
+        abortController.signal,
+        "brief",
+      )) {
+        chunks.push(chunk);
+      }
+
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/complete", {
+        method: "POST",
+        body: JSON.stringify({ context: "test context", style: "brief" }),
+        signal: abortController.signal,
+      });
+    });
+
     it("throws on non-ok response", async () => {
       mockApiFetch.mockResolvedValue({
         ok: false,

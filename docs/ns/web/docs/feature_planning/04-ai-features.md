@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a Complete; 04b–04f Not Started)
+**Status:** Partial (04a–04a.1 Complete; 04b–04f Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -13,6 +13,7 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 | Release | Summary | Status |
 |---------|---------|--------|
 | **04a** | Inline ghost text completions (SSE streaming), note summarization, smart auto-tagging, AI settings page, sidebar footer redesign | **Complete** |
+| **04a.1** | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | **Complete** |
 | **04b** | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) | Not Started |
 | **04c** | Semantic search (pgvector embeddings, complementing tsvector keyword search) | Not Started |
 | **04d** | Q&A over notes (natural language questions with citations) | Not Started |

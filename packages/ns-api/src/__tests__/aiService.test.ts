@@ -110,6 +110,75 @@ describe("aiService", () => {
 
       expect(chunks).toEqual(["text"]);
     });
+
+    it("uses different system prompts for different styles", async () => {
+      mockStreamResponse([]);
+
+      // Test "continue" style (default)
+      for await (const _chunk of generateCompletion("test", undefined, "continue")) {
+        // consume
+      }
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: expect.stringContaining("Continue the user's markdown text naturally"),
+        }),
+      );
+
+      mockCreate.mockClear();
+      mockStreamResponse([]);
+
+      // Test "markdown" style
+      for await (const _chunk of generateCompletion("test", undefined, "markdown")) {
+        // consume
+      }
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: expect.stringContaining("markdown formatting assistant"),
+        }),
+      );
+
+      mockCreate.mockClear();
+      mockStreamResponse([]);
+
+      // Test "brief" style
+      for await (const _chunk of generateCompletion("test", undefined, "brief")) {
+        // consume
+      }
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: expect.stringContaining("just a few words"),
+        }),
+      );
+    });
+
+    it("brief style uses lower max_tokens", async () => {
+      mockStreamResponse([]);
+
+      for await (const _chunk of generateCompletion("test", undefined, "brief")) {
+        // consume
+      }
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 50,
+        }),
+      );
+    });
+
+    it("defaults to continue style", async () => {
+      mockStreamResponse([]);
+
+      for await (const _chunk of generateCompletion("test")) {
+        // consume
+      }
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 200,
+          system: expect.stringContaining("Continue the user's markdown text naturally"),
+        }),
+      );
+    });
   });
 
   describe("generateSummary", () => {

@@ -207,6 +207,10 @@ export function NotesPage() {
   }
 
   function selectNote(note: Note) {
+    if (isDirty && selectedId) {
+      // Fire-and-forget save of current note before switching
+      updateNote(selectedId, { title, content }).catch(() => {});
+    }
     setSelectedId(note.id);
     setTitle(note.title);
     setContent(note.content);
@@ -444,6 +448,17 @@ export function NotesPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleSave]);
 
+  // Autosave: debounce 1.5s after changes
+  useEffect(() => {
+    if (!isDirty || !selectedId) return;
+
+    const timer = setTimeout(() => {
+      handleSave();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [isDirty, title, content, selectedId, handleSave]);
+
   const sortedFolders = useMemo(() => {
     const sorted = [...folders];
     sorted.sort((a, b) => {
@@ -459,8 +474,11 @@ export function NotesPage() {
   }, [folders, folderSortBy, folderSortOrder]);
 
   const aiExtensions = useMemo(
-    () => (settings.completions ? [ghostTextExtension(fetchCompletion)] : []),
-    [settings.completions],
+    () =>
+      settings.completions
+        ? [ghostTextExtension((ctx, sig) => fetchCompletion(ctx, sig, settings.completionStyle))]
+        : [],
+    [settings.completions, settings.completionStyle],
   );
 
   async function handleSummarize() {
@@ -769,13 +787,6 @@ export function NotesPage() {
                   {isSuggestingTags ? "Suggesting..." : "Suggest tags"}
                 </button>
               )}
-              <button
-                onClick={handleSave}
-                disabled={!isDirty || isSaving}
-                className="px-3 py-1 rounded-md bg-primary text-black text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Save
-              </button>
               {confirmDelete ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-destructive">Delete?</span>
@@ -824,6 +835,7 @@ export function NotesPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
+                  handleSave();
                   editorRef.current?.focus();
                 }
               }}

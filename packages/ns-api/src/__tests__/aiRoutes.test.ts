@@ -92,6 +92,61 @@ describe("AI routes", () => {
       expect(res.body).toContain("[DONE]");
     });
 
+    it("accepts style parameter", async () => {
+      const token = await getAccessToken();
+      mockGenerateCompletion.mockImplementation(async function* () {
+        yield "Hello";
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/complete",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { context: "Some context", style: "brief" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockGenerateCompletion).toHaveBeenCalledWith(
+        "Some context",
+        expect.any(Object),
+        "brief",
+      );
+    });
+
+    it("style is optional and defaults to continue", async () => {
+      const token = await getAccessToken();
+      mockGenerateCompletion.mockImplementation(async function* () {
+        yield "text";
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/complete",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { context: "Some context" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockGenerateCompletion).toHaveBeenCalledWith(
+        "Some context",
+        expect.any(Object),
+        "continue",
+      );
+    });
+
+    it("returns 400 with invalid style", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/complete",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { context: "test", style: "invalid-style" },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
     it("returns 400 with missing context", async () => {
       const token = await getAccessToken();
 
