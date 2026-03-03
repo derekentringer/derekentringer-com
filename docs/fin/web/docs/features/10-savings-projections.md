@@ -16,7 +16,7 @@ Project savings and high-yield savings account growth over time based on current
 - `SavingsAccountSummary` — accountId, accountName, accountType, currentBalance, apy, isFavorite, estimatedMonthlyContribution
 - `SavingsProjectionResponse` — account summary, projection points, milestones array
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Savings Projection (`src/store/projectionsStore.ts`)
 
@@ -48,7 +48,7 @@ Query parameters for savings projection:
 - `contribution` — monthly contribution override
 - `apy` — APY override
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### Savings Tab (`src/components/projections/SavingsTab.tsx`)
 

@@ -28,7 +28,7 @@ Notification system with scheduler-based evaluation, per-type preferences, brows
 - Default configs per type: `DEFAULT_NOTIFICATION_CONFIGS`
 - Label/description/category/phase maps: `NOTIFICATION_LABELS`, `NOTIFICATION_DESCRIPTIONS`, `NOTIFICATION_CATEGORIES`, `NOTIFICATION_PHASES`
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Prisma Schema
 
@@ -148,7 +148,7 @@ New fields: `fcmProjectId`, `fcmClientEmail`, `fcmPrivateKey`
 
 New encrypt/decrypt functions for DeviceToken, NotificationPreference, NotificationLog models.
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### Browser Notification Hook (`src/hooks/useBrowserNotifications.ts`)
 
@@ -215,18 +215,18 @@ Two cards in Settings > Notifications tab:
 
 | File | Description |
 |------|-------------|
-| `packages/finance-api/prisma/migrations/20260222000000_add_notifications/migration.sql` | Migration SQL |
-| `packages/finance-api/src/store/notificationStore.ts` | CRUD for device tokens, preferences, logs |
-| `packages/finance-api/src/routes/notifications.ts` | API endpoints |
-| `packages/finance-api/src/lib/fcm.ts` | Firebase Admin FCM integration |
-| `packages/finance-api/src/lib/notificationEvaluator.ts` | Phase 1 evaluators |
-| `packages/finance-api/src/lib/notificationScheduler.ts` | Scheduler lifecycle |
-| `packages/finance-web/src/api/notifications.ts` | Frontend API client |
-| `packages/finance-web/src/hooks/useBrowserNotifications.ts` | Polling-based browser notifications |
-| `packages/finance-web/src/components/NotificationBell.tsx` | Bell icon + popover |
-| `packages/finance-web/src/components/NotificationSettings.tsx` | Settings UI |
-| `packages/finance-web/src/components/ui/switch.tsx` | Toggle switch component |
-| `packages/finance-web/src/components/ui/popover.tsx` | Popover component |
+| `packages/fin-api/prisma/migrations/20260222000000_add_notifications/migration.sql` | Migration SQL |
+| `packages/fin-api/src/store/notificationStore.ts` | CRUD for device tokens, preferences, logs |
+| `packages/fin-api/src/routes/notifications.ts` | API endpoints |
+| `packages/fin-api/src/lib/fcm.ts` | Firebase Admin FCM integration |
+| `packages/fin-api/src/lib/notificationEvaluator.ts` | Phase 1 evaluators |
+| `packages/fin-api/src/lib/notificationScheduler.ts` | Scheduler lifecycle |
+| `packages/fin-web/src/api/notifications.ts` | Frontend API client |
+| `packages/fin-web/src/hooks/useBrowserNotifications.ts` | Polling-based browser notifications |
+| `packages/fin-web/src/components/NotificationBell.tsx` | Bell icon + popover |
+| `packages/fin-web/src/components/NotificationSettings.tsx` | Settings UI |
+| `packages/fin-web/src/components/ui/switch.tsx` | Toggle switch component |
+| `packages/fin-web/src/components/ui/popover.tsx` | Popover component |
 
 ## Files Modified
 
@@ -234,14 +234,14 @@ Two cards in Settings > Notifications tab:
 |------|---------|
 | `packages/shared/src/finance/types.ts` | NotificationType enum, config interfaces, API types |
 | `packages/shared/src/index.ts` | Re-export notification types |
-| `packages/finance-api/prisma/schema.prisma` | 3 new models |
-| `packages/finance-api/src/app.ts` | Route registration, scheduler lifecycle, log cleanup |
-| `packages/finance-api/src/config.ts` | Firebase credential fields |
-| `packages/finance-api/src/lib/mappers.ts` | Encrypt/decrypt for new models |
-| `packages/finance-api/.env.example` | Firebase env vars |
-| `packages/finance-web/src/components/AppLayout.tsx` | Activate browser notification hook |
-| `packages/finance-web/src/components/Header.tsx` | Add NotificationBell |
-| `packages/finance-web/src/pages/SettingsPage.tsx` | Add Notifications tab |
+| `packages/fin-api/prisma/schema.prisma` | 3 new models |
+| `packages/fin-api/src/app.ts` | Route registration, scheduler lifecycle, log cleanup |
+| `packages/fin-api/src/config.ts` | Firebase credential fields |
+| `packages/fin-api/src/lib/mappers.ts` | Encrypt/decrypt for new models |
+| `packages/fin-api/.env.example` | Firebase env vars |
+| `packages/fin-web/src/components/AppLayout.tsx` | Activate browser notification hook |
+| `packages/fin-web/src/components/Header.tsx` | Add NotificationBell |
+| `packages/fin-web/src/pages/SettingsPage.tsx` | Add Notifications tab |
 
 ## Dependencies Added
 

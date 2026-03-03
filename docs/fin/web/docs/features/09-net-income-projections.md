@@ -26,7 +26,7 @@ Project future net income based on income sources (manual or auto-detected from 
 - `AccountProjectionLine` — accountId, accountName, accountType, currentBalance, monthlyChange, isFavorite, projection
 - `AccountProjectionsResponse` — accounts array, overall line
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Income Source Store (`src/store/incomeSourceStore.ts`)
 
@@ -87,7 +87,7 @@ All routes require JWT authentication.
 | GET | `/projections/savings/accounts` | List savings/HYS accounts with summaries |
 | GET | `/projections/savings/:accountId` | Per-account savings projection with milestones |
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### Projections Page — Net Income Tab (`src/components/projections/NetIncomeTab.tsx`)
 

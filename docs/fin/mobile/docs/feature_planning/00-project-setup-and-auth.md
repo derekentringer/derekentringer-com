@@ -6,7 +6,7 @@
 
 ## Summary
 
-Bootstrap the Expo project in `packages/mobile/`, integrate with the monorepo, establish the dark theme, navigation shell, and complete auth flow with body-based refresh tokens.
+Bootstrap the Expo project in `packages/fin-mobile/`, integrate with the monorepo, establish the dark theme, navigation shell, and complete auth flow with body-based refresh tokens.
 
 ## Pre-requisite: API Changes for Mobile Auth
 
@@ -15,26 +15,26 @@ The finance-api delivers refresh tokens exclusively via HttpOnly cookies. React 
 **Modify `packages/shared/src/types/auth.ts`:**
 - Add optional `refreshToken?: string` to `LoginResponse` and `RefreshResponse`
 
-**Modify `packages/finance-api/src/routes/auth.ts`:**
+**Modify `packages/fin-api/src/routes/auth.ts`:**
 - Add `isMobileClient()` helper that checks `X-Client-Type: mobile` header
 - On `/auth/login`: when mobile client detected, include `refreshToken` in the JSON response body (alongside the existing cookie)
 - On `/auth/refresh`: accept `refreshToken` from request body (`request.body.refreshToken`) in addition to `request.cookies?.refreshToken`
 - On `/auth/logout`: accept `refreshToken` from request body for mobile clients
 
-**Modify `packages/finance-api/src/app.ts`:**
+**Modify `packages/fin-api/src/app.ts`:**
 - Update CORS origin callback to allow requests with no origin (mobile apps and non-browser clients)
 
 ## Config Files
 
-- `packages/mobile/package.json` — name: `@derekentringer/mobile`, deps: expo ~54, react 19.1, react-native 0.81, @react-navigation/bottom-tabs + native + native-stack, @tanstack/react-query ^5, axios ^1, zustand ^5, expo-secure-store, expo-font, react-native-svg, react-native-safe-area-context, react-native-screens, react-native-gesture-handler, react-native-reanimated, @expo/vector-icons
-- `packages/mobile/app.json` — name "Fin", slug "fin", portrait, dark theme (`userInterfaceStyle: dark`), `#0f1117` splash background, Android package `com.derekentringer.fin` (edgeToEdge enabled), iOS bundle `com.derekentringer.fin` (NSAllowsLocalNetworking), `newArchEnabled: true`, plugins: expo-font
-- `packages/mobile/eas.json` — development/preview/production profiles, all APK (sideload, not app-bundle)
-- `packages/mobile/metro.config.js` — monorepo config: `watchFolders` includes workspace root + shared package, `nodeModulesPaths` includes both local and root node_modules, `disableHierarchicalLookup: false`
-- `packages/mobile/tsconfig.json` — extends `expo/tsconfig.base`, strict mode, paths: `@/*` → `./src/*`
-- `packages/mobile/babel.config.js` — `babel-preset-expo`, `module-resolver` plugin with `@` alias
-- `packages/mobile/index.ts` — `registerRootComponent(App)`
-- `packages/mobile/App.tsx` — QueryClientProvider (5-min staleTime, 30-min gcTime, 2 retries), SafeAreaProvider, StatusBar (light-content), AppNavigator
-- `packages/mobile/jest.config.js`, `jest.setup.js` — test config with mocks for react-native, expo-secure-store, @react-navigation/native, react-native-reanimated, react-native-svg, @expo/vector-icons
+- `packages/fin-mobile/package.json` — name: `@derekentringer/fin-mobile`, deps: expo ~54, react 19.1, react-native 0.81, @react-navigation/bottom-tabs + native + native-stack, @tanstack/react-query ^5, axios ^1, zustand ^5, expo-secure-store, expo-font, react-native-svg, react-native-safe-area-context, react-native-screens, react-native-gesture-handler, react-native-reanimated, @expo/vector-icons
+- `packages/fin-mobile/app.json` — name "Fin", slug "fin", portrait, dark theme (`userInterfaceStyle: dark`), `#0f1117` splash background, Android package `com.derekentringer.fin` (edgeToEdge enabled), iOS bundle `com.derekentringer.fin` (NSAllowsLocalNetworking), `newArchEnabled: true`, plugins: expo-font
+- `packages/fin-mobile/eas.json` — development/preview/production profiles, all APK (sideload, not app-bundle)
+- `packages/fin-mobile/metro.config.js` — monorepo config: `watchFolders` includes workspace root + shared package, `nodeModulesPaths` includes both local and root node_modules, `disableHierarchicalLookup: false`
+- `packages/fin-mobile/tsconfig.json` — extends `expo/tsconfig.base`, strict mode, paths: `@/*` → `./src/*`
+- `packages/fin-mobile/babel.config.js` — `babel-preset-expo`, `module-resolver` plugin with `@` alias
+- `packages/fin-mobile/index.ts` — `registerRootComponent(App)`
+- `packages/fin-mobile/App.tsx` — QueryClientProvider (5-min staleTime, 30-min gcTime, 2 retries), SafeAreaProvider, StatusBar (light-content), AppNavigator
+- `packages/fin-mobile/jest.config.js`, `jest.setup.js` — test config with mocks for react-native, expo-secure-store, @react-navigation/native, react-native-reanimated, react-native-svg, @expo/vector-icons
 
 ## Source Files
 

@@ -15,7 +15,7 @@ Auto-categorize transactions using user-defined rules that match descriptions to
 - Category types: `Category`, `CreateCategoryRequest`, `UpdateCategoryRequest`, `CategoryListResponse`, `CategoryResponse`
 - Rule types: `RuleMatchType`, `CategoryRule`, `CreateCategoryRuleRequest`, `UpdateCategoryRuleRequest`, `CategoryRuleListResponse`, `CategoryRuleResponse` (with optional `appliedCount`)
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Category Store (`src/store/categoryStore.ts`)
 
@@ -108,7 +108,7 @@ model CategoryRule {
 
 Category and rule data are stored as plaintext (not encrypted) — they are configuration, not PII.
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### API Clients
 

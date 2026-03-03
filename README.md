@@ -9,7 +9,7 @@ Personal portfolio and tools monorepo.
 | `packages/web` | React + Vite portfolio site |
 | `packages/api` | Fastify API server |
 | `packages/shared` | Shared TypeScript types |
-| `packages/mobile` | React Native app (deferred) |
+| `packages/fin-mobile` | React Native app (deferred) |
 
 ## Development
 

@@ -88,12 +88,12 @@ Full account management (grouped list, type drill-down, detail with balance char
 
 ## Files Modified
 
-- `packages/mobile/package.json` — 1 new dependency (expo-blur)
-- `packages/mobile/App.tsx` — Added BottomSheetModalProvider wrapper
-- `packages/mobile/src/navigation/AppNavigator.tsx` — Added AccountsStackNavigator and ActivityStackNavigator
-- `packages/mobile/src/screens/AccountsScreen.tsx` — Replaced placeholder with grouped account list
-- `packages/mobile/src/screens/TransactionsScreen.tsx` — New screen (replaces ActivityScreen via stack navigator)
-- `packages/mobile/src/components/common/SectionHeader.tsx` — Action link styling (primary color + chevron)
+- `packages/fin-mobile/package.json` — 1 new dependency (expo-blur)
+- `packages/fin-mobile/App.tsx` — Added BottomSheetModalProvider wrapper
+- `packages/fin-mobile/src/navigation/AppNavigator.tsx` — Added AccountsStackNavigator and ActivityStackNavigator
+- `packages/fin-mobile/src/screens/AccountsScreen.tsx` — Replaced placeholder with grouped account list
+- `packages/fin-mobile/src/screens/TransactionsScreen.tsx` — New screen (replaces ActivityScreen via stack navigator)
+- `packages/fin-mobile/src/components/common/SectionHeader.tsx` — Action link styling (primary color + chevron)
 
 ## Files Deleted
 
