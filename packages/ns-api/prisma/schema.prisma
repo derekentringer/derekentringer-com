@@ -14,13 +14,23 @@ model Note {
   folder    String?
   tags      Json      @default("[]")
   summary   String?
+  sortOrder Int       @default(0)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   @@index([folder])
   @@index([deletedAt])
+  @@index([sortOrder])
   @@map("notes")
+}
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("folders")
 }
 
 model SyncCursor {

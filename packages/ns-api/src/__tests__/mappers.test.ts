@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toNote } from "../lib/mappers.js";
+import { toNote, toNoteSearchResult } from "../lib/mappers.js";
 
 describe("toNote", () => {
   const now = new Date("2025-06-15T12:00:00.000Z");
@@ -12,6 +12,7 @@ describe("toNote", () => {
       folder: "work",
       tags: ["tag1", "tag2"],
       summary: "A summary",
+      sortOrder: 0,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -69,5 +70,44 @@ describe("toNote", () => {
     const result = toNote(row as Parameters<typeof toNote>[0]);
 
     expect(result.tags).toEqual([]);
+  });
+});
+
+describe("toNoteSearchResult", () => {
+  const now = new Date("2025-06-15T12:00:00.000Z");
+
+  function makePrismaNote(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "note-1",
+      title: "Test Note",
+      content: "Some content",
+      folder: "work",
+      tags: ["tag1"],
+      summary: null,
+      sortOrder: 0,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      ...overrides,
+    };
+  }
+
+  it("includes headline when present", () => {
+    const row = makePrismaNote({ headline: "test <mark>result</mark>" });
+    const result = toNoteSearchResult(
+      row as Parameters<typeof toNoteSearchResult>[0],
+    );
+
+    expect(result.headline).toBe("test <mark>result</mark>");
+    expect(result.id).toBe("note-1");
+  });
+
+  it("sets headline to undefined when not present", () => {
+    const row = makePrismaNote();
+    const result = toNoteSearchResult(
+      row as Parameters<typeof toNoteSearchResult>[0],
+    );
+
+    expect(result.headline).toBeUndefined();
   });
 });
