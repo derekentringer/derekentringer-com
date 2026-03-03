@@ -41,6 +41,17 @@ const mockFetchNotes = vi.fn();
 const mockCreateNote = vi.fn();
 const mockUpdateNote = vi.fn();
 const mockDeleteNote = vi.fn();
+const mockFetchTrash = vi.fn();
+const mockRestoreNote = vi.fn();
+const mockPermanentDeleteNote = vi.fn();
+const mockFetchFolders = vi.fn();
+const mockCreateFolderApi = vi.fn();
+const mockReorderNotes = vi.fn();
+const mockRenameFolderApi = vi.fn();
+const mockDeleteFolderApi = vi.fn();
+const mockFetchTags = vi.fn();
+const mockRenameTagApi = vi.fn();
+const mockDeleteTagApi = vi.fn();
 const mockLogout = vi.fn();
 
 vi.mock("../api/notes.ts", () => ({
@@ -48,6 +59,17 @@ vi.mock("../api/notes.ts", () => ({
   createNote: (...args: unknown[]) => mockCreateNote(...args),
   updateNote: (...args: unknown[]) => mockUpdateNote(...args),
   deleteNote: (...args: unknown[]) => mockDeleteNote(...args),
+  fetchTrash: (...args: unknown[]) => mockFetchTrash(...args),
+  restoreNote: (...args: unknown[]) => mockRestoreNote(...args),
+  permanentDeleteNote: (...args: unknown[]) => mockPermanentDeleteNote(...args),
+  fetchFolders: (...args: unknown[]) => mockFetchFolders(...args),
+  createFolderApi: (...args: unknown[]) => mockCreateFolderApi(...args),
+  reorderNotes: (...args: unknown[]) => mockReorderNotes(...args),
+  renameFolderApi: (...args: unknown[]) => mockRenameFolderApi(...args),
+  deleteFolderApi: (...args: unknown[]) => mockDeleteFolderApi(...args),
+  fetchTags: (...args: unknown[]) => mockFetchTags(...args),
+  renameTagApi: (...args: unknown[]) => mockRenameTagApi(...args),
+  deleteTagApi: (...args: unknown[]) => mockDeleteTagApi(...args),
 }));
 
 vi.mock("../context/AuthContext.tsx", () => ({
@@ -61,9 +83,18 @@ const mockNote = {
   folder: null,
   tags: [],
   summary: null,
+  sortOrder: 0,
   createdAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-01T00:00:00.000Z",
   deletedAt: null,
+};
+
+const mockTrashedNote = {
+  ...mockNote,
+  id: "trash-1",
+  title: "Trashed Note",
+  content: "Deleted content",
+  deletedAt: "2025-06-01T00:00:00.000Z",
 };
 
 function renderNotesPage() {
@@ -77,6 +108,9 @@ function renderNotesPage() {
 beforeEach(() => {
   vi.clearAllMocks();
   mockFetchNotes.mockResolvedValue({ notes: [], total: 0 });
+  mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
+  mockFetchFolders.mockResolvedValue({ folders: [] });
+  mockFetchTags.mockResolvedValue({ tags: [] });
 });
 
 describe("NotesPage", () => {
@@ -120,8 +154,8 @@ describe("NotesPage", () => {
 
     await screen.findByText("No notes yet");
 
-    const createButton = screen.getByTitle("New note");
-    await userEvent.click(createButton);
+    const createButtons = screen.getAllByTitle("New note");
+    await userEvent.click(createButtons[0]);
 
     expect(mockCreateNote).toHaveBeenCalledWith({ title: "Untitled" });
   });
@@ -149,6 +183,256 @@ describe("NotesPage", () => {
 
     await waitFor(() => {
       expect(mockDeleteNote).toHaveBeenCalledWith("note-1");
+    });
+  });
+
+  describe("Sort controls", () => {
+    it("renders sort controls in notes view", async () => {
+      renderNotesPage();
+
+      await screen.findByText("No notes yet");
+
+      expect(screen.getByLabelText("Sort by")).toBeInTheDocument();
+    });
+
+    it("passes sortBy and sortOrder to fetchNotes", async () => {
+      renderNotesPage();
+
+      await screen.findByText("No notes yet");
+
+      // Default call should include sortBy and sortOrder
+      expect(mockFetchNotes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sortBy: "sortOrder",
+          sortOrder: "asc",
+        }),
+      );
+    });
+
+    it("changes sort field when dropdown changes", async () => {
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const sortSelect = screen.getByLabelText("Sort by");
+      await userEvent.selectOptions(sortSelect, "title");
+
+      await waitFor(() => {
+        expect(mockFetchNotes).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sortBy: "title",
+          }),
+        );
+      });
+    });
+
+    it("toggles sort order when direction button is clicked", async () => {
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      // Default is asc, button shows up arrow
+      const sortOrderButton = screen.getByLabelText("Sort ascending");
+      await userEvent.click(sortOrderButton);
+
+      await waitFor(() => {
+        expect(mockFetchNotes).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sortOrder: "desc",
+          }),
+        );
+      });
+    });
+  });
+
+  describe("Trash view", () => {
+    it("shows trash button with count badge", async () => {
+      mockFetchTrash.mockResolvedValue({ notes: [], total: 3 });
+
+      renderNotesPage();
+
+      const trashButton = await screen.findByTitle("View trash");
+      expect(trashButton).toBeInTheDocument();
+      expect(screen.getByText("3")).toBeInTheDocument();
+    });
+
+    it("switches to trash view when trash button is clicked", async () => {
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+
+      renderNotesPage();
+
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("View trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trashed Note");
+      expect(screen.getByText("Back to notes")).toBeInTheDocument();
+    });
+
+    it("shows empty trash message", async () => {
+      mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("View trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trash is empty");
+    });
+
+    it("shows read-only preview when trash note is selected", async () => {
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("View trash");
+      await userEvent.click(trashButton);
+
+      const noteButton = await screen.findByText("Trashed Note");
+      await userEvent.click(noteButton);
+
+      // Should show Restore and Delete Permanently buttons
+      expect(screen.getByText("Restore")).toBeInTheDocument();
+      expect(screen.getByText("Delete Permanently")).toBeInTheDocument();
+      // Should NOT show the editor
+      expect(screen.queryByTestId("markdown-editor")).not.toBeInTheDocument();
+    });
+
+    it("restores a note from trash", async () => {
+      const restoredNote = { ...mockTrashedNote, deletedAt: null };
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+      mockRestoreNote.mockResolvedValue(restoredNote);
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("View trash");
+      await userEvent.click(trashButton);
+
+      const noteButton = await screen.findByText("Trashed Note");
+      await userEvent.click(noteButton);
+
+      await userEvent.click(screen.getByText("Restore"));
+
+      await waitFor(() => {
+        expect(mockRestoreNote).toHaveBeenCalledWith("trash-1");
+      });
+    });
+
+    it("permanently deletes a note with confirmation", async () => {
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+      mockPermanentDeleteNote.mockResolvedValue(undefined);
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("View trash");
+      await userEvent.click(trashButton);
+
+      const noteButton = await screen.findByText("Trashed Note");
+      await userEvent.click(noteButton);
+
+      // First click shows confirmation
+      await userEvent.click(screen.getByText("Delete Permanently"));
+      expect(screen.getByText("Delete forever?")).toBeInTheDocument();
+
+      // Confirm permanent delete
+      await userEvent.click(screen.getByText("Confirm"));
+
+      await waitFor(() => {
+        expect(mockPermanentDeleteNote).toHaveBeenCalledWith("trash-1");
+      });
+    });
+
+    it("returns to notes view when back button is clicked", async () => {
+      mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("View trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trash is empty");
+
+      await userEvent.click(screen.getByText("Back to notes"));
+
+      await screen.findByText("No notes yet");
+    });
+
+    it("hides new note button in trash view", async () => {
+      mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      expect(screen.getAllByTitle("New note").length).toBeGreaterThan(0);
+
+      const trashButton = screen.getByTitle("View trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trash is empty");
+
+      expect(screen.queryAllByTitle("New note")).toHaveLength(0);
+    });
+  });
+
+  describe("Tags", () => {
+    it("renders tag pills when search is focused", async () => {
+      const user = userEvent.setup();
+      mockFetchTags.mockResolvedValue({
+        tags: [
+          { name: "javascript", count: 3 },
+          { name: "react", count: 2 },
+        ],
+      });
+
+      renderNotesPage();
+
+      await screen.findByText("No notes yet");
+
+      // Tags are hidden until search is focused
+      const searchInput = screen.getByPlaceholderText("Search notes...");
+      await user.click(searchInput);
+
+      expect(screen.getByText("javascript")).toBeInTheDocument();
+      expect(screen.getByText("react")).toBeInTheDocument();
+    });
+
+    it("does not render tag pills when no tags exist", async () => {
+      const user = userEvent.setup();
+      renderNotesPage();
+
+      await screen.findByText("No notes yet");
+
+      const searchInput = screen.getByPlaceholderText("Search notes...");
+      await user.click(searchInput);
+
+      expect(screen.queryByText("javascript")).not.toBeInTheDocument();
+    });
+
+    it("shows tag input when a note is selected", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.click(noteButton);
+
+      expect(screen.getByLabelText("Add tag")).toBeInTheDocument();
     });
   });
 });

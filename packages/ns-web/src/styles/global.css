@@ -16,6 +16,7 @@
   --color-sidebar: #13151c;
   --color-popover: #10121a;
   --color-popover-foreground: #ececec;
+  --color-subtle: #1a1c24;
   --color-accent: rgba(255, 255, 255, 0.03);
   --color-ring: #d4e157;
   --color-error: #ef4444;
@@ -186,4 +187,12 @@
 
 .markdown-preview input[type="checkbox"] {
   margin-right: 0.5em;
+}
+
+/* Search highlight (FTS headline) */
+.search-highlight mark {
+  background-color: rgba(212, 225, 87, 0.3);
+  color: var(--color-primary);
+  border-radius: 2px;
+  padding: 0 1px;
 }

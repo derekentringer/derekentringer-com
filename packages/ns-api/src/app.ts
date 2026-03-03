@@ -7,6 +7,7 @@ import authPlugin from "@derekentringer/shared/auth";
 import { loadConfig } from "./config.js";
 import { getPrisma } from "./lib/prisma.js";
 import { cleanupExpiredTokens } from "./store/refreshTokenStore.js";
+import { purgeOldTrash } from "./store/noteStore.js";
 import authRoutes from "./routes/auth.js";
 import healthRoutes from "./routes/health.js";
 import noteRoutes from "./routes/notes.js";
@@ -81,8 +82,10 @@ export function buildApp(opts?: BuildAppOptions) {
 
   app.addHook("onReady", async () => {
     cleanupExpiredTokens().catch(() => {});
+    purgeOldTrash().catch(() => {});
     cleanupTimer = setInterval(() => {
       cleanupExpiredTokens().catch(() => {});
+      purgeOldTrash().catch(() => {});
     }, TOKEN_CLEANUP_INTERVAL_MS);
   });
 
