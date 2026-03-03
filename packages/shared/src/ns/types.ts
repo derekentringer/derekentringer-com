@@ -46,6 +46,19 @@ export interface ReorderNotesRequest {
   order: { id: string; sortOrder: number }[];
 }
 
+export interface TagInfo {
+  name: string;
+  count: number;
+}
+
+export interface TagListResponse {
+  tags: TagInfo[];
+}
+
+export interface NoteSearchResult extends Note {
+  headline?: string;
+}
+
 export interface SyncChange {
   id: string;
   action: "create" | "update" | "delete";

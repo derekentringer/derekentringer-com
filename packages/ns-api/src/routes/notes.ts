@@ -7,8 +7,9 @@ import type {
   SortOrder,
   FolderListResponse,
   ReorderNotesRequest,
+  TagListResponse,
 } from "@derekentringer/shared/ns";
-import { toNote } from "../lib/mappers.js";
+import { toNote, toNoteSearchResult } from "../lib/mappers.js";
 import {
   createNote,
   getNote,
@@ -22,6 +23,9 @@ import {
   reorderNotes,
   renameFolder,
   deleteFolder,
+  listTags,
+  renameTag,
+  removeTag,
 } from "../store/noteStore.js";
 
 const UUID_REGEX =
@@ -90,6 +94,17 @@ const renameFolderSchema = {
   },
 };
 
+const renameTagSchema = {
+  body: {
+    type: "object" as const,
+    required: ["newName"],
+    additionalProperties: false,
+    properties: {
+      newName: { type: "string", minLength: 1 },
+    },
+  },
+};
+
 export default async function noteRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
@@ -113,6 +128,47 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     ) => {
       await reorderNotes(request.body.order);
       return reply.status(204).send();
+    },
+  );
+
+  // GET /notes/tags — MUST be before /:id
+  fastify.get(
+    "/tags",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const tags = await listTags();
+      const response: TagListResponse = { tags };
+      return reply.send(response);
+    },
+  );
+
+  // PATCH /notes/tags/:name — rename a tag
+  fastify.patch<{ Params: { name: string }; Body: { newName: string } }>(
+    "/tags/:name",
+    { schema: renameTagSchema },
+    async (
+      request: FastifyRequest<{
+        Params: { name: string };
+        Body: { newName: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { name } = request.params;
+      const { newName } = request.body;
+      const updated = await renameTag(name, newName);
+      return reply.send({ updated });
+    },
+  );
+
+  // DELETE /notes/tags/:name — remove a tag from all notes
+  fastify.delete(
+    "/tags/:name",
+    async (
+      request: FastifyRequest<{ Params: { name: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { name } = request.params;
+      const updated = await removeTag(name);
+      return reply.send({ updated });
     },
   );
 
@@ -147,6 +203,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         Querystring: {
           folder?: string;
           search?: string;
+          tags?: string;
           page?: string;
           pageSize?: string;
           sortBy?: string;
@@ -155,7 +212,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
-      const { folder, search, page, pageSize, sortBy, sortOrder } =
+      const { folder, search, tags, page, pageSize, sortBy, sortOrder } =
         request.query;
 
       if (sortBy && !VALID_SORT_FIELDS.includes(sortBy as NoteSortField)) {
@@ -174,14 +231,27 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
+      const parsedTags = tags
+        ? tags.split(",").map((t) => t.trim()).filter(Boolean)
+        : undefined;
+
       const result = await listNotes({
         folder,
         search,
+        tags: parsedTags,
         page: page ? Number(page) : undefined,
         pageSize: pageSize ? Number(pageSize) : undefined,
         sortBy: sortBy as NoteSortField | undefined,
         sortOrder: sortOrder as SortOrder | undefined,
       });
+
+      // Use toNoteSearchResult when search is active (includes headline)
+      if (search) {
+        return reply.send({
+          notes: result.notes.map(toNoteSearchResult),
+          total: result.total,
+        });
+      }
 
       const response: NoteListResponse = {
         notes: result.notes.map(toNote),

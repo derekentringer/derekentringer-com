@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Note, NoteSortField, SortOrder, FolderInfo } from "@derekentringer/shared/ns";
+import type { Note, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import {
   fetchNotes,
@@ -13,6 +13,9 @@ import {
   reorderNotes as apiReorderNotes,
   renameFolderApi,
   deleteFolderApi,
+  fetchTags,
+  renameTagApi,
+  deleteTagApi,
 } from "../api/notes.ts";
 import {
   MarkdownEditor,
@@ -26,13 +29,15 @@ import {
 import { SortControls } from "../components/SortControls.tsx";
 import { FolderList } from "../components/FolderList.tsx";
 import { NoteList } from "../components/NoteList.tsx";
+import { TagBrowser } from "../components/TagBrowser.tsx";
+import { TagInput } from "../components/TagInput.tsx";
 
 type SidebarView = "notes" | "trash";
 
 export function NotesPage() {
   const { logout } = useAuth();
 
-  const [notes, setNotes] = useState<Note[]>([]);
+  const [notes, setNotes] = useState<NoteSearchResult[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -54,6 +59,10 @@ export function NotesPage() {
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [allNotesCount, setAllNotesCount] = useState(0);
+
+  // Tag state
+  const [tags, setTags] = useState<TagInfo[]>([]);
+  const [activeTags, setActiveTags] = useState<string[]>([]);
 
   // Trash state
   const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
@@ -77,14 +86,16 @@ export function NotesPage() {
 
   const loadFolders = useCallback(async () => {
     try {
-      const [folderResult, notesResult] = await Promise.all([
+      const [folderResult, notesResult, tagResult] = await Promise.all([
         fetchFolders(),
         fetchNotes({ pageSize: 0 }),
+        fetchTags(),
       ]);
       setFolders(folderResult.folders);
       setAllNotesCount(notesResult.total);
+      setTags(tagResult.tags);
     } catch {
-      // Silent fail for folder loading
+      // Silent fail for folder/tag loading
     }
   }, []);
 
@@ -98,6 +109,7 @@ export function NotesPage() {
         const result = await fetchNotes({
           search: searchQuery || undefined,
           folder: folderParam,
+          tags: activeTags.length > 0 ? activeTags : undefined,
           sortBy,
           sortOrder,
         });
@@ -113,7 +125,7 @@ export function NotesPage() {
         setIsLoading(false);
       }
     },
-    [sortBy, sortOrder, activeFolder],
+    [sortBy, sortOrder, activeFolder, activeTags],
   );
 
   const loadTrash = useCallback(async () => {
@@ -309,6 +321,49 @@ export function NotesPage() {
     }
   }
 
+  function handleToggleTag(tag: string) {
+    setActiveTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
+    );
+  }
+
+  async function handleRenameTag(oldName: string, newName: string) {
+    try {
+      await renameTagApi(oldName, newName);
+      setActiveTags((prev) =>
+        prev.map((t) => (t === oldName ? newName : t)),
+      );
+      loadFolders(); // reloads tags too
+      loadNotes(debouncedSearch || undefined);
+    } catch {
+      showError("Failed to rename tag");
+    }
+  }
+
+  async function handleDeleteTag(name: string) {
+    try {
+      await deleteTagApi(name);
+      setActiveTags((prev) => prev.filter((t) => t !== name));
+      loadFolders(); // reloads tags too
+      loadNotes(debouncedSearch || undefined);
+    } catch {
+      showError("Failed to delete tag");
+    }
+  }
+
+  async function handleTagsChange(newTags: string[]) {
+    if (!selectedId) return;
+    try {
+      const updated = await updateNote(selectedId, { tags: newTags });
+      setNotes((prev) =>
+        prev.map((n) => (n.id === updated.id ? updated : n)),
+      );
+      loadFolders(); // reloads tags too
+    } catch {
+      showError("Failed to update tags");
+    }
+  }
+
   async function handleDeleteFolder(name: string) {
     try {
       await deleteFolderApi(name);
@@ -396,6 +451,14 @@ export function NotesPage() {
               onCreateFolder={handleCreateFolder}
               onRenameFolder={handleRenameFolder}
               onDeleteFolder={handleDeleteFolder}
+            />
+
+            <TagBrowser
+              tags={tags}
+              activeTags={activeTags}
+              onToggleTag={handleToggleTag}
+              onRenameTag={handleRenameTag}
+              onDeleteTag={handleDeleteTag}
             />
 
             <div className="border-t border-border mx-2" />
@@ -536,6 +599,13 @@ export function NotesPage() {
               }}
               placeholder="Note title"
               className="px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none border-b border-border"
+            />
+
+            {/* Tags */}
+            <TagInput
+              tags={selectedNote?.tags ?? []}
+              allTags={tags.map((t) => t.name)}
+              onChange={handleTagsChange}
             />
 
             {/* Editor toolbar */}

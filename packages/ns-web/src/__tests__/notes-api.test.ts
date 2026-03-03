@@ -12,6 +12,9 @@ import {
   reorderNotes,
   renameFolderApi,
   deleteFolderApi,
+  fetchTags,
+  renameTagApi,
+  deleteTagApi,
 } from "../api/notes.ts";
 
 const mockApiFetch = vi.fn();
@@ -359,6 +362,102 @@ describe("deleteFolderApi", () => {
 
     await expect(deleteFolderApi("work")).rejects.toThrow(
       "Failed to delete folder: 500",
+    );
+  });
+});
+
+describe("fetchNotes with tags", () => {
+  it("includes tags param in query string", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ notes: [], total: 0 }),
+    });
+
+    await fetchNotes({ tags: ["js", "react"] });
+
+    expect(mockApiFetch).toHaveBeenCalledWith(
+      "/notes?tags=js%2Creact",
+    );
+  });
+
+  it("omits tags when array is empty", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ notes: [], total: 0 }),
+    });
+
+    await fetchNotes({ tags: [] });
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes");
+  });
+});
+
+describe("fetchTags", () => {
+  it("fetches tag list", async () => {
+    const tags = [{ name: "js", count: 5 }];
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ tags }),
+    });
+
+    const result = await fetchTags();
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/tags");
+    expect(result).toEqual({ tags });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(fetchTags()).rejects.toThrow("Failed to fetch tags: 500");
+  });
+});
+
+describe("renameTagApi", () => {
+  it("sends PATCH with newName", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ updated: 3 }),
+    });
+
+    const result = await renameTagApi("old", "new");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/tags/old", {
+      method: "PATCH",
+      body: JSON.stringify({ newName: "new" }),
+    });
+    expect(result).toEqual({ updated: 3 });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(renameTagApi("old", "new")).rejects.toThrow(
+      "Failed to rename tag: 500",
+    );
+  });
+});
+
+describe("deleteTagApi", () => {
+  it("sends DELETE request", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ updated: 2 }),
+    });
+
+    const result = await deleteTagApi("old");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/tags/old", {
+      method: "DELETE",
+    });
+    expect(result).toEqual({ updated: 2 });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(deleteTagApi("old")).rejects.toThrow(
+      "Failed to delete tag: 500",
     );
   });
 });

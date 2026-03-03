@@ -7,12 +7,14 @@ import type {
   SortOrder,
   FolderListResponse,
   ReorderNotesRequest,
+  TagListResponse,
 } from "@derekentringer/shared/ns";
 import { apiFetch } from "./client.ts";
 
 export async function fetchNotes(params?: {
   folder?: string;
   search?: string;
+  tags?: string[];
   page?: number;
   pageSize?: number;
   sortBy?: NoteSortField;
@@ -21,6 +23,7 @@ export async function fetchNotes(params?: {
   const qs = new URLSearchParams();
   if (params?.folder) qs.set("folder", params.folder);
   if (params?.search) qs.set("search", params.search);
+  if (params?.tags && params.tags.length > 0) qs.set("tags", params.tags.join(","));
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
   if (params?.sortBy) qs.set("sortBy", params.sortBy);
@@ -181,6 +184,46 @@ export async function deleteFolderApi(
 
   if (!response.ok) {
     throw new Error(`Failed to delete folder: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchTags(): Promise<TagListResponse> {
+  const response = await apiFetch("/notes/tags");
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch tags: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function renameTagApi(
+  name: string,
+  newName: string,
+): Promise<{ updated: number }> {
+  const response = await apiFetch(`/notes/tags/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ newName }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to rename tag: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteTagApi(
+  name: string,
+): Promise<{ updated: number }> {
+  const response = await apiFetch(`/notes/tags/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete tag: ${response.status}`);
   }
 
   return response.json();

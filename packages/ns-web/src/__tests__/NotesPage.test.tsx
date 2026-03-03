@@ -48,6 +48,9 @@ const mockFetchFolders = vi.fn();
 const mockReorderNotes = vi.fn();
 const mockRenameFolderApi = vi.fn();
 const mockDeleteFolderApi = vi.fn();
+const mockFetchTags = vi.fn();
+const mockRenameTagApi = vi.fn();
+const mockDeleteTagApi = vi.fn();
 const mockLogout = vi.fn();
 
 vi.mock("../api/notes.ts", () => ({
@@ -62,6 +65,9 @@ vi.mock("../api/notes.ts", () => ({
   reorderNotes: (...args: unknown[]) => mockReorderNotes(...args),
   renameFolderApi: (...args: unknown[]) => mockRenameFolderApi(...args),
   deleteFolderApi: (...args: unknown[]) => mockDeleteFolderApi(...args),
+  fetchTags: (...args: unknown[]) => mockFetchTags(...args),
+  renameTagApi: (...args: unknown[]) => mockRenameTagApi(...args),
+  deleteTagApi: (...args: unknown[]) => mockDeleteTagApi(...args),
 }));
 
 vi.mock("../context/AuthContext.tsx", () => ({
@@ -102,6 +108,7 @@ beforeEach(() => {
   mockFetchNotes.mockResolvedValue({ notes: [], total: 0 });
   mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
   mockFetchFolders.mockResolvedValue({ folders: [] });
+  mockFetchTags.mockResolvedValue({ tags: [] });
 });
 
 describe("NotesPage", () => {
@@ -378,6 +385,44 @@ describe("NotesPage", () => {
       await screen.findByText("Trash is empty");
 
       expect(screen.queryByTitle("New note")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Tags", () => {
+    it("renders tag pills when tags are loaded", async () => {
+      mockFetchTags.mockResolvedValue({
+        tags: [
+          { name: "javascript", count: 3 },
+          { name: "react", count: 2 },
+        ],
+      });
+
+      renderNotesPage();
+
+      await screen.findByText("No notes yet");
+
+      expect(screen.getByText("Tags")).toBeInTheDocument();
+      expect(screen.getByText("javascript")).toBeInTheDocument();
+      expect(screen.getByText("react")).toBeInTheDocument();
+    });
+
+    it("does not render tag section when no tags exist", async () => {
+      renderNotesPage();
+
+      await screen.findByText("No notes yet");
+
+      expect(screen.queryByText("Tags")).not.toBeInTheDocument();
+    });
+
+    it("shows tag input when a note is selected", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.click(noteButton);
+
+      expect(screen.getByLabelText("Add tag")).toBeInTheDocument();
     });
   });
 });

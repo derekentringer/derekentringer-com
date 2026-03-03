@@ -22,6 +22,9 @@ import {
   reorderNotes,
   renameFolder,
   deleteFolder,
+  listTags,
+  renameTag,
+  removeTag,
 } from "../store/noteStore.js";
 
 interface P2025Error extends Error {
@@ -156,23 +159,18 @@ describe("noteStore", () => {
       );
     });
 
-    it("applies search filter", async () => {
-      mockPrisma.note.findMany.mockResolvedValue([]);
-      mockPrisma.note.count.mockResolvedValue(0);
+    it("applies search filter via FTS", async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([]);
 
       await listNotes({ search: "hello" });
 
-      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            deletedAt: null,
-            OR: [
-              { title: { contains: "hello", mode: "insensitive" } },
-              { content: { contains: "hello", mode: "insensitive" } },
-            ],
-          },
-        }),
-      );
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+      // First call is count query, second is data query
+      const countCall = mockPrisma.$queryRawUnsafe.mock.calls[0];
+      expect(countCall[0]).toContain("plainto_tsquery");
+      expect(countCall[1]).toBe("hello");
     });
 
     it("applies pagination", async () => {
@@ -500,6 +498,146 @@ describe("noteStore", () => {
         where: { folder: "work", deletedAt: null },
         data: { folder: null },
       });
+    });
+  });
+
+  describe("listNotes with search (FTS)", () => {
+    it("uses $queryRawUnsafe for full-text search", async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce([
+          { ...makeMockNoteRow(), headline: "test <mark>match</mark>" },
+        ]);
+
+      const result = await listNotes({ search: "match" });
+
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+      expect(result.total).toBe(1);
+      expect(result.notes).toHaveLength(1);
+      expect(result.notes[0].headline).toBe("test <mark>match</mark>");
+    });
+
+    it("includes folder filter in FTS query", async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([]);
+
+      await listNotes({ search: "hello", folder: "work" });
+
+      // Both count and data queries should include folder param
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+      const countCall = mockPrisma.$queryRawUnsafe.mock.calls[0];
+      expect(countCall[0]).toContain('"folder"');
+      expect(countCall[1]).toBe("hello");
+      expect(countCall[2]).toBe("work");
+    });
+
+    it("includes tags filter in FTS query", async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([]);
+
+      await listNotes({ search: "hello", tags: ["js", "react"] });
+
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+      const countCall = mockPrisma.$queryRawUnsafe.mock.calls[0];
+      expect(countCall[0]).toContain('"tags"');
+      expect(countCall[1]).toBe("hello");
+      expect(countCall[2]).toBe(JSON.stringify(["js", "react"]));
+    });
+  });
+
+  describe("listNotes with tags filter (no search)", () => {
+    it("passes tags to Prisma where clause", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      await listNotes({ tags: ["todo"] });
+
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tags: { array_contains: ["todo"] },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe("listTags", () => {
+    it("returns tag list from raw query", async () => {
+      const mockTags = [
+        { name: "js", count: 5 },
+        { name: "react", count: 3 },
+      ];
+      mockPrisma.$queryRawUnsafe.mockResolvedValue(mockTags);
+
+      const result = await listTags();
+
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
+      expect(result).toEqual(mockTags);
+    });
+  });
+
+  describe("renameTag", () => {
+    it("renames tag in all matching notes", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1", tags: ["old-tag", "other"] },
+        { id: "n2", tags: ["old-tag"] },
+      ]);
+      mockPrisma.note.update.mockResolvedValue({});
+
+      const result = await renameTag("old-tag", "new-tag");
+
+      expect(result).toBe(2);
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+
+    it("deduplicates when newName already exists in tags", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1", tags: ["old-tag", "new-tag"] },
+      ]);
+      mockPrisma.note.update.mockResolvedValue({});
+
+      await renameTag("old-tag", "new-tag");
+
+      // The transaction should receive update with deduplicated tags
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+
+    it("returns 0 when no notes have the tag", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1", tags: ["other"] },
+      ]);
+
+      const result = await renameTag("nonexistent", "new-tag");
+
+      expect(result).toBe(0);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("removeTag", () => {
+    it("removes tag from all matching notes", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1", tags: ["remove-me", "keep"] },
+        { id: "n2", tags: ["remove-me"] },
+      ]);
+      mockPrisma.note.update.mockResolvedValue({});
+
+      const result = await removeTag("remove-me");
+
+      expect(result).toBe(2);
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+
+    it("returns 0 when no notes have the tag", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([]);
+
+      const result = await removeTag("nonexistent");
+
+      expect(result).toBe(0);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });

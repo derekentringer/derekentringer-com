@@ -14,20 +14,21 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Note } from "@derekentringer/shared/ns";
+import type { NoteSearchResult } from "@derekentringer/shared/ns";
+import { SearchSnippet } from "./SearchSnippet.tsx";
 
 interface NoteListProps {
-  notes: Note[];
+  notes: NoteSearchResult[];
   selectedId: string | null;
-  onSelect: (note: Note) => void;
+  onSelect: (note: NoteSearchResult) => void;
   onReorder: (activeId: string, overId: string) => void;
   sortByManual: boolean;
 }
 
 interface SortableNoteItemProps {
-  note: Note;
+  note: NoteSearchResult;
   isSelected: boolean;
-  onSelect: (note: Note) => void;
+  onSelect: (note: NoteSearchResult) => void;
   sortByManual: boolean;
 }
 
@@ -66,13 +67,14 @@ function SortableNoteItem({
       )}
       <button
         onClick={() => onSelect(note)}
-        className={`flex-1 text-left px-2 py-2 rounded-md text-sm transition-colors truncate ${
+        className={`flex-1 text-left px-2 py-2 rounded-md text-sm transition-colors ${
           isSelected
             ? "bg-accent text-foreground"
             : "text-muted hover:bg-accent hover:text-foreground"
         }`}
       >
-        {note.title || "Untitled"}
+        <span className="block truncate">{note.title || "Untitled"}</span>
+        {note.headline && <SearchSnippet headline={note.headline} />}
       </button>
     </div>
   );

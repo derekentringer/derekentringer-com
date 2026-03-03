@@ -681,4 +681,110 @@ describe("Note routes", () => {
       expect(res.statusCode).toBe(401);
     });
   });
+
+  describe("GET /notes/tags", () => {
+    it("returns tag list", async () => {
+      const token = await getAccessToken();
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([
+        { name: "js", count: 5 },
+        { name: "react", count: 3 },
+      ]);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/tags",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.tags).toEqual([
+        { name: "js", count: 5 },
+        { name: "react", count: 3 },
+      ]);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/tags",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe("PATCH /notes/tags/:name", () => {
+    it("renames a tag", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1", tags: ["old"] },
+      ]);
+      mockPrisma.note.update.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/notes/tags/old",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { newName: "new" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().updated).toBe(1);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/notes/tags/old",
+        payload: { newName: "new" },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe("DELETE /notes/tags/:name", () => {
+    it("removes a tag from all notes", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1", tags: ["remove-me", "keep"] },
+      ]);
+      mockPrisma.note.update.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/notes/tags/remove-me",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().updated).toBe(1);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/notes/tags/remove-me",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe("GET /notes with tags filter", () => {
+    it("passes tags filter to store", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes?tags=js,react",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+    });
+  });
 });

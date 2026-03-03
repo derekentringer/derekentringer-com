@@ -5,6 +5,7 @@ import type {
   NoteSortField,
   SortOrder,
   FolderInfo,
+  TagInfo,
 } from "@derekentringer/shared/ns";
 import type { Note as PrismaNote } from "../generated/prisma/client.js";
 
@@ -49,15 +50,20 @@ export async function getNote(id: string): Promise<PrismaNote | null> {
 export interface ListNotesFilter {
   folder?: string;
   search?: string;
+  tags?: string[];
   page?: number;
   pageSize?: number;
   sortBy?: NoteSortField;
   sortOrder?: SortOrder;
 }
 
+interface FtsRow extends PrismaNote {
+  headline?: string;
+}
+
 export async function listNotes(
   filter?: ListNotesFilter,
-): Promise<{ notes: PrismaNote[]; total: number }> {
+): Promise<{ notes: FtsRow[]; total: number }> {
   const prisma = getPrisma();
   const page = filter?.page ?? 1;
   const pageSize = filter?.pageSize ?? 50;
@@ -65,17 +71,66 @@ export async function listNotes(
   const sortBy = filter?.sortBy ?? "sortOrder";
   const sortOrder = filter?.sortOrder ?? "asc";
 
+  // Use raw SQL for full-text search
+  if (filter?.search) {
+    const params: unknown[] = [filter.search];
+    let paramIdx = 2;
+
+    let whereClause = `"deletedAt" IS NULL AND "search_vector" @@ plainto_tsquery('english', $1)`;
+
+    if (filter.folder) {
+      whereClause += ` AND "folder" = $${paramIdx}`;
+      params.push(filter.folder);
+      paramIdx++;
+    }
+
+    if (filter.tags && filter.tags.length > 0) {
+      whereClause += ` AND "tags" @> $${paramIdx}::jsonb`;
+      params.push(JSON.stringify(filter.tags));
+      paramIdx++;
+    }
+
+    const SORT_COL_MAP: Record<string, string> = {
+      title: '"title"',
+      createdAt: '"createdAt"',
+      updatedAt: '"updatedAt"',
+      sortOrder: '"sortOrder"',
+    };
+    const sortCol = SORT_COL_MAP[sortBy] ?? '"sortOrder"';
+    const sortDir = sortOrder === "desc" ? "DESC" : "ASC";
+
+    const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${whereClause}`;
+    const dataQuery = `
+      SELECT *,
+        ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
+          'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline
+      FROM "notes"
+      WHERE ${whereClause}
+      ORDER BY ts_rank("search_vector", plainto_tsquery('english', $1)) DESC, ${sortCol} ${sortDir}
+      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+    `;
+    params.push(pageSize, skip);
+
+    const [countResult, notes] = await Promise.all([
+      prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, ...params.slice(0, -2)),
+      prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, ...params),
+    ]);
+
+    return {
+      notes,
+      total: countResult[0]?.total ?? 0,
+    };
+  }
+
+  // Standard Prisma query (no search)
   const where: Record<string, unknown> = { deletedAt: null };
 
   if (filter?.folder) {
     where.folder = filter.folder;
   }
 
-  if (filter?.search) {
-    where.OR = [
-      { title: { contains: filter.search, mode: "insensitive" } },
-      { content: { contains: filter.search, mode: "insensitive" } },
-    ];
+  if (filter?.tags && filter.tags.length > 0) {
+    where.tags = { array_contains: filter.tags };
   }
 
   const [notes, total] = await Promise.all([
@@ -243,4 +298,78 @@ export async function deleteFolder(name: string): Promise<number> {
     data: { folder: null },
   });
   return result.count;
+}
+
+export async function listTags(): Promise<TagInfo[]> {
+  const prisma = getPrisma();
+  const result = await prisma.$queryRawUnsafe<TagInfo[]>(`
+    SELECT tag AS name, COUNT(*)::int AS count
+    FROM "notes", jsonb_array_elements_text("tags") AS tag
+    WHERE "deletedAt" IS NULL
+    GROUP BY tag
+    ORDER BY tag ASC
+  `);
+  return result;
+}
+
+export async function renameTag(
+  oldName: string,
+  newName: string,
+): Promise<number> {
+  const prisma = getPrisma();
+  // Find notes that contain the old tag
+  const notes = await prisma.note.findMany({
+    where: { deletedAt: null },
+    select: { id: true, tags: true },
+  });
+
+  const toUpdate = notes.filter((n) => {
+    if (!Array.isArray(n.tags)) return false;
+    return n.tags.includes(oldName);
+  });
+
+  if (toUpdate.length === 0) return 0;
+
+  await prisma.$transaction(
+    toUpdate.map((n) => {
+      const tags = (n.tags as string[]).map((t) =>
+        t === oldName ? newName : t,
+      );
+      // Deduplicate in case newName already exists
+      const unique = [...new Set(tags)];
+      return prisma.note.update({
+        where: { id: n.id },
+        data: { tags: unique },
+      });
+    }),
+  );
+
+  return toUpdate.length;
+}
+
+export async function removeTag(name: string): Promise<number> {
+  const prisma = getPrisma();
+  const notes = await prisma.note.findMany({
+    where: { deletedAt: null },
+    select: { id: true, tags: true },
+  });
+
+  const toUpdate = notes.filter((n) => {
+    if (!Array.isArray(n.tags)) return false;
+    return n.tags.includes(name);
+  });
+
+  if (toUpdate.length === 0) return 0;
+
+  await prisma.$transaction(
+    toUpdate.map((n) => {
+      const tags = (n.tags as string[]).filter((t) => t !== name);
+      return prisma.note.update({
+        where: { id: n.id },
+        data: { tags },
+      });
+    }),
+  );
+
+  return toUpdate.length;
 }
