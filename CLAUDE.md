@@ -10,12 +10,12 @@ Personal portfolio and tools monorepo for Derek Entringer (derekentringer.com). 
 
 ```bash
 npm install          # Install all workspace dependencies
-npx turbo run dev    # Start all dev servers (web :3000, api :3001, finance-api :3002, finance-web :3003)
+npx turbo run dev    # Start all dev servers (web :3000, api :3001, fin-api :3002, fin-web :3003)
 npx turbo run build  # Build all packages
 npx turbo run type-check  # Type-check all packages
 ```
 
-**Dev server port notes**: When running `npx turbo run dev`, the `api` package (health-check stub on :3001) often fails with `EADDRINUSE` because it races with other turbo tasks for ports. This is not a problem — the `api` package is just a health-check stub and isn't needed for finance feature development. The important services are `finance-api` (Fastify on :3002) and `finance-web` (Vite on :3003). Vite auto-increments ports when collisions occur, so check the turbo output for actual port numbers. Before starting dev servers, always kill old processes first: `pkill -9 -f "vite|tsx watch|turbo"` then `lsof -ti :3000,:3001,:3002,:3003 | xargs kill -9`. CORS on finance-api defaults to `http://localhost:3003`, so finance-web **must** be on port 3003 for login to work — if it lands on another port, sign-in will fail with CORS errors.
+**Dev server port notes**: When running `npx turbo run dev`, the `api` package (health-check stub on :3001) often fails with `EADDRINUSE` because it races with other turbo tasks for ports. This is not a problem — the `api` package is just a health-check stub and isn't needed for finance feature development. The important services are `fin-api` (Fastify on :3002) and `fin-web` (Vite on :3003). Vite auto-increments ports when collisions occur, so check the turbo output for actual port numbers. Before starting dev servers, always kill old processes first: `pkill -9 -f "vite|tsx watch|turbo"` then `lsof -ti :3000,:3001,:3002,:3003 | xargs kill -9`. CORS on fin-api defaults to `http://localhost:3003`, so fin-web **must** be on port 3003 for login to work — if it lands on another port, sign-in will fail with CORS errors.
 
 ## Git Workflow
 
@@ -33,13 +33,13 @@ This project uses **gitflow**:
 - **Web**: Railpack auto-detects Node workspace; start command is `npm run start --workspace=@derekentringer/web` (configured in Railway dashboard)
 - **Web production server**: `serve` static file server bound to `0.0.0.0:$PORT` with SPA fallback (`-s` flag)
 - **API**: `packages/api/Dockerfile` — multi-stage Node build on port 3001
-- **Finance Web**: Railpack; start command `npm run start --workspace=@derekentringer/finance-web`; `serve` static file server with SPA fallback; custom domain `fin.derekentringer.com`; env: `VITE_API_URL=https://fin-api.derekentringer.com` (build-time)
-- **Finance API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/finance-api && npm run start --workspace=@derekentringer/finance-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `ENCRYPTION_KEY` (64-char hex)
+- **Finance Web**: Railpack; start command `npm run start --workspace=@derekentringer/fin-web`; `serve` static file server with SPA fallback; custom domain `fin.derekentringer.com`; env: `VITE_API_URL=https://fin-api.derekentringer.com` (build-time)
+- **Finance API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `ENCRYPTION_KEY` (64-char hex)
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs and pushes to main
 - **DNS**: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME)
 - **www redirect**: Client-side redirect in `App.tsx` from `www.derekentringer.com` → `derekentringer.com`
 
-Note: Railway skips Dockerfiles not at the repo root. The web Dockerfile exists for local Docker testing but Railway uses Railpack in production. Do not set watch paths on Railway services — cross-package dependencies (e.g., shared → finance-api) cause deploys to be silently skipped when changes land outside the watched paths.
+Note: Railway skips Dockerfiles not at the repo root. The web Dockerfile exists for local Docker testing but Railway uses Railpack in production. Do not set watch paths on Railway services — cross-package dependencies (e.g., shared → fin-api) cause deploys to be silently skipped when changes land outside the watched paths.
 
 ## Architecture
 
@@ -47,10 +47,10 @@ Note: Railway skips Dockerfiles not at the repo root. The web Dockerfile exists 
 packages/
   web/          — React + Vite + React Router SPA (portfolio site)
   api/          — Fastify API server (health-check stub)
-  finance-web/  — React + Vite SPA (personal finance dashboard)
-  finance-api/  — Fastify API server (personal finance backend)
+  fin-web/  — React + Vite SPA (personal finance dashboard)
+  fin-api/  — Fastify API server (personal finance backend)
   shared/       — Shared TypeScript types and utilities
-  mobile/       — React Native app (deferred to Phase 6)
+  fin-mobile/   — React Native app (deferred to Phase 6)
 ```
 
 ### Web (`packages/web/`)
@@ -69,7 +69,7 @@ packages/
 
 - `src/index.ts` — Fastify server with `GET /health` endpoint
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 - React + Vite SPA for personal finance dashboard
 - `src/App.tsx` — Routes + auth-gated layout
@@ -84,7 +84,7 @@ packages/
 - API URL configured via `VITE_API_URL` env var (build-time)
 - Production domain: `fin.derekentringer.com`
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 - Fastify server with JWT auth (access + refresh tokens)
 - `src/index.ts` — Server entry, CORS via `CORS_ORIGIN` env var
@@ -100,7 +100,7 @@ packages/
   - `src/lib/prisma.ts` — PrismaClient singleton with `@prisma/adapter-pg` (SSL without certificate verification in production — Railway Postgres does not support verified SSL)
   - `src/lib/encryption.ts` — AES-256-GCM field-level encryption (wraps shared crypto)
   - `src/lib/mappers.ts` — Prisma row ↔ API type mappers with encrypt/decrypt
-- **Prisma commands** (run from `packages/finance-api/`):
+- **Prisma commands** (run from `packages/fin-api/`):
   - `npm run db:migrate:dev` — Create/apply dev migration
   - `npm run db:migrate:deploy` — Apply migrations in production
   - `npm run db:seed` — Run seed script
@@ -108,7 +108,7 @@ packages/
 - **Local database**: `prisma migrate dev` does not work locally (access denied). Run migration SQL manually instead: `psql "postgresql://derekentringer@localhost:5432/finance" -c '<SQL>'`. Production migrations are applied automatically via the Railway start command.
 - `src/config.ts` — App config with secret enforcement (all secrets required outside `development`/`test` environments)
 - **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ENCRYPTION_KEY` (64-char hex, 32 bytes for AES-256-GCM), `PIN_TOKEN_SECRET` (dedicated secret for PIN tokens — must not share with `REFRESH_TOKEN_SECRET`)
-- **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/finance-api && npm run start --workspace=@derekentringer/finance-api`
+- **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`
 
 ## External Services
 

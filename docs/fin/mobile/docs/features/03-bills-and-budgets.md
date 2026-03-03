@@ -76,14 +76,14 @@ Full bill management (upcoming with month-grouped sections, all bills list, mark
 
 ## Files Modified
 
-- `packages/mobile/src/navigation/types.ts` — Added PlanningStackParamList
-- `packages/mobile/src/navigation/AppNavigator.tsx` — Replaced PlanningScreen with PlanningStackNavigator
-- `packages/mobile/src/components/dashboard/NetWorthChart.tsx` — Chart maxValue headroom, yAxisLabelWidth, removed negative margin
-- `packages/mobile/src/components/dashboard/IncomeSpendingChart.tsx` — Chart maxValue headroom, yAxisLabelWidth, removed negative margin
-- `packages/mobile/src/components/dashboard/FavoriteAccountCards.tsx` — Removed negative margin on mini chart
-- `packages/mobile/src/components/accounts/BalanceHistoryChart.tsx` — Chart maxValue headroom, yAxisLabelWidth
-- `packages/mobile/src/components/transactions/TransactionRow.tsx` — Debit amounts red, increased description/amount spacing
-- `packages/mobile/src/screens/AccountDetailScreen.tsx` — Increased transaction description/amount spacing
+- `packages/fin-mobile/src/navigation/types.ts` — Added PlanningStackParamList
+- `packages/fin-mobile/src/navigation/AppNavigator.tsx` — Replaced PlanningScreen with PlanningStackNavigator
+- `packages/fin-mobile/src/components/dashboard/NetWorthChart.tsx` — Chart maxValue headroom, yAxisLabelWidth, removed negative margin
+- `packages/fin-mobile/src/components/dashboard/IncomeSpendingChart.tsx` — Chart maxValue headroom, yAxisLabelWidth, removed negative margin
+- `packages/fin-mobile/src/components/dashboard/FavoriteAccountCards.tsx` — Removed negative margin on mini chart
+- `packages/fin-mobile/src/components/accounts/BalanceHistoryChart.tsx` — Chart maxValue headroom, yAxisLabelWidth
+- `packages/fin-mobile/src/components/transactions/TransactionRow.tsx` — Debit amounts red, increased description/amount spacing
+- `packages/fin-mobile/src/screens/AccountDetailScreen.tsx` — Increased transaction description/amount spacing
 
 ## Files Deleted
 

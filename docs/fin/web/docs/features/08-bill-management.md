@@ -23,7 +23,7 @@ Track recurring bills with configurable frequencies, due date generation, and pa
 - `BillPayment` — id, billId, dueDate, paidDate, amount
 - `UpcomingBillInstance` — billId, billName, amount, dueDate, isPaid, isOverdue, category?, paymentId?
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Bill Store (`src/store/billStore.ts`)
 
@@ -124,7 +124,7 @@ BillPayment uses `onDelete: Cascade` — deleting a bill removes all its payment
 
 Migration: `20260219040000_add_budgets_bills_bill_payments`
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### API Client (`src/api/bills.ts`)
 

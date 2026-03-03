@@ -31,7 +31,7 @@ Dashboard with net worth calculation, historical trend chart with view toggle (O
   - `AccountBalanceHistoryPoint` — date (YYYY-MM or YYYY-MM-DD), balance
   - `AccountBalanceHistoryResponse` — accountId, accountName, currentBalance, history
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Dashboard Store (`src/store/dashboardStore.ts`)
 
@@ -79,7 +79,7 @@ Account model extended with:
 
 Migration: `20260219050000_add_estimated_value`
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### API Client (`src/api/dashboard.ts`)
 

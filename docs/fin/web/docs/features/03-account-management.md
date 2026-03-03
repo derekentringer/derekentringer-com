@@ -17,7 +17,7 @@ Full CRUD for financial accounts with encrypted storage, PIN-gated write operati
 - API types: `Account`, `CreateAccountRequest`, `UpdateAccountRequest`, `AccountListResponse`, `AccountResponse`
 - Shared Fastify schema validation types
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Store Layer (`src/store/accountStore.ts`)
 - `createAccount(data)` — encrypts fields via mapper, stores in Postgres
@@ -47,7 +47,7 @@ Validation includes:
 - `src/__tests__/accountStore.test.ts` — unit tests for all store operations with mock Prisma
 - `src/__tests__/accounts.test.ts` — integration tests for all API routes via `app.inject()`
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### UI Framework Migration
 Migrated from CSS Modules to Tailwind CSS v4 + shadcn/ui:

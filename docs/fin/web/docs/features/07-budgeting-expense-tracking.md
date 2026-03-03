@@ -20,7 +20,7 @@ Monthly budget management with per-category targets, actual spending comparison 
 - `CategoryBudgetSummary` — category, budgeted, actual, remaining, effectiveFrom
 - `MonthlyBudgetSummaryResponse` — month, categories[], totalBudgeted, totalActual, totalRemaining
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Budget Store (`src/store/budgetStore.ts`)
 
@@ -80,7 +80,7 @@ Budget amounts are encrypted with AES-256-GCM. Category and effectiveFrom are st
 
 Migration: `20260219040000_add_budgets_bills_bill_payments`
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### API Client (`src/api/budgets.ts`)
 

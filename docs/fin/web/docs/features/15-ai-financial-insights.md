@@ -31,7 +31,7 @@ Contextual AI-powered financial insights embedded throughout the existing UI —
 - `DEFAULT_AI_INSIGHT_PREFERENCES` exported as value
 - All new AI types exported
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Database Schema
 
@@ -111,7 +111,7 @@ Each builder returns `{ scope, data, contentHash }` where `contentHash = SHA-256
 
 - `evaluateAiAlerts()` called in `evaluateAllNotifications()` with try/catch for non-critical failure
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### API Client (`src/api/ai.ts`)
 
@@ -192,16 +192,16 @@ Updated sidebar order: Goals, Bills, Budgets (previously: Budgets, Bills, Goals)
 
 | # | File | Purpose |
 |---|------|---------|
-| 1 | `packages/finance-api/src/store/aiInsightStore.ts` | Preference CRUD, cache CRUD, usage tracking |
-| 2 | `packages/finance-api/src/store/aiContextStore.ts` | Scoped context builders for each insight scope |
-| 3 | `packages/finance-api/src/lib/anthropicService.ts` | Claude API integration with tool_use |
-| 4 | `packages/finance-api/src/lib/aiAlertEvaluator.ts` | AI alert evaluation for notification scheduler |
-| 5 | `packages/finance-api/src/routes/ai.ts` | Route module: preferences, insights, cache endpoints |
-| 6 | `packages/finance-web/src/api/ai.ts` | Frontend API client for AI endpoints |
-| 7 | `packages/finance-web/src/components/AiInsightSettings.tsx` | Settings tab component |
-| 8 | `packages/finance-web/src/components/dashboard/AiInsightCard.tsx` | Dashboard insights card (collapsible, unseen indicator) |
-| 9 | `packages/finance-web/src/components/reports/AiDigest.tsx` | Monthly/quarterly digest renderer |
-| 10 | `packages/finance-web/src/components/AiInsightBanner.tsx` | Reusable page-level nudge banner |
+| 1 | `packages/fin-api/src/store/aiInsightStore.ts` | Preference CRUD, cache CRUD, usage tracking |
+| 2 | `packages/fin-api/src/store/aiContextStore.ts` | Scoped context builders for each insight scope |
+| 3 | `packages/fin-api/src/lib/anthropicService.ts` | Claude API integration with tool_use |
+| 4 | `packages/fin-api/src/lib/aiAlertEvaluator.ts` | AI alert evaluation for notification scheduler |
+| 5 | `packages/fin-api/src/routes/ai.ts` | Route module: preferences, insights, cache endpoints |
+| 6 | `packages/fin-web/src/api/ai.ts` | Frontend API client for AI endpoints |
+| 7 | `packages/fin-web/src/components/AiInsightSettings.tsx` | Settings tab component |
+| 8 | `packages/fin-web/src/components/dashboard/AiInsightCard.tsx` | Dashboard insights card (collapsible, unseen indicator) |
+| 9 | `packages/fin-web/src/components/reports/AiDigest.tsx` | Monthly/quarterly digest renderer |
+| 10 | `packages/fin-web/src/components/AiInsightBanner.tsx` | Reusable page-level nudge banner |
 
 ## Modified Files
 
@@ -209,16 +209,16 @@ Updated sidebar order: Goals, Bills, Budgets (previously: Budgets, Bills, Goals)
 |---|------|---------|
 | 1 | `packages/shared/src/finance/types.ts` | AI insight types + AiAlert notification type |
 | 2 | `packages/shared/src/index.ts` | Export new AI types and constants |
-| 3 | `packages/finance-api/prisma/schema.prisma` | 3 new models |
-| 4 | `packages/finance-api/src/app.ts` | Register AI routes + cache cleanup |
-| 5 | `packages/finance-api/src/lib/notificationEvaluator.ts` | Call evaluateAiAlerts() |
-| 6 | `packages/finance-web/src/pages/SettingsPage.tsx` | Add ai-insights tab |
-| 7 | `packages/finance-web/src/pages/DashboardPage.tsx` | Add AiInsightCard |
-| 8 | `packages/finance-web/src/pages/ReportsPage.tsx` | Tab-routed monthly/quarterly digests |
-| 9 | `packages/finance-web/src/App.tsx` | Update reports route to `reports/:tab?` |
-| 10 | `packages/finance-web/src/pages/BudgetsPage.tsx` | Add AiInsightBanner |
-| 11 | `packages/finance-web/src/pages/GoalsPage.tsx` | Add AiInsightBanner |
-| 12 | `packages/finance-web/src/components/Sidebar.tsx` | Reorder nav: Goals/Bills/Budgets, Decision Tools above Reports |
+| 3 | `packages/fin-api/prisma/schema.prisma` | 3 new models |
+| 4 | `packages/fin-api/src/app.ts` | Register AI routes + cache cleanup |
+| 5 | `packages/fin-api/src/lib/notificationEvaluator.ts` | Call evaluateAiAlerts() |
+| 6 | `packages/fin-web/src/pages/SettingsPage.tsx` | Add ai-insights tab |
+| 7 | `packages/fin-web/src/pages/DashboardPage.tsx` | Add AiInsightCard |
+| 8 | `packages/fin-web/src/pages/ReportsPage.tsx` | Tab-routed monthly/quarterly digests |
+| 9 | `packages/fin-web/src/App.tsx` | Update reports route to `reports/:tab?` |
+| 10 | `packages/fin-web/src/pages/BudgetsPage.tsx` | Add AiInsightBanner |
+| 11 | `packages/fin-web/src/pages/GoalsPage.tsx` | Add AiInsightBanner |
+| 12 | `packages/fin-web/src/components/Sidebar.tsx` | Reorder nav: Goals/Bills/Budgets, Decision Tools above Reports |
 
 ## AI Insight Read/Dismiss Sync & Archive (v1.26.0)
 
@@ -276,8 +276,8 @@ Migration: `20260227000000_add_ai_insight_status`
 
 | # | File | Purpose |
 |---|------|---------|
-| 1 | `packages/finance-api/src/store/aiInsightStatusStore.ts` | Insight status CRUD, unseen counts, archive |
-| 2 | `packages/finance-api/prisma/migrations/20260227000000_add_ai_insight_status/migration.sql` | Database migration |
+| 1 | `packages/fin-api/src/store/aiInsightStatusStore.ts` | Insight status CRUD, unseen counts, archive |
+| 2 | `packages/fin-api/prisma/migrations/20260227000000_add_ai_insight_status/migration.sql` | Database migration |
 
 ### Modified Files
 
@@ -285,13 +285,13 @@ Migration: `20260227000000_add_ai_insight_status`
 |---|------|---------|
 | 1 | `packages/shared/src/finance/types.ts` | Added 3 new types, extended AiInsightsResponse |
 | 2 | `packages/shared/src/index.ts` | Export new types |
-| 3 | `packages/finance-api/prisma/schema.prisma` | Added AiInsightStatus model |
-| 4 | `packages/finance-api/src/lib/mappers.ts` | Added encrypt/decrypt for AiInsightStatus |
-| 5 | `packages/finance-api/src/routes/ai.ts` | 4 new endpoints + modified POST /insights |
-| 6 | `packages/finance-web/src/api/ai.ts` | 4 new API functions |
-| 7 | `packages/finance-web/src/components/dashboard/AiInsightCard.tsx` | Server-side read tracking |
-| 8 | `packages/finance-web/src/components/AiInsightBanner.tsx` | Server-side dismiss tracking |
-| 9 | `packages/finance-web/src/components/AiInsightSettings.tsx` | Added Insight History section |
+| 3 | `packages/fin-api/prisma/schema.prisma` | Added AiInsightStatus model |
+| 4 | `packages/fin-api/src/lib/mappers.ts` | Added encrypt/decrypt for AiInsightStatus |
+| 5 | `packages/fin-api/src/routes/ai.ts` | 4 new endpoints + modified POST /insights |
+| 6 | `packages/fin-web/src/api/ai.ts` | 4 new API functions |
+| 7 | `packages/fin-web/src/components/dashboard/AiInsightCard.tsx` | Server-side read tracking |
+| 8 | `packages/fin-web/src/components/AiInsightBanner.tsx` | Server-side dismiss tracking |
+| 9 | `packages/fin-web/src/components/AiInsightSettings.tsx` | Added Insight History section |
 
 ## Deferred
 

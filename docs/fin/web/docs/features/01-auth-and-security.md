@@ -17,7 +17,7 @@ Single-user JWT authentication for the personal finance app. All API routes are 
 - PIN verification preHandler (`@derekentringer/shared/auth/pinVerify`) — verifies `X-Pin-Token` header
 - Fastify type augmentations for `authenticate` decorator and JWT payload types
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 - **POST /auth/login** — rate-limited (5/15min), bcrypt password comparison, returns JWT access token + sets httpOnly refresh cookie
 - **POST /auth/refresh** — rotates refresh token on every use, issues new access token
 - **POST /auth/logout** — JWT-protected, revokes refresh token, clears cookie
@@ -26,7 +26,7 @@ Single-user JWT authentication for the personal finance app. All API routes are 
 - In-memory refresh token store with TTL-based expiry
 - `@fastify/cookie`, `@fastify/cors`, `@fastify/rate-limit` plugins
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 - API client (`src/api/client.ts`) with auto-refresh interceptor on 401
 - Auth API functions (`src/api/auth.ts`) — login, refresh, logout, PIN verify
 - `AuthContext` with silent refresh on mount
@@ -59,7 +59,7 @@ Single-user JWT authentication for the personal finance app. All API routes are 
 
 ### Local Development Setup
 
-1. Copy `.env.example` to `.env` in `packages/finance-api/`
+1. Copy `.env.example` to `.env` in `packages/fin-api/`
 2. Generate a bcrypt hash for your password: `node -e "require('bcryptjs').hash('yourpassword', 12).then(h => console.log(h))"`
 3. Set `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH` in `.env`
 4. The dev script (`npm run dev`) automatically loads `.env` via `--env-file`

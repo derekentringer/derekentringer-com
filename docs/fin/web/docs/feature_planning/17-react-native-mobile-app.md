@@ -32,7 +32,7 @@ The finance-api delivers refresh tokens exclusively via HttpOnly cookies. React 
 **Modify `packages/shared/src/types/auth.ts`:**
 - Add optional `refreshToken?: string` to `LoginResponse`
 
-**Modify `packages/finance-api/src/routes/auth.ts`:**
+**Modify `packages/fin-api/src/routes/auth.ts`:**
 - On `/auth/login`: when `X-Client-Type: mobile` header is present, also include `refreshToken` in the JSON response body (alongside the existing cookie)
 - On `/auth/refresh`: when `X-Client-Type: mobile` header is present, accept `refreshToken` from request body (`request.body.refreshToken`) in addition to `request.cookies?.refreshToken`
 

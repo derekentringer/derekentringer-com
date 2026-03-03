@@ -90,10 +90,10 @@ Full-featured mobile dashboard matching the web app's `DashboardPage.tsx`, adapt
 
 ## Files Modified
 
-- `packages/mobile/package.json` — 5 new dependencies
-- `packages/mobile/App.tsx` — GestureHandlerRootView wrapper
-- `packages/mobile/babel.config.js` — reanimated plugin
-- `packages/mobile/src/screens/DashboardScreen.tsx` — replaced placeholder
+- `packages/fin-mobile/package.json` — 5 new dependencies
+- `packages/fin-mobile/App.tsx` — GestureHandlerRootView wrapper
+- `packages/fin-mobile/babel.config.js` — reanimated plugin
+- `packages/fin-mobile/src/screens/DashboardScreen.tsx` — replaced placeholder
 
 ## Verification
 
