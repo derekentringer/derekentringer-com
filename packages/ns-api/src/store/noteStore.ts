@@ -195,6 +195,7 @@ export async function updateNote(
     if (data.content !== undefined) updateData.content = data.content;
     if (data.folder !== undefined) updateData.folder = data.folder;
     if (data.tags !== undefined) updateData.tags = data.tags;
+    if (data.summary !== undefined) updateData.summary = data.summary;
 
     return await prisma.note.update({
       where: { id, deletedAt: null },

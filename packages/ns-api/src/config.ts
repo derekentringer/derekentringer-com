@@ -16,6 +16,7 @@ export function loadConfig(): Config {
       "REFRESH_TOKEN_SECRET",
       "CORS_ORIGIN",
       "DATABASE_URL",
+      "ANTHROPIC_API_KEY",
     ];
     for (const name of required) {
       if (!process.env[name]) {
@@ -37,6 +38,7 @@ export function loadConfig(): Config {
     nodeEnv,
     isProduction,
     databaseUrl: process.env.DATABASE_URL || "",
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
   };
 
   return cachedConfig;
@@ -52,6 +54,7 @@ export interface Config {
   nodeEnv: string;
   isProduction: boolean;
   databaseUrl: string;
+  anthropicApiKey: string;
 }
 
 /** Reset cached config (for testing only) */

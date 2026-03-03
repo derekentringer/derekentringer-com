@@ -58,6 +58,7 @@ const updateNoteSchema = {
       content: { type: "string" },
       folder: { type: ["string", "null"] },
       tags: { type: "array", items: { type: "string" } },
+      summary: { type: ["string", "null"] },
     },
   },
 };
@@ -426,7 +427,8 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         body.title === undefined &&
         body.content === undefined &&
         body.folder === undefined &&
-        body.tags === undefined
+        body.tags === undefined &&
+        body.summary === undefined
       ) {
         return reply.status(400).send({
           statusCode: 400,

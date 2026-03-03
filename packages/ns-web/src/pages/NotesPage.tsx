@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import type { Note, NoteSearchResult, NoteSortField, FolderSortField, SortOrder, FolderInfo, TagInfo } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import {
@@ -33,11 +34,16 @@ import { TagBrowser } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
+import { useAiSettings } from "../hooks/useAiSettings.ts";
+import { ghostTextExtension } from "../editor/ghostText.ts";
+import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi } from "../api/ai.ts";
 
 type SidebarView = "notes" | "trash";
 
 export function NotesPage() {
   const { logout } = useAuth();
+  const navigate = useNavigate();
+  const { settings } = useAiSettings();
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -77,6 +83,11 @@ export function NotesPage() {
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
 
   const [searchFocused, setSearchFocused] = useState(false);
+
+  // AI state
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+  const [isSuggestingTags, setIsSuggestingTags] = useState(false);
 
   const folderResize = useResizable({
     direction: "horizontal",
@@ -447,6 +458,68 @@ export function NotesPage() {
     return sorted;
   }, [folders, folderSortBy, folderSortOrder]);
 
+  const aiExtensions = useMemo(
+    () => (settings.completions ? [ghostTextExtension(fetchCompletion)] : []),
+    [settings.completions],
+  );
+
+  async function handleSummarize() {
+    if (!selectedId || isSummarizing) return;
+    setIsSummarizing(true);
+    try {
+      const summary = await summarizeNote(selectedId);
+      setNotes((prev) =>
+        prev.map((n) => (n.id === selectedId ? { ...n, summary } : n)),
+      );
+    } catch {
+      showError("Failed to generate summary");
+    } finally {
+      setIsSummarizing(false);
+    }
+  }
+
+  async function handleSuggestTags() {
+    if (!selectedId || isSuggestingTags) return;
+    setIsSuggestingTags(true);
+    try {
+      const tags = await suggestTagsApi(selectedId);
+      setSuggestedTags(tags);
+    } catch {
+      showError("Failed to suggest tags");
+    } finally {
+      setIsSuggestingTags(false);
+    }
+  }
+
+  async function handleAcceptTag(tag: string) {
+    if (!selectedId || !selectedNote) return;
+    const currentTags = selectedNote.tags ?? [];
+    if (currentTags.includes(tag)) {
+      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
+      return;
+    }
+    try {
+      const newTags = [...currentTags, tag];
+      const updated = await updateNote(selectedId, { tags: newTags });
+      setNotes((prev) =>
+        prev.map((n) => (n.id === updated.id ? updated : n)),
+      );
+      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
+      loadFolders();
+    } catch {
+      showError("Failed to add tag");
+    }
+  }
+
+  function handleDismissTag(tag: string) {
+    setSuggestedTags((prev) => prev.filter((t) => t !== tag));
+  }
+
+  // Clear suggested tags when switching notes
+  useEffect(() => {
+    setSuggestedTags([]);
+  }, [selectedId]);
+
   return (
     <div className="flex h-full">
       {/* Sidebar */}
@@ -620,28 +693,36 @@ export function NotesPage() {
           </>
         )}
 
-        <div className="p-4 border-t border-border flex items-center justify-between">
-          {sidebarView === "notes" && (
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {sidebarView === "notes" && (
+              <button
+                onClick={switchToTrash}
+                className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="Trash"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                {trashTotal > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
+                    {trashTotal}
+                  </span>
+                )}
+              </button>
+            )}
             <button
-              onClick={switchToTrash}
-              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              title="View trash"
+              onClick={() => navigate("/settings")}
+              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              title="Settings"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              Trash
-              {trashTotal > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-border text-xs text-muted-foreground">
-                  {trashTotal}
-                </span>
-              )}
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             </button>
-          )}
+          </div>
           <button
             onClick={logout}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            title="Sign out"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            Sign out
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
       </aside>
@@ -666,6 +747,28 @@ export function NotesPage() {
                     : "Saved"}
               </span>
               <div className="flex-1" />
+              {settings.summarize && (
+                <button
+                  onClick={handleSummarize}
+                  disabled={isSummarizing}
+                  className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  title="Summarize note"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
+                  {isSummarizing ? "Summarizing..." : "Summarize"}
+                </button>
+              )}
+              {settings.tagSuggestions && (
+                <button
+                  onClick={handleSuggestTags}
+                  disabled={isSuggestingTags}
+                  className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  title="Suggest tags"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                  {isSuggestingTags ? "Suggesting..." : "Suggest tags"}
+                </button>
+              )}
               <button
                 onClick={handleSave}
                 disabled={!isDirty || isSaving}
@@ -728,12 +831,48 @@ export function NotesPage() {
               className="px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none border-b border-border"
             />
 
+            {/* Summary */}
+            {selectedNote?.summary && (
+              <div className="px-4 py-2 text-sm text-muted-foreground border-b border-border italic">
+                {selectedNote.summary}
+              </div>
+            )}
+
             {/* Tags */}
             <TagInput
               tags={selectedNote?.tags ?? []}
               allTags={tags.map((t) => t.name)}
               onChange={handleTagsChange}
             />
+
+            {/* Suggested tags */}
+            {suggestedTags.length > 0 && (
+              <div className="px-4 py-2 border-b border-border flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground">Suggested:</span>
+                {suggestedTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent text-xs text-foreground border border-border"
+                  >
+                    {tag}
+                    <button
+                      onClick={() => handleAcceptTag(tag)}
+                      className="text-primary hover:text-primary-hover transition-colors"
+                      title="Accept tag"
+                    >
+                      +
+                    </button>
+                    <button
+                      onClick={() => handleDismissTag(tag)}
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                      title="Dismiss"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
 
             {/* Editor toolbar */}
             <EditorToolbar
@@ -757,6 +896,7 @@ export function NotesPage() {
                   }}
                   onSave={handleSave}
                   showLineNumbers={showLineNumbers}
+                  extensions={aiExtensions}
                   className={`${viewMode === "split" ? "w-1/2 border-r border-border" : "flex-1"} overflow-auto`}
                 />
               )}

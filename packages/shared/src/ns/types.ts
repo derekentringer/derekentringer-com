@@ -23,6 +23,7 @@ export interface UpdateNoteRequest {
   content?: string;
   folder?: string | null;
   tags?: string[];
+  summary?: string | null;
 }
 
 export interface NoteListResponse {
@@ -81,4 +82,20 @@ export interface SyncPushRequest {
 export interface SyncPullResponse {
   changes: SyncChange[];
   cursor: SyncCursor;
+}
+
+export interface AiCompleteRequest {
+  context: string;
+}
+
+export interface AiSummarizeRequest {
+  noteId: string;
+}
+
+export interface AiSuggestTagsRequest {
+  noteId: string;
+}
+
+export interface AiSuggestTagsResponse {
+  tags: string[];
 }
