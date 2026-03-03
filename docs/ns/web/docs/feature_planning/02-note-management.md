@@ -1,6 +1,6 @@
 # 02 — Note Management
 
-**Status:** Partial (basic CRUD complete — see [features/02-note-management.md](../features/02-note-management.md))
+**Status:** Partial (CRUD + CodeMirror editor complete — see [features/02-note-management.md](../features/02-note-management.md))
 **Phase:** 2 — Notes Core
 **Priority:** High
 
@@ -53,8 +53,8 @@ Full CRUD for notes in the web app using CodeMirror 6 for markdown editing, with
 
 ## Technical Considerations
 
-- CodeMirror 6 React integration via `@uiw/react-codemirror` or thin wrapper
-- Auto-save: debounced `PATCH /notes/:id` call; optimistic UI update
+- CodeMirror 6 React integration via thin custom wrapper (implemented — direct `EditorView` control for future AI extension)
+- Auto-save: debounced `PATCH /notes/:id` call; optimistic UI update (not yet implemented — currently manual save)
 - API client methods in `src/api/notes.ts` (matching fin-web API pattern)
 - Pagination: cursor-based or offset-based for large note collections
 - Notes returned from API include metadata but may exclude `content` in list responses (fetch full content on open)

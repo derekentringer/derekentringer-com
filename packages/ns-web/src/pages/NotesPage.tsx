@@ -7,6 +7,15 @@ import {
   updateNote,
   deleteNote,
 } from "../api/notes.ts";
+import {
+  MarkdownEditor,
+  type MarkdownEditorHandle,
+} from "../components/MarkdownEditor.tsx";
+import { MarkdownPreview } from "../components/MarkdownPreview.tsx";
+import {
+  EditorToolbar,
+  type ViewMode,
+} from "../components/EditorToolbar.tsx";
 
 export function NotesPage() {
   const { logout } = useAuth();
@@ -21,6 +30,9 @@ export function NotesPage() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("editor");
+  const [showLineNumbers, setShowLineNumbers] = useState(false);
+  const editorRef = useRef<MarkdownEditorHandle>(null);
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -249,16 +261,38 @@ export function NotesPage() {
               className="px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none border-b border-border"
             />
 
-            {/* Content */}
-            <textarea
-              value={content}
-              onChange={(e) => {
-                setContent(e.target.value);
-                setIsDirty(true);
-              }}
-              placeholder="Start writing..."
-              className="flex-1 px-4 py-3 bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none resize-none"
+            {/* Editor toolbar */}
+            <EditorToolbar
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onBold={() => editorRef.current?.insertBold()}
+              onItalic={() => editorRef.current?.insertItalic()}
+              showLineNumbers={showLineNumbers}
+              onToggleLineNumbers={() => setShowLineNumbers((v) => !v)}
             />
+
+            {/* Content */}
+            <div className="flex-1 flex min-h-0">
+              {viewMode !== "preview" && (
+                <MarkdownEditor
+                  ref={editorRef}
+                  value={content}
+                  onChange={(val) => {
+                    setContent(val);
+                    setIsDirty(true);
+                  }}
+                  onSave={handleSave}
+                  showLineNumbers={showLineNumbers}
+                  className={`${viewMode === "split" ? "w-1/2 border-r border-border" : "flex-1"} overflow-auto`}
+                />
+              )}
+              {viewMode !== "editor" && (
+                <MarkdownPreview
+                  content={content}
+                  className={viewMode === "split" ? "w-1/2 overflow-auto" : "flex-1"}
+                />
+              )}
+            </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">

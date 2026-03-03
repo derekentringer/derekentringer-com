@@ -1,8 +1,41 @@
+import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { NotesPage } from "../pages/NotesPage.tsx";
+
+vi.mock("../components/MarkdownEditor.tsx", () => ({
+  MarkdownEditor: React.forwardRef(function MockEditor(
+    {
+      value,
+      onChange,
+      onSave,
+    }: {
+      value: string;
+      onChange: (v: string) => void;
+      onSave?: () => void;
+      placeholder?: string;
+      className?: string;
+      showLineNumbers?: boolean;
+    },
+    _ref: React.Ref<unknown>,
+  ) {
+    return (
+      <textarea
+        data-testid="markdown-editor"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+            e.preventDefault();
+            onSave?.();
+          }
+        }}
+      />
+    );
+  }),
+}));
 
 const mockFetchNotes = vi.fn();
 const mockCreateNote = vi.fn();
@@ -70,7 +103,8 @@ describe("NotesPage", () => {
     await userEvent.click(noteButton);
 
     expect(screen.getByDisplayValue("Test Note")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Test content")).toBeInTheDocument();
+    const editor = screen.getByTestId("markdown-editor") as HTMLTextAreaElement;
+    expect(editor.value).toBe("Test content");
   });
 
   it("calls createNote when new note button is clicked", async () => {
