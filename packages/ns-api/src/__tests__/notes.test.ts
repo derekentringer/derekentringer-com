@@ -623,6 +623,38 @@ describe("Note routes", () => {
       expect(res.statusCode).toBe(200);
       expect(res.json().note.folder).toBeNull();
     });
+
+    it("accepts summary field", async () => {
+      const token = await getAccessToken();
+      const row = makeMockNoteRow({ summary: "A note summary" });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/${VALID_UUID}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { summary: "A note summary" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().note.summary).toBe("A note summary");
+    });
+
+    it("allows setting summary to null", async () => {
+      const token = await getAccessToken();
+      const row = makeMockNoteRow({ summary: null });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/${VALID_UUID}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { summary: null },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().note.summary).toBeNull();
+    });
   });
 
   // --- DELETE /notes/:id/permanent ---

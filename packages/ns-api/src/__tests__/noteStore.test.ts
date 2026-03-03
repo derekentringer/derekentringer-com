@@ -323,6 +323,30 @@ describe("noteStore", () => {
         updateNote("note-1", { title: "Fail" }),
       ).rejects.toThrow("DB connection failed");
     });
+
+    it("includes summary field when provided", async () => {
+      const row = makeMockNoteRow({ summary: "A summary" });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote("note-1", { summary: "A summary" });
+
+      expect(mockPrisma.note.update).toHaveBeenCalledWith({
+        where: { id: "note-1", deletedAt: null },
+        data: { summary: "A summary" },
+      });
+    });
+
+    it("allows setting summary to null", async () => {
+      const row = makeMockNoteRow({ summary: null });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote("note-1", { summary: null });
+
+      expect(mockPrisma.note.update).toHaveBeenCalledWith({
+        where: { id: "note-1", deletedAt: null },
+        data: { summary: null },
+      });
+    });
   });
 
   describe("softDeleteNote", () => {

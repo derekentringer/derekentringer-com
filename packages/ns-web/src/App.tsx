@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { NotesPage } from "./pages/NotesPage.tsx";
+import { SettingsPage } from "./pages/SettingsPage.tsx";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -22,6 +23,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <NotesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
             </ProtectedRoute>
           }
         />

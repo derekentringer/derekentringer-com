@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Not Started
+**Status:** Partial (04a Complete; 04b–04f Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -8,53 +8,57 @@
 
 AI-powered features using the Claude API (via ns-api) for smart tagging, summarization, semantic search, Q&A over notes, duplicate detection, and inline AI-assisted markdown writing via the custom CodeMirror 6 extension.
 
-## Requirements
+## Sub-Releases
 
-- **AI-assisted markdown writing** (custom CodeMirror 6 extension):
-  - `@derekentringer/codemirror-ai-markdown` — same extension used on desktop
-  - **Inline ghost text completions**: Claude suggests next sentence/paragraph as gray ghost text; Tab to accept, Escape or keep typing to dismiss
-  - **Select-and-rewrite**: select text, trigger AI rewrite via context menu or keyboard shortcut (rewrite, make concise, fix grammar, convert to list, expand, summarize)
-  - **Continue writing**: Ctrl+Shift+Space to generate next paragraph
-  - **Heading/structure suggestions**: suggest outline for new/empty notes based on title
-  - NoteSync wires the extension's callback to `POST /ai/complete` on ns-api
-- **Smart auto-tagging**:
-  - Analyze note content and suggest tags
-  - User accepts or dismisses suggestions
-  - Trigger: on note save (debounced) or manual
-  - API: `POST /ai/tags`
-- **Note summarization**:
-  - Generate 1-3 sentence summary
-  - Stored as `summary` field on the Note model
-  - Displayed in note list/cards
-  - API: `POST /ai/summarize`
-- **Semantic search**:
+| Release | Summary | Status |
+|---------|---------|--------|
+| **04a** | Inline ghost text completions (SSE streaming), note summarization, smart auto-tagging, AI settings page, sidebar footer redesign | **Complete** |
+| **04b** | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) | Not Started |
+| **04c** | Semantic search (pgvector embeddings, complementing tsvector keyword search) | Not Started |
+| **04d** | Q&A over notes (natural language questions with citations) | Not Started |
+| **04e** | Duplicate detection (embedding similarity for review/merge) | Not Started |
+| **04f** | Continue writing, heading/structure suggestions for empty notes | Not Started |
+
+## Remaining Requirements (04b–04f)
+
+- **Select-and-rewrite** (04b):
+  - Select text, trigger AI rewrite via context menu or keyboard shortcut
+  - Options: rewrite, make concise, fix grammar, convert to list, expand, summarize
+  - API: `POST /ai/rewrite`
+- **Semantic search** (04c):
   - Generate vector embeddings for notes via Claude API or dedicated embedding model
   - Store in PostgreSQL via pgvector
   - Search by meaning (e.g., "notes about weekend plans")
   - Complement tsvector keyword search — show both result types
   - API: `POST /ai/search`
-- **Q&A over notes**:
+- **Q&A over notes** (04d):
   - Natural language question input
   - System finds relevant notes (semantic + keyword), sends as context to Claude
   - Returns answer with citations linking to source notes
   - Chat-style panel
   - API: `POST /ai/ask`
-- **Duplicate detection**:
+- **Duplicate detection** (04e):
   - Use embeddings to find notes with similar content
   - Surface duplicates for review; user can merge or dismiss
   - API: `POST /ai/duplicates`
-- **AI settings**:
-  - All features disabled by default; per-feature toggles in settings
-  - Daily request limit (configurable)
+- **Continue writing & structure suggestions** (04f):
+  - Ctrl+Shift+Space to generate next paragraph
+  - Heading/structure suggestions for new/empty notes based on title
 
 ## Technical Considerations
 
-- `@derekentringer/codemirror-ai-markdown` is shared between web and desktop — same package, same behavior
+- `@derekentringer/codemirror-ai-markdown` shared package to be extracted from ns-web when desktop app needs it
 - All AI calls route through ns-api → Claude API; web never calls Claude directly
 - Embeddings stored in pgvector column on the Note model; regenerated when note content changes
-- Streaming: inline completions use streaming responses (`text/event-stream`) for low-latency ghost text
+- Streaming: inline completions use `messages.create({ stream: true })` via SSE `PassThrough` stream
 - Cost control: debounce AI calls, cache summaries and embeddings, daily usage counter per user
 - pgvector similarity search: `SELECT * FROM "Note" ORDER BY embedding <=> $1 LIMIT 10`
+
+## Open Questions
+
+- Which embedding model: Claude's built-in embeddings or a separate model (e.g., Voyage AI)?
+- Should Q&A history persist in the database, or be ephemeral per session?
+- Should select-and-rewrite use streaming or non-streaming responses?
 
 ## Dependencies
 
@@ -62,10 +66,3 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 - [01 — Auth](01-auth.md) — all AI endpoints require authentication
 - [02 — Note Management](02-note-management.md) — inline completions integrate into the editor
 - [03 — Search & Organization](03-search-and-organization.md) — semantic search extends the search system
-
-## Open Questions
-
-- Should inline completions stream token-by-token or wait for the full response?
-- Which embedding model: Claude's built-in embeddings or a separate model (e.g., Voyage AI)?
-- Should Q&A history persist in the database, or be ephemeral per session?
-- Context window for completions: current paragraph vs. full note?

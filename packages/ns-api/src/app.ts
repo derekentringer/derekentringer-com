@@ -11,6 +11,7 @@ import { purgeOldTrash } from "./store/noteStore.js";
 import authRoutes from "./routes/auth.js";
 import healthRoutes from "./routes/health.js";
 import noteRoutes from "./routes/notes.js";
+import aiRoutes from "./routes/ai.js";
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -73,6 +74,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(authRoutes, { prefix: "/auth" });
   app.register(healthRoutes);
   app.register(noteRoutes, { prefix: "/notes" });
+  app.register(aiRoutes, { prefix: "/ai" });
 
   app.get("/robots.txt", async (_request, reply) => {
     reply.type("text/plain").send("User-agent: *\nDisallow: /\n");
