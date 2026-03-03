@@ -35,8 +35,8 @@ This project uses **gitflow**:
 - **API**: `packages/api/Dockerfile` — multi-stage Node build on port 3001
 - **Finance Web**: Railpack; start command `npm run start --workspace=@derekentringer/fin-web`; `serve` static file server with SPA fallback; custom domain `fin.derekentringer.com`; env: `VITE_API_URL=https://fin-api.derekentringer.com` (build-time)
 - **Finance API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `ENCRYPTION_KEY` (64-char hex)
-- **NoteSync Web**: Railpack; start command `npm run start --workspace=@derekentringer/ns-web`; `serve` static file server with SPA fallback; env: `VITE_API_URL` (build-time)
-- **NoteSync API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`; Fastify on `0.0.0.0:$PORT`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN`, `DATABASE_URL` (from Railway Postgres plugin)
+- **NoteSync Web**: Railpack; start command `npm run start --workspace=@derekentringer/ns-web`; `serve` static file server with SPA fallback; custom domain `ns.derekentringer.com`; env: `VITE_API_URL=https://ns-api.derekentringer.com` (build-time)
+- **NoteSync API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`; Fastify on `0.0.0.0:$PORT`; custom domain `ns-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN=https://ns.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin)
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs and pushes to main
 - **DNS**: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME)
 - **www redirect**: Client-side redirect in `App.tsx` from `www.derekentringer.com` → `derekentringer.com`
@@ -125,6 +125,7 @@ packages/
 - `public/robots.txt` — Blocks all crawlers and AI agents
 - `index.html` includes `<meta name="robots" content="noindex, nofollow" />`
 - API URL configured via `VITE_API_URL` env var (build-time, defaults to `http://localhost:3004`)
+- Production domain: `ns.derekentringer.com`
 - Dev port: 3005
 - Accent color: lime-yellow (`#d4e157`)
 
@@ -138,6 +139,7 @@ packages/
 - `GET /robots.txt` — Blocks all crawlers (blanket `Disallow: /`)
 - `src/config.ts` — App config with secret enforcement
 - Passwords verified via bcrypt hashes from env vars (reuses same ADMIN_USERNAME/ADMIN_PASSWORD_HASH as fin-api)
+- Production domain: `ns-api.derekentringer.com`
 - **Database**: Separate PostgreSQL instance via Prisma ORM (v7)
   - `prisma/schema.prisma` — Database schema (Note, SyncCursor, RefreshToken)
   - `prisma.config.ts` — Prisma CLI config

@@ -12,11 +12,19 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.2",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/state": "^6.5.4",
+    "@codemirror/view": "^6.39.16",
     "@derekentringer/shared": "*",
+    "@lezer/highlight": "^1.2.3",
     "@tailwindcss/vite": "^4.2.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.1.0",
+    "remark-gfm": "^4.0.1",
     "serve": "^14.2.0",
     "tailwindcss": "^4.2.0"
   },
