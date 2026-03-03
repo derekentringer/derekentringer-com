@@ -18,6 +18,7 @@ import {
   restoreNote,
   permanentDeleteNote,
   purgeOldTrash,
+  createFolder,
   listFolders,
   reorderNotes,
   renameFolder,
@@ -62,6 +63,7 @@ describe("noteStore", () => {
     it("creates a note with all fields and auto-assigns sortOrder", async () => {
       const row = makeMockNoteRow();
       mockPrisma.note.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
+      mockPrisma.folder.upsert.mockResolvedValue({});
       mockPrisma.note.create.mockResolvedValue(row);
 
       const result = await createNote({
@@ -72,6 +74,11 @@ describe("noteStore", () => {
       });
 
       expect(result).toEqual(row);
+      expect(mockPrisma.folder.upsert).toHaveBeenCalledWith({
+        where: { name: "work" },
+        update: {},
+        create: { name: "work" },
+      });
       expect(mockPrisma.note.create).toHaveBeenCalledWith({
         data: {
           title: "Test Note",
@@ -437,8 +444,28 @@ describe("noteStore", () => {
     });
   });
 
+  describe("createFolder", () => {
+    it("creates a standalone folder", async () => {
+      mockPrisma.folder.create.mockResolvedValue({
+        id: "folder-1",
+        name: "work",
+        createdAt: new Date(),
+      });
+
+      await createFolder("work");
+
+      expect(mockPrisma.folder.create).toHaveBeenCalledWith({
+        data: { name: "work" },
+      });
+    });
+  });
+
   describe("listFolders", () => {
-    it("returns folder names with counts", async () => {
+    it("returns folder names with counts from folders table", async () => {
+      mockPrisma.folder.findMany.mockResolvedValue([
+        { id: "f1", name: "personal", createdAt: new Date() },
+        { id: "f2", name: "work", createdAt: new Date() },
+      ]);
       mockPrisma.note.groupBy.mockResolvedValue([
         { folder: "personal", _count: { id: 3 } },
         { folder: "work", _count: { id: 5 } },
@@ -447,12 +474,30 @@ describe("noteStore", () => {
       const result = await listFolders();
 
       expect(result).toEqual([
-        { name: "personal", count: 3 },
-        { name: "work", count: 5 },
+        { name: "personal", count: 3, createdAt: expect.any(String) },
+        { name: "work", count: 5, createdAt: expect.any(String) },
+      ]);
+    });
+
+    it("includes empty folders with count 0", async () => {
+      mockPrisma.folder.findMany.mockResolvedValue([
+        { id: "f1", name: "empty-folder", createdAt: new Date() },
+        { id: "f2", name: "work", createdAt: new Date() },
+      ]);
+      mockPrisma.note.groupBy.mockResolvedValue([
+        { folder: "work", _count: { id: 2 } },
+      ]);
+
+      const result = await listFolders();
+
+      expect(result).toEqual([
+        { name: "empty-folder", count: 0, createdAt: expect.any(String) },
+        { name: "work", count: 2, createdAt: expect.any(String) },
       ]);
     });
 
     it("returns empty array when no folders", async () => {
+      mockPrisma.folder.findMany.mockResolvedValue([]);
       mockPrisma.note.groupBy.mockResolvedValue([]);
 
       const result = await listFolders();
@@ -474,8 +519,9 @@ describe("noteStore", () => {
   });
 
   describe("renameFolder", () => {
-    it("renames all notes in folder and returns count", async () => {
+    it("renames all notes in folder and updates folders table", async () => {
       mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
+      mockPrisma.folder.upsert.mockResolvedValue({});
 
       const result = await renameFolder("old-name", "new-name");
 
@@ -484,12 +530,18 @@ describe("noteStore", () => {
         where: { folder: "old-name", deletedAt: null },
         data: { folder: "new-name" },
       });
+      expect(mockPrisma.folder.upsert).toHaveBeenCalledWith({
+        where: { name: "old-name" },
+        update: { name: "new-name" },
+        create: { name: "new-name" },
+      });
     });
   });
 
   describe("deleteFolder", () => {
-    it("unfiles all notes in folder and returns count", async () => {
+    it("unfiles all notes in folder and removes from folders table", async () => {
       mockPrisma.note.updateMany.mockResolvedValue({ count: 2 });
+      mockPrisma.folder.deleteMany.mockResolvedValue({ count: 1 });
 
       const result = await deleteFolder("work");
 
@@ -497,6 +549,9 @@ describe("noteStore", () => {
       expect(mockPrisma.note.updateMany).toHaveBeenCalledWith({
         where: { folder: "work", deletedAt: null },
         data: { folder: null },
+      });
+      expect(mockPrisma.folder.deleteMany).toHaveBeenCalledWith({
+        where: { name: "work" },
       });
     });
   });

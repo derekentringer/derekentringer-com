@@ -9,6 +9,7 @@ import {
   restoreNote,
   permanentDeleteNote,
   fetchFolders,
+  createFolderApi,
   reorderNotes,
   renameFolderApi,
   deleteFolderApi,
@@ -289,6 +290,31 @@ describe("fetchFolders", () => {
     mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
 
     await expect(fetchFolders()).rejects.toThrow("Failed to fetch folders: 500");
+  });
+});
+
+describe("createFolderApi", () => {
+  it("sends POST with folder name", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ name: "projects" }),
+    });
+
+    const result = await createFolderApi("projects");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders", {
+      method: "POST",
+      body: JSON.stringify({ name: "projects" }),
+    });
+    expect(result).toEqual({ name: "projects" });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 409 });
+
+    await expect(createFolderApi("existing")).rejects.toThrow(
+      "Failed to create folder: 409",
+    );
   });
 });
 

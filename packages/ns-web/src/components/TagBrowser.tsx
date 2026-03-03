@@ -51,8 +51,7 @@ export function TagBrowser({
   }
 
   return (
-    <div className="px-2 py-1">
-      <div className="text-xs text-muted-foreground mb-1 px-1">Tags</div>
+    <div>
       <div className="flex flex-wrap gap-1">
         {tags.map((tag) => {
           const isActive = activeTags.includes(tag.name);
@@ -99,7 +98,7 @@ export function TagBrowser({
       {activeTags.length > 0 && (
         <button
           onClick={() => activeTags.forEach((t) => onToggleTag(t))}
-          className="text-xs text-muted-foreground hover:text-foreground mt-1 px-1"
+          className="text-xs text-muted-foreground hover:text-foreground mt-1"
         >
           Clear filter
         </button>

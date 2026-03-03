@@ -25,6 +25,14 @@ model Note {
   @@map("notes")
 }
 
+model Folder {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("folders")
+}
+
 model SyncCursor {
   deviceId     String   @id
   lastSyncedAt DateTime

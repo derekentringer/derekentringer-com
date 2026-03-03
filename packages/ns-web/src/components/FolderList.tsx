@@ -1,20 +1,33 @@
 import { useState } from "react";
-import type { FolderInfo } from "@derekentringer/shared/ns";
+import type { FolderInfo, FolderSortField, SortOrder } from "@derekentringer/shared/ns";
 
 interface FolderListProps {
   folders: FolderInfo[];
   activeFolder: string | null;
   totalNotes: number;
+  folderSortBy: FolderSortField;
+  folderSortOrder: SortOrder;
+  onFolderSortByChange: (field: FolderSortField) => void;
+  onFolderSortOrderChange: (order: SortOrder) => void;
   onSelectFolder: (folder: string | null) => void;
   onCreateFolder: (name: string) => void;
   onRenameFolder: (oldName: string, newName: string) => void;
   onDeleteFolder: (name: string) => void;
 }
 
+const folderSortFields: { value: FolderSortField; label: string }[] = [
+  { value: "name", label: "Name" },
+  { value: "createdAt", label: "Created" },
+];
+
 export function FolderList({
   folders,
   activeFolder,
   totalNotes,
+  folderSortBy,
+  folderSortOrder,
+  onFolderSortByChange,
+  onFolderSortOrderChange,
   onSelectFolder,
   onCreateFolder,
   onRenameFolder,
@@ -64,13 +77,35 @@ export function FolderList({
         <span className="text-xs text-muted-foreground uppercase tracking-wider">
           Folders
         </span>
-        <button
-          onClick={() => setIsCreating(true)}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          title="New folder"
-        >
-          +
-        </button>
+        <div className="flex items-center gap-1">
+          <select
+            value={folderSortBy}
+            onChange={(e) => onFolderSortByChange(e.target.value as FolderSortField)}
+            className="px-1 py-0 rounded bg-transparent border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+            aria-label="Sort folders by"
+          >
+            {folderSortFields.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => onFolderSortOrderChange(folderSortOrder === "asc" ? "desc" : "asc")}
+            className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+            title={folderSortOrder === "asc" ? "Ascending" : "Descending"}
+            aria-label={`Sort folders ${folderSortOrder === "asc" ? "ascending" : "descending"}`}
+          >
+            {folderSortOrder === "asc" ? "\u2191" : "\u2193"}
+          </button>
+          <button
+            onClick={() => setIsCreating(true)}
+            className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors"
+            title="New folder"
+          >
+            +
+          </button>
+        </div>
       </div>
 
       {/* All Notes */}

@@ -146,6 +146,21 @@ export async function fetchFolders(): Promise<FolderListResponse> {
   return response.json();
 }
 
+export async function createFolderApi(
+  name: string,
+): Promise<{ name: string }> {
+  const response = await apiFetch("/notes/folders", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to create folder: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function reorderNotes(
   data: ReorderNotesRequest,
 ): Promise<void> {

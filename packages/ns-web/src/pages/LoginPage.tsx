@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.tsx";
+import { NsLogo } from "../components/NsLogo.tsx";
 
 export function LoginPage() {
   const { isAuthenticated, isLoading, login } = useAuth();
@@ -34,6 +35,7 @@ export function LoginPage() {
         onSubmit={handleSubmit}
       >
         <div className="flex items-center justify-center gap-3 mb-2">
+          <NsLogo className="w-8 h-8" />
           <h1 className="font-normal text-3xl text-foreground">NoteSync</h1>
         </div>
         <input

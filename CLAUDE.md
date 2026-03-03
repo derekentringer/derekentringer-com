@@ -118,10 +118,14 @@ packages/
 
 - React + Vite SPA for note-taking app
 - `src/App.tsx` — Routes + auth-gated layout
-- `src/pages/LoginPage.tsx` — Login form with NoteSync branding
+- `src/pages/LoginPage.tsx` — Login form with NoteSync branding and logo
 - `src/pages/NotesPage.tsx` — Notes view with sidebar + editor shell
+- `src/components/NsLogo.tsx` — Inline SVG logo component (lime-yellow rounded square with `+`)
+- `src/components/ResizeDivider.tsx` — Draggable divider for resizable sidebar panels
+- `src/hooks/useResizable.ts` — Custom hook for drag-resize with localStorage persistence
 - `src/context/AuthContext.tsx` — JWT auth state management (no PIN layer)
 - `src/api/client.ts` — `apiFetch()` with Bearer token, 401 refresh retry
+- `public/` — Favicon (ICO + PNG), apple-touch-icon, Android Chrome icons, `site.webmanifest`, `logo.svg`
 - `public/robots.txt` — Blocks all crawlers and AI agents
 - `index.html` includes `<meta name="robots" content="noindex, nofollow" />`
 - API URL configured via `VITE_API_URL` env var (build-time, defaults to `http://localhost:3004`)

@@ -45,6 +45,7 @@ const mockFetchTrash = vi.fn();
 const mockRestoreNote = vi.fn();
 const mockPermanentDeleteNote = vi.fn();
 const mockFetchFolders = vi.fn();
+const mockCreateFolderApi = vi.fn();
 const mockReorderNotes = vi.fn();
 const mockRenameFolderApi = vi.fn();
 const mockDeleteFolderApi = vi.fn();
@@ -62,6 +63,7 @@ vi.mock("../api/notes.ts", () => ({
   restoreNote: (...args: unknown[]) => mockRestoreNote(...args),
   permanentDeleteNote: (...args: unknown[]) => mockPermanentDeleteNote(...args),
   fetchFolders: (...args: unknown[]) => mockFetchFolders(...args),
+  createFolderApi: (...args: unknown[]) => mockCreateFolderApi(...args),
   reorderNotes: (...args: unknown[]) => mockReorderNotes(...args),
   renameFolderApi: (...args: unknown[]) => mockRenameFolderApi(...args),
   deleteFolderApi: (...args: unknown[]) => mockDeleteFolderApi(...args),
@@ -152,8 +154,8 @@ describe("NotesPage", () => {
 
     await screen.findByText("No notes yet");
 
-    const createButton = screen.getByTitle("New note");
-    await userEvent.click(createButton);
+    const createButtons = screen.getAllByTitle("New note");
+    await userEvent.click(createButtons[0]);
 
     expect(mockCreateNote).toHaveBeenCalledWith({ title: "Untitled" });
   });
@@ -377,19 +379,20 @@ describe("NotesPage", () => {
       renderNotesPage();
       await screen.findByText("No notes yet");
 
-      expect(screen.getByTitle("New note")).toBeInTheDocument();
+      expect(screen.getAllByTitle("New note").length).toBeGreaterThan(0);
 
       const trashButton = screen.getByTitle("View trash");
       await userEvent.click(trashButton);
 
       await screen.findByText("Trash is empty");
 
-      expect(screen.queryByTitle("New note")).not.toBeInTheDocument();
+      expect(screen.queryAllByTitle("New note")).toHaveLength(0);
     });
   });
 
   describe("Tags", () => {
-    it("renders tag pills when tags are loaded", async () => {
+    it("renders tag pills when search is focused", async () => {
+      const user = userEvent.setup();
       mockFetchTags.mockResolvedValue({
         tags: [
           { name: "javascript", count: 3 },
@@ -401,17 +404,24 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      expect(screen.getByText("Tags")).toBeInTheDocument();
+      // Tags are hidden until search is focused
+      const searchInput = screen.getByPlaceholderText("Search notes...");
+      await user.click(searchInput);
+
       expect(screen.getByText("javascript")).toBeInTheDocument();
       expect(screen.getByText("react")).toBeInTheDocument();
     });
 
-    it("does not render tag section when no tags exist", async () => {
+    it("does not render tag pills when no tags exist", async () => {
+      const user = userEvent.setup();
       renderNotesPage();
 
       await screen.findByText("No notes yet");
 
-      expect(screen.queryByText("Tags")).not.toBeInTheDocument();
+      const searchInput = screen.getByPlaceholderText("Search notes...");
+      await user.click(searchInput);
+
+      expect(screen.queryByText("javascript")).not.toBeInTheDocument();
     });
 
     it("shows tag input when a note is selected", async () => {

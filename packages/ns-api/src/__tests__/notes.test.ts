@@ -245,6 +245,9 @@ describe("Note routes", () => {
   describe("GET /notes/folders", () => {
     it("returns folder list (200)", async () => {
       const token = await getAccessToken();
+      mockPrisma.folder.findMany.mockResolvedValue([
+        { id: "f1", name: "work", createdAt: new Date() },
+      ]);
       mockPrisma.note.groupBy.mockResolvedValue([
         { folder: "work", _count: { id: 3 } },
       ]);
@@ -266,6 +269,56 @@ describe("Note routes", () => {
       const res = await app.inject({
         method: "GET",
         url: "/notes/folders",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- POST /notes/folders ---
+
+  describe("POST /notes/folders", () => {
+    it("creates a folder (201)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.folder.create.mockResolvedValue({
+        id: "f1",
+        name: "projects",
+        createdAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/notes/folders",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: "projects" },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.name).toBe("projects");
+    });
+
+    it("returns 409 for duplicate folder", async () => {
+      const token = await getAccessToken();
+      const err = new Error("Unique constraint failed") as Error & { code: string };
+      err.code = "P2002";
+      mockPrisma.folder.create.mockRejectedValue(err);
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/notes/folders",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: "existing" },
+      });
+
+      expect(res.statusCode).toBe(409);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/notes/folders",
+        payload: { name: "test" },
       });
 
       expect(res.statusCode).toBe(401);

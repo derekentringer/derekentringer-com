@@ -1,6 +1,6 @@
 # 03 — Search & Organization
 
-**Status:** In Progress
+**Status:** Complete
 **Phase:** 2 — Notes Core
 **Priority:** High
 
@@ -12,9 +12,9 @@ Full-text search across all notes using PostgreSQL tsvector, plus a folder and t
 
 | Release | Branch | Summary | Status |
 |---------|--------|---------|--------|
-| **03a** | `feature/ns-03a-trash-sort` | Trash view (list/restore/permanent delete), sort controls, auto-purge | In Progress |
-| **03b** | `feature/ns-03b-folders-dnd` | Flat folders, folder CRUD, @dnd-kit drag-and-drop reordering | Not Started |
-| **03c** | `feature/ns-03c-tags-fts` | Tag browser, tag CRUD, PostgreSQL tsvector full-text search with snippets | Not Started |
+| **03a** | `feature/ns-03a-trash-sort` | Trash view (list/restore/permanent delete), sort controls, auto-purge | Complete |
+| **03b** | `feature/ns-03b-folders-dnd` | Flat folders, folder CRUD, @dnd-kit drag-and-drop reordering | Complete |
+| **03c** | `feature/ns-03c-tags-fts` | Tag browser, tag CRUD, PostgreSQL tsvector full-text search with snippets, resizable sidebar, logo/branding, favicon | Complete |
 
 Each release includes: API changes, frontend changes, shared type updates, tests, and doc updates.
 

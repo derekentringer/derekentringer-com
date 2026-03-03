@@ -29,6 +29,15 @@ export async function createNote(
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
+  // Ensure folder exists in folders table
+  if (data.folder) {
+    await prisma.folder.upsert({
+      where: { name: data.folder },
+      update: {},
+      create: { name: data.folder },
+    });
+  }
+
   return prisma.note.create({
     data: {
       title: data.title,
@@ -101,7 +110,8 @@ export async function listNotes(
 
     const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${whereClause}`;
     const dataQuery = `
-      SELECT *,
+      SELECT "id", "title", "content", "folder", "tags", "summary", "sortOrder",
+        "createdAt", "updatedAt", "deletedAt",
         ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
           'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline
       FROM "notes"
@@ -250,18 +260,35 @@ export async function purgeOldTrash(days = 30): Promise<number> {
   return result.count;
 }
 
+export async function createFolder(name: string): Promise<void> {
+  const prisma = getPrisma();
+  await prisma.folder.create({ data: { name } });
+}
+
 export async function listFolders(): Promise<FolderInfo[]> {
   const prisma = getPrisma();
+
+  // Get all standalone folders
+  const allFolders = await prisma.folder.findMany({
+    orderBy: { name: "asc" },
+  });
+
+  // Get note counts grouped by folder
   const groups = await prisma.note.groupBy({
     by: ["folder"],
     where: { deletedAt: null, folder: { not: null } },
     _count: { id: true },
-    orderBy: { folder: "asc" },
   });
 
-  return groups.map((g) => ({
-    name: g.folder as string,
-    count: g._count.id,
+  const countMap = new Map(
+    groups.map((g) => [g.folder as string, g._count.id]),
+  );
+
+  // Merge: every folder from the folders table, with count from notes
+  return allFolders.map((f) => ({
+    name: f.name,
+    count: countMap.get(f.name) ?? 0,
+    createdAt: f.createdAt.toISOString(),
   }));
 }
 
@@ -288,6 +315,12 @@ export async function renameFolder(
     where: { folder: oldName, deletedAt: null },
     data: { folder: newName },
   });
+  // Rename in folders table (upsert to handle edge cases)
+  await prisma.folder.upsert({
+    where: { name: oldName },
+    update: { name: newName },
+    create: { name: newName },
+  });
   return result.count;
 }
 
@@ -297,6 +330,8 @@ export async function deleteFolder(name: string): Promise<number> {
     where: { folder: name, deletedAt: null },
     data: { folder: null },
   });
+  // Remove from folders table
+  await prisma.folder.deleteMany({ where: { name } });
   return result.count;
 }
 

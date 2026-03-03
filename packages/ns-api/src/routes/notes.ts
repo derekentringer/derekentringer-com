@@ -19,6 +19,7 @@ import {
   softDeleteNote,
   restoreNote,
   permanentDeleteNote,
+  createFolder,
   listFolders,
   reorderNotes,
   renameFolder,
@@ -83,6 +84,17 @@ const reorderSchema = {
   },
 };
 
+const createFolderSchema = {
+  body: {
+    type: "object" as const,
+    required: ["name"],
+    additionalProperties: false,
+    properties: {
+      name: { type: "string", minLength: 1 },
+    },
+  },
+};
+
 const renameFolderSchema = {
   body: {
     type: "object" as const,
@@ -115,6 +127,35 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       const folders = await listFolders();
       const response: FolderListResponse = { folders };
       return reply.send(response);
+    },
+  );
+
+  // POST /notes/folders — create a standalone folder
+  fastify.post<{ Body: { name: string } }>(
+    "/folders",
+    { schema: createFolderSchema },
+    async (
+      request: FastifyRequest<{ Body: { name: string } }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        await createFolder(request.body.name);
+        return reply.status(201).send({ name: request.body.name });
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          (error as { code: string }).code === "P2002"
+        ) {
+          return reply.status(409).send({
+            statusCode: 409,
+            error: "Conflict",
+            message: "Folder already exists",
+          });
+        }
+        throw error;
+      }
     },
   );
 

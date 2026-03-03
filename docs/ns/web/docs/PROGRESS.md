@@ -47,7 +47,7 @@
 - [x] [03 — Search & Organization](features/03-search-and-organization.md)
   - [x] 03a — Trash View + Sort (trash list/restore/permanent delete, sort controls, auto-purge)
   - [x] 03b — Flat Folders + Drag-and-Drop (folder CRUD, @dnd-kit reordering, sortOrder)
-  - [x] 03c — Tags + Full-Text Search (tag browser/CRUD, PostgreSQL tsvector with snippets)
+  - [x] 03c — Tags + Full-Text Search (tag browser/CRUD, PostgreSQL tsvector with snippets, resizable sidebar dividers, NoteSync logo/branding/favicon)
 
 ### Phase 3: AI & Offline — Medium Priority
 
