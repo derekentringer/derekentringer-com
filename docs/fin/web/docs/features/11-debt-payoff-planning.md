@@ -21,7 +21,7 @@ Calculate and visualize debt payoff timelines using avalanche, snowball, and cus
 - `DebtPayoffStrategyResult` — strategy, debtFreeDate, totalInterestPaid, totalPaid, per-account timelines, aggregate schedule
 - `DebtPayoffResponse` — debtAccounts[], avalanche, snowball, custom|null, actualVsPlanned[]
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Debt Payoff Calculation (`src/store/projectionsStore.ts`)
 
@@ -65,7 +65,7 @@ Query parameters for debt payoff:
 - `customOrder` — comma-separated account IDs for custom strategy priority
 - `maxMonths` — projection cap (120|240|360, default 360)
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### Debt Payoff Tab (`src/components/projections/DebtPayoffTab.tsx`)
 

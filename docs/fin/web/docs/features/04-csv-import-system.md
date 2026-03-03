@@ -16,7 +16,7 @@ Pluggable CSV parser architecture for importing transactions from bank exports. 
 - Import types: `ParsedTransaction`, `CsvImportPreviewResponse`, `CsvImportConfirmRequest`, `CsvImportConfirmResponse`
 - Transaction types: `UpdateTransactionRequest`, `TransactionListResponse`, `TransactionResponse`
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### CSV Parsers (`src/csv-parsers/`)
 
@@ -84,14 +84,14 @@ All routes require JWT authentication.
 
 #### Dependencies
 
-- Added `@fastify/multipart` to `packages/finance-api/package.json`
+- Added `@fastify/multipart` to `packages/fin-api/package.json`
 
 ### Prisma Schema Changes
 
 - Added `dedupeHash String?` to Transaction model
 - Added `@@unique([accountId, dedupeHash])` constraint for per-account deduplication
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### API Client (`src/api/transactions.ts`)
 

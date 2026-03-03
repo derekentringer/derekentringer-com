@@ -32,7 +32,7 @@ Track investment portfolio holdings with live pricing, asset allocation visualiz
 - `QuoteResponse` — ticker, currentPrice, change, changePercent, high, low, open, previousClose
 - `isCashAccountType(type)` — helper to check if an account type is a cash type
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Database Schema (`prisma/schema.prisma`)
 
@@ -185,7 +185,7 @@ Migration: `20260225020000_add_holdings`
 - `src/__tests__/holdings.test.ts` — 26 tests: integration tests for holding routes (auth, validation, CRUD, quote endpoint)
 - `src/__tests__/portfolioStore.test.ts` — 8 tests: asset allocation with/without cash, performance summary with savings in totalCost, historical series excludes savings, account-specific queries, rebalance suggestions
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### API Clients
 
@@ -251,28 +251,28 @@ Investments page with 4 tabs:
 
 | File | Description |
 |------|-------------|
-| `packages/finance-api/prisma/migrations/20260225020000_add_holdings/` | Migration SQL for 4 new models |
-| `packages/finance-api/src/store/holdingStore.ts` | Holding CRUD with encryption |
-| `packages/finance-api/src/store/targetAllocationStore.ts` | Target allocation management |
-| `packages/finance-api/src/store/priceHistoryStore.ts` | Price history + benchmark storage |
-| `packages/finance-api/src/store/portfolioStore.ts` | Asset allocation, performance, rebalancing |
-| `packages/finance-api/src/routes/holdings.ts` | Holdings API routes |
-| `packages/finance-api/src/routes/portfolio.ts` | Portfolio analysis API routes |
-| `packages/finance-api/src/lib/finnhub.ts` | Finnhub API client |
-| `packages/finance-api/src/lib/priceFetchScheduler.ts` | Daily automated price fetching |
-| `packages/finance-api/src/__tests__/holdingStore.test.ts` | Holding store unit tests |
-| `packages/finance-api/src/__tests__/holdingMappers.test.ts` | Holding mapper tests |
-| `packages/finance-api/src/__tests__/holdings.test.ts` | Holdings route integration tests |
-| `packages/finance-api/src/__tests__/portfolioStore.test.ts` | Portfolio store unit tests |
-| `packages/finance-web/src/api/holdings.ts` | Frontend holdings API client |
-| `packages/finance-web/src/api/portfolio.ts` | Frontend portfolio API client |
-| `packages/finance-web/src/components/holdings/HoldingForm.tsx` | Holding create/edit dialog |
-| `packages/finance-web/src/components/holdings/HoldingsTable.tsx` | Holdings data table |
-| `packages/finance-web/src/components/portfolio/AllocationChart.tsx` | Asset allocation donut chart |
-| `packages/finance-web/src/components/portfolio/PerformanceSummary.tsx` | Performance KPI cards |
-| `packages/finance-web/src/components/portfolio/PerformanceChart.tsx` | Portfolio vs. benchmark chart |
-| `packages/finance-web/src/components/portfolio/TargetAllocationForm.tsx` | Target allocation dialog |
-| `packages/finance-web/src/components/portfolio/RebalanceCard.tsx` | Rebalancing suggestions |
+| `packages/fin-api/prisma/migrations/20260225020000_add_holdings/` | Migration SQL for 4 new models |
+| `packages/fin-api/src/store/holdingStore.ts` | Holding CRUD with encryption |
+| `packages/fin-api/src/store/targetAllocationStore.ts` | Target allocation management |
+| `packages/fin-api/src/store/priceHistoryStore.ts` | Price history + benchmark storage |
+| `packages/fin-api/src/store/portfolioStore.ts` | Asset allocation, performance, rebalancing |
+| `packages/fin-api/src/routes/holdings.ts` | Holdings API routes |
+| `packages/fin-api/src/routes/portfolio.ts` | Portfolio analysis API routes |
+| `packages/fin-api/src/lib/finnhub.ts` | Finnhub API client |
+| `packages/fin-api/src/lib/priceFetchScheduler.ts` | Daily automated price fetching |
+| `packages/fin-api/src/__tests__/holdingStore.test.ts` | Holding store unit tests |
+| `packages/fin-api/src/__tests__/holdingMappers.test.ts` | Holding mapper tests |
+| `packages/fin-api/src/__tests__/holdings.test.ts` | Holdings route integration tests |
+| `packages/fin-api/src/__tests__/portfolioStore.test.ts` | Portfolio store unit tests |
+| `packages/fin-web/src/api/holdings.ts` | Frontend holdings API client |
+| `packages/fin-web/src/api/portfolio.ts` | Frontend portfolio API client |
+| `packages/fin-web/src/components/holdings/HoldingForm.tsx` | Holding create/edit dialog |
+| `packages/fin-web/src/components/holdings/HoldingsTable.tsx` | Holdings data table |
+| `packages/fin-web/src/components/portfolio/AllocationChart.tsx` | Asset allocation donut chart |
+| `packages/fin-web/src/components/portfolio/PerformanceSummary.tsx` | Performance KPI cards |
+| `packages/fin-web/src/components/portfolio/PerformanceChart.tsx` | Portfolio vs. benchmark chart |
+| `packages/fin-web/src/components/portfolio/TargetAllocationForm.tsx` | Target allocation dialog |
+| `packages/fin-web/src/components/portfolio/RebalanceCard.tsx` | Rebalancing suggestions |
 
 ## Files Modified
 
@@ -280,14 +280,14 @@ Investments page with 4 tabs:
 |------|---------|
 | `packages/shared/src/finance/types.ts` | AssetClass, Holding, TargetAllocation, Performance, Rebalance types, `isCashAccountType()` helper |
 | `packages/shared/src/index.ts` | Re-export new types and helpers |
-| `packages/finance-api/prisma/schema.prisma` | 4 new models + Account relation |
-| `packages/finance-api/src/app.ts` | Register holding/portfolio routes, start/stop price scheduler |
-| `packages/finance-api/src/config.ts` | Finnhub API key, price fetch hour config |
-| `packages/finance-api/src/lib/mappers.ts` | Holding, target allocation, price history encrypt/decrypt |
-| `packages/finance-api/src/store/accountStore.ts` | `getCashBalance()` lightweight query |
-| `packages/finance-api/src/__tests__/helpers/mockPrisma.ts` | Added holding, targetAllocation, priceHistory, benchmarkHistory mock models |
-| `packages/finance-web/src/App.tsx` | Account type page route |
-| `packages/finance-web/src/pages/AccountTypePage.tsx` | 4-tab investments page with holdings, allocation, performance |
+| `packages/fin-api/prisma/schema.prisma` | 4 new models + Account relation |
+| `packages/fin-api/src/app.ts` | Register holding/portfolio routes, start/stop price scheduler |
+| `packages/fin-api/src/config.ts` | Finnhub API key, price fetch hour config |
+| `packages/fin-api/src/lib/mappers.ts` | Holding, target allocation, price history encrypt/decrypt |
+| `packages/fin-api/src/store/accountStore.ts` | `getCashBalance()` lightweight query |
+| `packages/fin-api/src/__tests__/helpers/mockPrisma.ts` | Added holding, targetAllocation, priceHistory, benchmarkHistory mock models |
+| `packages/fin-web/src/App.tsx` | Account type page route |
+| `packages/fin-web/src/pages/AccountTypePage.tsx` | 4-tab investments page with holdings, allocation, performance |
 
 ## Dependencies Added
 

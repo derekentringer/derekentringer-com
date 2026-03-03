@@ -24,7 +24,7 @@ AI-powered PDF statement import with account-type-specific profile extraction. U
 - PDF import types: `PdfImportPreviewResponse`, `PdfImportConfirmRequest`, `PdfImportConfirmResponse`
 - New CSV parser: `CsvParserId` extended with `"fidelity-401k"`; `CSV_PARSER_IDS` and `CSV_PARSER_LABELS` updated
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### PDF Extraction Engine (`src/lib/pdfExtract.ts`)
 
@@ -173,7 +173,7 @@ All profile fields are stored as encrypted strings (AES-256-GCM).
 
 Migration: `20260219030000_add_statement_profiles`
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### API Client (`src/api/balances.ts`)
 

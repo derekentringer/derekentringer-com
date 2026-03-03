@@ -22,7 +22,7 @@ Set and track financial goals with four goal types: savings, debt payoff, net wo
 - `GoalProgressResponse` — goals[], monthlySurplus, monthlyIncome, monthlyExpenses, monthlyDebtPayments
 - `ReorderGoalsRequest` — order[] with id and sortOrder
 
-### Finance API (`packages/finance-api/`)
+### Finance API (`packages/fin-api/`)
 
 #### Database Schema (`prisma/schema.prisma`)
 
@@ -110,7 +110,7 @@ All routes require authentication. CUID format validation on ID params. Fastify 
 - `encryptGoalForCreate` — encrypts input fields for Prisma create
 - `encryptGoalForUpdate` — encrypts changed fields, handles null-to-clear for optional fields
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### Goals Page (`src/pages/GoalsPage.tsx`)
 

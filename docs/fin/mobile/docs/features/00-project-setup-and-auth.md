@@ -7,7 +7,7 @@
 
 ## Summary
 
-Bootstrapped the Expo React Native project in `packages/mobile/`, integrated with the monorepo, established the dark theme and navigation shell, and implemented complete auth flow with body-based refresh tokens. Modified the finance-api and shared types to support mobile authentication.
+Bootstrapped the Expo React Native project in `packages/fin-mobile/`, integrated with the monorepo, established the dark theme and navigation shell, and implemented complete auth flow with body-based refresh tokens. Modified the finance-api and shared types to support mobile authentication.
 
 ## What Was Implemented
 

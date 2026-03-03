@@ -16,7 +16,7 @@ Enhanced account type pages with inline profile cards, market mortgage rate comp
 
 - `MortgageRatesResponse` type — `rate30yr: number | null`, `rate15yr: number | null`, `asOf: string | null`
 
-#### Finance API (`packages/finance-api/`)
+#### Finance API (`packages/fin-api/`)
 
 **Config (`src/config.ts`):**
 - Added `fredApiKey` field (reads `FRED_API_KEY` env var, defaults to empty string; not required)
@@ -28,7 +28,7 @@ Enhanced account type pages with inline profile cards, market mortgage rate comp
   - Returns `{ rate30yr: null, rate15yr: null, asOf: null }` when no `FRED_API_KEY` configured or on fetch failure
   - `fetchFredRate(seriesId, apiKey)` helper fetches latest observation from FRED
 
-#### Finance Web (`packages/finance-web/`)
+#### Finance Web (`packages/fin-web/`)
 
 **API Client (`src/api/dashboard.ts`):**
 - `fetchMortgageRates()` — GET /dashboard/mortgage-rates
@@ -65,7 +65,7 @@ All four KPIs always render (defaulting to 0 when no data), ensuring consistent 
 
 ### Chart Rendering Fix: Snapshot-Driven Accounts
 
-**Dashboard Store (`packages/finance-api/src/store/dashboardStore.ts`):**
+**Dashboard Store (`packages/fin-api/src/store/dashboardStore.ts`):**
 
 `computeAccountBalanceHistory()` now branches by account type:
 
@@ -74,25 +74,25 @@ All four KPIs always render (defaulting to 0 when no data), ensuring consistent 
 
 **Root cause of the bug:** The transaction-based backwards reconstruction subtracted recorded transactions from `currentBalance` to derive historical balances. For investment accounts, this produced negative starting balances because contributions (positive transactions) were subtracted, but market gains (which aren't transactions) were not accounted for. For loan accounts, the chart was flat-lined because loan payments are captured as balance snapshots from PDF imports, not as individual transactions.
 
-**AccountBalanceCard (`packages/finance-web/src/components/dashboard/AccountBalanceCard.tsx`):**
+**AccountBalanceCard (`packages/fin-web/src/components/dashboard/AccountBalanceCard.tsx`):**
 - Added `domain` prop to YAxis: floors at 0 when all data is positive, allows negative when data actually contains negative values
 - Prevents Recharts auto-scaling from showing negative Y-axis values for accounts with all-positive balances
 
 ## Files Modified
 
 ### Finance API
-- `packages/finance-api/src/config.ts` — added `fredApiKey` field
-- `packages/finance-api/src/routes/dashboard.ts` — added `GET /mortgage-rates` endpoint with FRED API fetch + cache
-- `packages/finance-api/src/store/dashboardStore.ts` — snapshot-driven chart rendering for Investment, Real Estate, Loan accounts
+- `packages/fin-api/src/config.ts` — added `fredApiKey` field
+- `packages/fin-api/src/routes/dashboard.ts` — added `GET /mortgage-rates` endpoint with FRED API fetch + cache
+- `packages/fin-api/src/store/dashboardStore.ts` — snapshot-driven chart rendering for Investment, Real Estate, Loan accounts
 
 ### Shared
 - `packages/shared/src/finance/types.ts` — added `MortgageRatesResponse` type
 - `packages/shared/src/index.ts` — exported `MortgageRatesResponse`
 
 ### Finance Web
-- `packages/finance-web/src/api/dashboard.ts` — added `fetchMortgageRates()`
-- `packages/finance-web/src/pages/AccountTypePage.tsx` — market rate badges, investments inline layout, investment KPIs, mortgage rates fetch
-- `packages/finance-web/src/components/dashboard/AccountBalanceCard.tsx` — YAxis domain fix
+- `packages/fin-web/src/api/dashboard.ts` — added `fetchMortgageRates()`
+- `packages/fin-web/src/pages/AccountTypePage.tsx` — market rate badges, investments inline layout, investment KPIs, mortgage rates fetch
+- `packages/fin-web/src/components/dashboard/AccountBalanceCard.tsx` — YAxis domain fix
 
 ## Dependencies
 

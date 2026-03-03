@@ -23,7 +23,7 @@
 ## Architecture Decisions
 
 - **Expo managed workflow** — faster setup, EAS Build, built-in FCM, OTA updates possible later
-- **Monorepo integration** — `packages/mobile/` shares `packages/shared/` types and utilities with API and web
+- **Monorepo integration** — `packages/fin-mobile/` shares `packages/shared/` types and utilities with API and web
 - **No CSV/PDF import** — file import is a desktop workflow; excluded from mobile
 - **Sideload-only** — APK for Android, ad-hoc IPA for iOS; no app store listings
 - **Push notifications Android-only** — iOS requires paid Apple Developer account for APNs

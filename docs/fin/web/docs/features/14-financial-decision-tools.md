@@ -21,7 +21,7 @@ Interactive financial calculators for common decisions: "Should I keep savings i
 - `FourOhOneKYearPoint` — year, label, current/optimal/max balances
 - `FourOhOneKResult` — contributions, matches, optimal %, moneyLeftOnTable, 30-year projection
 
-### Finance Web (`packages/finance-web/`)
+### Finance Web (`packages/fin-web/`)
 
 #### Calculation Functions (`src/lib/decisionCalculators.ts`)
 
