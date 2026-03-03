@@ -10,12 +10,12 @@ Personal portfolio and tools monorepo for Derek Entringer (derekentringer.com). 
 
 ```bash
 npm install          # Install all workspace dependencies
-npx turbo run dev    # Start all dev servers (web :3000, api :3001, fin-api :3002, fin-web :3003)
+npx turbo run dev    # Start all dev servers (web :3000, api :3001, fin-api :3002, fin-web :3003, ns-api :3004, ns-web :3005)
 npx turbo run build  # Build all packages
 npx turbo run type-check  # Type-check all packages
 ```
 
-**Dev server port notes**: When running `npx turbo run dev`, the `api` package (health-check stub on :3001) often fails with `EADDRINUSE` because it races with other turbo tasks for ports. This is not a problem — the `api` package is just a health-check stub and isn't needed for finance feature development. The important services are `fin-api` (Fastify on :3002) and `fin-web` (Vite on :3003). Vite auto-increments ports when collisions occur, so check the turbo output for actual port numbers. Before starting dev servers, always kill old processes first: `pkill -9 -f "vite|tsx watch|turbo"` then `lsof -ti :3000,:3001,:3002,:3003 | xargs kill -9`. CORS on fin-api defaults to `http://localhost:3003`, so fin-web **must** be on port 3003 for login to work — if it lands on another port, sign-in will fail with CORS errors.
+**Dev server port notes**: When running `npx turbo run dev`, the `api` package (health-check stub on :3001) often fails with `EADDRINUSE` because it races with other turbo tasks for ports. This is not a problem — the `api` package is just a health-check stub and isn't needed for finance feature development. The important services are `fin-api` (Fastify on :3002), `fin-web` (Vite on :3003), `ns-api` (Fastify on :3004), and `ns-web` (Vite on :3005). Vite auto-increments ports when collisions occur, so check the turbo output for actual port numbers. Before starting dev servers, always kill old processes first: `pkill -9 -f "vite|tsx watch|turbo"` then `lsof -ti :3000,:3001,:3002,:3003,:3004,:3005 | xargs kill -9`. CORS on fin-api defaults to `http://localhost:3003`, so fin-web **must** be on port 3003 for login to work. CORS on ns-api defaults to `http://localhost:3005`, so ns-web **must** be on port 3005 for login to work. If either lands on another port, sign-in will fail with CORS errors.
 
 ## Git Workflow
 
@@ -35,6 +35,8 @@ This project uses **gitflow**:
 - **API**: `packages/api/Dockerfile` — multi-stage Node build on port 3001
 - **Finance Web**: Railpack; start command `npm run start --workspace=@derekentringer/fin-web`; `serve` static file server with SPA fallback; custom domain `fin.derekentringer.com`; env: `VITE_API_URL=https://fin-api.derekentringer.com` (build-time)
 - **Finance API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `ENCRYPTION_KEY` (64-char hex)
+- **NoteSync Web**: Railpack; start command `npm run start --workspace=@derekentringer/ns-web`; `serve` static file server with SPA fallback; env: `VITE_API_URL` (build-time)
+- **NoteSync API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`; Fastify on `0.0.0.0:$PORT`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN`, `DATABASE_URL` (from Railway Postgres plugin)
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs and pushes to main
 - **DNS**: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME)
 - **www redirect**: Client-side redirect in `App.tsx` from `www.derekentringer.com` → `derekentringer.com`
@@ -47,8 +49,10 @@ Note: Railway skips Dockerfiles not at the repo root. The web Dockerfile exists 
 packages/
   web/          — React + Vite + React Router SPA (portfolio site)
   api/          — Fastify API server (health-check stub)
-  fin-web/  — React + Vite SPA (personal finance dashboard)
-  fin-api/  — Fastify API server (personal finance backend)
+  fin-web/      — React + Vite SPA (personal finance dashboard)
+  fin-api/      — Fastify API server (personal finance backend)
+  ns-web/       — React + Vite SPA (NoteSync note-taking app)
+  ns-api/       — Fastify API server (NoteSync backend)
   shared/       — Shared TypeScript types and utilities
   fin-mobile/   — React Native app (deferred to Phase 6)
 ```
@@ -109,6 +113,43 @@ packages/
 - `src/config.ts` — App config with secret enforcement (all secrets required outside `development`/`test` environments)
 - **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ENCRYPTION_KEY` (64-char hex, 32 bytes for AES-256-GCM), `PIN_TOKEN_SECRET` (dedicated secret for PIN tokens — must not share with `REFRESH_TOKEN_SECRET`)
 - **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`
+
+### NoteSync Web (`packages/ns-web/`)
+
+- React + Vite SPA for note-taking app
+- `src/App.tsx` — Routes + auth-gated layout
+- `src/pages/LoginPage.tsx` — Login form with NoteSync branding
+- `src/pages/NotesPage.tsx` — Notes view with sidebar + editor shell
+- `src/context/AuthContext.tsx` — JWT auth state management (no PIN layer)
+- `src/api/client.ts` — `apiFetch()` with Bearer token, 401 refresh retry
+- `public/robots.txt` — Blocks all crawlers and AI agents
+- `index.html` includes `<meta name="robots" content="noindex, nofollow" />`
+- API URL configured via `VITE_API_URL` env var (build-time, defaults to `http://localhost:3004`)
+- Dev port: 3005
+- Accent color: lime-yellow (`#d4e157`)
+
+### NoteSync API (`packages/ns-api/`)
+
+- Fastify server with JWT auth (access + refresh tokens, no PIN layer)
+- `src/index.ts` — Server entry, port 3004
+- `src/app.ts` — App factory with CORS, helmet, rate-limit, cookie, auth plugins
+- `src/routes/auth.ts` — Login, refresh, logout endpoints
+- `src/routes/health.ts` — `GET /health` endpoint
+- `GET /robots.txt` — Blocks all crawlers (blanket `Disallow: /`)
+- `src/config.ts` — App config with secret enforcement
+- Passwords verified via bcrypt hashes from env vars (reuses same ADMIN_USERNAME/ADMIN_PASSWORD_HASH as fin-api)
+- **Database**: Separate PostgreSQL instance via Prisma ORM (v7)
+  - `prisma/schema.prisma` — Database schema (Note, SyncCursor, RefreshToken)
+  - `prisma.config.ts` — Prisma CLI config
+  - `src/generated/prisma/` — Generated Prisma client (gitignored)
+  - `src/lib/prisma.ts` — PrismaClient singleton with `@prisma/adapter-pg`
+- **Prisma commands** (run from `packages/ns-api/`):
+  - `npm run db:migrate:dev` — Create/apply dev migration
+  - `npm run db:migrate:deploy` — Apply migrations in production
+  - `npm run db:seed` — Run seed script
+  - `npm run db:studio` — Open Prisma Studio
+- **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN` (defaults to `http://localhost:3005`)
+- **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`
 
 ## External Services
 
