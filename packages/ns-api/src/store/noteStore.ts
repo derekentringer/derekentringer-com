@@ -1,5 +1,11 @@
 import { getPrisma } from "../lib/prisma.js";
-import type { CreateNoteRequest, UpdateNoteRequest, NoteSortField, SortOrder } from "@derekentringer/shared/ns";
+import type {
+  CreateNoteRequest,
+  UpdateNoteRequest,
+  NoteSortField,
+  SortOrder,
+  FolderInfo,
+} from "@derekentringer/shared/ns";
 import type { Note as PrismaNote } from "../generated/prisma/client.js";
 
 function isNotFoundError(error: unknown): boolean {
@@ -15,12 +21,20 @@ export async function createNote(
   data: CreateNoteRequest,
 ): Promise<PrismaNote> {
   const prisma = getPrisma();
+
+  const maxResult = await prisma.note.aggregate({
+    _max: { sortOrder: true },
+    where: { deletedAt: null },
+  });
+  const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
+
   return prisma.note.create({
     data: {
       title: data.title,
       content: data.content ?? "",
       folder: data.folder ?? null,
       tags: data.tags ?? [],
+      sortOrder: nextSortOrder,
     },
   });
 }
@@ -48,8 +62,8 @@ export async function listNotes(
   const page = filter?.page ?? 1;
   const pageSize = filter?.pageSize ?? 50;
   const skip = (page - 1) * pageSize;
-  const sortBy = filter?.sortBy ?? "updatedAt";
-  const sortOrder = filter?.sortOrder ?? "desc";
+  const sortBy = filter?.sortBy ?? "sortOrder";
+  const sortOrder = filter?.sortOrder ?? "asc";
 
   const where: Record<string, unknown> = { deletedAt: null };
 
@@ -178,5 +192,55 @@ export async function purgeOldTrash(days = 30): Promise<number> {
     },
   });
 
+  return result.count;
+}
+
+export async function listFolders(): Promise<FolderInfo[]> {
+  const prisma = getPrisma();
+  const groups = await prisma.note.groupBy({
+    by: ["folder"],
+    where: { deletedAt: null, folder: { not: null } },
+    _count: { id: true },
+    orderBy: { folder: "asc" },
+  });
+
+  return groups.map((g) => ({
+    name: g.folder as string,
+    count: g._count.id,
+  }));
+}
+
+export async function reorderNotes(
+  order: { id: string; sortOrder: number }[],
+): Promise<void> {
+  const prisma = getPrisma();
+  await prisma.$transaction(
+    order.map((item) =>
+      prisma.note.update({
+        where: { id: item.id },
+        data: { sortOrder: item.sortOrder },
+      }),
+    ),
+  );
+}
+
+export async function renameFolder(
+  oldName: string,
+  newName: string,
+): Promise<number> {
+  const prisma = getPrisma();
+  const result = await prisma.note.updateMany({
+    where: { folder: oldName, deletedAt: null },
+    data: { folder: newName },
+  });
+  return result.count;
+}
+
+export async function deleteFolder(name: string): Promise<number> {
+  const prisma = getPrisma();
+  const result = await prisma.note.updateMany({
+    where: { folder: name, deletedAt: null },
+    data: { folder: null },
+  });
   return result.count;
 }

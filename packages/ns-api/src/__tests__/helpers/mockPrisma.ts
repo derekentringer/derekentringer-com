@@ -9,10 +9,12 @@ export interface MockModel {
   findUnique: Mock;
   findMany: Mock;
   update: Mock;
+  updateMany: Mock;
   delete: Mock;
   deleteMany: Mock;
   count: Mock;
   aggregate: Mock;
+  groupBy: Mock;
   upsert: Mock;
 }
 
@@ -31,10 +33,12 @@ function createMockModel(): MockModel {
     findUnique: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
     delete: vi.fn(),
     deleteMany: vi.fn(),
     count: vi.fn(),
     aggregate: vi.fn(),
+    groupBy: vi.fn(),
     upsert: vi.fn(),
   };
 }
@@ -49,7 +53,13 @@ export function createMockPrisma(): MockPrisma {
   };
 
   mock.$transaction.mockImplementation(
-    async (fn: (client: MockPrisma) => Promise<unknown>) => fn(mock),
+    async (input: unknown) => {
+      if (typeof input === "function") {
+        return (input as (client: MockPrisma) => Promise<unknown>)(mock);
+      }
+      // Array of promises (batch transaction)
+      return Promise.all(input as Promise<unknown>[]);
+    },
   );
 
   setPrisma(mock as unknown as PrismaClient);

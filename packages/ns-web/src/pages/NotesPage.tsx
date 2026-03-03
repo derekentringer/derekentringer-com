@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Note, NoteSortField, SortOrder } from "@derekentringer/shared/ns";
+import type { Note, NoteSortField, SortOrder, FolderInfo } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import {
   fetchNotes,
@@ -9,6 +9,10 @@ import {
   fetchTrash,
   restoreNote as apiRestoreNote,
   permanentDeleteNote as apiPermanentDeleteNote,
+  fetchFolders,
+  reorderNotes as apiReorderNotes,
+  renameFolderApi,
+  deleteFolderApi,
 } from "../api/notes.ts";
 import {
   MarkdownEditor,
@@ -20,6 +24,8 @@ import {
   type ViewMode,
 } from "../components/EditorToolbar.tsx";
 import { SortControls } from "../components/SortControls.tsx";
+import { FolderList } from "../components/FolderList.tsx";
+import { NoteList } from "../components/NoteList.tsx";
 
 type SidebarView = "notes" | "trash";
 
@@ -41,8 +47,13 @@ export function NotesPage() {
   const editorRef = useRef<MarkdownEditorHandle>(null);
 
   // Sort state
-  const [sortBy, setSortBy] = useState<NoteSortField>("updatedAt");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [sortBy, setSortBy] = useState<NoteSortField>("sortOrder");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+
+  // Folder state
+  const [folders, setFolders] = useState<FolderInfo[]>([]);
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [allNotesCount, setAllNotesCount] = useState(0);
 
   // Trash state
   const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
@@ -64,22 +75,45 @@ export function NotesPage() {
     };
   }, [search]);
 
+  const loadFolders = useCallback(async () => {
+    try {
+      const [folderResult, notesResult] = await Promise.all([
+        fetchFolders(),
+        fetchNotes({ pageSize: 0 }),
+      ]);
+      setFolders(folderResult.folders);
+      setAllNotesCount(notesResult.total);
+    } catch {
+      // Silent fail for folder loading
+    }
+  }, []);
+
   const loadNotes = useCallback(
     async (searchQuery?: string) => {
       try {
+        const folderParam =
+          activeFolder === "__unfiled__"
+            ? undefined
+            : activeFolder ?? undefined;
         const result = await fetchNotes({
           search: searchQuery || undefined,
+          folder: folderParam,
           sortBy,
           sortOrder,
         });
-        setNotes(result.notes);
+        let filtered = result.notes;
+        // Client-side filter for "unfiled" (notes with no folder)
+        if (activeFolder === "__unfiled__") {
+          filtered = filtered.filter((n) => !n.folder);
+        }
+        setNotes(filtered);
       } catch {
         showError("Failed to load notes");
       } finally {
         setIsLoading(false);
       }
     },
-    [sortBy, sortOrder],
+    [sortBy, sortOrder, activeFolder],
   );
 
   const loadTrash = useCallback(async () => {
@@ -92,10 +126,15 @@ export function NotesPage() {
     }
   }, []);
 
-  // Load notes on mount and when search/sort changes
+  // Load notes on mount and when search/sort/folder changes
   useEffect(() => {
     loadNotes(debouncedSearch || undefined);
   }, [debouncedSearch, loadNotes]);
+
+  // Load folders on mount
+  useEffect(() => {
+    loadFolders();
+  }, [loadFolders]);
 
   // Load trash count on mount (for badge)
   useEffect(() => {
@@ -132,9 +171,14 @@ export function NotesPage() {
 
   async function handleCreate() {
     try {
-      const note = await createNote({ title: "Untitled" });
+      const folder =
+        activeFolder && activeFolder !== "__unfiled__"
+          ? activeFolder
+          : undefined;
+      const note = await createNote({ title: "Untitled", folder });
       setNotes((prev) => [note, ...prev]);
       selectNote(note);
+      loadFolders();
     } catch {
       showError("Failed to create note");
     }
@@ -174,6 +218,7 @@ export function NotesPage() {
       setIsDirty(false);
       setConfirmDelete(false);
       setTrashTotal((prev) => prev + 1);
+      loadFolders();
     } catch {
       showError("Failed to delete note");
     }
@@ -190,6 +235,7 @@ export function NotesPage() {
       setSelectedId(null);
       setTitle("");
       setContent("");
+      loadFolders();
     } catch {
       showError("Failed to restore note");
     }
@@ -213,6 +259,66 @@ export function NotesPage() {
       setConfirmPermanentDelete(false);
     } catch {
       showError("Failed to permanently delete note");
+    }
+  }
+
+  async function handleReorder(activeId: string, overId: string) {
+    const oldIndex = notes.findIndex((n) => n.id === activeId);
+    const newIndex = notes.findIndex((n) => n.id === overId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = [...notes];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+
+    // Optimistic update
+    const updatedNotes = reordered.map((n, i) => ({ ...n, sortOrder: i }));
+    setNotes(updatedNotes);
+
+    try {
+      await apiReorderNotes({
+        order: updatedNotes.map((n) => ({
+          id: n.id,
+          sortOrder: n.sortOrder,
+        })),
+      });
+    } catch {
+      showError("Failed to reorder notes");
+      loadNotes(debouncedSearch || undefined);
+    }
+  }
+
+  async function handleCreateFolder(name: string) {
+    // Creating a folder = creating a note with that folder name, then moving to it
+    // Actually, folders are derived from notes. To "create" a folder, we set activeFolder
+    // and new notes will be created in it. But we need at least one note to have the folder.
+    // For now, just switch to viewing that folder. The folder will appear once a note is in it.
+    setActiveFolder(name);
+  }
+
+  async function handleRenameFolder(oldName: string, newName: string) {
+    try {
+      await renameFolderApi(oldName, newName);
+      if (activeFolder === oldName) {
+        setActiveFolder(newName);
+      }
+      loadFolders();
+      loadNotes(debouncedSearch || undefined);
+    } catch {
+      showError("Failed to rename folder");
+    }
+  }
+
+  async function handleDeleteFolder(name: string) {
+    try {
+      await deleteFolderApi(name);
+      if (activeFolder === name) {
+        setActiveFolder(null);
+      }
+      loadFolders();
+      loadNotes(debouncedSearch || undefined);
+    } catch {
+      showError("Failed to delete folder");
     }
   }
 
@@ -282,7 +388,19 @@ export function NotesPage() {
               onSortOrderChange={setSortOrder}
             />
 
-            <nav className="flex-1 overflow-y-auto p-2">
+            <FolderList
+              folders={folders}
+              activeFolder={activeFolder}
+              totalNotes={allNotesCount}
+              onSelectFolder={setActiveFolder}
+              onCreateFolder={handleCreateFolder}
+              onRenameFolder={handleRenameFolder}
+              onDeleteFolder={handleDeleteFolder}
+            />
+
+            <div className="border-t border-border mx-2" />
+
+            <nav className="flex-1 overflow-y-auto p-2" data-testid="note-list">
               {isLoading ? (
                 <div className="px-3 py-2 text-sm text-muted-foreground">
                   Loading...
@@ -292,19 +410,13 @@ export function NotesPage() {
                   {debouncedSearch ? "No notes found" : "No notes yet"}
                 </div>
               ) : (
-                notes.map((note) => (
-                  <button
-                    key={note.id}
-                    onClick={() => selectNote(note)}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors truncate ${
-                      note.id === selectedId
-                        ? "bg-accent text-foreground"
-                        : "text-muted hover:bg-accent hover:text-foreground"
-                    }`}
-                  >
-                    {note.title || "Untitled"}
-                  </button>
-                ))
+                <NoteList
+                  notes={notes}
+                  selectedId={selectedId}
+                  onSelect={selectNote}
+                  onReorder={handleReorder}
+                  sortByManual={sortBy === "sortOrder"}
+                />
               )}
             </nav>
           </>

@@ -28,6 +28,7 @@ describe("SortControls", () => {
       />,
     );
 
+    expect(screen.getByText("Manual")).toBeInTheDocument();
     expect(screen.getByText("Modified")).toBeInTheDocument();
     expect(screen.getByText("Created")).toBeInTheDocument();
     expect(screen.getByText("Title")).toBeInTheDocument();

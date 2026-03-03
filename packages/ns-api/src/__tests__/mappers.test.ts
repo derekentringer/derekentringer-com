@@ -12,6 +12,7 @@ describe("toNote", () => {
       folder: "work",
       tags: ["tag1", "tag2"],
       summary: "A summary",
+      sortOrder: 0,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,

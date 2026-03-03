@@ -44,6 +44,10 @@ const mockDeleteNote = vi.fn();
 const mockFetchTrash = vi.fn();
 const mockRestoreNote = vi.fn();
 const mockPermanentDeleteNote = vi.fn();
+const mockFetchFolders = vi.fn();
+const mockReorderNotes = vi.fn();
+const mockRenameFolderApi = vi.fn();
+const mockDeleteFolderApi = vi.fn();
 const mockLogout = vi.fn();
 
 vi.mock("../api/notes.ts", () => ({
@@ -54,6 +58,10 @@ vi.mock("../api/notes.ts", () => ({
   fetchTrash: (...args: unknown[]) => mockFetchTrash(...args),
   restoreNote: (...args: unknown[]) => mockRestoreNote(...args),
   permanentDeleteNote: (...args: unknown[]) => mockPermanentDeleteNote(...args),
+  fetchFolders: (...args: unknown[]) => mockFetchFolders(...args),
+  reorderNotes: (...args: unknown[]) => mockReorderNotes(...args),
+  renameFolderApi: (...args: unknown[]) => mockRenameFolderApi(...args),
+  deleteFolderApi: (...args: unknown[]) => mockDeleteFolderApi(...args),
 }));
 
 vi.mock("../context/AuthContext.tsx", () => ({
@@ -67,6 +75,7 @@ const mockNote = {
   folder: null,
   tags: [],
   summary: null,
+  sortOrder: 0,
   createdAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-01T00:00:00.000Z",
   deletedAt: null,
@@ -92,6 +101,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFetchNotes.mockResolvedValue({ notes: [], total: 0 });
   mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
+  mockFetchFolders.mockResolvedValue({ folders: [] });
 });
 
 describe("NotesPage", () => {
@@ -184,8 +194,8 @@ describe("NotesPage", () => {
       // Default call should include sortBy and sortOrder
       expect(mockFetchNotes).toHaveBeenCalledWith(
         expect.objectContaining({
-          sortBy: "updatedAt",
-          sortOrder: "desc",
+          sortBy: "sortOrder",
+          sortOrder: "asc",
         }),
       );
     });
@@ -210,14 +220,14 @@ describe("NotesPage", () => {
       renderNotesPage();
       await screen.findByText("No notes yet");
 
-      // Default is desc, button shows down arrow
-      const sortOrderButton = screen.getByLabelText("Sort descending");
+      // Default is asc, button shows up arrow
+      const sortOrderButton = screen.getByLabelText("Sort ascending");
       await userEvent.click(sortOrderButton);
 
       await waitFor(() => {
         expect(mockFetchNotes).toHaveBeenCalledWith(
           expect.objectContaining({
-            sortOrder: "asc",
+            sortOrder: "desc",
           }),
         );
       });

@@ -14,6 +14,7 @@ export function toNote(row: PrismaNote): Note {
     folder: row.folder,
     tags,
     summary: row.summary,
+    sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,

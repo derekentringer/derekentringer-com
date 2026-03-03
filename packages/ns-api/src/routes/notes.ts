@@ -5,6 +5,8 @@ import type {
   NoteListResponse,
   NoteSortField,
   SortOrder,
+  FolderListResponse,
+  ReorderNotesRequest,
 } from "@derekentringer/shared/ns";
 import { toNote } from "../lib/mappers.js";
 import {
@@ -16,12 +18,16 @@ import {
   softDeleteNote,
   restoreNote,
   permanentDeleteNote,
+  listFolders,
+  reorderNotes,
+  renameFolder,
+  deleteFolder,
 } from "../store/noteStore.js";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const VALID_SORT_FIELDS: NoteSortField[] = ["title", "createdAt", "updatedAt"];
+const VALID_SORT_FIELDS: NoteSortField[] = ["title", "createdAt", "updatedAt", "sortOrder"];
 const VALID_SORT_ORDERS: SortOrder[] = ["asc", "desc"];
 
 const createNoteSchema = {
@@ -51,8 +57,64 @@ const updateNoteSchema = {
   },
 };
 
+const reorderSchema = {
+  body: {
+    type: "object" as const,
+    required: ["order"],
+    additionalProperties: false,
+    properties: {
+      order: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "sortOrder"],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string" },
+            sortOrder: { type: "integer" },
+          },
+        },
+      },
+    },
+  },
+};
+
+const renameFolderSchema = {
+  body: {
+    type: "object" as const,
+    required: ["newName"],
+    additionalProperties: false,
+    properties: {
+      newName: { type: "string", minLength: 1 },
+    },
+  },
+};
+
 export default async function noteRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  // GET /notes/folders — MUST be before /:id
+  fastify.get(
+    "/folders",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const folders = await listFolders();
+      const response: FolderListResponse = { folders };
+      return reply.send(response);
+    },
+  );
+
+  // PUT /notes/reorder — MUST be before /:id
+  fastify.put<{ Body: ReorderNotesRequest }>(
+    "/reorder",
+    { schema: reorderSchema },
+    async (
+      request: FastifyRequest<{ Body: ReorderNotesRequest }>,
+      reply: FastifyReply,
+    ) => {
+      await reorderNotes(request.body.order);
+      return reply.status(204).send();
+    },
+  );
 
   // GET /notes/trash — MUST be before /:id
   fastify.get(
@@ -168,6 +230,37 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     ) => {
       const note = await createNote(request.body);
       return reply.status(201).send({ note: toNote(note) });
+    },
+  );
+
+  // PATCH /notes/folders/:name — rename a folder
+  fastify.patch<{ Params: { name: string }; Body: { newName: string } }>(
+    "/folders/:name",
+    { schema: renameFolderSchema },
+    async (
+      request: FastifyRequest<{
+        Params: { name: string };
+        Body: { newName: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { name } = request.params;
+      const { newName } = request.body;
+      const updated = await renameFolder(name, newName);
+      return reply.send({ updated });
+    },
+  );
+
+  // DELETE /notes/folders/:name — unfile all notes in folder
+  fastify.delete(
+    "/folders/:name",
+    async (
+      request: FastifyRequest<{ Params: { name: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { name } = request.params;
+      const updated = await deleteFolder(name);
+      return reply.send({ updated });
     },
   );
 

@@ -52,6 +52,7 @@ describe("Note routes", () => {
       folder: "work",
       tags: ["tag1"],
       summary: null,
+      sortOrder: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,
@@ -64,6 +65,7 @@ describe("Note routes", () => {
   describe("POST /notes", () => {
     it("creates a note with valid data (201)", async () => {
       const token = await getAccessToken();
+      mockPrisma.note.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
       mockPrisma.note.create.mockResolvedValue(
         makeMockNoteRow({ title: "New Note", content: "Hello", folder: null, tags: [] }),
       );
@@ -232,6 +234,152 @@ describe("Note routes", () => {
       const res = await app.inject({
         method: "GET",
         url: "/notes/trash",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- GET /notes/folders ---
+
+  describe("GET /notes/folders", () => {
+    it("returns folder list (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.groupBy.mockResolvedValue([
+        { folder: "work", _count: { id: 3 } },
+      ]);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/folders",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.folders).toHaveLength(1);
+      expect(body.folders[0].name).toBe("work");
+      expect(body.folders[0].count).toBe(3);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/folders",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- PUT /notes/reorder ---
+
+  describe("PUT /notes/reorder", () => {
+    it("reorders notes (204)", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/reorder",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          order: [
+            { id: VALID_UUID, sortOrder: 1 },
+            { id: VALID_UUID_2, sortOrder: 0 },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(204);
+    });
+
+    it("returns 400 with missing order", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/reorder",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/reorder",
+        payload: { order: [] },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- PATCH /notes/folders/:name ---
+
+  describe("PATCH /notes/folders/:name", () => {
+    it("renames a folder (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/notes/folders/work",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { newName: "office" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().updated).toBe(3);
+    });
+
+    it("returns 400 with missing newName", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/notes/folders/work",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PATCH",
+        url: "/notes/folders/work",
+        payload: { newName: "office" },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- DELETE /notes/folders/:name ---
+
+  describe("DELETE /notes/folders/:name", () => {
+    it("deletes a folder and unfiles notes (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.updateMany.mockResolvedValue({ count: 2 });
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/notes/folders/work",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().updated).toBe(2);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/notes/folders/work",
       });
 
       expect(res.statusCode).toBe(401);

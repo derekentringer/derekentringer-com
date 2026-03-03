@@ -5,6 +5,7 @@ export interface Note {
   folder: string | null;
   tags: string[];
   summary: string | null;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -29,8 +30,21 @@ export interface NoteListResponse {
   total: number;
 }
 
-export type NoteSortField = "title" | "createdAt" | "updatedAt";
+export type NoteSortField = "title" | "createdAt" | "updatedAt" | "sortOrder";
 export type SortOrder = "asc" | "desc";
+
+export interface FolderInfo {
+  name: string;
+  count: number;
+}
+
+export interface FolderListResponse {
+  folders: FolderInfo[];
+}
+
+export interface ReorderNotesRequest {
+  order: { id: string; sortOrder: number }[];
+}
 
 export interface SyncChange {
   id: string;

@@ -5,6 +5,8 @@ import type {
   NoteListResponse,
   NoteSortField,
   SortOrder,
+  FolderListResponse,
+  ReorderNotesRequest,
 } from "@derekentringer/shared/ns";
 import { apiFetch } from "./client.ts";
 
@@ -129,4 +131,57 @@ export async function permanentDeleteNote(id: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`Failed to permanently delete note: ${response.status}`);
   }
+}
+
+export async function fetchFolders(): Promise<FolderListResponse> {
+  const response = await apiFetch("/notes/folders");
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch folders: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function reorderNotes(
+  data: ReorderNotesRequest,
+): Promise<void> {
+  const response = await apiFetch("/notes/reorder", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to reorder notes: ${response.status}`);
+  }
+}
+
+export async function renameFolderApi(
+  name: string,
+  newName: string,
+): Promise<{ updated: number }> {
+  const response = await apiFetch(`/notes/folders/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ newName }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to rename folder: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteFolderApi(
+  name: string,
+): Promise<{ updated: number }> {
+  const response = await apiFetch(`/notes/folders/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete folder: ${response.status}`);
+  }
+
+  return response.json();
 }

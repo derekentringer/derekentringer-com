@@ -8,6 +8,10 @@ import {
   fetchTrash,
   restoreNote,
   permanentDeleteNote,
+  fetchFolders,
+  reorderNotes,
+  renameFolderApi,
+  deleteFolderApi,
 } from "../api/notes.ts";
 
 const mockApiFetch = vi.fn();
@@ -26,6 +30,7 @@ const mockNote = {
   folder: null,
   tags: [],
   summary: null,
+  sortOrder: 0,
   createdAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-01T00:00:00.000Z",
   deletedAt: null,
@@ -259,6 +264,101 @@ describe("permanentDeleteNote", () => {
 
     await expect(permanentDeleteNote("note-1")).rejects.toThrow(
       "Failed to permanently delete note: 404",
+    );
+  });
+});
+
+describe("fetchFolders", () => {
+  it("fetches folder list", async () => {
+    const folders = [{ name: "work", count: 3 }];
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ folders }),
+    });
+
+    const result = await fetchFolders();
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders");
+    expect(result).toEqual({ folders });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(fetchFolders()).rejects.toThrow("Failed to fetch folders: 500");
+  });
+});
+
+describe("reorderNotes", () => {
+  it("sends PUT with order body", async () => {
+    mockApiFetch.mockResolvedValue({ ok: true });
+
+    const order = [
+      { id: "note-1", sortOrder: 0 },
+      { id: "note-2", sortOrder: 1 },
+    ];
+    await reorderNotes({ order });
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ order }),
+    });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(reorderNotes({ order: [] })).rejects.toThrow(
+      "Failed to reorder notes: 500",
+    );
+  });
+});
+
+describe("renameFolderApi", () => {
+  it("sends PATCH with newName", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ updated: 3 }),
+    });
+
+    const result = await renameFolderApi("work", "office");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/work", {
+      method: "PATCH",
+      body: JSON.stringify({ newName: "office" }),
+    });
+    expect(result).toEqual({ updated: 3 });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(renameFolderApi("work", "office")).rejects.toThrow(
+      "Failed to rename folder: 500",
+    );
+  });
+});
+
+describe("deleteFolderApi", () => {
+  it("sends DELETE request", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ updated: 2 }),
+    });
+
+    const result = await deleteFolderApi("work");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/work", {
+      method: "DELETE",
+    });
+    expect(result).toEqual({ updated: 2 });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(deleteFolderApi("work")).rejects.toThrow(
+      "Failed to delete folder: 500",
     );
   });
 });

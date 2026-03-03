@@ -8,6 +8,7 @@ interface SortControlsProps {
 }
 
 const sortFields: { value: NoteSortField; label: string }[] = [
+  { value: "sortOrder", label: "Manual" },
   { value: "updatedAt", label: "Modified" },
   { value: "createdAt", label: "Created" },
   { value: "title", label: "Title" },
