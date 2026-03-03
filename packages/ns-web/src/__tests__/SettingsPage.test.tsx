@@ -71,6 +71,7 @@ describe("SettingsPage", () => {
       "ns-ai-settings",
       JSON.stringify({
         completions: true,
+        completionStyle: "continue",
         summarize: false,
         tagSuggestions: true,
       }),
@@ -88,5 +89,57 @@ describe("SettingsPage", () => {
     renderSettingsPage();
 
     expect(screen.getByText("Back to notes")).toBeInTheDocument();
+  });
+
+  // --- Completion style radio group ---
+
+  it("shows style radio group when completions enabled", async () => {
+    renderSettingsPage();
+
+    // Enable completions
+    const switches = screen.getAllByRole("switch");
+    await userEvent.click(switches[0]);
+
+    expect(screen.getByRole("radiogroup", { name: "Completion style" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Continue writing")).toBeInTheDocument();
+    expect(screen.getByLabelText("Markdown assist")).toBeInTheDocument();
+    expect(screen.getByLabelText("Brief")).toBeInTheDocument();
+  });
+
+  it("hides style radio group when completions disabled", () => {
+    renderSettingsPage();
+
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  });
+
+  it("selecting a different style persists it", async () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({
+        completions: true,
+        completionStyle: "continue",
+        summarize: false,
+        tagSuggestions: false,
+      }),
+    );
+
+    renderSettingsPage();
+
+    const briefRadio = screen.getByLabelText("Brief");
+    await userEvent.click(briefRadio);
+
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.completionStyle).toBe("brief");
+  });
+
+  it("defaults style selection to Continue writing", async () => {
+    renderSettingsPage();
+
+    // Enable completions
+    const switches = screen.getAllByRole("switch");
+    await userEvent.click(switches[0]);
+
+    const continueRadio = screen.getByLabelText("Continue writing") as HTMLInputElement;
+    expect(continueRadio.checked).toBe(true);
   });
 });

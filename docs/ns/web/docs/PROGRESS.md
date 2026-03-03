@@ -53,6 +53,7 @@
 
 - [~] [04 — AI Features](features/04-ai-features.md)
   - [x] 04a — Summarize, Auto-Tag, Inline Completions (Anthropic Claude API via ns-api, SSE streaming ghost text, AI settings page with toggles, sidebar footer redesign)
+  - [x] 04a.1 — Completion Style Options (configurable styles: Continue writing, Markdown assist, Brief — per-style system prompts and max_tokens)
   - [ ] 04b — Select-and-Rewrite
   - [ ] 04c — Semantic Search (pgvector)
   - [ ] 04d — Q&A Over Notes

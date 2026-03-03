@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useAiSettings, type AiSettings } from "../hooks/useAiSettings.ts";
+import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
 
 function ToggleSwitch({
   label,
@@ -31,11 +31,17 @@ function ToggleSwitch({
   );
 }
 
-const SETTING_LABELS: Record<keyof AiSettings, string> = {
-  completions: "Inline completions",
-  summarize: "Summarize",
-  tagSuggestions: "Auto-tag suggestions",
-};
+const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions"; label: string }[] = [
+  { key: "completions", label: "Inline completions" },
+  { key: "summarize", label: "Summarize" },
+  { key: "tagSuggestions", label: "Auto-tag suggestions" },
+];
+
+const STYLE_OPTIONS: { value: CompletionStyle; label: string }[] = [
+  { value: "continue", label: "Continue writing" },
+  { value: "markdown", label: "Markdown assist" },
+  { value: "brief", label: "Brief" },
+];
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -73,16 +79,32 @@ export function SettingsPage() {
           </h2>
 
           <div className="divide-y divide-border">
-            {(Object.keys(SETTING_LABELS) as (keyof AiSettings)[]).map(
-              (key) => (
+            {TOGGLE_SETTINGS.map(({ key, label }) => (
+              <div key={key}>
                 <ToggleSwitch
-                  key={key}
-                  label={SETTING_LABELS[key]}
+                  label={label}
                   checked={settings[key]}
                   onChange={(value) => updateSetting(key, value)}
                 />
-              ),
-            )}
+                {key === "completions" && settings.completions && (
+                  <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">
+                    {STYLE_OPTIONS.map(({ value, label: styleLabel }) => (
+                      <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="completionStyle"
+                          value={value}
+                          checked={settings.completionStyle === value}
+                          onChange={() => updateSetting("completionStyle", value)}
+                          className="accent-primary"
+                        />
+                        <span className="text-sm text-muted-foreground">{styleLabel}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>
