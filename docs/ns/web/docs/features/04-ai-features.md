@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a Complete; 04b–04f Not Started)
+**Status:** Partial (04a–04a.1 Complete; 04b–04f Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -13,6 +13,7 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | Release | Branch | Summary | Status |
 |---------|--------|---------|--------|
 | **04a** | `feature/ns-04a-ai-features` | Inline ghost text completions (SSE streaming), note summarization, smart auto-tagging, AI settings page with toggles, sidebar footer redesign | Complete |
+| **04a.1** | `feature/ns-04a1-completion-styles` | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | Complete |
 | **04b** | — | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) | Not Started |
 | **04c** | — | Semantic search (pgvector embeddings, complementing tsvector keyword search) | Not Started |
 | **04d** | — | Q&A over notes (natural language questions with citations) | Not Started |
@@ -99,6 +100,54 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 - `SettingsPage.test.tsx` — tests toggle rendering, defaults, localStorage persistence (5 tests)
 - `useAiSettings.test.ts` — tests defaults, read/write, corruption handling (5 tests)
 - Updated: `config.test.ts`, `notes.test.ts`, `noteStore.test.ts`, `NotesPage.test.tsx`
+
+---
+
+## Release 04a.1: Completion Style Options
+
+### Summary
+
+Adds configurable completion styles so the AI adapts its behavior based on user preference. Three styles are offered: **Continue writing** (default, natural text continuation), **Markdown assist** (focused on markdown syntax/formatting), and **Brief** (short completions, just a few words).
+
+### API Changes
+
+#### AI Service (`packages/ns-api/src/services/aiService.ts`)
+- Added `CompletionStyle` type: `"continue" | "markdown" | "brief"`
+- Added `COMPLETION_PROMPTS` map with style-specific system prompts
+- Added `COMPLETION_MAX_TOKENS` map: `continue` and `markdown` → 200, `brief` → 50
+- Updated `generateCompletion()` to accept optional `style` parameter (defaults to `"continue"`)
+
+#### Routes (`packages/ns-api/src/routes/ai.ts`)
+- Added optional `style` field to `/ai/complete` schema (enum: `["continue", "markdown", "brief"]`)
+- Invalid style values rejected with 400
+- Passes style to `generateCompletion()`, defaults to `"continue"` when omitted
+
+### Frontend Changes
+
+#### Settings Hook (`packages/ns-web/src/hooks/useAiSettings.ts`)
+- Added `CompletionStyle` type export
+- Added `completionStyle` field to `AiSettings` (default: `"continue"`)
+- `loadSettings()` validates `completionStyle` against allowed values, falls back to `"continue"`
+- Generalized `updateSetting` signature to `<K extends keyof AiSettings>(key: K, value: AiSettings[K])` to accept both booleans and style strings
+
+#### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
+- Added radio-button group below the "Inline completions" toggle (conditionally rendered when completions enabled)
+- Three options: Continue writing, Markdown assist, Brief
+- Replaced `SETTING_LABELS` record with `TOGGLE_SETTINGS` array to skip `completionStyle` in toggle iteration
+
+#### AI API Client (`packages/ns-web/src/api/ai.ts`)
+- Added optional `style` parameter to `fetchCompletion()` — included in POST body when provided
+
+#### NotesPage (`packages/ns-web/src/pages/NotesPage.tsx`)
+- Updated `aiExtensions` memo to bind the current `completionStyle` via closure
+- Added `settings.completionStyle` to `useMemo` dependency array
+
+### Tests
+- `useAiSettings.test.ts` — added tests for `completionStyle` read/write, invalid value fallback (3 new tests)
+- `SettingsPage.test.tsx` — added tests for style radio group visibility, selection persistence, default (4 new tests)
+- `aiService.test.ts` — added tests for style-based prompts, brief max_tokens, default style (3 new tests)
+- `aiRoutes.test.ts` — added tests for style parameter acceptance, optional default, invalid style 400 (3 new tests)
+- `ai-api.test.ts` — added test for style in request body (1 new test)
 
 ---
 

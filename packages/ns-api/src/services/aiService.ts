@@ -11,19 +11,36 @@ function getClient(): Anthropic {
   return client;
 }
 
+export type CompletionStyle = "continue" | "markdown" | "brief";
+
+const COMPLETION_PROMPTS: Record<CompletionStyle, string> = {
+  continue:
+    "You are a writing assistant. Continue the user's markdown text naturally. Output only the continuation, no commentary.",
+  markdown:
+    "You are a markdown formatting assistant. Help the user with markdown syntax — suggest tables, code blocks, links, lists, headings, or other formatting based on context. Output only the markdown, no commentary.",
+  brief:
+    "You are a writing assistant. Complete the user's current thought with just a few words (at most one short sentence). Output only the brief completion, no commentary.",
+};
+
+const COMPLETION_MAX_TOKENS: Record<CompletionStyle, number> = {
+  continue: 200,
+  markdown: 200,
+  brief: 50,
+};
+
 export async function* generateCompletion(
   context: string,
   signal?: AbortSignal,
+  style: CompletionStyle = "continue",
 ): AsyncGenerator<string> {
   const anthropic = getClient();
 
   const stream = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 200,
+    max_tokens: COMPLETION_MAX_TOKENS[style],
     temperature: 0.7,
     stream: true,
-    system:
-      "You are a writing assistant. Continue the user's markdown text naturally. Output only the continuation, no commentary.",
+    system: COMPLETION_PROMPTS[style],
     messages: [{ role: "user", content: context }],
   });
 

@@ -18,6 +18,7 @@ const completeSchema = {
     additionalProperties: false,
     properties: {
       context: { type: "string", minLength: 1 },
+      style: { type: "string", enum: ["continue", "markdown", "brief"] },
     },
   },
 };
@@ -48,14 +49,14 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
   // POST /ai/complete — SSE streaming
-  fastify.post<{ Body: { context: string } }>(
+  fastify.post<{ Body: { context: string; style?: string } }>(
     "/complete",
     { schema: completeSchema },
     async (
-      request: FastifyRequest<{ Body: { context: string } }>,
+      request: FastifyRequest<{ Body: { context: string; style?: string } }>,
       reply: FastifyReply,
     ) => {
-      const { context } = request.body;
+      const { context, style } = request.body;
 
       const abortController = new AbortController();
       const passthrough = new PassThrough();
@@ -71,6 +72,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
           for await (const chunk of generateCompletion(
             context,
             abortController.signal,
+            (style as "continue" | "markdown" | "brief") ?? "continue",
           )) {
             if (abortController.signal.aborted) break;
             passthrough.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);

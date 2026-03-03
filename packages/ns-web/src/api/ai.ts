@@ -1,12 +1,14 @@
 import { apiFetch } from "./client.ts";
+import type { CompletionStyle } from "../hooks/useAiSettings.ts";
 
 export async function* fetchCompletion(
   context: string,
   signal: AbortSignal,
+  style?: CompletionStyle,
 ): AsyncGenerator<string> {
   const response = await apiFetch("/ai/complete", {
     method: "POST",
-    body: JSON.stringify({ context }),
+    body: JSON.stringify({ context, ...(style && { style }) }),
     signal,
   });
 
