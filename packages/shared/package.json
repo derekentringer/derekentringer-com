@@ -20,6 +20,10 @@
     "./finance": {
       "types": "./src/finance/types.ts",
       "default": "./dist/finance/types.js"
+    },
+    "./ns": {
+      "types": "./src/ns/index.ts",
+      "default": "./dist/ns/index.js"
     }
   },
   "scripts": {

@@ -1,6 +1,6 @@
 # 02 — Note Management
 
-**Status:** Not Started
+**Status:** Partial (basic CRUD complete — see [features/02-note-management.md](../features/02-note-management.md))
 **Phase:** 2 — Notes Core
 **Priority:** High
 

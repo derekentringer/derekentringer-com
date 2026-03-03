@@ -38,12 +38,12 @@
 
 ### Phase 1: Foundation — High Priority
 
-- [ ] [00 — Project Scaffolding](feature_planning/00-project-scaffolding.md)
-- [ ] [01 — Auth](feature_planning/01-auth.md)
+- [x] [00 — Project Scaffolding](features/00-project-scaffolding.md)
+- [x] [01 — Auth](features/01-auth.md)
 
 ### Phase 2: Notes Core — High Priority
 
-- [ ] [02 — Note Management](feature_planning/02-note-management.md)
+- [x] [02 — Note Management](features/02-note-management.md) — basic CRUD (create, list, search, update, soft delete), sidebar with note list + search, plain-text editor with manual save + Cmd/Ctrl+S, delete confirmation flow, error toast, Vitest test suites for both ns-api (61 tests) and ns-web (20 tests)
 - [ ] [03 — Search & Organization](feature_planning/03-search-and-organization.md)
 
 ### Phase 3: AI & Offline — Medium Priority
