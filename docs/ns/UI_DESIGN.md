@@ -37,13 +37,13 @@ Minimal accent color. The UI stays out of the way; content is the focus.
 | Text (primary) | `#cccccc` | Body text, note content |
 | Text (secondary) | `#8b8b8b` | Dates, metadata, placeholders |
 | Text (heading) | `#e0e0e0` | Note titles, section headings |
-| Accent | `#4a9eff` | Selected items, active tab, links, primary buttons |
-| Accent (hover) | `#5aafff` | Hover on accent elements |
+| Accent | `#c2fe0c` | Selected items, active tab, links, primary buttons |
+| Accent (hover) | `#a8db00` | Hover on accent elements |
 | Success | `#4ec9b0` | Synced indicator, save confirmation |
-| Warning | `#cca700` | Offline indicator, pending sync |
+| Warning | `#ff5500` | Offline indicator, pending sync |
 | Error | `#f14c4c` | Errors, delete actions |
 | Ghost text | `#555555` | AI inline completions |
-| Selection | `#264f78` | Text selection in editor |
+| Selection | `#243600` | Text selection in editor |
 | Active line | `#2a2a2a` | Current line highlight in editor |
 
 #### Light Mode
@@ -57,13 +57,13 @@ Minimal accent color. The UI stays out of the way; content is the focus.
 | Text (primary) | `#333333` | Body text, note content |
 | Text (secondary) | `#777777` | Dates, metadata, placeholders |
 | Text (heading) | `#1a1a1a` | Note titles, section headings |
-| Accent | `#0066cc` | Selected items, active tab, links, primary buttons |
-| Accent (hover) | `#0055aa` | Hover on accent elements |
+| Accent | `#4a6b00` | Selected items, active tab, links, primary buttons |
+| Accent (hover) | `#3d5c00` | Hover on accent elements |
 | Success | `#2d9f7f` | Synced indicator |
-| Warning | `#b89500` | Offline indicator |
+| Warning | `#c44000` | Offline indicator |
 | Error | `#d32f2f` | Errors, delete actions |
 | Ghost text | `#bbbbbb` | AI inline completions |
-| Selection | `#add6ff` | Text selection in editor |
+| Selection | `#e8f5b0` | Text selection in editor |
 | Active line | `#f7f7f7` | Current line highlight in editor |
 
 ---
@@ -170,7 +170,7 @@ Users choose their preferred monospace font in settings. All three are bundled/a
 
 - Active/selected note: accent-colored left border + tertiary background
 - Hover: tertiary background
-- Unsynced indicator: small yellow dot next to title
+- Unsynced indicator: small orange dot next to title
 
 ### Editor Area
 
@@ -579,8 +579,8 @@ Note: Cmd+B is context-sensitive — toggles sidebar when focus is outside edito
 | State | Indicator |
 |-------|-----------|
 | Synced | No indicator (clean) |
-| Modified (unsynced) | Small yellow dot next to title |
-| New (never synced) | Small blue dot next to title |
+| Modified (unsynced) | Small orange dot next to title |
+| New (never synced) | Small accent (lime) dot next to title |
 | Conflict (future) | Small red dot next to title |
 
 ### Save Status (Editor Status Bar)
