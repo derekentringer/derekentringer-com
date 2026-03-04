@@ -99,3 +99,9 @@ export interface AiSuggestTagsRequest {
 export interface AiSuggestTagsResponse {
   tags: string[];
 }
+
+export interface EmbeddingStatus {
+  enabled: boolean;
+  pendingCount: number;
+  totalWithEmbeddings: number;
+}

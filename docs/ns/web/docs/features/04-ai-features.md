@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04b Complete; 04c–04f Not Started)
+**Status:** Partial (04a–04c Complete; 04d–04f Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -15,7 +15,7 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | **04a** | `feature/ns-04a-ai-features` | Inline ghost text completions (SSE streaming), note summarization, smart auto-tagging, AI settings page with toggles, sidebar footer redesign | Complete |
 | **04a.1** | `feature/ns-04a1-completion-styles` | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | Complete |
 | **04b** | `feature/ns-04b-select-and-rewrite` | Select-and-rewrite with floating menu, keyboard shortcut, right-click trigger, settings toggle | Complete |
-| **04c** | — | Semantic search (pgvector embeddings, complementing tsvector keyword search) | Not Started |
+| **04c** | `feature/ns-04c-semantic-search` | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | Complete |
 | **04d** | — | Q&A over notes (natural language questions with citations) | Not Started |
 | **04e** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
 | **04f** | — | Continue writing, heading/structure suggestions for empty notes | Not Started |
@@ -213,6 +213,114 @@ Adds a select-and-rewrite feature: users select text in the editor, trigger a re
 - `SettingsPage.test.tsx` — 2 new tests: keyboard shortcuts heading, shortcut descriptions; updated toggle count to 4
 - `useAiSettings.test.ts` — updated all expected defaults to include `rewrite: false`
 - `NotesPage.test.tsx` — updated mocks for `rewriteExtension` and `rewriteText`
+
+---
+
+## Release 04c: Semantic Search
+
+### Summary
+
+Adds semantic search using Voyage AI vector embeddings stored in PostgreSQL via pgvector. Notes are embedded asynchronously by a background processor. Users can search by meaning with three modes: **Keyword** (existing tsvector), **Semantic** (cosine similarity on embeddings), and **Hybrid** (weighted combination: 0.3 keyword + 0.7 semantic). The feature is gated by a server-side setting toggle.
+
+### Database Changes
+
+#### Prisma Migration (`20260304000000_add_embeddings`)
+- `CREATE EXTENSION IF NOT EXISTS vector` — enables pgvector
+- Added `embedding vector(512)` column to `notes` table (Voyage `voyage-3-lite` outputs 512 dimensions)
+- Added `embeddingUpdatedAt TIMESTAMP(3)` column to `notes` table
+- Created HNSW index: `CREATE INDEX note_embedding_idx ON "notes" USING hnsw (embedding vector_cosine_ops)`
+- Created `settings` table: `id TEXT PRIMARY KEY, value TEXT NOT NULL, "updatedAt" TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP`
+
+#### Prisma Schema (`packages/ns-api/prisma/schema.prisma`)
+- Added `embedding Unsupported("vector(512)")?` and `embeddingUpdatedAt DateTime?` to Note model
+- Added `Setting` model: `id String @id, value String, updatedAt DateTime @default(now()) @updatedAt`
+
+### API Changes
+
+#### Config (`packages/ns-api/src/config.ts`)
+- Added `voyageApiKey` to Config interface
+- Reads from `VOYAGE_API_KEY` env var (empty string fallback for dev/test)
+- Added to required secrets list for production enforcement
+
+#### Embedding Service (`packages/ns-api/src/services/embeddingService.ts`) — NEW
+- `generateEmbedding(text)` — calls Voyage AI REST API (`POST https://api.voyageai.com/v1/embeddings`, model `voyage-3-lite`, `input_type: "document"`)
+- `generateQueryEmbedding(text)` — same but `input_type: "query"`
+- Input truncated to 4000 chars for API safety
+- Returns `data[0].embedding` array
+
+#### Setting Store (`packages/ns-api/src/store/settingStore.ts`) — NEW
+- `getSetting(key)` / `setSetting(key, value)` — Prisma findUnique/upsert on Setting model
+- `isEmbeddingEnabled()` — reads `"embeddingEnabled"` key, defaults `false`
+- `setEmbeddingEnabled(enabled)` — writes boolean as string
+
+#### Embedding Processor (`packages/ns-api/src/services/embeddingProcessor.ts`) — NEW
+- `startEmbeddingProcessor()` — returns `{ stop }` handle, runs every 60s
+- Each tick: checks `isEmbeddingEnabled()`, queries notes where `embeddingUpdatedAt IS NULL OR embeddingUpdatedAt < updatedAt`, generates embedding, updates note
+- Batch size of 1 per tick (Voyage free tier: 3 RPM)
+- Rate-limit delay of 22s between notes in `processAllPendingEmbeddings()`
+- Skips notes with empty content (marks as current without embedding)
+- Uses `NOW() AT TIME ZONE 'UTC'` for consistent timestamp comparison with Prisma's UTC storage
+- `processAllPendingEmbeddings()` exported for on-demand use when enabling
+
+#### App (`packages/ns-api/src/app.ts`)
+- Wired `startEmbeddingProcessor()` in `onReady` hook alongside existing cleanup jobs
+- Stops in `onClose` hook
+
+#### Note Store (`packages/ns-api/src/store/noteStore.ts`)
+- Added `semanticSearch(query, filter, pageSize, skip)` — generates query embedding, raw SQL with `1 - (embedding <=> $1::vector)` for cosine similarity, similarity threshold > 0.3, sorted by similarity
+- Added `hybridSearch(query, filter, pageSize, skip)` — combines tsvector rank (normalized) + cosine similarity with weights (0.3 keyword + 0.7 semantic)
+- Updated `searchNotes()` to accept `mode: "keyword" | "semantic" | "hybrid"` parameter and delegate to appropriate implementation
+
+#### Routes — AI (`packages/ns-api/src/routes/ai.ts`)
+- `POST /ai/embeddings/enable` — sets `embeddingEnabled` to true, triggers `processAllPendingEmbeddings()` in background, returns `{ enabled: true }`
+- `POST /ai/embeddings/disable` — sets `embeddingEnabled` to false, returns `{ enabled: false }`
+- `GET /ai/embeddings/status` — returns `{ enabled, pendingCount, totalWithEmbeddings }`
+
+#### Routes — Notes (`packages/ns-api/src/routes/notes.ts`)
+- Added `searchMode` query parameter to `GET /notes` (enum: `keyword`, `semantic`, `hybrid`)
+- Passed to `noteStore.searchNotes()` when `search` param is present
+
+### Shared Types (`packages/shared/src/ns/types.ts`)
+- Added `EmbeddingStatus` interface: `{ enabled: boolean, pendingCount: number, totalWithEmbeddings: number }`
+
+### Frontend Changes
+
+#### AI API Client (`packages/ns-web/src/api/ai.ts`)
+- Added `enableEmbeddings()` — POST `/ai/embeddings/enable`
+- Added `disableEmbeddings()` — POST `/ai/embeddings/disable`
+- Added `getEmbeddingStatus()` — GET `/ai/embeddings/status`
+
+#### Notes API (`packages/ns-web/src/api/notes.ts`)
+- Added `searchMode?: "keyword" | "semantic" | "hybrid"` parameter to `fetchNotes()`
+- Appended to URLSearchParams when present
+
+#### Settings Hook (`packages/ns-web/src/hooks/useAiSettings.ts`)
+- Added `semanticSearch: boolean` to `AiSettings` (default: `false`)
+- Persisted in localStorage, controls UI visibility of search mode selector
+
+#### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
+- Added "Semantic search" toggle to AI Features section (5th toggle)
+- When toggled ON: calls `enableEmbeddings()` API
+- When toggled OFF: calls `disableEmbeddings()` API
+- Shows embedding status below toggle when enabled (pending count, total embedded)
+
+#### NotesPage (`packages/ns-web/src/pages/NotesPage.tsx`)
+- Added search mode `<select>` dropdown inline with search input when `settings.semanticSearch` is enabled
+- Options: Keyword, Semantic, Hybrid (default: Hybrid when semantic search enabled)
+- Passes selected `searchMode` to `fetchNotes()`
+- Header shows "Search Results" (hiding sort/add controls) when search is active
+
+### Tests
+- `embeddingService.test.ts` — NEW: Voyage API calls, model/input_type, truncation, query embedding, error handling (5 tests)
+- `settingStore.test.ts` — NEW: getSetting null, setSetting roundtrip, isEmbeddingEnabled default, setEmbeddingEnabled (4 tests)
+- `embeddingProcessor.test.ts` — NEW: processes pending notes, handles errors, start/stop, skips when disabled (4 tests)
+- `aiRoutes.test.ts` — added embedding enable/disable/status endpoints + 401 auth tests (6 new tests)
+- `noteStore.test.ts` — added semantic/hybrid search mode delegation tests (3 new tests)
+- `config.test.ts` — added voyageApiKey to expected config shape
+- `ai-api.test.ts` — added enableEmbeddings, disableEmbeddings, getEmbeddingStatus tests (3 new tests)
+- `useAiSettings.test.ts` — added semanticSearch field defaults and persistence
+- `SettingsPage.test.tsx` — updated toggle count, tested semantic search toggle
+- `NotesPage.test.tsx` — tested search mode selector visibility, updated mocks
 
 ---
 

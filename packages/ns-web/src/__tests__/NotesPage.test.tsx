@@ -96,6 +96,9 @@ vi.mock("../api/ai.ts", () => ({
   summarizeNote: vi.fn(),
   suggestTags: vi.fn(),
   rewriteText: vi.fn(),
+  enableEmbeddings: vi.fn().mockResolvedValue({ enabled: true }),
+  disableEmbeddings: vi.fn().mockResolvedValue({ enabled: false }),
+  getEmbeddingStatus: vi.fn().mockResolvedValue({ enabled: false, pendingCount: 0, totalWithEmbeddings: 0 }),
 }));
 
 const mockNote = {
@@ -409,6 +412,15 @@ describe("NotesPage", () => {
       await screen.findByText("Trash is empty");
 
       expect(screen.queryAllByTitle("New note")).toHaveLength(0);
+    });
+  });
+
+  describe("Search mode selector", () => {
+    it("does not show search mode selector when semanticSearch is disabled", async () => {
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      expect(screen.queryByTestId("search-mode-select")).not.toBeInTheDocument();
     });
   });
 

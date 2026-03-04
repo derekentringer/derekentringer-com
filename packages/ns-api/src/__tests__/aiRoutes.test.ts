@@ -31,6 +31,23 @@ vi.mock("../services/aiService.js", () => ({
   rewriteText: (...args: unknown[]) => mockRewriteText(...args),
 }));
 
+const mockSetEmbeddingEnabled = vi.fn();
+const mockIsEmbeddingEnabled = vi.fn();
+
+vi.mock("../store/settingStore.js", () => ({
+  setEmbeddingEnabled: (...args: unknown[]) => mockSetEmbeddingEnabled(...args),
+  isEmbeddingEnabled: () => mockIsEmbeddingEnabled(),
+  getSetting: vi.fn(),
+  setSetting: vi.fn(),
+}));
+
+const mockProcessAllPendingEmbeddings = vi.fn();
+
+vi.mock("../services/embeddingProcessor.js", () => ({
+  processAllPendingEmbeddings: () => mockProcessAllPendingEmbeddings(),
+  startEmbeddingProcessor: () => ({ stop: () => {} }),
+}));
+
 import { buildApp } from "../app.js";
 
 describe("AI routes", () => {
@@ -401,6 +418,92 @@ describe("AI routes", () => {
         payload: { text: "some text", action: "rewrite" },
       });
 
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- POST /ai/embeddings/enable ---
+  describe("POST /ai/embeddings/enable", () => {
+    it("returns 200 with enabled true", async () => {
+      const token = await getAccessToken();
+      mockSetEmbeddingEnabled.mockResolvedValue(undefined);
+      mockProcessAllPendingEmbeddings.mockResolvedValue(undefined);
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/embeddings/enable",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ enabled: true });
+      expect(mockSetEmbeddingEnabled).toHaveBeenCalledWith(true);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/embeddings/enable",
+      });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- POST /ai/embeddings/disable ---
+  describe("POST /ai/embeddings/disable", () => {
+    it("returns 200 with enabled false", async () => {
+      const token = await getAccessToken();
+      mockSetEmbeddingEnabled.mockResolvedValue(undefined);
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/embeddings/disable",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ enabled: false });
+      expect(mockSetEmbeddingEnabled).toHaveBeenCalledWith(false);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/embeddings/disable",
+      });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- GET /ai/embeddings/status ---
+  describe("GET /ai/embeddings/status", () => {
+    it("returns correct status shape", async () => {
+      const token = await getAccessToken();
+      mockIsEmbeddingEnabled.mockResolvedValue(true);
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ count: 5 }]) // pending
+        .mockResolvedValueOnce([{ count: 10 }]); // embedded
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/ai/embeddings/status",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body).toEqual({
+        enabled: true,
+        pendingCount: 5,
+        totalWithEmbeddings: 10,
+      });
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/ai/embeddings/status",
+      });
       expect(res.statusCode).toBe(401);
     });
   });

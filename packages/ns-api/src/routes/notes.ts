@@ -245,6 +245,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         Querystring: {
           folder?: string;
           search?: string;
+          searchMode?: string;
           tags?: string;
           page?: string;
           pageSize?: string;
@@ -254,7 +255,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
-      const { folder, search, tags, page, pageSize, sortBy, sortOrder } =
+      const { folder, search, searchMode, tags, page, pageSize, sortBy, sortOrder } =
         request.query;
 
       if (sortBy && !VALID_SORT_FIELDS.includes(sortBy as NoteSortField)) {
@@ -273,6 +274,15 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
+      const VALID_SEARCH_MODES = ["keyword", "semantic", "hybrid"];
+      if (searchMode && !VALID_SEARCH_MODES.includes(searchMode)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: `Invalid searchMode value. Must be one of: ${VALID_SEARCH_MODES.join(", ")}`,
+        });
+      }
+
       const parsedTags = tags
         ? tags.split(",").map((t) => t.trim()).filter(Boolean)
         : undefined;
@@ -280,6 +290,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       const result = await listNotes({
         folder,
         search,
+        searchMode: searchMode as "keyword" | "semantic" | "hybrid" | undefined,
         tags: parsedTags,
         page: page ? Number(page) : undefined,
         pageSize: pageSize ? Number(pageSize) : undefined,
