@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04a.1 Complete; 04b–04f Not Started)
+**Status:** Partial (04a–04b Complete; 04c–04f Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -14,7 +14,7 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 |---------|--------|---------|--------|
 | **04a** | `feature/ns-04a-ai-features` | Inline ghost text completions (SSE streaming), note summarization, smart auto-tagging, AI settings page with toggles, sidebar footer redesign | Complete |
 | **04a.1** | `feature/ns-04a1-completion-styles` | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | Complete |
-| **04b** | — | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) | Not Started |
+| **04b** | `feature/ns-04b-select-and-rewrite` | Select-and-rewrite with floating menu, keyboard shortcut, right-click trigger, settings toggle | Complete |
 | **04c** | — | Semantic search (pgvector embeddings, complementing tsvector keyword search) | Not Started |
 | **04d** | — | Q&A over notes (natural language questions with citations) | Not Started |
 | **04e** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
@@ -148,6 +148,71 @@ Adds configurable completion styles so the AI adapts its behavior based on user 
 - `aiService.test.ts` — added tests for style-based prompts, brief max_tokens, default style (3 new tests)
 - `aiRoutes.test.ts` — added tests for style parameter acceptance, optional default, invalid style 400 (3 new tests)
 - `ai-api.test.ts` — added test for style in request body (1 new test)
+
+---
+
+## Release 04b: Select-and-Rewrite
+
+### Summary
+
+Adds a select-and-rewrite feature: users select text in the editor, trigger a rewrite action via keyboard shortcut (`Cmd/Ctrl+Shift+R`) or right-click context menu, choose from six actions in a floating dropdown, and the selection is replaced with the AI result. Includes a settings toggle to enable/disable the feature.
+
+### API Changes
+
+#### AI Service (`packages/ns-api/src/services/aiService.ts`)
+- Added `RewriteAction` type: `"rewrite" | "concise" | "fix-grammar" | "to-list" | "expand" | "summarize"`
+- Added `REWRITE_PROMPTS` map with action-specific system prompts
+- Added `REWRITE_MAX_TOKENS` map: `expand` → 800, `rewrite`/`fix-grammar`/`to-list` → 500, `concise` → 300, `summarize` → 200
+- Added `rewriteText(text, action)` — non-streaming, `temperature: 0.3`, returns trimmed text
+
+#### Routes (`packages/ns-api/src/routes/ai.ts`)
+- `POST /ai/rewrite` — JSON; body `{ text: string (1–10000 chars), action: enum[6] }`; returns `{ text: result }`
+- Schema uses `additionalProperties: false`, validates action enum
+- Auth inherited from existing `onRequest` hook
+
+### Frontend Changes
+
+#### AI API Client (`packages/ns-web/src/api/ai.ts`)
+- Added `RewriteAction` type export
+- Added `rewriteText(text, action)` — POST to `/ai/rewrite`, returns `data.text`
+
+#### CodeMirror Rewrite Menu Extension (`packages/ns-web/src/editor/rewriteMenu.ts`) — NEW
+- Self-contained CodeMirror 6 extension: `rewriteExtension(rewriteFn)`
+- `rewriteFnFacet` — Facet storing the rewrite callback for tooltip DOM access
+- `RewriteMenuState` — tracks `{ from, to, status: "open" | "loading" | "error" }`
+- Effects: `openRewriteMenu`, `closeRewriteMenu`, `setRewriteLoading`, `setRewriteError`
+- `rewriteMenuField` StateField: manages menu state, auto-closes on doc change or selection change
+- Tooltip via `showTooltip.computeN`: positioned at selection end, `above: true`
+- Tooltip DOM: 6 action buttons (open), "Rewriting..." text (loading), error message with 2s auto-close (error)
+- Buttons use `mousedown` + `preventDefault()` to prevent editor blur/selection loss
+- `Prec.high` keymap: `Mod-Shift-r` opens menu when text selected, `Escape` closes menu when open
+- Right-click handler via `EditorView.domEventHandlers`: intercepts `contextmenu` when text selected, falls through otherwise
+- Includes `tooltips()` from `@codemirror/view`
+
+#### MarkdownEditor (`packages/ns-web/src/components/MarkdownEditor.tsx`)
+- Added rewrite menu CSS to dark theme: `.cm-rewrite-menu` (dark bg, rounded, shadow), `.cm-rewrite-action` (button styles with lime-yellow hover), `.cm-rewrite-loading` (lime-yellow), `.cm-rewrite-error` (red)
+
+#### Settings Hook (`packages/ns-web/src/hooks/useAiSettings.ts`)
+- Added `rewrite: boolean` to `AiSettings` interface (default: `false`)
+- Persisted in localStorage with boolean validation and fallback
+
+#### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
+- Added "Select-and-rewrite" toggle to AI Features section (4th toggle)
+- Added "Keyboard Shortcuts" reference section below AI Features with 7 shortcuts
+- Platform-aware shortcut labels: `Cmd` on Mac, `Ctrl` on other platforms
+
+#### NotesPage (`packages/ns-web/src/pages/NotesPage.tsx`)
+- `rewriteExtension(rewriteText)` added to `aiExtensions` memo, gated on `settings.rewrite`
+- Added `settings.rewrite` to `useMemo` dependency array
+
+### Tests
+- `aiService.test.ts` — 5 new tests: rewrite per-action prompts, max_tokens, trimming, non-text response, empty string fallback
+- `aiRoutes.test.ts` — 6 new tests: 200 with rewritten text, all valid actions, missing text/action 400, invalid action 400, 401 without auth
+- `ai-api.test.ts` — 3 new tests: returns text, sends correct body, throws on non-ok response
+- `rewriteMenu.test.ts` — 10 new tests (NEW FILE): extension validity, StateField init, open/close effects, auto-close on doc/selection change, selection checks
+- `SettingsPage.test.tsx` — 2 new tests: keyboard shortcuts heading, shortcut descriptions; updated toggle count to 4
+- `useAiSettings.test.ts` — updated all expected defaults to include `rewrite: false`
+- `NotesPage.test.tsx` — updated mocks for `rewriteExtension` and `rewriteText`
 
 ---
 

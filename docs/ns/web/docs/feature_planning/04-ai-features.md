@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04a.1 Complete; 04b–04f Not Started)
+**Status:** Partial (04a–04b Complete; 04c–04f Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -14,18 +14,14 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 |---------|---------|--------|
 | **04a** | Inline ghost text completions (SSE streaming), note summarization, smart auto-tagging, AI settings page, sidebar footer redesign | **Complete** |
 | **04a.1** | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | **Complete** |
-| **04b** | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) | Not Started |
+| **04b** | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) with floating menu, keyboard shortcut, right-click trigger, and settings toggle | **Complete** |
 | **04c** | Semantic search (pgvector embeddings, complementing tsvector keyword search) | Not Started |
 | **04d** | Q&A over notes (natural language questions with citations) | Not Started |
 | **04e** | Duplicate detection (embedding similarity for review/merge) | Not Started |
 | **04f** | Continue writing, heading/structure suggestions for empty notes | Not Started |
 
-## Remaining Requirements (04b–04f)
+## Remaining Requirements (04c–04f)
 
-- **Select-and-rewrite** (04b):
-  - Select text, trigger AI rewrite via context menu or keyboard shortcut
-  - Options: rewrite, make concise, fix grammar, convert to list, expand, summarize
-  - API: `POST /ai/rewrite`
 - **Semantic search** (04c):
   - Generate vector embeddings for notes via Claude API or dedicated embedding model
   - Store in PostgreSQL via pgvector
@@ -59,7 +55,6 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 
 - Which embedding model: Claude's built-in embeddings or a separate model (e.g., Voyage AI)?
 - Should Q&A history persist in the database, or be ephemeral per session?
-- Should select-and-rewrite use streaming or non-streaming responses?
 
 ## Dependencies
 
