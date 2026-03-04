@@ -10,6 +10,7 @@ export interface AiSettings {
   summarize: boolean;
   tagSuggestions: boolean;
   rewrite: boolean;
+  semanticSearch: boolean;
 }
 
 const STORAGE_KEY = "ns-ai-settings";
@@ -20,6 +21,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   summarize: false,
   tagSuggestions: false,
   rewrite: false,
+  semanticSearch: false,
 };
 
 function loadSettings(): AiSettings {
@@ -35,6 +37,7 @@ function loadSettings(): AiSettings {
       summarize: typeof parsed.summarize === "boolean" ? parsed.summarize : false,
       tagSuggestions: typeof parsed.tagSuggestions === "boolean" ? parsed.tagSuggestions : false,
       rewrite: typeof parsed.rewrite === "boolean" ? parsed.rewrite : false,
+      semanticSearch: typeof parsed.semanticSearch === "boolean" ? parsed.semanticSearch : false,
     };
   } catch {
     return DEFAULT_SETTINGS;

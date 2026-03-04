@@ -8,6 +8,12 @@ import {
 } from "../services/aiService.js";
 import { getNote, updateNote } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
+import {
+  isEmbeddingEnabled,
+  setEmbeddingEnabled,
+} from "../store/settingStore.js";
+import { processAllPendingEmbeddings } from "../services/embeddingProcessor.js";
+import { getPrisma } from "../lib/prisma.js";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -214,6 +220,52 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       );
 
       return reply.send({ text: result });
+    },
+  );
+
+  // POST /ai/embeddings/enable
+  fastify.post(
+    "/embeddings/enable",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      await setEmbeddingEnabled(true);
+      // Trigger background processing (fire-and-forget)
+      processAllPendingEmbeddings().catch((error) => {
+        _request.log.error(error, "Background embedding processing failed");
+      });
+      return reply.send({ enabled: true });
+    },
+  );
+
+  // POST /ai/embeddings/disable
+  fastify.post(
+    "/embeddings/disable",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      await setEmbeddingEnabled(false);
+      return reply.send({ enabled: false });
+    },
+  );
+
+  // GET /ai/embeddings/status
+  fastify.get(
+    "/embeddings/status",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const prisma = getPrisma();
+      const enabled = await isEmbeddingEnabled();
+
+      const [pendingResult, embeddedResult] = await Promise.all([
+        prisma.$queryRawUnsafe<[{ count: number }]>(
+          `SELECT COUNT(*)::int AS count FROM "notes" WHERE "deletedAt" IS NULL AND ("embeddingUpdatedAt" IS NULL OR "embeddingUpdatedAt" < "updatedAt")`,
+        ),
+        prisma.$queryRawUnsafe<[{ count: number }]>(
+          `SELECT COUNT(*)::int AS count FROM "notes" WHERE "deletedAt" IS NULL AND "embedding" IS NOT NULL`,
+        ),
+      ]);
+
+      return reply.send({
+        enabled,
+        pendingCount: pendingResult[0]?.count ?? 0,
+        totalWithEmbeddings: embeddedResult[0]?.count ?? 0,
+      });
     },
   );
 }

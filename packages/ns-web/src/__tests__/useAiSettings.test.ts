@@ -16,6 +16,7 @@ describe("useAiSettings", () => {
       summarize: false,
       tagSuggestions: false,
       rewrite: false,
+      semanticSearch: false,
     });
   });
 
@@ -28,6 +29,7 @@ describe("useAiSettings", () => {
         summarize: true,
         tagSuggestions: false,
         rewrite: true,
+        semanticSearch: true,
       }),
     );
 
@@ -39,6 +41,7 @@ describe("useAiSettings", () => {
       summarize: true,
       tagSuggestions: false,
       rewrite: true,
+      semanticSearch: true,
     });
   });
 
@@ -84,6 +87,19 @@ describe("useAiSettings", () => {
     expect(stored.completionStyle).toBe("brief");
   });
 
+  it("updateSetting persists semanticSearch to localStorage", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    act(() => {
+      result.current.updateSetting("semanticSearch", true);
+    });
+
+    expect(result.current.settings.semanticSearch).toBe(true);
+
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.semanticSearch).toBe(true);
+  });
+
   it("updateSetting preserves other settings", () => {
     localStorage.setItem(
       "ns-ai-settings",
@@ -93,6 +109,7 @@ describe("useAiSettings", () => {
         summarize: false,
         tagSuggestions: true,
         rewrite: true,
+        semanticSearch: true,
       }),
     );
 
@@ -108,6 +125,7 @@ describe("useAiSettings", () => {
       summarize: true,
       tagSuggestions: true,
       rewrite: true,
+      semanticSearch: true,
     });
   });
 
@@ -122,6 +140,7 @@ describe("useAiSettings", () => {
       summarize: false,
       tagSuggestions: false,
       rewrite: false,
+      semanticSearch: false,
     });
   });
 
@@ -139,6 +158,7 @@ describe("useAiSettings", () => {
       summarize: false,
       tagSuggestions: false,
       rewrite: false,
+      semanticSearch: false,
     });
   });
 

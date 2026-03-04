@@ -51,6 +51,7 @@ describe("loadConfig", () => {
     process.env.CORS_ORIGIN = "https://app.example.com";
     process.env.DATABASE_URL = "postgresql://localhost/test";
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+    process.env.VOYAGE_API_KEY = "pa-test-voyage-key";
 
     const config = loadConfig();
 

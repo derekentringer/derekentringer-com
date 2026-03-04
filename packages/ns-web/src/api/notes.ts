@@ -14,6 +14,7 @@ import { apiFetch } from "./client.ts";
 export async function fetchNotes(params?: {
   folder?: string;
   search?: string;
+  searchMode?: "keyword" | "semantic" | "hybrid";
   tags?: string[];
   page?: number;
   pageSize?: number;
@@ -23,6 +24,7 @@ export async function fetchNotes(params?: {
   const qs = new URLSearchParams();
   if (params?.folder) qs.set("folder", params.folder);
   if (params?.search) qs.set("search", params.search);
+  if (params?.searchMode) qs.set("searchMode", params.searchMode);
   if (params?.tags && params.tags.length > 0) qs.set("tags", params.tags.join(","));
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));

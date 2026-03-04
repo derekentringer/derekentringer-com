@@ -6,7 +6,7 @@ vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
 }));
 
-import { fetchCompletion, summarizeNote, suggestTags, rewriteText } from "../api/ai.ts";
+import { fetchCompletion, summarizeNote, suggestTags, rewriteText, enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -225,6 +225,71 @@ describe("AI API client", () => {
       await expect(rewriteText("test", "rewrite")).rejects.toThrow(
         "Rewrite failed: 500",
       );
+    });
+  });
+
+  describe("enableEmbeddings", () => {
+    it("sends POST to /ai/embeddings/enable", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ enabled: true }),
+      });
+
+      const result = await enableEmbeddings();
+
+      expect(result).toEqual({ enabled: true });
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/embeddings/enable", {
+        method: "POST",
+      });
+    });
+
+    it("throws on non-ok response", async () => {
+      mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+      await expect(enableEmbeddings()).rejects.toThrow("Enable embeddings failed: 500");
+    });
+  });
+
+  describe("disableEmbeddings", () => {
+    it("sends POST to /ai/embeddings/disable", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ enabled: false }),
+      });
+
+      const result = await disableEmbeddings();
+
+      expect(result).toEqual({ enabled: false });
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/embeddings/disable", {
+        method: "POST",
+      });
+    });
+
+    it("throws on non-ok response", async () => {
+      mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+      await expect(disableEmbeddings()).rejects.toThrow("Disable embeddings failed: 500");
+    });
+  });
+
+  describe("getEmbeddingStatus", () => {
+    it("returns embedding status object", async () => {
+      const status = { enabled: true, pendingCount: 3, totalWithEmbeddings: 10 };
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(status),
+      });
+
+      const result = await getEmbeddingStatus();
+
+      expect(result).toEqual(status);
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/embeddings/status");
+    });
+
+    it("throws on non-ok response", async () => {
+      mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+      await expect(getEmbeddingStatus()).rejects.toThrow("Embedding status failed: 500");
     });
   });
 });

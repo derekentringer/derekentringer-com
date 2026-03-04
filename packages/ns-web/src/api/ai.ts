@@ -1,5 +1,6 @@
 import { apiFetch } from "./client.ts";
 import type { CompletionStyle } from "../hooks/useAiSettings.ts";
+import type { EmbeddingStatus } from "@derekentringer/shared/ns";
 
 export type RewriteAction =
   | "rewrite"
@@ -105,4 +106,38 @@ export async function rewriteText(
 
   const data = await response.json();
   return data.text;
+}
+
+export async function enableEmbeddings(): Promise<{ enabled: boolean }> {
+  const response = await apiFetch("/ai/embeddings/enable", {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Enable embeddings failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function disableEmbeddings(): Promise<{ enabled: boolean }> {
+  const response = await apiFetch("/ai/embeddings/disable", {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Disable embeddings failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getEmbeddingStatus(): Promise<EmbeddingStatus> {
+  const response = await apiFetch("/ai/embeddings/status");
+
+  if (!response.ok) {
+    throw new Error(`Embedding status failed: ${response.status}`);
+  }
+
+  return response.json();
 }

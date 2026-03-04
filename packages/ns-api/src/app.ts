@@ -8,6 +8,7 @@ import { loadConfig } from "./config.js";
 import { getPrisma } from "./lib/prisma.js";
 import { cleanupExpiredTokens } from "./store/refreshTokenStore.js";
 import { purgeOldTrash } from "./store/noteStore.js";
+import { startEmbeddingProcessor } from "./services/embeddingProcessor.js";
 import authRoutes from "./routes/auth.js";
 import healthRoutes from "./routes/health.js";
 import noteRoutes from "./routes/notes.js";
@@ -81,6 +82,7 @@ export function buildApp(opts?: BuildAppOptions) {
   });
 
   let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+  let embeddingProcessor: { stop: () => void } | null = null;
 
   app.addHook("onReady", async () => {
     cleanupExpiredTokens().catch(() => {});
@@ -89,10 +91,12 @@ export function buildApp(opts?: BuildAppOptions) {
       cleanupExpiredTokens().catch(() => {});
       purgeOldTrash().catch(() => {});
     }, TOKEN_CLEANUP_INTERVAL_MS);
+    embeddingProcessor = startEmbeddingProcessor();
   });
 
   app.addHook("onClose", async () => {
     if (cleanupTimer) clearInterval(cleanupTimer);
+    if (embeddingProcessor) embeddingProcessor.stop();
     await getPrisma().$disconnect();
   });
 

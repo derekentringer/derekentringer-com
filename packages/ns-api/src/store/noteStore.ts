@@ -8,6 +8,7 @@ import type {
   TagInfo,
 } from "@derekentringer/shared/ns";
 import type { Note as PrismaNote } from "../generated/prisma/client.js";
+import { generateQueryEmbedding } from "../services/embeddingService.js";
 
 function isNotFoundError(error: unknown): boolean {
   return (
@@ -56,9 +57,12 @@ export async function getNote(id: string): Promise<PrismaNote | null> {
   return note;
 }
 
+export type SearchMode = "keyword" | "semantic" | "hybrid";
+
 export interface ListNotesFilter {
   folder?: string;
   search?: string;
+  searchMode?: SearchMode;
   tags?: string[];
   page?: number;
   pageSize?: number;
@@ -80,56 +84,19 @@ export async function listNotes(
   const sortBy = filter?.sortBy ?? "sortOrder";
   const sortOrder = filter?.sortOrder ?? "asc";
 
-  // Use raw SQL for full-text search
+  // Use raw SQL for search
   if (filter?.search) {
-    const params: unknown[] = [filter.search];
-    let paramIdx = 2;
+    const mode = filter.searchMode ?? "keyword";
 
-    let whereClause = `"deletedAt" IS NULL AND "search_vector" @@ plainto_tsquery('english', $1)`;
-
-    if (filter.folder) {
-      whereClause += ` AND "folder" = $${paramIdx}`;
-      params.push(filter.folder);
-      paramIdx++;
+    if (mode === "semantic") {
+      return semanticSearch(filter.search, filter, pageSize, skip);
+    }
+    if (mode === "hybrid") {
+      return hybridSearch(filter.search, filter, pageSize, skip);
     }
 
-    if (filter.tags && filter.tags.length > 0) {
-      whereClause += ` AND "tags" @> $${paramIdx}::jsonb`;
-      params.push(JSON.stringify(filter.tags));
-      paramIdx++;
-    }
-
-    const SORT_COL_MAP: Record<string, string> = {
-      title: '"title"',
-      createdAt: '"createdAt"',
-      updatedAt: '"updatedAt"',
-      sortOrder: '"sortOrder"',
-    };
-    const sortCol = SORT_COL_MAP[sortBy] ?? '"sortOrder"';
-    const sortDir = sortOrder === "desc" ? "DESC" : "ASC";
-
-    const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${whereClause}`;
-    const dataQuery = `
-      SELECT "id", "title", "content", "folder", "tags", "summary", "sortOrder",
-        "createdAt", "updatedAt", "deletedAt",
-        ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
-          'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline
-      FROM "notes"
-      WHERE ${whereClause}
-      ORDER BY ts_rank("search_vector", plainto_tsquery('english', $1)) DESC, ${sortCol} ${sortDir}
-      LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
-    `;
-    params.push(pageSize, skip);
-
-    const [countResult, notes] = await Promise.all([
-      prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, ...params.slice(0, -2)),
-      prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, ...params),
-    ]);
-
-    return {
-      notes,
-      total: countResult[0]?.total ?? 0,
-    };
+    // Keyword search (default)
+    return keywordSearch(filter.search, filter, pageSize, skip, sortBy, sortOrder);
   }
 
   // Standard Prisma query (no search)
@@ -154,6 +121,168 @@ export async function listNotes(
   ]);
 
   return { notes, total };
+}
+
+function buildFilterClause(
+  filter: ListNotesFilter,
+  startIdx: number,
+): { clause: string; params: unknown[]; nextIdx: number } {
+  let clause = "";
+  const params: unknown[] = [];
+  let idx = startIdx;
+
+  if (filter.folder) {
+    clause += ` AND "folder" = $${idx}`;
+    params.push(filter.folder);
+    idx++;
+  }
+
+  if (filter.tags && filter.tags.length > 0) {
+    clause += ` AND "tags" @> $${idx}::jsonb`;
+    params.push(JSON.stringify(filter.tags));
+    idx++;
+  }
+
+  return { clause, params, nextIdx: idx };
+}
+
+async function keywordSearch(
+  search: string,
+  filter: ListNotesFilter,
+  pageSize: number,
+  skip: number,
+  sortBy: string,
+  sortOrder: string,
+): Promise<{ notes: FtsRow[]; total: number }> {
+  const prisma = getPrisma();
+  const params: unknown[] = [search];
+  let paramIdx = 2;
+
+  let whereClause = `"deletedAt" IS NULL AND "search_vector" @@ plainto_tsquery('english', $1)`;
+
+  const extra = buildFilterClause(filter, paramIdx);
+  whereClause += extra.clause;
+  params.push(...extra.params);
+  paramIdx = extra.nextIdx;
+
+  const SORT_COL_MAP: Record<string, string> = {
+    title: '"title"',
+    createdAt: '"createdAt"',
+    updatedAt: '"updatedAt"',
+    sortOrder: '"sortOrder"',
+  };
+  const sortCol = SORT_COL_MAP[sortBy] ?? '"sortOrder"';
+  const sortDir = sortOrder === "desc" ? "DESC" : "ASC";
+
+  const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${whereClause}`;
+  const dataQuery = `
+    SELECT "id", "title", "content", "folder", "tags", "summary", "sortOrder",
+      "createdAt", "updatedAt", "deletedAt",
+      ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
+        'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline
+    FROM "notes"
+    WHERE ${whereClause}
+    ORDER BY ts_rank("search_vector", plainto_tsquery('english', $1)) DESC, ${sortCol} ${sortDir}
+    LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+  `;
+  params.push(pageSize, skip);
+
+  const [countResult, notes] = await Promise.all([
+    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, ...params.slice(0, -2)),
+    prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, ...params),
+  ]);
+
+  return {
+    notes,
+    total: countResult[0]?.total ?? 0,
+  };
+}
+
+async function semanticSearch(
+  search: string,
+  filter: ListNotesFilter,
+  pageSize: number,
+  skip: number,
+): Promise<{ notes: FtsRow[]; total: number }> {
+  const prisma = getPrisma();
+  const queryEmbedding = await generateQueryEmbedding(search);
+  const vectorStr = `[${queryEmbedding.join(",")}]`;
+
+  // Minimum cosine similarity threshold to filter low-quality matches
+  const SIM_THRESHOLD = 0.3;
+
+  // Count query — no vector param needed, filter indices start at 1
+  const baseWhere = `"deletedAt" IS NULL AND "embedding" IS NOT NULL`;
+  const countFilter = buildFilterClause(filter, 1);
+  const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${baseWhere}${countFilter.clause}`;
+
+  // Data query — $1 = vector, filter indices start at 2
+  const dataFilter = buildFilterClause(filter, 2);
+  let dataParamIdx = dataFilter.nextIdx;
+  const dataQuery = `
+    SELECT "id", "title", "content", "folder", "tags", "summary", "sortOrder",
+      "createdAt", "updatedAt", "deletedAt"
+    FROM "notes"
+    WHERE ${baseWhere}${dataFilter.clause}
+      AND (1 - ("embedding" <=> $1::vector)) > ${SIM_THRESHOLD}
+    ORDER BY "embedding" <=> $1::vector ASC
+    LIMIT $${dataParamIdx} OFFSET $${dataParamIdx + 1}
+  `;
+
+  const [countResult, notes] = await Promise.all([
+    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, ...countFilter.params),
+    prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, vectorStr, ...dataFilter.params, pageSize, skip),
+  ]);
+
+  return {
+    notes,
+    total: countResult[0]?.total ?? 0,
+  };
+}
+
+async function hybridSearch(
+  search: string,
+  filter: ListNotesFilter,
+  pageSize: number,
+  skip: number,
+): Promise<{ notes: FtsRow[]; total: number }> {
+  const prisma = getPrisma();
+  const queryEmbedding = await generateQueryEmbedding(search);
+  const vectorStr = `[${queryEmbedding.join(",")}]`;
+
+  // Count query — $1 = search text, filter indices start at 2 (no vector needed)
+  const countBaseWhere = `"deletedAt" IS NULL AND ("search_vector" @@ plainto_tsquery('english', $1) OR "embedding" IS NOT NULL)`;
+  const countFilter = buildFilterClause(filter, 2);
+  const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${countBaseWhere}${countFilter.clause}`;
+
+  // Data query — $1 = search text, $2 = vector, filter indices start at 3
+  const dataBaseWhere = `"deletedAt" IS NULL AND ("search_vector" @@ plainto_tsquery('english', $1) OR "embedding" IS NOT NULL)`;
+  const dataFilter = buildFilterClause(filter, 3);
+  let dataParamIdx = dataFilter.nextIdx;
+  const dataQuery = `
+    SELECT "id", "title", "content", "folder", "tags", "summary", "sortOrder",
+      "createdAt", "updatedAt", "deletedAt",
+      ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
+        'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline,
+      (
+        0.3 * COALESCE(ts_rank("search_vector", plainto_tsquery('english', $1)), 0) +
+        0.7 * COALESCE(1 - ("embedding" <=> $2::vector), 0)
+      ) AS hybrid_score
+    FROM "notes"
+    WHERE ${dataBaseWhere}${dataFilter.clause}
+    ORDER BY hybrid_score DESC
+    LIMIT $${dataParamIdx} OFFSET $${dataParamIdx + 1}
+  `;
+
+  const [countResult, notes] = await Promise.all([
+    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, search, ...countFilter.params),
+    prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, search, vectorStr, ...dataFilter.params, pageSize, skip),
+  ]);
+
+  return {
+    notes,
+    total: countResult[0]?.total ?? 0,
+  };
 }
 
 export interface ListTrashedFilter {

@@ -55,7 +55,7 @@
   - [x] 04a — Summarize, Auto-Tag, Inline Completions (Anthropic Claude API via ns-api, SSE streaming ghost text, AI settings page with toggles, sidebar footer redesign)
   - [x] 04a.1 — Completion Style Options (configurable styles: Continue writing, Markdown assist, Brief — per-style system prompts and max_tokens)
   - [x] 04b — Select-and-Rewrite (floating menu with 6 actions, Cmd/Ctrl+Shift+R shortcut, right-click trigger, settings toggle, keyboard shortcuts reference on settings page)
-  - [ ] 04c — Semantic Search (pgvector)
+  - [x] 04c — Semantic Search (pgvector embeddings via Voyage AI, keyword/semantic/hybrid search modes, server-side embedding toggle, background processor)
   - [ ] 04d — Q&A Over Notes
   - [ ] 04e — Duplicate Detection
   - [ ] 04f — Continue Writing, Structure Suggestions

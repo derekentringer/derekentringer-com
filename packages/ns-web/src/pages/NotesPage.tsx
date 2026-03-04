@@ -84,6 +84,7 @@ export function NotesPage() {
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
 
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchMode, setSearchMode] = useState<"keyword" | "semantic" | "hybrid">(settings.semanticSearch ? "hybrid" : "keyword");
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -143,6 +144,7 @@ export function NotesPage() {
             : activeFolder ?? undefined;
         const result = await fetchNotes({
           search: searchQuery || undefined,
+          searchMode: searchQuery && settings.semanticSearch ? searchMode : undefined,
           folder: folderParam,
           tags: activeTags.length > 0 ? activeTags : undefined,
           sortBy,
@@ -160,7 +162,7 @@ export function NotesPage() {
         setIsLoading(false);
       }
     },
-    [sortBy, sortOrder, activeFolder, activeTags],
+    [sortBy, sortOrder, activeFolder, activeTags, searchMode, settings.semanticSearch],
   );
 
   const loadTrash = useCallback(async () => {
@@ -173,7 +175,7 @@ export function NotesPage() {
     }
   }, []);
 
-  // Load notes on mount and when search/sort/folder changes
+  // Load notes on mount and when search/sort/folder/mode changes
   useEffect(() => {
     loadNotes(debouncedSearch || undefined);
   }, [debouncedSearch, loadNotes]);
@@ -545,7 +547,7 @@ export function NotesPage() {
     <div className="flex h-full">
       {/* Sidebar */}
       <aside className="bg-sidebar flex flex-col shrink-0" style={{ width: sidebarResize.size }}>
-        <div className="p-4 border-b border-border flex items-center justify-between">
+        <div className="p-4 flex items-center justify-between">
           <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
           {sidebarView === "notes" && (
             <button
@@ -561,7 +563,21 @@ export function NotesPage() {
         {sidebarView === "notes" ? (
           <>
             <div className="p-2">
-              <div className="relative">
+              <div className="relative flex items-center rounded-md bg-input border border-border focus-within:ring-2 focus-within:ring-ring">
+                {settings.semanticSearch && (
+                  <select
+                    value={searchMode}
+                    onChange={(e) => setSearchMode(e.target.value as "keyword" | "semantic" | "hybrid")}
+                    className="bg-transparent border-none border-r border-border text-[11px] text-muted-foreground pl-2 pr-0 py-1.5 focus:outline-none cursor-pointer appearance-none"
+                    style={{ backgroundImage: "none" }}
+                    aria-label="Search mode"
+                    data-testid="search-mode-select"
+                  >
+                    <option value="keyword">Keyword</option>
+                    <option value="semantic">Semantic</option>
+                    <option value="hybrid">Hybrid</option>
+                  </select>
+                )}
                 <input
                   type="text"
                   placeholder="Search notes..."
@@ -569,7 +585,7 @@ export function NotesPage() {
                   onChange={(e) => setSearch(e.target.value)}
                   onFocus={() => setSearchFocused(true)}
                   onBlur={() => setSearchFocused(false)}
-                  className="w-full px-3 py-1.5 pr-8 rounded-md bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className={`flex-1 bg-transparent py-1.5 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none ${settings.semanticSearch ? "pl-1" : "pl-3"}`}
                 />
                 {search && (
                   <button
@@ -626,36 +642,38 @@ export function NotesPage() {
             <div className="px-2 py-1">
               <div className="flex items-center justify-between px-1 mb-1">
                 <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                  Notes
+                  {debouncedSearch ? "Search Results" : "Notes"}
                 </span>
-                <div className="flex items-center gap-1">
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as NoteSortField)}
-                    className="px-1 py-0 rounded bg-transparent border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
-                    aria-label="Sort by"
-                  >
-                    <option value="sortOrder">Manual</option>
-                    <option value="updatedAt">Modified</option>
-                    <option value="createdAt">Created</option>
-                    <option value="title">Title</option>
-                  </select>
-                  <button
-                    onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                    className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                    title={sortOrder === "asc" ? "Ascending" : "Descending"}
-                    aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
-                  >
-                    {sortOrder === "asc" ? "\u2191" : "\u2193"}
-                  </button>
-                  <button
-                    onClick={handleCreate}
-                    className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    title="New note"
-                  >
-                    +
-                  </button>
-                </div>
+                {!debouncedSearch && (
+                  <div className="flex items-center gap-1">
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as NoteSortField)}
+                      className="px-1 py-0 rounded bg-transparent border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                      aria-label="Sort by"
+                    >
+                      <option value="sortOrder">Manual</option>
+                      <option value="updatedAt">Modified</option>
+                      <option value="createdAt">Created</option>
+                      <option value="title">Title</option>
+                    </select>
+                    <button
+                      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                      title={sortOrder === "asc" ? "Ascending" : "Descending"}
+                      aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
+                    >
+                      {sortOrder === "asc" ? "\u2191" : "\u2193"}
+                    </button>
+                    <button
+                      onClick={handleCreate}
+                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      title="New note"
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
