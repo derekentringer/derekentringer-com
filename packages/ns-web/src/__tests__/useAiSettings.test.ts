@@ -17,6 +17,8 @@ describe("useAiSettings", () => {
       tagSuggestions: false,
       rewrite: false,
       semanticSearch: false,
+      audioNotes: false,
+      audioMode: "memo",
     });
   });
 
@@ -30,6 +32,8 @@ describe("useAiSettings", () => {
         tagSuggestions: false,
         rewrite: true,
         semanticSearch: true,
+        audioNotes: true,
+        audioMode: "lecture",
       }),
     );
 
@@ -42,6 +46,8 @@ describe("useAiSettings", () => {
       tagSuggestions: false,
       rewrite: true,
       semanticSearch: true,
+      audioNotes: true,
+      audioMode: "lecture",
     });
   });
 
@@ -110,6 +116,8 @@ describe("useAiSettings", () => {
         tagSuggestions: true,
         rewrite: true,
         semanticSearch: true,
+        audioNotes: false,
+        audioMode: "memo",
       }),
     );
 
@@ -126,6 +134,8 @@ describe("useAiSettings", () => {
       tagSuggestions: true,
       rewrite: true,
       semanticSearch: true,
+      audioNotes: false,
+      audioMode: "memo",
     });
   });
 
@@ -141,6 +151,8 @@ describe("useAiSettings", () => {
       tagSuggestions: false,
       rewrite: false,
       semanticSearch: false,
+      audioNotes: false,
+      audioMode: "memo",
     });
   });
 
@@ -159,6 +171,8 @@ describe("useAiSettings", () => {
       tagSuggestions: false,
       rewrite: false,
       semanticSearch: false,
+      audioNotes: false,
+      audioMode: "memo",
     });
   });
 
@@ -176,5 +190,46 @@ describe("useAiSettings", () => {
     const { result } = renderHook(() => useAiSettings());
 
     expect(result.current.settings.completionStyle).toBe("continue");
+  });
+
+  it("reads audioMode from localStorage", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({
+        audioNotes: true,
+        audioMode: "meeting",
+      }),
+    );
+
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.audioMode).toBe("meeting");
+  });
+
+  it("defaults invalid audioMode to memo", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({
+        audioNotes: true,
+        audioMode: "invalid-mode",
+      }),
+    );
+
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.audioMode).toBe("memo");
+  });
+
+  it("updateSetting persists audioMode to localStorage", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    act(() => {
+      result.current.updateSetting("audioMode", "lecture");
+    });
+
+    expect(result.current.settings.audioMode).toBe("lecture");
+
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.audioMode).toBe("lecture");
   });
 });

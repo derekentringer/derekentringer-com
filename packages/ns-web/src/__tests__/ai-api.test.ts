@@ -6,7 +6,7 @@ vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
 }));
 
-import { fetchCompletion, summarizeNote, suggestTags, rewriteText, enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
+import { fetchCompletion, summarizeNote, suggestTags, rewriteText, enableEmbeddings, disableEmbeddings, getEmbeddingStatus, transcribeAudio } from "../api/ai.ts";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -290,6 +290,88 @@ describe("AI API client", () => {
       mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
 
       await expect(getEmbeddingStatus()).rejects.toThrow("Embedding status failed: 500");
+    });
+  });
+
+  describe("transcribeAudio", () => {
+    it("sends FormData to correct endpoint", async () => {
+      const mockNote = {
+        id: "note-1",
+        title: "Audio Note",
+        content: "Transcribed text",
+        folder: null,
+        tags: ["audio"],
+        summary: null,
+        sortOrder: 0,
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+        deletedAt: null,
+      };
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            title: "Audio Note",
+            content: "Transcribed text",
+            tags: ["audio"],
+            note: mockNote,
+          }),
+      });
+
+      const blob = new Blob(["audio-data"], { type: "audio/webm" });
+      const result = await transcribeAudio(blob, "memo");
+
+      expect(result.title).toBe("Audio Note");
+      expect(result.note).toBeDefined();
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/transcribe", {
+        method: "POST",
+        body: expect.any(FormData),
+      });
+    });
+
+    it("returns parsed response", async () => {
+      const mockNote = {
+        id: "note-2",
+        title: "Meeting",
+        content: "# Meeting\n\nNotes here",
+        folder: null,
+        tags: ["meeting"],
+        summary: null,
+        sortOrder: 0,
+        createdAt: "2025-01-01T00:00:00.000Z",
+        updatedAt: "2025-01-01T00:00:00.000Z",
+        deletedAt: null,
+      };
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            title: "Meeting",
+            content: "# Meeting\n\nNotes here",
+            tags: ["meeting"],
+            note: mockNote,
+          }),
+      });
+
+      const blob = new Blob(["audio-data"], { type: "audio/webm" });
+      const result = await transcribeAudio(blob, "meeting");
+
+      expect(result.title).toBe("Meeting");
+      expect(result.content).toContain("Meeting");
+      expect(result.tags).toEqual(["meeting"]);
+      expect(result.note.id).toBe("note-2");
+    });
+
+    it("throws with server error message", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: () => Promise.resolve({ message: "Transcript is empty" }),
+      });
+
+      const blob = new Blob(["audio-data"], { type: "audio/webm" });
+
+      await expect(transcribeAudio(blob, "memo")).rejects.toThrow("Transcript is empty");
     });
   });
 });

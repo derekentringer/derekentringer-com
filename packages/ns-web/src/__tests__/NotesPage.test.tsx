@@ -78,7 +78,7 @@ vi.mock("../context/AuthContext.tsx", () => ({
 
 vi.mock("../hooks/useAiSettings.ts", () => ({
   useAiSettings: () => ({
-    settings: { completions: false, summarize: false, tagSuggestions: false, rewrite: false },
+    settings: { completions: false, summarize: false, tagSuggestions: false, rewrite: false, audioNotes: false, audioMode: "memo" },
     updateSetting: vi.fn(),
   }),
 }));
@@ -96,6 +96,7 @@ vi.mock("../api/ai.ts", () => ({
   summarizeNote: vi.fn(),
   suggestTags: vi.fn(),
   rewriteText: vi.fn(),
+  transcribeAudio: vi.fn(),
   enableEmbeddings: vi.fn().mockResolvedValue({ enabled: true }),
   disableEmbeddings: vi.fn().mockResolvedValue({ enabled: false }),
   getEmbeddingStatus: vi.fn().mockResolvedValue({ enabled: false, pendingCount: 0, totalWithEmbeddings: 0 }),

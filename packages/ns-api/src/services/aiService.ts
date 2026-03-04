@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { loadConfig } from "../config.js";
+import type { AudioMode } from "@derekentringer/shared/ns";
 
 let client: Anthropic | null = null;
 
@@ -167,6 +168,56 @@ export async function rewriteText(
     return block.text.trim();
   }
   return "";
+}
+
+const TRANSCRIPT_PROMPTS: Record<AudioMode, string> = {
+  meeting:
+    "You are a meeting notes assistant. Structure the transcript into meeting notes with: attendees (if mentioned), key discussion points, decisions made, and action items. Use markdown formatting. Output a JSON object with keys: title (short meeting title), content (structured markdown), tags (relevant tags array).",
+  lecture:
+    "You are a lecture notes assistant. Structure the transcript into organized notes with: key concepts, definitions, important points, and a summary. Use markdown formatting with headings and lists. Output a JSON object with keys: title (topic title), content (structured markdown), tags (relevant tags array).",
+  memo:
+    "You are a note-taking assistant. Clean up the transcript into a well-written memo. Keep the personal tone, fix grammar and filler words, organize into paragraphs. Output a JSON object with keys: title (brief title), content (cleaned-up markdown), tags (relevant tags array).",
+  verbatim:
+    "You are a transcription assistant. Minimally process the transcript: fix obvious errors, add punctuation and paragraph breaks, but keep the content as close to the original as possible. Output a JSON object with keys: title (brief title), content (cleaned transcription), tags (relevant tags array).",
+};
+
+export async function structureTranscript(
+  transcript: string,
+  mode: AudioMode,
+): Promise<{ title: string; content: string; tags: string[] }> {
+  const anthropic = getClient();
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 2000,
+    temperature: 0.3,
+    system: TRANSCRIPT_PROMPTS[mode],
+    messages: [{ role: "user", content: transcript }],
+  });
+
+  const block = response.content[0];
+  if (block.type === "text") {
+    try {
+      // Strip markdown code fences if present (```json ... ```)
+      let jsonText = block.text.trim();
+      const fenceMatch = jsonText.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+      if (fenceMatch) {
+        jsonText = fenceMatch[1].trim();
+      }
+      const parsed = JSON.parse(jsonText);
+      return {
+        title: typeof parsed.title === "string" ? parsed.title : "Audio Note",
+        content: typeof parsed.content === "string" ? parsed.content : transcript,
+        tags: Array.isArray(parsed.tags)
+          ? parsed.tags.filter((t: unknown): t is string => typeof t === "string")
+          : [],
+      };
+    } catch {
+      return { title: "Audio Note", content: transcript, tags: [] };
+    }
+  }
+
+  return { title: "Audio Note", content: transcript, tags: [] };
 }
 
 /** Reset client (for testing only) */

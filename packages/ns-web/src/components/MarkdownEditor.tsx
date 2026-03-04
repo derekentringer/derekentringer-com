@@ -32,6 +32,7 @@ interface MarkdownEditorProps {
   onSave?: () => void;
   placeholder?: string;
   className?: string;
+  style?: React.CSSProperties;
   showLineNumbers?: boolean;
   readOnly?: boolean;
   extensions?: Extension[];
@@ -156,6 +157,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     onSave,
     placeholder: placeholderText = "Start writing...",
     className,
+    style,
     showLineNumbers = false,
     readOnly = false,
     extensions: extraExtensions = [],
@@ -267,5 +269,5 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     });
   }, [showLineNumbers]);
 
-  return <div ref={containerRef} className={className} />;
+  return <div ref={containerRef} className={className} style={style} />;
 });

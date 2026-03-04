@@ -5,9 +5,13 @@ import {
   generateSummary,
   suggestTags,
   rewriteText,
+  structureTranscript,
 } from "../services/aiService.js";
-import { getNote, updateNote } from "../store/noteStore.js";
+import { transcribeAudio } from "../services/whisperService.js";
+import { getNote, updateNote, createNote } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
+import { toNote } from "../lib/mappers.js";
+import type { AudioMode } from "@derekentringer/shared/ns";
 import {
   isEmbeddingEnabled,
   setEmbeddingEnabled,
@@ -73,6 +77,17 @@ const rewriteSchema = {
     },
   },
 };
+
+const VALID_AUDIO_TYPES = new Set([
+  "audio/webm",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/ogg",
+  "video/webm",
+]);
+
+const VALID_MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 
 export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
@@ -220,6 +235,82 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       );
 
       return reply.send({ text: result });
+    },
+  );
+
+  // POST /ai/transcribe — multipart/form-data
+  fastify.post(
+    "/transcribe",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      let file;
+      let mode: AudioMode = "memo";
+
+      try {
+        const parts = request.parts();
+        for await (const part of parts) {
+          if (part.type === "field" && part.fieldname === "mode") {
+            const val = (part.value as string) || "memo";
+            if (VALID_MODES.includes(val as AudioMode)) {
+              mode = val as AudioMode;
+            }
+          } else if (part.type === "file" && part.fieldname === "file") {
+            file = {
+              buffer: await part.toBuffer(),
+              filename: part.filename,
+              mimetype: part.mimetype,
+            };
+          }
+        }
+      } catch {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid multipart data",
+        });
+      }
+
+      if (!file) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "No audio file provided",
+        });
+      }
+
+      if (!VALID_AUDIO_TYPES.has(file.mimetype)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: `Unsupported audio type: ${file.mimetype}`,
+        });
+      }
+
+      const transcript = await transcribeAudio(file.buffer, file.filename);
+
+      if (!transcript || transcript.trim().length === 0) {
+        return reply.status(422).send({
+          statusCode: 422,
+          error: "Unprocessable Entity",
+          message: "Transcript is empty",
+        });
+      }
+
+      const structured = await structureTranscript(transcript, mode);
+
+      const noteRow = await createNote({
+        title: structured.title,
+        content: structured.content,
+        tags: structured.tags,
+      });
+
+      const note = toNote(noteRow);
+
+      return reply.send({
+        title: structured.title,
+        content: structured.content,
+        tags: structured.tags,
+        note,
+      });
     },
   );
 

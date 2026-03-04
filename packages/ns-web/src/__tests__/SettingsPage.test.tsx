@@ -28,7 +28,7 @@ function renderSettingsPage() {
 }
 
 describe("SettingsPage", () => {
-  it("renders five toggle switches", () => {
+  it("renders six toggle switches", () => {
     renderSettingsPage();
 
     expect(screen.getByText("Inline completions")).toBeInTheDocument();
@@ -36,6 +36,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Auto-tag suggestions")).toBeInTheDocument();
     expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
     expect(screen.getByText("Semantic search")).toBeInTheDocument();
+    expect(screen.getByText("Audio notes")).toBeInTheDocument();
   });
 
   it("renders Settings heading", () => {
@@ -54,7 +55,7 @@ describe("SettingsPage", () => {
     renderSettingsPage();
 
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(5);
+    expect(switches).toHaveLength(6);
     switches.forEach((s) => {
       expect(s).toHaveAttribute("aria-checked", "false");
     });
@@ -175,5 +176,28 @@ describe("SettingsPage", () => {
     expect(screen.getAllByText("AI Rewrite (with selection)")).toHaveLength(2);
     expect(screen.getByText("Accept AI completion")).toBeInTheDocument();
     expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
+  });
+
+  it("audio notes toggle renders", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Audio notes")).toBeInTheDocument();
+  });
+
+  it("shows audio mode radio group when audio notes enabled", async () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({
+        audioNotes: true,
+        audioMode: "memo",
+      }),
+    );
+
+    renderSettingsPage();
+
+    expect(screen.getByRole("radiogroup", { name: "Audio mode" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Meeting notes")).toBeInTheDocument();
+    expect(screen.getByLabelText("Lecture notes")).toBeInTheDocument();
+    expect(screen.getByLabelText("Memo")).toBeInTheDocument();
+    expect(screen.getByLabelText("Verbatim")).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
+import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
 import { enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
 import type { EmbeddingStatus } from "@derekentringer/shared/ns";
 
@@ -34,18 +34,26 @@ function ToggleSwitch({
   );
 }
 
-const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch"; label: string }[] = [
+const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes"; label: string }[] = [
   { key: "completions", label: "Inline completions" },
   { key: "summarize", label: "Summarize" },
   { key: "tagSuggestions", label: "Auto-tag suggestions" },
   { key: "rewrite", label: "Select-and-rewrite" },
   { key: "semanticSearch", label: "Semantic search" },
+  { key: "audioNotes", label: "Audio notes" },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string }[] = [
   { value: "continue", label: "Continue writing" },
   { value: "markdown", label: "Markdown assist" },
   { value: "brief", label: "Brief" },
+];
+
+const AUDIO_MODE_OPTIONS: { value: AudioMode; label: string }[] = [
+  { value: "meeting", label: "Meeting notes" },
+  { value: "lecture", label: "Lecture notes" },
+  { value: "memo", label: "Memo" },
+  { value: "verbatim", label: "Verbatim" },
 ];
 
 const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: string }[] = [
@@ -164,6 +172,23 @@ export function SettingsPage() {
                           className="accent-primary"
                         />
                         <span className="text-sm text-muted-foreground">{styleLabel}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {key === "audioNotes" && settings.audioNotes && (
+                  <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
+                    {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel }) => (
+                      <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="audioMode"
+                          value={value}
+                          checked={settings.audioMode === value}
+                          onChange={() => updateSetting("audioMode", value)}
+                          className="accent-primary"
+                        />
+                        <span className="text-sm text-muted-foreground">{modeLabel}</span>
                       </label>
                     ))}
                   </div>

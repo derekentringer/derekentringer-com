@@ -1,8 +1,10 @@
 import { useState, useCallback } from "react";
 
 export type CompletionStyle = "continue" | "markdown" | "brief";
+export type AudioMode = "meeting" | "lecture" | "memo" | "verbatim";
 
 const VALID_COMPLETION_STYLES: CompletionStyle[] = ["continue", "markdown", "brief"];
+const VALID_AUDIO_MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 
 export interface AiSettings {
   completions: boolean;
@@ -11,6 +13,8 @@ export interface AiSettings {
   tagSuggestions: boolean;
   rewrite: boolean;
   semanticSearch: boolean;
+  audioNotes: boolean;
+  audioMode: AudioMode;
 }
 
 const STORAGE_KEY = "ns-ai-settings";
@@ -22,6 +26,8 @@ const DEFAULT_SETTINGS: AiSettings = {
   tagSuggestions: false,
   rewrite: false,
   semanticSearch: false,
+  audioNotes: false,
+  audioMode: "memo",
 };
 
 function loadSettings(): AiSettings {
@@ -38,6 +44,8 @@ function loadSettings(): AiSettings {
       tagSuggestions: typeof parsed.tagSuggestions === "boolean" ? parsed.tagSuggestions : false,
       rewrite: typeof parsed.rewrite === "boolean" ? parsed.rewrite : false,
       semanticSearch: typeof parsed.semanticSearch === "boolean" ? parsed.semanticSearch : false,
+      audioNotes: typeof parsed.audioNotes === "boolean" ? parsed.audioNotes : false,
+      audioMode: VALID_AUDIO_MODES.includes(parsed.audioMode) ? parsed.audioMode : "memo",
     };
   } catch {
     return DEFAULT_SETTINGS;

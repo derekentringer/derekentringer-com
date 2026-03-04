@@ -38,6 +38,7 @@ import { useAiSettings } from "../hooks/useAiSettings.ts";
 import { ghostTextExtension } from "../editor/ghostText.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
+import { AudioRecorder } from "../components/AudioRecorder.tsx";
 
 type SidebarView = "notes" | "trash";
 
@@ -104,6 +105,13 @@ export function NotesPage() {
     minSize: 180,
     maxSize: 480,
     storageKey: "ns-sidebar-width",
+  });
+  const splitResize = useResizable({
+    direction: "vertical",
+    initialSize: 500,
+    minSize: 200,
+    maxSize: 1200,
+    storageKey: "ns-split-width",
   });
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -538,6 +546,12 @@ export function NotesPage() {
     setSuggestedTags((prev) => prev.filter((t) => t !== tag));
   }
 
+  function handleAudioNoteCreated(note: Note) {
+    setNotes((prev) => [note, ...prev]);
+    selectNote(note);
+    loadFolders();
+  }
+
   // Clear suggested tags when switching notes
   useEffect(() => {
     setSuggestedTags([]);
@@ -786,6 +800,13 @@ export function NotesPage() {
                     : "Saved"}
               </span>
               <div className="flex-1" />
+              {settings.audioNotes && (
+                <AudioRecorder
+                  defaultMode={settings.audioMode}
+                  onNoteCreated={handleAudioNoteCreated}
+                  onError={showError}
+                />
+              )}
               {settings.summarize && (
                 <button
                   onClick={handleSummarize}
@@ -930,13 +951,21 @@ export function NotesPage() {
                   onSave={handleSave}
                   showLineNumbers={showLineNumbers}
                   extensions={aiExtensions}
-                  className={`${viewMode === "split" ? "w-1/2 border-r border-border" : "flex-1"} overflow-auto`}
+                  className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
+                  style={viewMode === "split" ? { width: splitResize.size } : undefined}
+                />
+              )}
+              {viewMode === "split" && (
+                <ResizeDivider
+                  direction="vertical"
+                  isDragging={splitResize.isDragging}
+                  onPointerDown={splitResize.onPointerDown}
                 />
               )}
               {viewMode !== "editor" && (
                 <MarkdownPreview
                   content={content}
-                  className={viewMode === "split" ? "w-1/2 overflow-auto" : "flex-1"}
+                  className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
                 />
               )}
             </div>
@@ -1000,12 +1029,19 @@ export function NotesPage() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <p className="text-muted-foreground">
               {sidebarView === "trash"
                 ? "Select a note to preview"
                 : "Select a note or create a new one"}
             </p>
+            {sidebarView === "notes" && settings.audioNotes && (
+              <AudioRecorder
+                defaultMode={settings.audioMode}
+                onNoteCreated={handleAudioNoteCreated}
+                onError={showError}
+              />
+            )}
           </div>
         )}
       </main>

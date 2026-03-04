@@ -23,12 +23,20 @@ const mockGenerateCompletion = vi.fn();
 const mockGenerateSummary = vi.fn();
 const mockSuggestTags = vi.fn();
 const mockRewriteText = vi.fn();
+const mockStructureTranscript = vi.fn();
 
 vi.mock("../services/aiService.js", () => ({
   generateCompletion: (...args: unknown[]) => mockGenerateCompletion(...args),
   generateSummary: (...args: unknown[]) => mockGenerateSummary(...args),
   suggestTags: (...args: unknown[]) => mockSuggestTags(...args),
   rewriteText: (...args: unknown[]) => mockRewriteText(...args),
+  structureTranscript: (...args: unknown[]) => mockStructureTranscript(...args),
+}));
+
+const mockTranscribeAudio = vi.fn();
+
+vi.mock("../services/whisperService.js", () => ({
+  transcribeAudio: (...args: unknown[]) => mockTranscribeAudio(...args),
 }));
 
 const mockSetEmbeddingEnabled = vi.fn();
@@ -504,6 +512,133 @@ describe("AI routes", () => {
         method: "GET",
         url: "/ai/embeddings/status",
       });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- POST /ai/transcribe ---
+
+  describe("POST /ai/transcribe", () => {
+    it("returns 200 with structured note", async () => {
+      const token = await getAccessToken();
+      mockTranscribeAudio.mockResolvedValue("This is a test transcript.");
+      mockStructureTranscript.mockResolvedValue({
+        title: "Test Meeting",
+        content: "# Meeting Notes\n\nDiscussion points...",
+        tags: ["meeting", "test"],
+      });
+      const noteRow = makeMockNoteRow({
+        title: "Test Meeting",
+        content: "# Meeting Notes\n\nDiscussion points...",
+        tags: ["meeting", "test"],
+      });
+      mockPrisma.note.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      mockPrisma.note.create.mockResolvedValue(noteRow);
+
+      const form = new FormData();
+      form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
+      form.append("mode", "meeting");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/transcribe",
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...Object.fromEntries(
+            // Let inject handle multipart boundary
+            [],
+          ),
+        },
+        payload: form,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.title).toBe("Test Meeting");
+      expect(body.content).toContain("Meeting Notes");
+      expect(body.tags).toEqual(["meeting", "test"]);
+      expect(body.note).toBeDefined();
+      expect(body.note.id).toBe(VALID_UUID);
+    });
+
+    it("returns 400 with no file", async () => {
+      const token = await getAccessToken();
+
+      const form = new FormData();
+      form.append("mode", "memo");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/transcribe",
+        headers: { authorization: `Bearer ${token}` },
+        payload: form,
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toBe("No audio file provided");
+    });
+
+    it("returns 422 when transcript is empty", async () => {
+      const token = await getAccessToken();
+      mockTranscribeAudio.mockResolvedValue("");
+
+      const form = new FormData();
+      form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/transcribe",
+        headers: { authorization: `Bearer ${token}` },
+        payload: form,
+      });
+
+      expect(res.statusCode).toBe(422);
+      expect(res.json().message).toBe("Transcript is empty");
+    });
+
+    it("defaults mode to memo", async () => {
+      const token = await getAccessToken();
+      mockTranscribeAudio.mockResolvedValue("Some transcript text.");
+      mockStructureTranscript.mockResolvedValue({
+        title: "Quick Note",
+        content: "Some transcript text.",
+        tags: [],
+      });
+      const noteRow = makeMockNoteRow({
+        title: "Quick Note",
+        content: "Some transcript text.",
+        tags: [],
+      });
+      mockPrisma.note.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      mockPrisma.note.create.mockResolvedValue(noteRow);
+
+      const form = new FormData();
+      form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/transcribe",
+        headers: { authorization: `Bearer ${token}` },
+        payload: form,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockStructureTranscript).toHaveBeenCalledWith(
+        "Some transcript text.",
+        "memo",
+      );
+    });
+
+    it("returns 401 without auth", async () => {
+      const form = new FormData();
+      form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/transcribe",
+        payload: form,
+      });
+
       expect(res.statusCode).toBe(401);
     });
   });

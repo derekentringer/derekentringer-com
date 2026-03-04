@@ -56,7 +56,7 @@
   - [x] 04a.1 — Completion Style Options (configurable styles: Continue writing, Markdown assist, Brief — per-style system prompts and max_tokens)
   - [x] 04b — Select-and-Rewrite (floating menu with 6 actions, Cmd/Ctrl+Shift+R shortcut, right-click trigger, settings toggle, keyboard shortcuts reference on settings page)
   - [x] 04c — Semantic Search (pgvector embeddings via Voyage AI, keyword/semantic/hybrid search modes, server-side embedding toggle, background processor)
-  - [ ] 04d — Audio Notes (voice recording → AI-structured markdown via Whisper + Claude)
+  - [x] 04d — Audio Notes (voice recording → AI-structured markdown via Whisper + Claude, AudioRecorder component with mode selection, draggable split view divider)
   - [ ] 04e — Q&A Over Notes
   - [ ] 04f — Duplicate Detection
   - [ ] 04g — Continue Writing, Structure Suggestions

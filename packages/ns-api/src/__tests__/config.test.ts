@@ -25,6 +25,7 @@ describe("loadConfig", () => {
     expect(config.port).toBe(3004);
     expect(config.nodeEnv).toBe("development");
     expect(config.isProduction).toBe(false);
+    expect(config.openaiApiKey).toBe("");
   });
 
   it("returns custom values from env vars", () => {
@@ -52,6 +53,7 @@ describe("loadConfig", () => {
     process.env.DATABASE_URL = "postgresql://localhost/test";
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
     process.env.VOYAGE_API_KEY = "pa-test-voyage-key";
+    process.env.OPENAI_API_KEY = "sk-test-openai-key";
 
     const config = loadConfig();
 
