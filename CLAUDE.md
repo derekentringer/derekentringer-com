@@ -36,7 +36,7 @@ This project uses **gitflow**:
 - **Finance Web**: Railpack; start command `npm run start --workspace=@derekentringer/fin-web`; `serve` static file server with SPA fallback; custom domain `fin.derekentringer.com`; env: `VITE_API_URL=https://fin-api.derekentringer.com` (build-time)
 - **Finance API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `ENCRYPTION_KEY` (64-char hex)
 - **NoteSync Web**: Railpack; start command `npm run start --workspace=@derekentringer/ns-web`; `serve` static file server with SPA fallback; custom domain `ns.derekentringer.com`; env: `VITE_API_URL=https://ns-api.derekentringer.com` (build-time)
-- **NoteSync API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`; Fastify on `0.0.0.0:$PORT`; custom domain `ns-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN=https://ns.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin)
+- **NoteSync API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`; Fastify on `0.0.0.0:$PORT`; custom domain `ns-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN=https://ns.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `OPENAI_API_KEY` (for Whisper audio transcription)
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs and pushes to main
 - **DNS**: GoDaddy (registrar) → Cloudflare (nameservers) → Railway (CNAME)
 - **www redirect**: Client-side redirect in `App.tsx` from `www.derekentringer.com` → `derekentringer.com`
@@ -154,7 +154,7 @@ packages/
   - `npm run db:migrate:deploy` — Apply migrations in production
   - `npm run db:seed` — Run seed script
   - `npm run db:studio` — Open Prisma Studio
-- **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN` (defaults to `http://localhost:3005`)
+- **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN` (defaults to `http://localhost:3005`), `OPENAI_API_KEY` (for Whisper audio transcription)
 - **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`
 
 ## External Services

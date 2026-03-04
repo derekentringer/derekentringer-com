@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04c Complete; 04d–04g Not Started)
+**Status:** Partial (04a–04d Complete; 04e–04g Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -16,7 +16,7 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | **04a.1** | `feature/ns-04a1-completion-styles` | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | Complete |
 | **04b** | `feature/ns-04b-select-and-rewrite` | Select-and-rewrite with floating menu, keyboard shortcut, right-click trigger, settings toggle | Complete |
 | **04c** | `feature/ns-04c-semantic-search` | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | Complete |
-| **04d** | — | Audio notes — voice recording → AI-structured markdown via Whisper + Claude | Not Started |
+| **04d** | `feature/ns-04d-audio-notes` | Audio notes — voice recording → AI-structured markdown via Whisper + Claude, AudioRecorder component, draggable split view divider | Complete |
 | **04e** | — | Q&A over notes (natural language questions with citations) | Not Started |
 | **04f** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
 | **04g** | — | Continue writing, heading/structure suggestions for empty notes | Not Started |
@@ -322,6 +322,98 @@ Adds semantic search using Voyage AI vector embeddings stored in PostgreSQL via 
 - `useAiSettings.test.ts` — added semanticSearch field defaults and persistence
 - `SettingsPage.test.tsx` — updated toggle count, tested semantic search toggle
 - `NotesPage.test.tsx` — tested search mode selector visibility, updated mocks
+
+---
+
+## Release 04d: Audio Notes
+
+### Summary
+
+Adds voice-to-notes: users record audio in the browser via `MediaRecorder`, upload to ns-api, transcribe via OpenAI Whisper API, then Claude processes the transcript into structured markdown with title, content, and tags. Four processing modes are available: Meeting, Lecture, Memo (default), and Verbatim. Also adds a draggable split view divider for the editor/preview panes, reusing the existing `useResizable` hook and `ResizeDivider` component.
+
+### API Changes
+
+#### Config (`packages/ns-api/src/config.ts`)
+- Added `openaiApiKey` to Config interface
+- Reads from `OPENAI_API_KEY` env var (empty string fallback for dev/test)
+- Added to required secrets list for production enforcement
+
+#### Whisper Service (`packages/ns-api/src/services/whisperService.ts`) — NEW
+- `transcribeAudio(audioBuffer, filename)` — calls OpenAI Whisper API (`POST https://api.openai.com/v1/audio/transcriptions`, model `whisper-1`)
+- Uploads audio as `multipart/form-data` via `FormData` + `Blob`
+- Returns plain text transcript
+- Auth via `Bearer ${config.openaiApiKey}`
+
+#### AI Service (`packages/ns-api/src/services/aiService.ts`)
+- Added `AudioMode` type import from `@derekentringer/shared/ns`
+- Added `TRANSCRIPT_PROMPTS` map with mode-specific system prompts for meeting, lecture, memo, verbatim
+- Added `structureTranscript(transcript, mode)` — non-streaming, `claude-sonnet-4-20250514`, `max_tokens: 2000`, `temperature: 0.3`
+- Returns `{ title, content, tags }` parsed from Claude's JSON response
+- Strips markdown code fences (`\`\`\`json ... \`\`\``) before parsing
+- Graceful fallback: returns raw transcript with "Audio Note" title on parse failure
+
+#### App (`packages/ns-api/src/app.ts`)
+- Registered `@fastify/multipart` plugin with `fileSize: 25MB`, `files: 1` limits
+
+#### Routes (`packages/ns-api/src/routes/ai.ts`)
+- `POST /ai/transcribe` — multipart/form-data; accepts `file` (audio blob) and `mode` (string) fields
+- Validates audio MIME type against allowlist: `audio/webm`, `audio/mp4`, `audio/mpeg`, `audio/wav`, `audio/ogg`, `video/webm`
+- Validates mode against `AudioMode` enum, defaults to `"memo"`
+- Flow: parse multipart → transcribe via Whisper → structure via Claude → create note → return `{ title, content, tags, note }`
+- Returns 400 for missing file, unsupported type, or invalid multipart
+- Returns 422 for empty transcript
+- Auth inherited from existing `onRequest` hook
+
+### Shared Types (`packages/shared/src/ns/types.ts`)
+- Added `AudioMode` type: `"meeting" | "lecture" | "memo" | "verbatim"`
+- Added `TranscribeResponse` interface: `{ title, content, tags }`
+
+### Frontend Changes
+
+#### AI API Client (`packages/ns-web/src/api/ai.ts`)
+- Added `TranscribeResult` interface: `{ title, content, tags, note }`
+- Added `transcribeAudio(audioBlob, mode)` — uploads `FormData` to `/ai/transcribe`, returns `TranscribeResult`
+- Parses error messages from JSON response on failure
+
+#### AudioRecorder Component (`packages/ns-web/src/components/AudioRecorder.tsx`) — NEW
+- `AudioRecorder({ defaultMode, onNoteCreated, onError })` — standalone component
+- Three states: idle (Record button + mode dropdown), recording (timer + Stop button), processing (spinner)
+- Browser `MediaRecorder` API with `audio/webm;codecs=opus`
+- Mode dropdown with 4 options (Meeting, Lecture, Memo, Verbatim), closes on outside click
+- Recording timer display (MM:SS), max 30 minutes auto-stop
+- Cleanup on unmount: stops tracks, clears timers
+- Graceful mic permission error handling (`NotAllowedError` → "Microphone permission denied")
+
+#### Settings Hook (`packages/ns-web/src/hooks/useAiSettings.ts`)
+- Added `AudioMode` type export: `"meeting" | "lecture" | "memo" | "verbatim"`
+- Added `audioNotes: boolean` to `AiSettings` (default: `false`)
+- Added `audioMode: AudioMode` to `AiSettings` (default: `"memo"`)
+- `loadSettings()` validates `audioMode` against allowed values, falls back to `"memo"`
+
+#### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
+- Added "Audio notes" toggle to AI Features section (6th toggle)
+- Added radio-button group below toggle (conditionally rendered when audio notes enabled) with 4 mode options
+- Added `AUDIO_MODE_OPTIONS` constant array
+
+#### NotesPage (`packages/ns-web/src/pages/NotesPage.tsx`)
+- AudioRecorder shown in editor toolbar (next to Summarize/Tags buttons) when `settings.audioNotes` enabled
+- AudioRecorder also shown in empty state (no note selected) when enabled
+- `handleAudioNoteCreated(note)` — adds new note to list, selects it, reloads folders
+- Draggable split view divider: added `splitResize` hook (`useResizable`, vertical, 200–1200px, `ns-split-width` localStorage key)
+- Split view: editor uses `shrink-0` + inline width from `splitResize.size`, `<ResizeDivider>` between panes, preview uses `flex-1 min-w-0`
+
+#### MarkdownEditor (`packages/ns-web/src/components/MarkdownEditor.tsx`)
+- Added `style?: React.CSSProperties` prop, passed to container div (supports split view resize)
+
+### Tests
+- `whisperService.test.ts` — NEW: Whisper API call, auth header, model param, returns transcript, throws on error (3 tests)
+- `AudioRecorder.test.tsx` — NEW: renders Record button and mode dropdown, shows mode options, closes dropdown on selection (3 tests)
+- `aiRoutes.test.ts` — added transcribe endpoint tests: 200 with structured note, mode parameter, missing file 400, unsupported type 400, empty transcript 422, 401 without auth (6 new tests)
+- `config.test.ts` — added openaiApiKey to expected config shape
+- `ai-api.test.ts` — added transcribeAudio tests: returns result, sends FormData, throws on error, mode parameter (4 new tests)
+- `useAiSettings.test.ts` — added audioNotes and audioMode field defaults, persistence, invalid mode fallback (4 new tests)
+- `SettingsPage.test.tsx` — updated toggle count to 6, tested audio notes toggle and mode radio group (3 new tests)
+- `NotesPage.test.tsx` — updated mocks for AudioRecorder
 
 ---
 

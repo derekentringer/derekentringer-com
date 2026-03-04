@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04c Complete; 04d–04g Not Started)
+**Status:** Partial (04a–04d Complete; 04e–04g Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -16,7 +16,7 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 | **04a.1** | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | **Complete** |
 | **04b** | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) with floating menu, keyboard shortcut, right-click trigger, and settings toggle | **Complete** |
 | **04c** | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | **Complete** |
-| **04d** | Audio notes — voice recording → AI-structured markdown via Whisper transcription + Claude processing | Not Started |
+| **04d** | Audio notes — voice recording → AI-structured markdown via Whisper transcription + Claude processing, AudioRecorder component, draggable split view divider | **Complete** |
 | **04e** | Q&A over notes (natural language questions with citations) | Not Started |
 | **04f** | Duplicate detection (embedding similarity for review/merge) | Not Started |
 | **04g** | Continue writing, heading/structure suggestions for empty notes | Not Started |

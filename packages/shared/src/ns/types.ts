@@ -105,3 +105,11 @@ export interface EmbeddingStatus {
   pendingCount: number;
   totalWithEmbeddings: number;
 }
+
+export type AudioMode = "meeting" | "lecture" | "memo" | "verbatim";
+
+export interface TranscribeResponse {
+  title: string;
+  content: string;
+  tags: string[];
+}

@@ -2,6 +2,7 @@ import Fastify, { type FastifyError } from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
+import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import authPlugin from "@derekentringer/shared/auth";
 import { loadConfig } from "./config.js";
@@ -48,6 +49,7 @@ export function buildApp(opts?: BuildAppOptions) {
       timeWindow: "1 minute",
     });
   }
+  app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
   app.register(authPlugin, {
     jwtSecret: config.jwtSecret,
   });
