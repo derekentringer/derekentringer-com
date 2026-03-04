@@ -68,11 +68,12 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 - Context: last ~500 characters before cursor
 
 #### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
-- Dedicated `/settings` route with three toggle switches (all default OFF):
+- Dedicated `/settings` route with toggle switches (all default OFF):
   - Inline completions — ghost text suggestions while typing
   - Summarize — AI-generated note summaries
   - Auto-tag suggestions — AI-suggested tags
 - Settings persisted in `localStorage` under `"ns-ai-settings"`
+- Two-column layout: AI Features card and Keyboard Shortcuts card side by side (`md:flex-row`, stacked on small screens)
 
 #### Settings Hook (`packages/ns-web/src/hooks/useAiSettings.ts`)
 - `useAiSettings()` — reads/writes AI settings from localStorage
@@ -394,6 +395,7 @@ Adds voice-to-notes: users record audio in the browser via `MediaRecorder`, uplo
 - Added "Audio notes" toggle to AI Features section (6th toggle)
 - Added radio-button group below toggle (conditionally rendered when audio notes enabled) with 4 mode options
 - Added `AUDIO_MODE_OPTIONS` constant array
+- Redesigned layout: two-column side-by-side cards (`max-w-3xl`, `md:flex-row`) — AI Features and Keyboard Shortcuts cards sit next to each other on medium+ screens, stack vertically on small screens
 
 #### NotesPage (`packages/ns-web/src/pages/NotesPage.tsx`)
 - AudioRecorder shown in editor toolbar (next to Summarize/Tags buttons) when `settings.audioNotes` enabled
