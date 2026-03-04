@@ -13,6 +13,38 @@ function getClient(): Anthropic {
 
 export type CompletionStyle = "continue" | "markdown" | "brief";
 
+export type RewriteAction =
+  | "rewrite"
+  | "concise"
+  | "fix-grammar"
+  | "to-list"
+  | "expand"
+  | "summarize";
+
+const REWRITE_PROMPTS: Record<RewriteAction, string> = {
+  rewrite:
+    "You are a writing assistant. Rewrite the user's text to improve clarity and flow while preserving the original meaning. Output only the rewritten text, no commentary.",
+  concise:
+    "You are a writing assistant. Make the user's text more concise by removing unnecessary words and tightening the prose. Output only the concise text, no commentary.",
+  "fix-grammar":
+    "You are a grammar assistant. Fix any grammar, spelling, and punctuation errors in the user's text. Output only the corrected text, no commentary.",
+  "to-list":
+    "You are a formatting assistant. Convert the user's text into a markdown bulleted list. Output only the list, no commentary.",
+  expand:
+    "You are a writing assistant. Expand the user's text with more detail, examples, or explanation while maintaining the original tone. Output only the expanded text, no commentary.",
+  summarize:
+    "You are a summarization assistant. Summarize the user's text into a concise version. Output only the summary, no commentary.",
+};
+
+const REWRITE_MAX_TOKENS: Record<RewriteAction, number> = {
+  rewrite: 500,
+  concise: 300,
+  "fix-grammar": 500,
+  "to-list": 500,
+  expand: 800,
+  summarize: 200,
+};
+
 const COMPLETION_PROMPTS: Record<CompletionStyle, string> = {
   continue:
     "You are a writing assistant. Continue the user's markdown text naturally. Output only the continuation, no commentary.",
@@ -114,6 +146,27 @@ export async function suggestTags(
     }
   }
   return [];
+}
+
+export async function rewriteText(
+  text: string,
+  action: RewriteAction,
+): Promise<string> {
+  const anthropic = getClient();
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: REWRITE_MAX_TOKENS[action],
+    temperature: 0.3,
+    system: REWRITE_PROMPTS[action],
+    messages: [{ role: "user", content: text }],
+  });
+
+  const block = response.content[0];
+  if (block.type === "text") {
+    return block.text.trim();
+  }
+  return "";
 }
 
 /** Reset client (for testing only) */

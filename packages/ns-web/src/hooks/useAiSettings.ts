@@ -9,6 +9,7 @@ export interface AiSettings {
   completionStyle: CompletionStyle;
   summarize: boolean;
   tagSuggestions: boolean;
+  rewrite: boolean;
 }
 
 const STORAGE_KEY = "ns-ai-settings";
@@ -18,6 +19,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   completionStyle: "continue",
   summarize: false,
   tagSuggestions: false,
+  rewrite: false,
 };
 
 function loadSettings(): AiSettings {
@@ -32,6 +34,7 @@ function loadSettings(): AiSettings {
         : "continue",
       summarize: typeof parsed.summarize === "boolean" ? parsed.summarize : false,
       tagSuggestions: typeof parsed.tagSuggestions === "boolean" ? parsed.tagSuggestions : false,
+      rewrite: typeof parsed.rewrite === "boolean" ? parsed.rewrite : false,
     };
   } catch {
     return DEFAULT_SETTINGS;

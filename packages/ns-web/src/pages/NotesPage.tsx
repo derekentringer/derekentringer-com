@@ -36,7 +36,8 @@ import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useAiSettings } from "../hooks/useAiSettings.ts";
 import { ghostTextExtension } from "../editor/ghostText.ts";
-import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi } from "../api/ai.ts";
+import { rewriteExtension } from "../editor/rewriteMenu.ts";
+import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 
 type SidebarView = "notes" | "trash";
 
@@ -474,11 +475,13 @@ export function NotesPage() {
   }, [folders, folderSortBy, folderSortOrder]);
 
   const aiExtensions = useMemo(
-    () =>
-      settings.completions
+    () => [
+      ...(settings.rewrite ? [rewriteExtension(rewriteText)] : []),
+      ...(settings.completions
         ? [ghostTextExtension((ctx, sig) => fetchCompletion(ctx, sig, settings.completionStyle))]
-        : [],
-    [settings.completions, settings.completionStyle],
+        : []),
+    ],
+    [settings.rewrite, settings.completions, settings.completionStyle],
   );
 
   async function handleSummarize() {

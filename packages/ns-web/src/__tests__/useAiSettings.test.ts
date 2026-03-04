@@ -15,6 +15,7 @@ describe("useAiSettings", () => {
       completionStyle: "continue",
       summarize: false,
       tagSuggestions: false,
+      rewrite: false,
     });
   });
 
@@ -26,6 +27,7 @@ describe("useAiSettings", () => {
         completionStyle: "markdown",
         summarize: true,
         tagSuggestions: false,
+        rewrite: true,
       }),
     );
 
@@ -36,6 +38,7 @@ describe("useAiSettings", () => {
       completionStyle: "markdown",
       summarize: true,
       tagSuggestions: false,
+      rewrite: true,
     });
   });
 
@@ -89,6 +92,7 @@ describe("useAiSettings", () => {
         completionStyle: "markdown",
         summarize: false,
         tagSuggestions: true,
+        rewrite: true,
       }),
     );
 
@@ -103,6 +107,7 @@ describe("useAiSettings", () => {
       completionStyle: "markdown",
       summarize: true,
       tagSuggestions: true,
+      rewrite: true,
     });
   });
 
@@ -116,6 +121,7 @@ describe("useAiSettings", () => {
       completionStyle: "continue",
       summarize: false,
       tagSuggestions: false,
+      rewrite: false,
     });
   });
 
@@ -132,6 +138,7 @@ describe("useAiSettings", () => {
       completionStyle: "continue",
       summarize: false,
       tagSuggestions: false,
+      rewrite: false,
     });
   });
 

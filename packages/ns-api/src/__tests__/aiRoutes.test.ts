@@ -22,11 +22,13 @@ beforeAll(() => {
 const mockGenerateCompletion = vi.fn();
 const mockGenerateSummary = vi.fn();
 const mockSuggestTags = vi.fn();
+const mockRewriteText = vi.fn();
 
 vi.mock("../services/aiService.js", () => ({
   generateCompletion: (...args: unknown[]) => mockGenerateCompletion(...args),
   generateSummary: (...args: unknown[]) => mockGenerateSummary(...args),
   suggestTags: (...args: unknown[]) => mockSuggestTags(...args),
+  rewriteText: (...args: unknown[]) => mockRewriteText(...args),
 }));
 
 import { buildApp } from "../app.js";
@@ -299,6 +301,104 @@ describe("AI routes", () => {
         method: "POST",
         url: "/ai/tags",
         payload: { noteId: VALID_UUID },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- POST /ai/rewrite ---
+
+  describe("POST /ai/rewrite", () => {
+    it("returns 200 with rewritten text", async () => {
+      const token = await getAccessToken();
+      mockRewriteText.mockResolvedValue("Improved text here.");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/rewrite",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { text: "Some rough draft text", action: "rewrite" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.text).toBe("Improved text here.");
+      expect(mockRewriteText).toHaveBeenCalledWith(
+        "Some rough draft text",
+        "rewrite",
+      );
+    });
+
+    it("accepts all valid actions", async () => {
+      const token = await getAccessToken();
+      const actions = [
+        "rewrite",
+        "concise",
+        "fix-grammar",
+        "to-list",
+        "expand",
+        "summarize",
+      ];
+
+      for (const action of actions) {
+        mockRewriteText.mockResolvedValue("result");
+
+        const res = await app.inject({
+          method: "POST",
+          url: "/ai/rewrite",
+          headers: { authorization: `Bearer ${token}` },
+          payload: { text: "test text", action },
+        });
+
+        expect(res.statusCode).toBe(200);
+      }
+    });
+
+    it("returns 400 with missing text", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/rewrite",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { action: "rewrite" },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 400 with missing action", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/rewrite",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { text: "some text" },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 400 with invalid action", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/rewrite",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { text: "some text", action: "invalid-action" },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/rewrite",
+        payload: { text: "some text", action: "rewrite" },
       });
 
       expect(res.statusCode).toBe(401);
