@@ -4,18 +4,38 @@ import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/us
 import { enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
 import type { EmbeddingStatus } from "@derekentringer/shared/ns";
 
+function InfoIcon({ tooltip }: { tooltip: string }) {
+  return (
+    <span className="relative group ml-1.5 inline-flex items-center" aria-label={tooltip}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="16" x2="12" y2="12" />
+        <line x1="12" y1="8" x2="12.01" y2="8" />
+      </svg>
+      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 rounded-md bg-card border border-border px-3 py-2 text-xs text-muted-foreground shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        {tooltip}
+      </span>
+    </span>
+  );
+}
+
 function ToggleSwitch({
   label,
   checked,
   onChange,
+  info,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  info?: string;
 }) {
   return (
     <label className="flex items-center justify-between py-3 cursor-pointer">
-      <span className="text-sm text-foreground">{label}</span>
+      <span className="text-sm text-foreground flex items-center">
+        {label}
+        {info && <InfoIcon tooltip={info} />}
+      </span>
       <button
         role="switch"
         aria-checked={checked}
@@ -34,26 +54,26 @@ function ToggleSwitch({
   );
 }
 
-const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes"; label: string }[] = [
-  { key: "completions", label: "Inline completions" },
-  { key: "summarize", label: "Summarize" },
-  { key: "tagSuggestions", label: "Auto-tag suggestions" },
-  { key: "rewrite", label: "Select-and-rewrite" },
-  { key: "semanticSearch", label: "Semantic search" },
-  { key: "audioNotes", label: "Audio notes" },
+const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes"; label: string; info: string }[] = [
+  { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
+  { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
+  { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
+  { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
+  { key: "semanticSearch", label: "Semantic search", info: "Search by meaning, not just keywords. Uses AI embeddings to find related notes." },
+  { key: "audioNotes", label: "Audio notes", info: "Record audio and transcribe it into a note using AI." },
 ];
 
-const STYLE_OPTIONS: { value: CompletionStyle; label: string }[] = [
-  { value: "continue", label: "Continue writing" },
-  { value: "markdown", label: "Markdown assist" },
-  { value: "brief", label: "Brief" },
+const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [
+  { value: "continue", label: "Continue writing", info: "Predicts and continues your natural writing style." },
+  { value: "markdown", label: "Markdown assist", info: "Suggests markdown formatting like headings, lists, and code blocks." },
+  { value: "brief", label: "Brief", info: "Short, concise completions — a few words at a time." },
 ];
 
-const AUDIO_MODE_OPTIONS: { value: AudioMode; label: string }[] = [
-  { value: "meeting", label: "Meeting notes" },
-  { value: "lecture", label: "Lecture notes" },
-  { value: "memo", label: "Memo" },
-  { value: "verbatim", label: "Verbatim" },
+const AUDIO_MODE_OPTIONS: { value: AudioMode; label: string; info: string }[] = [
+  { value: "meeting", label: "Meeting notes", info: "Structures transcript into attendees, discussion points, decisions, and action items." },
+  { value: "lecture", label: "Lecture notes", info: "Organizes into key concepts, definitions, important points, and a summary." },
+  { value: "memo", label: "Memo", info: "Cleans up speech into a well-written memo. Fixes grammar and filler words." },
+  { value: "verbatim", label: "Verbatim", info: "Minimal processing — adds punctuation and paragraphs but keeps your exact words." },
 ];
 
 const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: string }[] = [
@@ -142,7 +162,7 @@ export function SettingsPage() {
             </h2>
 
             <div className="divide-y divide-border">
-              {TOGGLE_SETTINGS.map(({ key, label }) => (
+              {TOGGLE_SETTINGS.map(({ key, label, info }) => (
                 <div key={key}>
                   <ToggleSwitch
                     label={label}
@@ -152,6 +172,7 @@ export function SettingsPage() {
                         ? handleSemanticSearchToggle(value)
                         : updateSetting(key, value)
                     }
+                    info={info}
                   />
                   {key === "semanticSearch" && settings.semanticSearch && embeddingStatus && (
                     <div className="pb-3 pl-1 text-xs text-muted-foreground">
@@ -162,7 +183,7 @@ export function SettingsPage() {
                   )}
                   {key === "completions" && settings.completions && (
                     <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">
-                      {STYLE_OPTIONS.map(({ value, label: styleLabel }) => (
+                      {STYLE_OPTIONS.map(({ value, label: styleLabel, info: styleInfo }) => (
                         <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
                           <input
                             type="radio"
@@ -171,15 +192,17 @@ export function SettingsPage() {
                             checked={settings.completionStyle === value}
                             onChange={() => updateSetting("completionStyle", value)}
                             className="accent-primary"
+                            aria-label={styleLabel}
                           />
                           <span className="text-sm text-muted-foreground">{styleLabel}</span>
+                          <InfoIcon tooltip={styleInfo} />
                         </label>
                       ))}
                     </div>
                   )}
                   {key === "audioNotes" && settings.audioNotes && (
                     <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
-                      {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel }) => (
+                      {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel, info: modeInfo }) => (
                         <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
                           <input
                             type="radio"
@@ -188,8 +211,10 @@ export function SettingsPage() {
                             checked={settings.audioMode === value}
                             onChange={() => updateSetting("audioMode", value)}
                             className="accent-primary"
+                            aria-label={modeLabel}
                           />
                           <span className="text-sm text-muted-foreground">{modeLabel}</span>
+                          <InfoIcon tooltip={modeInfo} />
                         </label>
                       ))}
                     </div>

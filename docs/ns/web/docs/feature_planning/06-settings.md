@@ -1,12 +1,25 @@
 # 06 — Settings
 
-**Status:** Not Started
+**Status:** Partial (AI settings implemented as part of 04a–04d.1; remaining sections not started)
 **Phase:** 4 — Polish
 **Priority:** Low
 
 ## Summary
 
 Settings page for theme, editor preferences, AI feature toggles, and account management.
+
+## What's Already Implemented
+
+The AI settings section was built incrementally as part of AI feature releases (04a–04d.1):
+- **Per-feature toggles**: Inline completions, Summarize, Auto-tag suggestions, Select-and-rewrite, Semantic search, Audio notes (all default OFF)
+- **Completion style radio group**: Continue writing, Markdown assist, Brief (shown when completions enabled)
+- **Audio mode radio group**: Meeting notes, Lecture notes, Memo, Verbatim (shown when audio notes enabled)
+- **Info tooltips**: Hover tooltips on all toggles, completion styles, and audio modes via InfoIcon component
+- **Semantic search status**: Embedding count and pending count shown when semantic search enabled
+- **Keyboard shortcuts reference**: Platform-aware (Cmd/Ctrl) shortcut table in a side-by-side card
+- **Two-column layout**: AI Features card and Keyboard Shortcuts card side by side on medium+ screens
+- **Settings persisted in localStorage** under `"ns-ai-settings"`
+- **Route**: `/settings` with back-to-notes navigation
 
 ## Requirements
 

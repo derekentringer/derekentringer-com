@@ -1,15 +1,5 @@
 import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
   SortableContext,
-  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
@@ -21,7 +11,6 @@ interface NoteListProps {
   notes: NoteSearchResult[];
   selectedId: string | null;
   onSelect: (note: NoteSearchResult) => void;
-  onReorder: (activeId: string, overId: string) => void;
   sortByManual: boolean;
 }
 
@@ -84,45 +73,22 @@ export function NoteList({
   notes,
   selectedId,
   onSelect,
-  onReorder,
   sortByManual,
 }: NoteListProps) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      onReorder(String(active.id), String(over.id));
-    }
-  }
-
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
+    <SortableContext
+      items={notes.map((n) => n.id)}
+      strategy={verticalListSortingStrategy}
     >
-      <SortableContext
-        items={notes.map((n) => n.id)}
-        strategy={verticalListSortingStrategy}
-      >
-        {notes.map((note) => (
-          <SortableNoteItem
-            key={note.id}
-            note={note}
-            isSelected={note.id === selectedId}
-            onSelect={onSelect}
-            sortByManual={sortByManual}
-          />
-        ))}
-      </SortableContext>
-    </DndContext>
+      {notes.map((note) => (
+        <SortableNoteItem
+          key={note.id}
+          note={note}
+          isSelected={note.id === selectedId}
+          onSelect={onSelect}
+          sortByManual={sortByManual}
+        />
+      ))}
+    </SortableContext>
   );
 }

@@ -83,7 +83,11 @@ async function processBatch(): Promise<void> {
 
   for (const note of notes) {
     try {
-      const text = `${note.title}\n${note.content}`;
+      const text = `${note.title}\n${note.content}`.trim();
+      if (text.length === 0 || !note.content.trim()) {
+        await markNoteEmbeddingCurrent(note.id);
+        continue;
+      }
       const embedding = await generateEmbedding(text);
       await updateNoteEmbedding(note.id, embedding);
     } catch (error) {

@@ -211,8 +211,12 @@ async function semanticSearch(
   // Minimum cosine similarity threshold to filter low-quality matches
   const SIM_THRESHOLD = 0.3;
 
+  // Minimum content length — notes with empty/near-empty content produce
+  // unreliable embeddings that spuriously match many queries
+  const MIN_CONTENT_LEN = 20;
+
   // Count query — no vector param needed, filter indices start at 1
-  const baseWhere = `"deletedAt" IS NULL AND "embedding" IS NOT NULL`;
+  const baseWhere = `"deletedAt" IS NULL AND "embedding" IS NOT NULL AND LENGTH("content") >= ${MIN_CONTENT_LEN}`;
   const countFilter = buildFilterClause(filter, 1);
   const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${baseWhere}${countFilter.clause}`;
 
@@ -250,13 +254,28 @@ async function hybridSearch(
   const queryEmbedding = await generateQueryEmbedding(search);
   const vectorStr = `[${queryEmbedding.join(",")}]`;
 
-  // Count query — $1 = search text, filter indices start at 2 (no vector needed)
-  const countBaseWhere = `"deletedAt" IS NULL AND ("search_vector" @@ plainto_tsquery('english', $1) OR "embedding" IS NOT NULL)`;
-  const countFilter = buildFilterClause(filter, 2);
-  const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${countBaseWhere}${countFilter.clause}`;
+  // Semantic similarity threshold — filters out notes with weak/irrelevant
+  // embeddings. Higher than pure semantic (0.3) because hybrid includes the
+  // keyword path as a fallback so we can be stricter on the semantic side.
+  const HYBRID_SIM_THRESHOLD = 0.4;
+
+  // Minimum content length for semantic signal — notes with empty/near-empty
+  // content produce unreliable embeddings that spuriously match many queries.
+  // Keyword matching still works for sparse notes via the first OR branch.
+  const MIN_CONTENT_LEN = 20;
+
+  // Require keyword match OR meaningful semantic similarity from substantial content
+  const baseWhere = `"deletedAt" IS NULL AND ("search_vector" @@ plainto_tsquery('english', $1) OR ("embedding" IS NOT NULL AND LENGTH("content") >= ${MIN_CONTENT_LEN} AND (1 - ("embedding" <=> $2::vector)) > ${HYBRID_SIM_THRESHOLD}))`;
+
+  // Count query — $1 = search text, $2 = vector, filter indices start at 3
+  const countFilter = buildFilterClause(filter, 3);
+  const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${baseWhere}${countFilter.clause}`;
 
   // Data query — $1 = search text, $2 = vector, filter indices start at 3
-  const dataBaseWhere = `"deletedAt" IS NULL AND ("search_vector" @@ plainto_tsquery('english', $1) OR "embedding" IS NOT NULL)`;
+  // Scoring: ts_rank values are tiny (0.01–0.1) so raw keyword weight is
+  // negligible vs semantic similarity (0–1). A flat 0.3 bonus for keyword
+  // matches ensures notes containing the search term always outrank
+  // semantic-only matches of similar quality.
   const dataFilter = buildFilterClause(filter, 3);
   let dataParamIdx = dataFilter.nextIdx;
   const dataQuery = `
@@ -266,16 +285,17 @@ async function hybridSearch(
         'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline,
       (
         0.3 * COALESCE(ts_rank("search_vector", plainto_tsquery('english', $1)), 0) +
-        0.7 * COALESCE(1 - ("embedding" <=> $2::vector), 0)
+        0.7 * COALESCE(1 - ("embedding" <=> $2::vector), 0) +
+        CASE WHEN "search_vector" @@ plainto_tsquery('english', $1) THEN 0.3 ELSE 0 END
       ) AS hybrid_score
     FROM "notes"
-    WHERE ${dataBaseWhere}${dataFilter.clause}
+    WHERE ${baseWhere}${dataFilter.clause}
     ORDER BY hybrid_score DESC
     LIMIT $${dataParamIdx} OFFSET $${dataParamIdx + 1}
   `;
 
   const [countResult, notes] = await Promise.all([
-    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, search, ...countFilter.params),
+    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, search, vectorStr, ...countFilter.params),
     prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, search, vectorStr, ...dataFilter.params, pageSize, skip),
   ]);
 
