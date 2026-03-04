@@ -10,10 +10,11 @@ export function getPrisma(): PrismaClient {
       throw new Error("DATABASE_URL environment variable is not set");
     }
     const isProduction = (process.env.NODE_ENV || "").toLowerCase().trim() === "production";
+    const sslDisabled = connectionString.includes("sslmode=disable");
     const adapter = new PrismaPg({
       connectionString,
       max: 10,
-      ...(isProduction ? { ssl: { rejectUnauthorized: false } } : {}),
+      ...(isProduction && !sslDisabled ? { ssl: { rejectUnauthorized: false } } : {}),
     });
     prisma = new PrismaClient({ adapter });
   }
