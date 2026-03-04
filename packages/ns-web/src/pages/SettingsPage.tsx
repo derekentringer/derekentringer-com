@@ -110,8 +110,8 @@ export function SettingsPage() {
   );
 
   return (
-    <div className="flex h-full items-center justify-center bg-background">
-      <div className="w-full max-w-md p-6">
+    <div className="flex h-full items-start justify-center bg-background overflow-auto">
+      <div className="w-full max-w-3xl p-6">
         <button
           onClick={() => navigate("/")}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
@@ -135,82 +135,84 @@ export function SettingsPage() {
 
         <h1 className="text-xl font-semibold text-foreground mb-6">Settings</h1>
 
-        <div className="bg-card border border-border rounded-lg p-4">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
-            AI Features
-          </h2>
+        <div className="flex flex-col md:flex-row gap-4 items-start">
+          <div className="bg-card border border-border rounded-lg p-4 flex-1 min-w-0">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
+              AI Features
+            </h2>
 
-          <div className="divide-y divide-border">
-            {TOGGLE_SETTINGS.map(({ key, label }) => (
-              <div key={key}>
-                <ToggleSwitch
-                  label={label}
-                  checked={settings[key]}
-                  onChange={(value) =>
-                    key === "semanticSearch"
-                      ? handleSemanticSearchToggle(value)
-                      : updateSetting(key, value)
-                  }
-                />
-                {key === "semanticSearch" && settings.semanticSearch && embeddingStatus && (
-                  <div className="pb-3 pl-1 text-xs text-muted-foreground">
-                    {embeddingStatus.pendingCount > 0
-                      ? `${embeddingStatus.totalWithEmbeddings} embedded, ${embeddingStatus.pendingCount} pending`
-                      : `${embeddingStatus.totalWithEmbeddings} notes embedded`}
-                  </div>
-                )}
-                {key === "completions" && settings.completions && (
-                  <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">
-                    {STYLE_OPTIONS.map(({ value, label: styleLabel }) => (
-                      <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="completionStyle"
-                          value={value}
-                          checked={settings.completionStyle === value}
-                          onChange={() => updateSetting("completionStyle", value)}
-                          className="accent-primary"
-                        />
-                        <span className="text-sm text-muted-foreground">{styleLabel}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-                {key === "audioNotes" && settings.audioNotes && (
-                  <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
-                    {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel }) => (
-                      <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="audioMode"
-                          value={value}
-                          checked={settings.audioMode === value}
-                          onChange={() => updateSetting("audioMode", value)}
-                          className="accent-primary"
-                        />
-                        <span className="text-sm text-muted-foreground">{modeLabel}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+            <div className="divide-y divide-border">
+              {TOGGLE_SETTINGS.map(({ key, label }) => (
+                <div key={key}>
+                  <ToggleSwitch
+                    label={label}
+                    checked={settings[key]}
+                    onChange={(value) =>
+                      key === "semanticSearch"
+                        ? handleSemanticSearchToggle(value)
+                        : updateSetting(key, value)
+                    }
+                  />
+                  {key === "semanticSearch" && settings.semanticSearch && embeddingStatus && (
+                    <div className="pb-3 pl-1 text-xs text-muted-foreground">
+                      {embeddingStatus.pendingCount > 0
+                        ? `${embeddingStatus.totalWithEmbeddings} embedded, ${embeddingStatus.pendingCount} pending`
+                        : `${embeddingStatus.totalWithEmbeddings} notes embedded`}
+                    </div>
+                  )}
+                  {key === "completions" && settings.completions && (
+                    <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">
+                      {STYLE_OPTIONS.map(({ value, label: styleLabel }) => (
+                        <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="completionStyle"
+                            value={value}
+                            checked={settings.completionStyle === value}
+                            onChange={() => updateSetting("completionStyle", value)}
+                            className="accent-primary"
+                          />
+                          <span className="text-sm text-muted-foreground">{styleLabel}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {key === "audioNotes" && settings.audioNotes && (
+                    <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
+                      {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel }) => (
+                        <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="audioMode"
+                            value={value}
+                            checked={settings.audioMode === value}
+                            onChange={() => updateSetting("audioMode", value)}
+                            className="accent-primary"
+                          />
+                          <span className="text-sm text-muted-foreground">{modeLabel}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="bg-card border border-border rounded-lg p-4 mt-4">
-          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
-            Keyboard Shortcuts
-          </h2>
-          <div className="space-y-2">
-            {KEYBOARD_SHORTCUTS.map(({ shortcut, macShortcut, description }) => (
-              <div key={`${shortcut}-${description}`} className="flex items-center justify-between py-1">
-                <span className="text-sm text-foreground">{description}</span>
-                <kbd className="px-2 py-0.5 rounded bg-background border border-border text-xs text-muted-foreground font-mono">
-                  {isMac ? macShortcut : shortcut}
-                </kbd>
-              </div>
-            ))}
+          <div className="bg-card border border-border rounded-lg p-4 flex-1 min-w-0">
+            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
+              Keyboard Shortcuts
+            </h2>
+            <div className="space-y-2">
+              {KEYBOARD_SHORTCUTS.map(({ shortcut, macShortcut, description }) => (
+                <div key={`${shortcut}-${description}`} className="flex items-center justify-between py-1">
+                  <span className="text-sm text-foreground">{description}</span>
+                  <kbd className="px-2 py-0.5 rounded bg-background border border-border text-xs text-muted-foreground font-mono whitespace-nowrap ml-3">
+                    {isMac ? macShortcut : shortcut}
+                  </kbd>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
