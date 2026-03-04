@@ -22,12 +22,13 @@ function renderSettingsPage() {
 }
 
 describe("SettingsPage", () => {
-  it("renders three toggle switches", () => {
+  it("renders four toggle switches", () => {
     renderSettingsPage();
 
     expect(screen.getByText("Inline completions")).toBeInTheDocument();
     expect(screen.getByText("Summarize")).toBeInTheDocument();
     expect(screen.getByText("Auto-tag suggestions")).toBeInTheDocument();
+    expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
   });
 
   it("renders Settings heading", () => {
@@ -46,7 +47,7 @@ describe("SettingsPage", () => {
     renderSettingsPage();
 
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(3);
+    expect(switches).toHaveLength(4);
     switches.forEach((s) => {
       expect(s).toHaveAttribute("aria-checked", "false");
     });
@@ -141,5 +142,24 @@ describe("SettingsPage", () => {
 
     const continueRadio = screen.getByLabelText("Continue writing") as HTMLInputElement;
     expect(continueRadio.checked).toBe(true);
+  });
+
+  // --- Keyboard Shortcuts section ---
+
+  it("renders Keyboard Shortcuts heading", () => {
+    renderSettingsPage();
+
+    expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
+  });
+
+  it("displays all shortcut descriptions", () => {
+    renderSettingsPage();
+
+    expect(screen.getByText("Save note")).toBeInTheDocument();
+    expect(screen.getByText("Bold")).toBeInTheDocument();
+    expect(screen.getByText("Italic")).toBeInTheDocument();
+    expect(screen.getAllByText("AI Rewrite (with selection)")).toHaveLength(2);
+    expect(screen.getByText("Accept AI completion")).toBeInTheDocument();
+    expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
   });
 });

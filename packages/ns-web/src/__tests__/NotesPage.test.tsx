@@ -78,7 +78,7 @@ vi.mock("../context/AuthContext.tsx", () => ({
 
 vi.mock("../hooks/useAiSettings.ts", () => ({
   useAiSettings: () => ({
-    settings: { completions: false, summarize: false, tagSuggestions: false },
+    settings: { completions: false, summarize: false, tagSuggestions: false, rewrite: false },
     updateSetting: vi.fn(),
   }),
 }));
@@ -87,10 +87,15 @@ vi.mock("../editor/ghostText.ts", () => ({
   ghostTextExtension: vi.fn(() => []),
 }));
 
+vi.mock("../editor/rewriteMenu.ts", () => ({
+  rewriteExtension: vi.fn(() => []),
+}));
+
 vi.mock("../api/ai.ts", () => ({
   fetchCompletion: vi.fn(),
   summarizeNote: vi.fn(),
   suggestTags: vi.fn(),
+  rewriteText: vi.fn(),
 }));
 
 const mockNote = {

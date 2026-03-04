@@ -4,6 +4,7 @@ import {
   generateCompletion,
   generateSummary,
   suggestTags,
+  rewriteText,
 } from "../services/aiService.js";
 import { getNote, updateNote } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
@@ -41,6 +42,28 @@ const tagsSchema = {
     additionalProperties: false,
     properties: {
       noteId: { type: "string", minLength: 1 },
+    },
+  },
+};
+
+const rewriteSchema = {
+  body: {
+    type: "object" as const,
+    required: ["text", "action"],
+    additionalProperties: false,
+    properties: {
+      text: { type: "string", minLength: 1, maxLength: 10000 },
+      action: {
+        type: "string",
+        enum: [
+          "rewrite",
+          "concise",
+          "fix-grammar",
+          "to-list",
+          "expand",
+          "summarize",
+        ],
+      },
     },
   },
 };
@@ -166,6 +189,31 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       );
 
       return reply.send({ tags: suggestedTags });
+    },
+  );
+
+  // POST /ai/rewrite — JSON
+  fastify.post<{ Body: { text: string; action: string } }>(
+    "/rewrite",
+    { schema: rewriteSchema },
+    async (
+      request: FastifyRequest<{ Body: { text: string; action: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { text, action } = request.body;
+
+      const result = await rewriteText(
+        text,
+        action as
+          | "rewrite"
+          | "concise"
+          | "fix-grammar"
+          | "to-list"
+          | "expand"
+          | "summarize",
+      );
+
+      return reply.send({ text: result });
     },
   );
 }

@@ -23,6 +23,7 @@ import {
   generateCompletion,
   generateSummary,
   suggestTags,
+  rewriteText,
   resetClient,
 } from "../services/aiService.js";
 
@@ -275,6 +276,95 @@ describe("aiService", () => {
 
       const result = await suggestTags("Title", "Content", []);
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("rewriteText", () => {
+    it("returns rewritten text", async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: "text", text: "Rewritten version." }],
+      });
+
+      const result = await rewriteText("Original text", "rewrite");
+
+      expect(result).toBe("Rewritten version.");
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 500,
+          temperature: 0.3,
+        }),
+      );
+    });
+
+    it("uses correct system prompt for each action", async () => {
+      const actionPromptPairs: [string, string][] = [
+        ["rewrite", "Rewrite the user's text"],
+        ["concise", "Make the user's text more concise"],
+        ["fix-grammar", "Fix any grammar"],
+        ["to-list", "Convert the user's text into a markdown bulleted list"],
+        ["expand", "Expand the user's text"],
+        ["summarize", "Summarize the user's text"],
+      ];
+
+      for (const [action, promptSnippet] of actionPromptPairs) {
+        mockCreate.mockClear();
+        mockCreate.mockResolvedValue({
+          content: [{ type: "text", text: "result" }],
+        });
+
+        await rewriteText("test", action as "rewrite" | "concise" | "fix-grammar" | "to-list" | "expand" | "summarize");
+
+        expect(mockCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            system: expect.stringContaining(promptSnippet),
+          }),
+        );
+      }
+    });
+
+    it("uses correct max_tokens per action", async () => {
+      const actionMaxTokens: Record<string, number> = {
+        rewrite: 500,
+        concise: 300,
+        "fix-grammar": 500,
+        "to-list": 500,
+        expand: 800,
+        summarize: 200,
+      };
+
+      for (const [action, maxTokens] of Object.entries(actionMaxTokens)) {
+        mockCreate.mockClear();
+        mockCreate.mockResolvedValue({
+          content: [{ type: "text", text: "result" }],
+        });
+
+        await rewriteText("test", action as "rewrite" | "concise" | "fix-grammar" | "to-list" | "expand" | "summarize");
+
+        expect(mockCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            max_tokens: maxTokens,
+          }),
+        );
+      }
+    });
+
+    it("returns empty string for non-text response", async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: "tool_use", id: "t1" }],
+      });
+
+      const result = await rewriteText("test", "rewrite");
+      expect(result).toBe("");
+    });
+
+    it("trims whitespace from response", async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: "text", text: "  Trimmed result  " }],
+      });
+
+      const result = await rewriteText("test", "concise");
+      expect(result).toBe("Trimmed result");
     });
   });
 });

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
 
@@ -31,10 +32,11 @@ function ToggleSwitch({
   );
 }
 
-const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions"; label: string }[] = [
+const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite"; label: string }[] = [
   { key: "completions", label: "Inline completions" },
   { key: "summarize", label: "Summarize" },
   { key: "tagSuggestions", label: "Auto-tag suggestions" },
+  { key: "rewrite", label: "Select-and-rewrite" },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string }[] = [
@@ -43,9 +45,24 @@ const STYLE_OPTIONS: { value: CompletionStyle; label: string }[] = [
   { value: "brief", label: "Brief" },
 ];
 
+const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: string }[] = [
+  { shortcut: "Ctrl + S", macShortcut: "Cmd + S", description: "Save note" },
+  { shortcut: "Ctrl + B", macShortcut: "Cmd + B", description: "Bold" },
+  { shortcut: "Ctrl + I", macShortcut: "Cmd + I", description: "Italic" },
+  { shortcut: "Ctrl + Shift + R", macShortcut: "Cmd + Shift + R", description: "AI Rewrite (with selection)" },
+  { shortcut: "Right-click", macShortcut: "Right-click", description: "AI Rewrite (with selection)" },
+  { shortcut: "Tab", macShortcut: "Tab", description: "Accept AI completion" },
+  { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
+];
+
 export function SettingsPage() {
   const navigate = useNavigate();
   const { settings, updateSetting } = useAiSettings();
+
+  const isMac = useMemo(
+    () => typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform),
+    [],
+  );
 
   return (
     <div className="flex h-full items-center justify-center bg-background">
@@ -103,6 +120,22 @@ export function SettingsPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-lg p-4 mt-4">
+          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Keyboard Shortcuts
+          </h2>
+          <div className="space-y-2">
+            {KEYBOARD_SHORTCUTS.map(({ shortcut, macShortcut, description }) => (
+              <div key={`${shortcut}-${description}`} className="flex items-center justify-between py-1">
+                <span className="text-sm text-foreground">{description}</span>
+                <kbd className="px-2 py-0.5 rounded bg-background border border-border text-xs text-muted-foreground font-mono">
+                  {isMac ? macShortcut : shortcut}
+                </kbd>
               </div>
             ))}
           </div>
