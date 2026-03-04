@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04c Complete; 04d–04f Not Started)
+**Status:** Partial (04a–04c Complete; 04d–04g Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -16,23 +16,31 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 | **04a.1** | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | **Complete** |
 | **04b** | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) with floating menu, keyboard shortcut, right-click trigger, and settings toggle | **Complete** |
 | **04c** | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | **Complete** |
-| **04d** | Q&A over notes (natural language questions with citations) | Not Started |
-| **04e** | Duplicate detection (embedding similarity for review/merge) | Not Started |
-| **04f** | Continue writing, heading/structure suggestions for empty notes | Not Started |
+| **04d** | Audio notes — voice recording → AI-structured markdown via Whisper transcription + Claude processing | Not Started |
+| **04e** | Q&A over notes (natural language questions with citations) | Not Started |
+| **04f** | Duplicate detection (embedding similarity for review/merge) | Not Started |
+| **04g** | Continue writing, heading/structure suggestions for empty notes | Not Started |
 
-## Remaining Requirements (04d–04f)
+## Remaining Requirements (04d–04g)
 
-- **Q&A over notes** (04d):
+- **Audio notes** (04d):
+  - Record audio in browser via MediaRecorder API
+  - Upload to ns-api, transcribe via OpenAI Whisper API
+  - Claude processes transcript into structured markdown (headings, key points, action items)
+  - Processing modes: meeting notes, lecture notes, voice memo, verbatim
+  - API: `POST /ai/transcribe`
+  - See [04d — Audio Notes](04d-audio-notes.md) for full spec
+- **Q&A over notes** (04e):
   - Natural language question input
   - System finds relevant notes (semantic + keyword), sends as context to Claude
   - Returns answer with citations linking to source notes
   - Chat-style panel
   - API: `POST /ai/ask`
-- **Duplicate detection** (04e):
+- **Duplicate detection** (04f):
   - Use embeddings to find notes with similar content
   - Surface duplicates for review; user can merge or dismiss
   - API: `POST /ai/duplicates`
-- **Continue writing & structure suggestions** (04f):
+- **Continue writing & structure suggestions** (04g):
   - Ctrl+Shift+Space to generate next paragraph
   - Heading/structure suggestions for new/empty notes based on title
 
