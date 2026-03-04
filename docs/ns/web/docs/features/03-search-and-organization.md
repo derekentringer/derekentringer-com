@@ -64,7 +64,8 @@ Each release includes: API changes, frontend changes, shared type updates, tests
 ### Frontend
 - FolderList component in sidebar with create, rename, delete
 - NoteList component with @dnd-kit drag-and-drop reordering
-- Drag-to-folder support
+- Drag-to-folder: DndContext lifted from NoteList to NotesPage, enabling cross-component drag — notes can be dragged from the note list onto folder items (or "Unfiled") in the sidebar. Each folder uses `useDroppable` from `@dnd-kit/core` with `ring-2 ring-primary` visual feedback on hover. Droppable IDs use `folder:` prefix to distinguish from note reorder targets.
+- Inline folder selector: `<select>` dropdown next to the title input allows changing a note's folder (or clearing it to "Unfiled") without drag-and-drop
 - activeFolder state for filtering
 
 ---

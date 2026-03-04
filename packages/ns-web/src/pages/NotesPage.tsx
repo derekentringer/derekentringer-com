@@ -1,5 +1,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { Note, NoteSearchResult, NoteSortField, FolderSortField, SortOrder, FolderInfo, TagInfo } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import {
@@ -113,6 +123,15 @@ export function NotesPage() {
     maxSize: 1200,
     storageKey: "ns-split-width",
   });
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -349,6 +368,32 @@ export function NotesPage() {
     }
   }
 
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+
+    const overId = String(over.id);
+
+    if (overId.startsWith("folder:")) {
+      const noteId = String(active.id);
+      const folderTarget = overId.slice("folder:".length);
+      const folder = folderTarget === "__unfiled__" ? null : folderTarget;
+
+      try {
+        const updated = await updateNote(noteId, { folder });
+        setNotes((prev) =>
+          prev.map((n) => (n.id === updated.id ? updated : n)),
+        );
+        loadNotes(debouncedSearch || undefined);
+        loadFolders();
+      } catch {
+        showError("Failed to move note");
+      }
+    } else if (active.id !== over.id) {
+      handleReorder(String(active.id), overId);
+    }
+  }
+
   async function handleCreateFolder(name: string) {
     try {
       await createFolderApi(name);
@@ -575,7 +620,7 @@ export function NotesPage() {
         </div>
 
         {sidebarView === "notes" ? (
-          <>
+          <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <div className="p-2">
               <div className="relative flex items-center rounded-md bg-input border border-border focus-within:ring-2 focus-within:ring-ring">
                 {settings.semanticSearch && (
@@ -705,12 +750,11 @@ export function NotesPage() {
                   notes={notes}
                   selectedId={selectedId}
                   onSelect={selectNote}
-                  onReorder={handleReorder}
                   sortByManual={sortBy === "sortOrder"}
                 />
               )}
             </nav>
-          </>
+          </DndContext>
         ) : (
           <>
             <div className="p-2">
@@ -855,35 +899,63 @@ export function NotesPage() {
               )}
             </div>
 
-            {/* Title */}
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                setIsDirty(true);
-              }}
-              onFocus={(e) => {
-                if (e.target.value === "Untitled") {
-                  setTitle("");
-                }
-              }}
-              onBlur={(e) => {
-                if (e.target.value.trim() === "") {
-                  setTitle("Untitled");
+            {/* Folder + Title */}
+            <div className="flex items-center border-b border-border">
+              <select
+                value={selectedNote?.folder ?? ""}
+                onChange={async (e) => {
+                  const folder = e.target.value || null;
+                  if (!selectedId) return;
+                  try {
+                    const updated = await updateNote(selectedId, { folder });
+                    setNotes((prev) =>
+                      prev.map((n) => (n.id === updated.id ? updated : n)),
+                    );
+                    loadNotes(debouncedSearch || undefined);
+                    loadFolders();
+                  } catch {
+                    showError("Failed to move note");
+                  }
+                }}
+                className="bg-transparent border-none text-[11px] text-muted-foreground pl-3 pr-0 py-1.5 focus:outline-none cursor-pointer appearance-none"
+                style={{ backgroundImage: "none" }}
+                aria-label="Note folder"
+                data-testid="note-folder-select"
+              >
+                <option value="">Unfiled</option>
+                {sortedFolders.map((f) => (
+                  <option key={f.name} value={f.name}>{f.name}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
                   setIsDirty(true);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleSave();
-                  editorRef.current?.focus();
-                }
-              }}
-              placeholder="Note title"
-              className="px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none border-b border-border"
-            />
+                }}
+                onFocus={(e) => {
+                  if (e.target.value === "Untitled") {
+                    setTitle("");
+                  }
+                }}
+                onBlur={(e) => {
+                  if (e.target.value.trim() === "") {
+                    setTitle("Untitled");
+                    setIsDirty(true);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleSave();
+                    editorRef.current?.focus();
+                  }
+                }}
+                placeholder="Note title"
+                className="flex-1 px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
+              />
+            </div>
 
             {/* Summary */}
             {selectedNote?.summary && (

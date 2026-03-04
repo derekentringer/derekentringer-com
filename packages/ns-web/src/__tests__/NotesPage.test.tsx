@@ -425,6 +425,79 @@ describe("NotesPage", () => {
     });
   });
 
+  describe("Folder selector", () => {
+    it("renders folder selector showing current folder when note is selected", async () => {
+      const noteInFolder = { ...mockNote, folder: "Work" };
+      mockFetchNotes.mockResolvedValue({ notes: [noteInFolder], total: 1 });
+      mockFetchFolders.mockResolvedValue({
+        folders: [{ name: "Work", count: 1, createdAt: "2025-01-01T00:00:00.000Z" }],
+      });
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.click(noteButton);
+
+      const folderSelect = screen.getByTestId("note-folder-select") as HTMLSelectElement;
+      expect(folderSelect.value).toBe("Work");
+    });
+
+    it("renders Unfiled when note has no folder", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.click(noteButton);
+
+      const folderSelect = screen.getByTestId("note-folder-select") as HTMLSelectElement;
+      expect(folderSelect.value).toBe("");
+    });
+
+    it("calls updateNote when folder is changed via selector", async () => {
+      const updatedNote = { ...mockNote, folder: "Work" };
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+      mockFetchFolders.mockResolvedValue({
+        folders: [{ name: "Work", count: 0, createdAt: "2025-01-01T00:00:00.000Z" }],
+      });
+      mockUpdateNote.mockResolvedValue(updatedNote);
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.click(noteButton);
+
+      const folderSelect = screen.getByTestId("note-folder-select");
+      await userEvent.selectOptions(folderSelect, "Work");
+
+      await waitFor(() => {
+        expect(mockUpdateNote).toHaveBeenCalledWith("note-1", { folder: "Work" });
+      });
+    });
+
+    it("sets folder to null when Unfiled is selected", async () => {
+      const noteInFolder = { ...mockNote, folder: "Work" };
+      const updatedNote = { ...mockNote, folder: null };
+      mockFetchNotes.mockResolvedValue({ notes: [noteInFolder], total: 1 });
+      mockFetchFolders.mockResolvedValue({
+        folders: [{ name: "Work", count: 1, createdAt: "2025-01-01T00:00:00.000Z" }],
+      });
+      mockUpdateNote.mockResolvedValue(updatedNote);
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.click(noteButton);
+
+      const folderSelect = screen.getByTestId("note-folder-select");
+      await userEvent.selectOptions(folderSelect, "");
+
+      await waitFor(() => {
+        expect(mockUpdateNote).toHaveBeenCalledWith("note-1", { folder: null });
+      });
+    });
+  });
+
   describe("Tags", () => {
     it("renders tag pills when search is focused", async () => {
       const user = userEvent.setup();

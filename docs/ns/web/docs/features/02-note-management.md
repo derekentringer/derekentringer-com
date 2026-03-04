@@ -58,5 +58,4 @@ The [full feature plan](../feature_planning/02-note-management.md) includes thes
 - Grid/card view toggle
 - Sort options (title, created date, modified date)
 - Tag autocomplete and inline management
-- Folder assignment via dropdown
 - Note metadata panel (created/updated timestamps)

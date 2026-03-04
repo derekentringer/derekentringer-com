@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useDroppable } from "@dnd-kit/core";
 import type { FolderInfo, FolderSortField, SortOrder } from "@derekentringer/shared/ns";
 
 interface FolderListProps {
@@ -13,6 +14,15 @@ interface FolderListProps {
   onCreateFolder: (name: string) => void;
   onRenameFolder: (oldName: string, newName: string) => void;
   onDeleteFolder: (name: string) => void;
+}
+
+function DroppableFolderItem({ droppableId, children }: { droppableId: string; children: React.ReactNode }) {
+  const { isOver, setNodeRef } = useDroppable({ id: droppableId });
+  return (
+    <div ref={setNodeRef} className={isOver ? "ring-2 ring-primary rounded" : ""}>
+      {children}
+    </div>
+  );
 }
 
 const folderSortFields: { value: FolderSortField; label: string }[] = [
@@ -123,57 +133,60 @@ export function FolderList({
 
       {/* Unfiled */}
       {unfiledCount > 0 && (
-        <button
-          onClick={() => onSelectFolder("__unfiled__")}
-          className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
-            activeFolder === "__unfiled__"
-              ? "text-foreground bg-accent"
-              : "text-muted-foreground hover:text-foreground hover:bg-accent"
-          }`}
-        >
-          Unfiled
-          <span className="ml-1 text-xs opacity-60">{unfiledCount}</span>
-        </button>
+        <DroppableFolderItem droppableId="folder:__unfiled__">
+          <button
+            onClick={() => onSelectFolder("__unfiled__")}
+            className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
+              activeFolder === "__unfiled__"
+                ? "text-foreground bg-accent"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+            }`}
+          >
+            Unfiled
+            <span className="ml-1 text-xs opacity-60">{unfiledCount}</span>
+          </button>
+        </DroppableFolderItem>
       )}
 
       {/* Folders */}
       {folders.map((folder) => (
-        <div key={folder.name} className="relative">
-          {renamingFolder === folder.name ? (
-            <input
-              type="text"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onBlur={() => handleRenameSubmit(folder.name)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleRenameSubmit(folder.name);
-                if (e.key === "Escape") {
-                  setRenamingFolder(null);
-                  setRenameValue("");
-                }
-              }}
-              autoFocus
-              className="w-full px-2 py-1 rounded text-sm bg-input border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          ) : (
-            <button
-              onClick={() => onSelectFolder(folder.name)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContextMenu(
-                  contextMenu === folder.name ? null : folder.name,
-                );
-              }}
-              className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
-                activeFolder === folder.name
-                  ? "text-foreground bg-accent"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              {folder.name}
-              <span className="ml-1 text-xs opacity-60">{folder.count}</span>
-            </button>
-          )}
+        <DroppableFolderItem key={folder.name} droppableId={`folder:${folder.name}`}>
+          <div className="relative">
+            {renamingFolder === folder.name ? (
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={() => handleRenameSubmit(folder.name)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRenameSubmit(folder.name);
+                  if (e.key === "Escape") {
+                    setRenamingFolder(null);
+                    setRenameValue("");
+                  }
+                }}
+                autoFocus
+                className="w-full px-2 py-1 rounded text-sm bg-input border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            ) : (
+              <button
+                onClick={() => onSelectFolder(folder.name)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu(
+                    contextMenu === folder.name ? null : folder.name,
+                  );
+                }}
+                className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
+                  activeFolder === folder.name
+                    ? "text-foreground bg-accent"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+              >
+                {folder.name}
+                <span className="ml-1 text-xs opacity-60">{folder.count}</span>
+              </button>
+            )}
 
           {/* Context menu */}
           {contextMenu === folder.name && (
@@ -192,7 +205,8 @@ export function FolderList({
               </button>
             </div>
           )}
-        </div>
+          </div>
+        </DroppableFolderItem>
       ))}
 
       {/* Inline create */}

@@ -419,6 +419,43 @@ Adds voice-to-notes: users record audio in the browser via `MediaRecorder`, uplo
 
 ---
 
+## Release 04d.1: Search Quality & Settings Info Tooltips
+
+### Summary
+
+Improves hybrid and semantic search ranking quality and adds informational tooltips to all AI feature settings. Hybrid search now adds a flat keyword-match bonus so that notes matching the search term by keyword always outrank semantic-only matches. Semantic search filters out notes with sparse content (< 20 characters) whose embeddings are unreliable. The background embedding processor now correctly skips empty/sparse notes. Settings page adds hover tooltips (InfoIcon) to all AI feature toggles, completion styles, and audio modes.
+
+### API Changes
+
+#### Note Store — Hybrid Search (`packages/ns-api/src/store/noteStore.ts`)
+- Scoring formula changed from `0.3 * ts_rank + 0.7 * cosine_similarity` to `0.3 * ts_rank + 0.7 * cosine_similarity + keyword_match_bonus`
+- Keyword match bonus: `CASE WHEN "search_vector" @@ plainto_tsquery('english', $1) THEN 0.3 ELSE 0 END` — ensures notes matching by keyword always rank above semantic-only matches
+- WHERE clause tightened: semantic-only matches require `LENGTH("content") >= 20 AND similarity > 0.4`
+- Count query updated to pass vector parameter
+
+#### Note Store — Semantic Search (`packages/ns-api/src/store/noteStore.ts`)
+- Added `MIN_CONTENT_LEN = 20` filter: `LENGTH("content") >= 20` in WHERE clause
+- Notes with sparse content produce unreliable embeddings from title-only text via voyage-3-lite, so they are excluded from semantic search results
+
+#### Embedding Processor (`packages/ns-api/src/services/embeddingProcessor.ts`)
+- Fixed `processBatch()` to include the same empty-content guard that `processAllPendingEmbeddings()` had
+- Notes with empty or whitespace-only content are now marked as current (timestamp updated) without generating an embedding, preventing noisy title-only vectors
+
+### Frontend Changes
+
+#### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
+- Added `InfoIcon` component: inline SVG info circle with CSS hover tooltip (pure CSS via `group`/`group-hover` Tailwind pattern)
+- Added `info` prop to `ToggleSwitch` component — renders InfoIcon next to the label
+- All 6 `TOGGLE_SETTINGS` entries now include `info` descriptions: Inline completions, Summarize, Auto-tag suggestions, Select-and-rewrite, Semantic search, Audio notes
+- All 3 `STYLE_OPTIONS` entries include `info` descriptions: Continue writing, Markdown assist, Brief
+- All 4 `AUDIO_MODE_OPTIONS` entries include `info` descriptions: Meeting notes, Lecture notes, Memo, Verbatim
+- Radio inputs use `aria-label` for test compatibility (InfoIcon rendered as sibling, not inside label text)
+
+### Tests
+- `NotesPage.test.tsx` — 4 new tests for folder selector (renders current folder, renders Unfiled, calls updateNote on change, sets folder to null)
+
+---
+
 ## Technical Considerations
 
 - All AI calls route through ns-api → Claude API; web never calls Claude directly
