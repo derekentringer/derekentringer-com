@@ -9,6 +9,12 @@ vi.mock("../context/AuthContext.tsx", () => ({
   useAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
 
+vi.mock("../api/ai.ts", () => ({
+  enableEmbeddings: vi.fn().mockResolvedValue({ enabled: true }),
+  disableEmbeddings: vi.fn().mockResolvedValue({ enabled: false }),
+  getEmbeddingStatus: vi.fn().mockResolvedValue({ enabled: false, pendingCount: 0, totalWithEmbeddings: 0 }),
+}));
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -22,13 +28,14 @@ function renderSettingsPage() {
 }
 
 describe("SettingsPage", () => {
-  it("renders four toggle switches", () => {
+  it("renders five toggle switches", () => {
     renderSettingsPage();
 
     expect(screen.getByText("Inline completions")).toBeInTheDocument();
     expect(screen.getByText("Summarize")).toBeInTheDocument();
     expect(screen.getByText("Auto-tag suggestions")).toBeInTheDocument();
     expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
+    expect(screen.getByText("Semantic search")).toBeInTheDocument();
   });
 
   it("renders Settings heading", () => {
@@ -47,7 +54,7 @@ describe("SettingsPage", () => {
     renderSettingsPage();
 
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(4);
+    expect(switches).toHaveLength(5);
     switches.forEach((s) => {
       expect(s).toHaveAttribute("aria-checked", "false");
     });
@@ -75,6 +82,7 @@ describe("SettingsPage", () => {
         completionStyle: "continue",
         summarize: false,
         tagSuggestions: true,
+        semanticSearch: false,
       }),
     );
 
@@ -84,6 +92,12 @@ describe("SettingsPage", () => {
     expect(switches[0]).toHaveAttribute("aria-checked", "true");
     expect(switches[1]).toHaveAttribute("aria-checked", "false");
     expect(switches[2]).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("renders semantic search toggle", () => {
+    renderSettingsPage();
+
+    expect(screen.getByText("Semantic search")).toBeInTheDocument();
   });
 
   it("renders back to notes link", () => {

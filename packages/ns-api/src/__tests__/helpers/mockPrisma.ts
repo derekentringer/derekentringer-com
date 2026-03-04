@@ -21,6 +21,7 @@ export interface MockModel {
 export interface MockPrisma {
   note: MockModel;
   folder: MockModel;
+  setting: MockModel;
   syncCursor: MockModel;
   refreshToken: MockModel;
   $disconnect: Mock;
@@ -49,6 +50,7 @@ export function createMockPrisma(): MockPrisma {
   const mock: MockPrisma = {
     note: createMockModel(),
     folder: createMockModel(),
+    setting: createMockModel(),
     syncCursor: createMockModel(),
     refreshToken: createMockModel(),
     $disconnect: vi.fn(),

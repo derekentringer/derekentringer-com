@@ -17,6 +17,7 @@ export function loadConfig(): Config {
       "CORS_ORIGIN",
       "DATABASE_URL",
       "ANTHROPIC_API_KEY",
+      "VOYAGE_API_KEY",
     ];
     for (const name of required) {
       if (!process.env[name]) {
@@ -39,6 +40,7 @@ export function loadConfig(): Config {
     isProduction,
     databaseUrl: process.env.DATABASE_URL || "",
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
+    voyageApiKey: process.env.VOYAGE_API_KEY || "",
   };
 
   return cachedConfig;
@@ -55,6 +57,7 @@ export interface Config {
   isProduction: boolean;
   databaseUrl: string;
   anthropicApiKey: string;
+  voyageApiKey: string;
 }
 
 /** Reset cached config (for testing only) */

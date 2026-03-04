@@ -8,6 +8,12 @@ beforeAll(() => {
   mockPrisma = createMockPrisma();
 });
 
+const mockGenerateQueryEmbedding = vi.fn();
+
+vi.mock("../services/embeddingService.js", () => ({
+  generateQueryEmbedding: (...args: unknown[]) => mockGenerateQueryEmbedding(...args),
+}));
+
 import {
   createNote,
   getNote,
@@ -717,6 +723,74 @@ describe("noteStore", () => {
 
       expect(result).toBe(0);
       expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("listNotes with semantic search mode", () => {
+    it("uses vector similarity query for semantic mode", async () => {
+      mockGenerateQueryEmbedding.mockResolvedValue([0.1, 0.2, 0.3]);
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce([
+          { ...makeMockNoteRow(), headline: "0.8542" },
+        ]);
+
+      const result = await listNotes({ search: "machine learning", searchMode: "semantic" });
+
+      expect(mockGenerateQueryEmbedding).toHaveBeenCalledWith("machine learning");
+      expect(result.total).toBe(1);
+      expect(result.notes).toHaveLength(1);
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+      const dataCall = mockPrisma.$queryRawUnsafe.mock.calls[1][0];
+      expect(dataCall).toContain("embedding");
+      expect(dataCall).toContain("vector");
+    });
+  });
+
+  describe("listNotes with hybrid search mode", () => {
+    it("combines keyword and semantic scores", async () => {
+      mockGenerateQueryEmbedding.mockResolvedValue([0.1, 0.2, 0.3]);
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 2 }])
+        .mockResolvedValueOnce([
+          { ...makeMockNoteRow({ id: "n1" }), headline: "test <mark>result</mark>" },
+          { ...makeMockNoteRow({ id: "n2" }), headline: "another <mark>result</mark>" },
+        ]);
+
+      const result = await listNotes({ search: "test query", searchMode: "hybrid" });
+
+      expect(mockGenerateQueryEmbedding).toHaveBeenCalledWith("test query");
+      expect(result.total).toBe(2);
+      expect(result.notes).toHaveLength(2);
+      const dataCall = mockPrisma.$queryRawUnsafe.mock.calls[1][0];
+      expect(dataCall).toContain("hybrid_score");
+      expect(dataCall).toContain("ts_rank");
+      expect(dataCall).toContain("embedding");
+    });
+  });
+
+  describe("listNotes search mode delegation", () => {
+    it("defaults to keyword search when no mode specified", async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([]);
+
+      await listNotes({ search: "hello" });
+
+      const countCall = mockPrisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(countCall).toContain("plainto_tsquery");
+      expect(countCall).not.toContain("embedding");
+    });
+
+    it("uses keyword search when mode is keyword", async () => {
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([]);
+
+      await listNotes({ search: "hello", searchMode: "keyword" });
+
+      const countCall = mockPrisma.$queryRawUnsafe.mock.calls[0][0];
+      expect(countCall).toContain("plainto_tsquery");
     });
   });
 });

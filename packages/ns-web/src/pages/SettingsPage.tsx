@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
+import { enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
+import type { EmbeddingStatus } from "@derekentringer/shared/ns";
 
 function ToggleSwitch({
   label,
@@ -32,11 +34,12 @@ function ToggleSwitch({
   );
 }
 
-const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite"; label: string }[] = [
+const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch"; label: string }[] = [
   { key: "completions", label: "Inline completions" },
   { key: "summarize", label: "Summarize" },
   { key: "tagSuggestions", label: "Auto-tag suggestions" },
   { key: "rewrite", label: "Select-and-rewrite" },
+  { key: "semanticSearch", label: "Semantic search" },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string }[] = [
@@ -58,6 +61,40 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
 export function SettingsPage() {
   const navigate = useNavigate();
   const { settings, updateSetting } = useAiSettings();
+  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus | null>(null);
+
+  const loadEmbeddingStatus = useCallback(async () => {
+    try {
+      const status = await getEmbeddingStatus();
+      setEmbeddingStatus(status);
+    } catch {
+      // Silent fail
+    }
+  }, []);
+
+  useEffect(() => {
+    if (settings.semanticSearch) {
+      loadEmbeddingStatus();
+      const timer = setInterval(loadEmbeddingStatus, 10_000);
+      return () => clearInterval(timer);
+    }
+  }, [settings.semanticSearch, loadEmbeddingStatus]);
+
+  async function handleSemanticSearchToggle(enabled: boolean) {
+    updateSetting("semanticSearch", enabled);
+    try {
+      if (enabled) {
+        await enableEmbeddings();
+        loadEmbeddingStatus();
+      } else {
+        await disableEmbeddings();
+        setEmbeddingStatus(null);
+      }
+    } catch {
+      // Revert on failure
+      updateSetting("semanticSearch", !enabled);
+    }
+  }
 
   const isMac = useMemo(
     () => typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform),
@@ -101,8 +138,19 @@ export function SettingsPage() {
                 <ToggleSwitch
                   label={label}
                   checked={settings[key]}
-                  onChange={(value) => updateSetting(key, value)}
+                  onChange={(value) =>
+                    key === "semanticSearch"
+                      ? handleSemanticSearchToggle(value)
+                      : updateSetting(key, value)
+                  }
                 />
+                {key === "semanticSearch" && settings.semanticSearch && embeddingStatus && (
+                  <div className="pb-3 pl-1 text-xs text-muted-foreground">
+                    {embeddingStatus.pendingCount > 0
+                      ? `${embeddingStatus.totalWithEmbeddings} embedded, ${embeddingStatus.pendingCount} pending`
+                      : `${embeddingStatus.totalWithEmbeddings} notes embedded`}
+                  </div>
+                )}
                 {key === "completions" && settings.completions && (
                   <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">
                     {STYLE_OPTIONS.map(({ value, label: styleLabel }) => (
