@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04c Complete; 04d–04f Not Started)
+**Status:** Partial (04a–04c Complete; 04d–04g Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -16,9 +16,10 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | **04a.1** | `feature/ns-04a1-completion-styles` | Completion style options — configurable styles (Continue writing, Markdown assist, Brief) with per-style system prompts and max_tokens | Complete |
 | **04b** | `feature/ns-04b-select-and-rewrite` | Select-and-rewrite with floating menu, keyboard shortcut, right-click trigger, settings toggle | Complete |
 | **04c** | `feature/ns-04c-semantic-search` | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | Complete |
-| **04d** | — | Q&A over notes (natural language questions with citations) | Not Started |
-| **04e** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
-| **04f** | — | Continue writing, heading/structure suggestions for empty notes | Not Started |
+| **04d** | — | Audio notes — voice recording → AI-structured markdown via Whisper + Claude | Not Started |
+| **04e** | — | Q&A over notes (natural language questions with citations) | Not Started |
+| **04f** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
+| **04g** | — | Continue writing, heading/structure suggestions for empty notes | Not Started |
 
 ---
 
