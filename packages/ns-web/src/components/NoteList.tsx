@@ -7,6 +7,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { NoteSearchResult } from "@derekentringer/shared/ns";
 import { SearchSnippet } from "./SearchSnippet.tsx";
+import { ConfirmDialog } from "./ConfirmDialog.tsx";
 
 interface NoteListProps {
   notes: NoteSearchResult[];
@@ -31,6 +32,7 @@ interface SortableNoteItemProps {
   contextMenu: ContextMenuState | null;
   onContextMenuOpen: (noteId: string, x: number, y: number) => void;
   onContextMenuClose: () => void;
+  onDeleteClick: (noteId: string) => void;
   contextMenuRef: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -43,6 +45,7 @@ function SortableNoteItem({
   contextMenu,
   onContextMenuOpen,
   onContextMenuClose,
+  onDeleteClick,
   contextMenuRef,
 }: SortableNoteItemProps) {
   const {
@@ -95,10 +98,7 @@ function SortableNoteItem({
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
-            onClick={() => {
-              onDeleteNote(note.id);
-              onContextMenuClose();
-            }}
+            onClick={() => onDeleteClick(note.id)}
             className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors"
           >
             Delete
@@ -117,6 +117,7 @@ export function NoteList({
   sortByManual,
 }: NoteListProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -130,25 +131,48 @@ export function NoteList({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [contextMenu]);
 
+  function handleDeleteClick(noteId: string) {
+    setPendingDeleteId(noteId);
+    setContextMenu(null);
+  }
+
+  const pendingNote = pendingDeleteId ? notes.find((n) => n.id === pendingDeleteId) : null;
+
   return (
-    <SortableContext
-      items={notes.map((n) => n.id)}
-      strategy={verticalListSortingStrategy}
-    >
-      {notes.map((note) => (
-        <SortableNoteItem
-          key={note.id}
-          note={note}
-          isSelected={note.id === selectedId}
-          onSelect={onSelect}
-          onDeleteNote={onDeleteNote}
-          sortByManual={sortByManual}
-          contextMenu={contextMenu}
-          onContextMenuOpen={(noteId, x, y) => setContextMenu({ noteId, x, y })}
-          onContextMenuClose={() => setContextMenu(null)}
-          contextMenuRef={contextMenuRef}
+    <>
+      <SortableContext
+        items={notes.map((n) => n.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        {notes.map((note) => (
+          <SortableNoteItem
+            key={note.id}
+            note={note}
+            isSelected={note.id === selectedId}
+            onSelect={onSelect}
+            onDeleteNote={onDeleteNote}
+            sortByManual={sortByManual}
+            contextMenu={contextMenu}
+            onContextMenuOpen={(noteId, x, y) => setContextMenu({ noteId, x, y })}
+            onContextMenuClose={() => setContextMenu(null)}
+            onDeleteClick={handleDeleteClick}
+            contextMenuRef={contextMenuRef}
+          />
+        ))}
+      </SortableContext>
+
+      {/* Delete confirmation dialog */}
+      {pendingDeleteId && (
+        <ConfirmDialog
+          title="Delete Note"
+          message={pendingNote?.title || "Untitled"}
+          onConfirm={() => {
+            onDeleteNote?.(pendingDeleteId);
+            setPendingDeleteId(null);
+          }}
+          onCancel={() => setPendingDeleteId(null)}
         />
-      ))}
-    </SortableContext>
+      )}
+    </>
   );
 }

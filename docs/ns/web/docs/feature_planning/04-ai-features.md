@@ -18,6 +18,7 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 | **04c** | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | **Complete** |
 | **04d** | Audio notes — voice recording → AI-structured markdown via Whisper transcription + Claude processing, AudioRecorder component, draggable split view divider | **Complete** |
 | **04e** | Q&A over notes — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | **Complete** |
+| **04e.1** | UI polish — AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button | **Complete** |
 | **04f** | Duplicate detection (embedding similarity for review/merge) | Not Started |
 | **04g** | Continue writing, heading/structure suggestions for empty notes | Not Started |
 

@@ -18,6 +18,7 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | **04c** | `feature/ns-04c-semantic-search` | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | Complete |
 | **04d** | `feature/ns-04d-audio-notes` | Audio notes — voice recording → AI-structured markdown via Whisper + Claude, AudioRecorder component, draggable split view divider | Complete |
 | **04e** | `feature/ns-04e-qa-over-notes` | Q&A over notes — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | Complete |
+| **04e.1** | — | UI polish — AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button | Complete |
 | **04f** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
 | **04g** | — | Continue writing, heading/structure suggestions for empty notes | Not Started |
 
@@ -536,6 +537,44 @@ Adds a Q&A assistant panel: users ask natural language questions about their not
 - `SettingsPage.test.tsx` — updated toggle count to 7, added Q&A toggle and disabled state tests
 - `QAPanel.test.tsx` — NEW, 5 tests: empty state, header, Ask button disabled/enabled, source pill click
 - `NotesPage.test.tsx` — updated mocks for `askQuestion`
+
+---
+
+## Release 04e.1: UI Polish — AudioRecorder, ConfirmDialog, Summary Delete
+
+### Summary
+
+Moves the AudioRecorder button from the editor toolbar and empty state into the sidebar header next to the "+" button (icon-only, no "Record" label). Adds a reusable `ConfirmDialog` component for centered delete confirmation dialogs on notes, folders, and summaries. Adds an x button to dismiss note summaries with confirmation.
+
+### Frontend Changes
+
+#### ConfirmDialog Component (`packages/ns-web/src/components/ConfirmDialog.tsx`) — NEW
+- Reusable centered modal dialog with dark overlay (`bg-black/50`)
+- Props: `title` (larger `text-base font-medium`), `message` (smaller `text-sm text-muted-foreground`), `onConfirm`, `onCancel`
+- Centered Cancel and Delete buttons
+
+#### AudioRecorder (`packages/ns-web/src/components/AudioRecorder.tsx`)
+- Removed "Record" text label — now shows only microphone icon + dropdown arrow
+- Both buttons use `h-7` to match the "+" button height in the sidebar header
+
+#### FolderList (`packages/ns-web/src/components/FolderList.tsx`)
+- Delete action in context menu now opens `ConfirmDialog` with title "Delete Folder" and folder name as message
+- Replaced inline confirm state with `pendingDelete` state for dialog flow
+
+#### NoteList (`packages/ns-web/src/components/NoteList.tsx`)
+- Delete action in context menu now opens `ConfirmDialog` with title "Delete Note" and note title as message
+- Replaced inline confirm state with `pendingDeleteId` state for dialog flow
+- Simplified `SortableNoteItemProps` — removed `confirmDelete` prop
+
+#### NotesPage (`packages/ns-web/src/pages/NotesPage.tsx`)
+- AudioRecorder moved from editor toolbar and empty state to sidebar header, next to "+" button
+- AudioRecorder wrapped in flex container with `gap-1.5` alongside "+" button
+- Added summary delete: x button (`&times;`) in upper-right of summary display area
+- Clicking x opens `ConfirmDialog` with title "Delete Summary" and note title as message
+- `handleDeleteSummary()` clears summary via `updateNote(id, { summary: null })` and updates local state
+
+### Tests
+- `AudioRecorder.test.tsx` — updated test to find Record button by `title` attribute instead of text content
 
 ---
 

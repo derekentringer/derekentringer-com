@@ -50,6 +50,7 @@ import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
+import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 
 type SidebarView = "notes" | "trash";
 
@@ -94,6 +95,7 @@ export function NotesPage() {
   const [trashNotes, setTrashNotes] = useState<Note[]>([]);
   const [trashTotal, setTrashTotal] = useState(0);
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
+  const [confirmDeleteSummary, setConfirmDeleteSummary] = useState(false);
 
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchMode, setSearchMode] = useState<"keyword" | "semantic" | "hybrid">(settings.semanticSearch ? "hybrid" : "keyword");
@@ -583,6 +585,18 @@ export function NotesPage() {
     }
   }
 
+  async function handleDeleteSummary() {
+    if (!selectedId) return;
+    try {
+      await updateNote(selectedId, { summary: null });
+      setNotes((prev) =>
+        prev.map((n) => (n.id === selectedId ? { ...n, summary: null } : n)),
+      );
+    } catch {
+      showError("Failed to delete summary");
+    }
+  }
+
   async function handleSuggestTags() {
     if (!selectedId || isSuggestingTags) return;
     setIsSuggestingTags(true);
@@ -664,13 +678,22 @@ export function NotesPage() {
         <div className="p-4 flex items-center justify-between">
           <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
           {sidebarView === "notes" && (
-            <button
-              onClick={handleCreate}
-              className="w-7 h-7 flex items-center justify-center rounded bg-primary text-black hover:bg-primary-hover transition-colors text-lg leading-none"
-              title="New note"
-            >
-              +
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleCreate}
+                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-black hover:bg-primary-hover transition-colors text-lg leading-none"
+                title="New note"
+              >
+                +
+              </button>
+              {settings.audioNotes && (
+                <AudioRecorder
+                  defaultMode={settings.audioMode}
+                  onNoteCreated={handleAudioNoteCreated}
+                  onError={showError}
+                />
+              )}
+            </div>
           )}
         </div>
 
@@ -901,13 +924,6 @@ export function NotesPage() {
                     : "Saved"}
               </span>
               <div className="flex-1" />
-              {settings.audioNotes && (
-                <AudioRecorder
-                  defaultMode={settings.audioMode}
-                  onNoteCreated={handleAudioNoteCreated}
-                  onError={showError}
-                />
-              )}
               {settings.summarize && (
                 <button
                   onClick={handleSummarize}
@@ -1016,9 +1032,27 @@ export function NotesPage() {
 
             {/* Summary */}
             {selectedNote?.summary && (
-              <div className="px-4 py-2 text-sm text-muted-foreground border-b border-border italic">
+              <div className="relative px-4 py-2 text-sm text-muted-foreground border-b border-border italic pr-8">
                 {selectedNote.summary}
+                <button
+                  onClick={() => setConfirmDeleteSummary(true)}
+                  className="absolute top-1.5 right-2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors"
+                  title="Remove summary"
+                >
+                  &times;
+                </button>
               </div>
+            )}
+            {confirmDeleteSummary && (
+              <ConfirmDialog
+                title="Delete Summary"
+                message={selectedNote?.title || "Untitled"}
+                onConfirm={() => {
+                  handleDeleteSummary();
+                  setConfirmDeleteSummary(false);
+                }}
+                onCancel={() => setConfirmDeleteSummary(false)}
+              />
             )}
 
             {/* Tags */}
@@ -1164,13 +1198,6 @@ export function NotesPage() {
                 ? "Select a note to preview"
                 : "Select a note or create a new one"}
             </p>
-            {sidebarView === "notes" && settings.audioNotes && (
-              <AudioRecorder
-                defaultMode={settings.audioMode}
-                onNoteCreated={handleAudioNoteCreated}
-                onError={showError}
-              />
-            )}
           </div>
         )}
         </div>
