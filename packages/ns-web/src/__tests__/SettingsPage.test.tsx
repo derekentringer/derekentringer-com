@@ -28,7 +28,7 @@ function renderSettingsPage() {
 }
 
 describe("SettingsPage", () => {
-  it("renders six toggle switches", () => {
+  it("renders seven toggle switches", () => {
     renderSettingsPage();
 
     expect(screen.getByText("Inline completions")).toBeInTheDocument();
@@ -37,6 +37,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
     expect(screen.getByText("Semantic search")).toBeInTheDocument();
     expect(screen.getByText("Audio notes")).toBeInTheDocument();
+    expect(screen.getByText("Q&A assistant")).toBeInTheDocument();
   });
 
   it("renders Settings heading", () => {
@@ -55,7 +56,7 @@ describe("SettingsPage", () => {
     renderSettingsPage();
 
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(6);
+    expect(switches).toHaveLength(7);
     switches.forEach((s) => {
       expect(s).toHaveAttribute("aria-checked", "false");
     });
@@ -199,5 +200,20 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Lecture notes")).toBeInTheDocument();
     expect(screen.getByLabelText("Memo")).toBeInTheDocument();
     expect(screen.getByLabelText("Verbatim")).toBeInTheDocument();
+  });
+
+  it("Q&A toggle is present", () => {
+    renderSettingsPage();
+
+    expect(screen.getByText("Q&A assistant")).toBeInTheDocument();
+  });
+
+  it("Q&A toggle is disabled when semantic search is off", () => {
+    renderSettingsPage();
+
+    const switches = screen.getAllByRole("switch");
+    // Q&A assistant is the last toggle (index 6)
+    const qaSwitch = switches[6];
+    expect(qaSwitch).toBeDisabled();
   });
 });

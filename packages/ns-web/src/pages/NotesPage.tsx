@@ -49,6 +49,7 @@ import { ghostTextExtension } from "../editor/ghostText.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
+import { QAPanel } from "../components/QAPanel.tsx";
 
 type SidebarView = "notes" | "trash";
 
@@ -122,6 +123,16 @@ export function NotesPage() {
     minSize: 200,
     maxSize: 1200,
     storageKey: "ns-split-width",
+  });
+
+  // Q&A panel state
+  const [qaOpen, setQaOpen] = useState(false);
+  const qaResize = useResizable({
+    direction: "vertical",
+    initialSize: 350,
+    minSize: 250,
+    maxSize: 600,
+    storageKey: "ns-qa-panel-width",
   });
 
   const dndSensors = useSensors(
@@ -297,6 +308,24 @@ export function NotesPage() {
       setContent("");
       setIsDirty(false);
       setConfirmDelete(false);
+      setTrashTotal((prev) => prev + 1);
+      loadFolders();
+    } catch {
+      showError("Failed to delete note");
+    }
+  }
+
+  async function handleDeleteNoteById(noteId: string) {
+    try {
+      await deleteNote(noteId);
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      if (selectedId === noteId) {
+        setSelectedId(null);
+        setTitle("");
+        setContent("");
+        setIsDirty(false);
+        setConfirmDelete(false);
+      }
       setTrashTotal((prev) => prev + 1);
       loadFolders();
     } catch {
@@ -602,6 +631,32 @@ export function NotesPage() {
     setSuggestedTags([]);
   }, [selectedId]);
 
+  // Close Q&A panel when setting is disabled
+  useEffect(() => {
+    if (!settings.qaAssistant) {
+      setQaOpen(false);
+    }
+  }, [settings.qaAssistant]);
+
+  function handleQaSelectNote(noteId: string) {
+    // Switch to notes view if in trash
+    if (sidebarView === "trash") {
+      setSidebarView("notes");
+      setConfirmPermanentDelete(false);
+    }
+    // Find the note in the current list
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      selectNote(note);
+    } else {
+      // Note may not be loaded (different folder/search), so reload and select
+      loadNotes().then(() => {
+        // After reload, try to find and select
+        setSelectedId(noteId);
+      });
+    }
+  }
+
   return (
     <div className="flex h-full">
       {/* Sidebar */}
@@ -750,6 +805,7 @@ export function NotesPage() {
                   notes={notes}
                   selectedId={selectedId}
                   onSelect={selectNote}
+                  onDeleteNote={handleDeleteNoteById}
                   sortByManual={sortBy === "sortOrder"}
                 />
               )}
@@ -831,7 +887,8 @@ export function NotesPage() {
       />
 
       {/* Editor area */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex min-w-0">
+        <div className="flex-1 flex flex-col min-w-0">
         {selectedNote && sidebarView === "notes" ? (
           <>
             {/* Toolbar */}
@@ -1116,7 +1173,24 @@ export function NotesPage() {
             )}
           </div>
         )}
+        </div>
+
       </main>
+
+      {/* Q&A sliding panel */}
+      {settings.qaAssistant && (
+        <div
+          className="fixed top-0 right-0 h-full z-10 overflow-visible transition-transform duration-300 ease-in-out"
+          style={{
+            width: qaResize.size,
+            transform: qaOpen ? "translateX(0)" : `translateX(${qaResize.size}px)`,
+          }}
+        >
+          <div className="h-full border-l border-border shadow-lg">
+            <QAPanel onSelectNote={handleQaSelectNote} isOpen={qaOpen} onToggle={() => setQaOpen((v) => !v)} />
+          </div>
+        </div>
+      )}
 
       {/* Error toast */}
       {error && (

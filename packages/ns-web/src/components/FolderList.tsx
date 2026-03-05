@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import type { FolderInfo, FolderSortField, SortOrder } from "@derekentringer/shared/ns";
 
@@ -47,7 +47,19 @@ export function FolderList({
   const [newFolderName, setNewFolderName] = useState("");
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [contextMenu, setContextMenu] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [contextMenu]);
 
   const unfiledCount =
     totalNotes - folders.reduce((sum, f) => sum + f.count, 0);
@@ -174,7 +186,7 @@ export function FolderList({
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setContextMenu(
-                    contextMenu === folder.name ? null : folder.name,
+                    contextMenu?.name === folder.name ? null : { name: folder.name, x: e.clientX, y: e.clientY },
                   );
                 }}
                 className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
@@ -189,8 +201,12 @@ export function FolderList({
             )}
 
           {/* Context menu */}
-          {contextMenu === folder.name && (
-            <div className="absolute right-0 top-full z-10 mt-0.5 py-1 bg-card border border-border rounded-md shadow-lg min-w-[100px]">
+          {contextMenu?.name === folder.name && (
+            <div
+              ref={contextMenuRef}
+              className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[100px]"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+            >
               <button
                 onClick={() => startRename(folder.name)}
                 className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"

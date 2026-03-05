@@ -6,9 +6,10 @@ import {
   suggestTags,
   rewriteText,
   structureTranscript,
+  answerQuestion,
 } from "../services/aiService.js";
 import { transcribeAudio } from "../services/whisperService.js";
-import { getNote, updateNote, createNote } from "../store/noteStore.js";
+import { getNote, updateNote, createNote, findRelevantNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
@@ -30,6 +31,17 @@ const completeSchema = {
     properties: {
       context: { type: "string", minLength: 1 },
       style: { type: "string", enum: ["continue", "markdown", "brief"] },
+    },
+  },
+};
+
+const askSchema = {
+  body: {
+    type: "object" as const,
+    required: ["question"],
+    additionalProperties: false,
+    properties: {
+      question: { type: "string", minLength: 1, maxLength: 2000 },
     },
   },
 };
@@ -124,6 +136,68 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         } catch (error) {
           if (!abortController.signal.aborted) {
             request.log.error(error, "AI completion error");
+          }
+        }
+        passthrough.write("data: [DONE]\n\n");
+        passthrough.end();
+      })();
+
+      return reply
+        .type("text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .header("Connection", "keep-alive")
+        .send(passthrough);
+    },
+  );
+
+  // POST /ai/ask — SSE streaming Q&A
+  fastify.post<{ Body: { question: string } }>(
+    "/ask",
+    { schema: askSchema },
+    async (
+      request: FastifyRequest<{ Body: { question: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { question } = request.body;
+
+      const abortController = new AbortController();
+      const passthrough = new PassThrough();
+
+      request.raw.socket.on("close", () => {
+        abortController.abort();
+      });
+
+      (async () => {
+        try {
+          const relevantNotes = await findRelevantNotes(question, 5);
+
+          const sources = relevantNotes.map((n) => ({
+            id: n.id,
+            title: n.title,
+          }));
+          passthrough.write(
+            `data: ${JSON.stringify({ sources })}\n\n`,
+          );
+
+          if (relevantNotes.length === 0) {
+            passthrough.write(
+              `data: ${JSON.stringify({ text: "I couldn't find any relevant notes to answer your question. Try adding more notes or rephrasing your question." })}\n\n`,
+            );
+          } else {
+            for await (const chunk of answerQuestion(
+              question,
+              relevantNotes,
+              abortController.signal,
+            )) {
+              if (abortController.signal.aborted) break;
+              passthrough.write(
+                `data: ${JSON.stringify({ text: chunk })}\n\n`,
+              );
+            }
+          }
+        } catch (error) {
+          if (!abortController.signal.aborted) {
+            request.log.error(error, "AI ask error");
           }
         }
         passthrough.write("data: [DONE]\n\n");

@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04d Complete; 04e–04g Not Started)
+**Status:** Partial (04a–04e Complete; 04f–04g Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -17,25 +17,12 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 | **04b** | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) with floating menu, keyboard shortcut, right-click trigger, and settings toggle | **Complete** |
 | **04c** | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | **Complete** |
 | **04d** | Audio notes — voice recording → AI-structured markdown via Whisper transcription + Claude processing, AudioRecorder component, draggable split view divider | **Complete** |
-| **04e** | Q&A over notes (natural language questions with citations) | Not Started |
+| **04e** | Q&A over notes — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | **Complete** |
 | **04f** | Duplicate detection (embedding similarity for review/merge) | Not Started |
 | **04g** | Continue writing, heading/structure suggestions for empty notes | Not Started |
 
-## Remaining Requirements (04d–04g)
+## Remaining Requirements (04f–04g)
 
-- **Audio notes** (04d):
-  - Record audio in browser via MediaRecorder API
-  - Upload to ns-api, transcribe via OpenAI Whisper API
-  - Claude processes transcript into structured markdown (headings, key points, action items)
-  - Processing modes: meeting notes, lecture notes, voice memo, verbatim
-  - API: `POST /ai/transcribe`
-  - See [04d — Audio Notes](04d-audio-notes.md) for full spec
-- **Q&A over notes** (04e):
-  - Natural language question input
-  - System finds relevant notes (semantic + keyword), sends as context to Claude
-  - Returns answer with citations linking to source notes
-  - Chat-style panel
-  - API: `POST /ai/ask`
 - **Duplicate detection** (04f):
   - Use embeddings to find notes with similar content
   - Surface duplicates for review; user can merge or dismiss
@@ -52,10 +39,6 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 - Streaming: inline completions use `messages.create({ stream: true })` via SSE `PassThrough` stream
 - Cost control: debounce AI calls, cache summaries and embeddings, daily usage counter per user
 - pgvector similarity search: `SELECT * FROM "Note" ORDER BY embedding <=> $1 LIMIT 10`
-
-## Open Questions
-
-- Should Q&A history persist in the database, or be ephemeral per session?
 
 ## Dependencies
 

@@ -113,3 +113,8 @@ export interface TranscribeResponse {
   content: string;
   tags: string[];
 }
+
+export interface QASource {
+  id: string;
+  title: string;
+}

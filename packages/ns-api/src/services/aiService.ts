@@ -220,6 +220,49 @@ export async function structureTranscript(
   return { title: "Audio Note", content: transcript, tags: [] };
 }
 
+export interface NoteContext {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export async function* answerQuestion(
+  question: string,
+  noteContexts: NoteContext[],
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  const anthropic = getClient();
+
+  const contextBlock = noteContexts
+    .map((n) => `## ${n.title}\n${n.content}`)
+    .join("\n\n---\n\n");
+
+  const stream = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 1000,
+    temperature: 0.3,
+    stream: true,
+    system:
+      "You are a Q&A assistant. Answer the user's question based ONLY on the provided notes. Cite sources by title in [brackets]. If the notes don't contain relevant information, say so.",
+    messages: [
+      {
+        role: "user",
+        content: `Notes:\n\n${contextBlock}\n\nQuestion: ${question}`,
+      },
+    ],
+  });
+
+  for await (const event of stream) {
+    if (signal?.aborted) return;
+    if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta"
+    ) {
+      yield event.delta.text;
+    }
+  }
+}
+
 /** Reset client (for testing only) */
 export function resetClient(): void {
   client = null;

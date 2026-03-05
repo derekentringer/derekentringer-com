@@ -6,7 +6,8 @@ vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
 }));
 
-import { fetchCompletion, summarizeNote, suggestTags, rewriteText, enableEmbeddings, disableEmbeddings, getEmbeddingStatus, transcribeAudio } from "../api/ai.ts";
+import { fetchCompletion, askQuestion, summarizeNote, suggestTags, rewriteText, enableEmbeddings, disableEmbeddings, getEmbeddingStatus, transcribeAudio } from "../api/ai.ts";
+import type { AskQuestionEvent } from "../api/ai.ts";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -126,6 +127,69 @@ describe("AI API client", () => {
       }
 
       expect(chunks).toEqual([]);
+    });
+  });
+
+  describe("askQuestion", () => {
+    it("yields sources event then text chunks", async () => {
+      const sseData =
+        'data: {"sources":[{"id":"note-1","title":"My Note"}]}\n\ndata: {"text":"Answer"}\n\ndata: {"text":" here"}\n\ndata: [DONE]\n\n';
+      const encoder = new TextEncoder();
+
+      const mockReader = {
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: encoder.encode(sseData),
+          })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        releaseLock: vi.fn(),
+      };
+
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      });
+
+      const abortController = new AbortController();
+      const events: AskQuestionEvent[] = [];
+
+      for await (const event of askQuestion(
+        "What is in my notes?",
+        abortController.signal,
+      )) {
+        events.push(event);
+      }
+
+      expect(events).toEqual([
+        { sources: [{ id: "note-1", title: "My Note" }] },
+        { text: "Answer" },
+        { text: " here" },
+      ]);
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/ask", {
+        method: "POST",
+        body: JSON.stringify({ question: "What is in my notes?" }),
+        signal: abortController.signal,
+      });
+    });
+
+    it("throws on non-ok response", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+      });
+
+      const abortController = new AbortController();
+
+      await expect(async () => {
+        for await (const _event of askQuestion(
+          "test question",
+          abortController.signal,
+        )) {
+          // Should not reach here
+        }
+      }).rejects.toThrow("Q&A request failed: 500");
     });
   });
 

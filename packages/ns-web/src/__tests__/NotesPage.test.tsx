@@ -78,7 +78,7 @@ vi.mock("../context/AuthContext.tsx", () => ({
 
 vi.mock("../hooks/useAiSettings.ts", () => ({
   useAiSettings: () => ({
-    settings: { completions: false, summarize: false, tagSuggestions: false, rewrite: false, audioNotes: false, audioMode: "memo" },
+    settings: { completions: false, summarize: false, tagSuggestions: false, rewrite: false, audioNotes: false, audioMode: "memo", qaAssistant: false },
     updateSetting: vi.fn(),
   }),
 }));
@@ -93,6 +93,7 @@ vi.mock("../editor/rewriteMenu.ts", () => ({
 
 vi.mock("../api/ai.ts", () => ({
   fetchCompletion: vi.fn(),
+  askQuestion: vi.fn(),
   summarizeNote: vi.fn(),
   suggestTags: vi.fn(),
   rewriteText: vi.fn(),

@@ -58,7 +58,7 @@
   - [x] 04c — Semantic Search (pgvector embeddings via Voyage AI, keyword/semantic/hybrid search modes, server-side embedding toggle, background processor, hybrid keyword-match bonus, content-length filter for search quality)
   - [x] 04d — Audio Notes (voice recording → AI-structured markdown via Whisper + Claude, AudioRecorder component with mode selection, draggable split view divider)
   - [x] 04d.1 — Search Quality & Settings Info Tooltips (hybrid keyword-match bonus, semantic content-length filter, embedding processor empty-content fix, hover info tooltips on all AI settings)
-  - [ ] 04e — Q&A Over Notes
+  - [x] 04e — Q&A Over Notes (collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, right-click context menus on notes, cursor-positioned context menus on folders/notes)
   - [ ] 04f — Duplicate Detection
   - [ ] 04g — Continue Writing, Structure Suggestions
 - [ ] [05 — Offline Cache](feature_planning/05-offline-cache.md)

@@ -24,14 +24,16 @@ function ToggleSwitch({
   checked,
   onChange,
   info,
+  disabled,
 }: {
   label: string;
   checked: boolean;
   onChange: (value: boolean) => void;
   info?: string;
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex items-center justify-between py-3 cursor-pointer">
+    <label className={`flex items-center justify-between py-3 ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
       <span className="text-sm text-foreground flex items-center">
         {label}
         {info && <InfoIcon tooltip={info} />}
@@ -39,10 +41,11 @@ function ToggleSwitch({
       <button
         role="switch"
         aria-checked={checked}
-        onClick={() => onChange(!checked)}
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!checked)}
         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
           checked ? "bg-primary" : "bg-border"
-        }`}
+        } ${disabled ? "cursor-not-allowed" : ""}`}
       >
         <span
           className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
@@ -54,13 +57,14 @@ function ToggleSwitch({
   );
 }
 
-const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes"; label: string; info: string }[] = [
+const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes" | "qaAssistant"; label: string; info: string }[] = [
   { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
   { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
   { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
   { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
   { key: "semanticSearch", label: "Semantic search", info: "Search by meaning, not just keywords. Uses AI embeddings to find related notes." },
   { key: "audioNotes", label: "Audio notes", info: "Record audio and transcribe it into a note using AI." },
+  { key: "qaAssistant", label: "Q&A assistant", info: "Ask natural language questions about your notes. Requires semantic search to be enabled." },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [
@@ -110,6 +114,9 @@ export function SettingsPage() {
 
   async function handleSemanticSearchToggle(enabled: boolean) {
     updateSetting("semanticSearch", enabled);
+    if (!enabled) {
+      updateSetting("qaAssistant", false);
+    }
     try {
       if (enabled) {
         await enableEmbeddings();
@@ -173,6 +180,7 @@ export function SettingsPage() {
                         : updateSetting(key, value)
                     }
                     info={info}
+                    disabled={key === "qaAssistant" && !settings.semanticSearch}
                   />
                   {key === "semanticSearch" && settings.semanticSearch && embeddingStatus && (
                     <div className="pb-3 pl-1 text-xs text-muted-foreground">

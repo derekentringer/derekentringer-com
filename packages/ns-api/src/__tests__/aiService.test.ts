@@ -24,6 +24,7 @@ import {
   generateSummary,
   suggestTags,
   rewriteText,
+  answerQuestion,
   resetClient,
 } from "../services/aiService.js";
 
@@ -365,6 +366,115 @@ describe("aiService", () => {
 
       const result = await rewriteText("test", "concise");
       expect(result).toBe("Trimmed result");
+    });
+  });
+
+  describe("answerQuestion", () => {
+    function mockStreamResponse(events: unknown[]) {
+      mockCreate.mockResolvedValue({
+        [Symbol.asyncIterator]: async function* () {
+          for (const event of events) {
+            yield event;
+          }
+        },
+      });
+    }
+
+    it("yields streamed text chunks", async () => {
+      mockStreamResponse([
+        { type: "content_block_delta", delta: { type: "text_delta", text: "Based on" } },
+        { type: "content_block_delta", delta: { type: "text_delta", text: " your notes" } },
+      ]);
+
+      const chunks: string[] = [];
+      for await (const chunk of answerQuestion("What is X?", [
+        { id: "1", title: "Note 1", content: "Content about X" },
+      ])) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toEqual(["Based on", " your notes"]);
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          temperature: 0.3,
+          stream: true,
+        }),
+      );
+    });
+
+    it("includes note contexts in user message", async () => {
+      mockStreamResponse([]);
+
+      const noteContexts = [
+        { id: "1", title: "First Note", content: "First content" },
+        { id: "2", title: "Second Note", content: "Second content" },
+      ];
+
+      for await (const _chunk of answerQuestion("my question", noteContexts)) {
+        // consume
+      }
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [
+            {
+              role: "user",
+              content: expect.stringContaining("## First Note"),
+            },
+          ],
+        }),
+      );
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [
+            {
+              role: "user",
+              content: expect.stringContaining("## Second Note"),
+            },
+          ],
+        }),
+      );
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messages: [
+            {
+              role: "user",
+              content: expect.stringContaining("Question: my question"),
+            },
+          ],
+        }),
+      );
+    });
+
+    it("stops when signal is aborted", async () => {
+      const abortController = new AbortController();
+
+      mockCreate.mockResolvedValue({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            type: "content_block_delta",
+            delta: { type: "text_delta", text: "First" },
+          };
+          abortController.abort();
+          yield {
+            type: "content_block_delta",
+            delta: { type: "text_delta", text: "Second" },
+          };
+        },
+      });
+
+      const chunks: string[] = [];
+      for await (const chunk of answerQuestion(
+        "question",
+        [{ id: "1", title: "Note", content: "Content" }],
+        abortController.signal,
+      )) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toEqual(["First"]);
     });
   });
 });

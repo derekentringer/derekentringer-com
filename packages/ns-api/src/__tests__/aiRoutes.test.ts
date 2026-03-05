@@ -24,6 +24,7 @@ const mockGenerateSummary = vi.fn();
 const mockSuggestTags = vi.fn();
 const mockRewriteText = vi.fn();
 const mockStructureTranscript = vi.fn();
+const mockAnswerQuestion = vi.fn();
 
 vi.mock("../services/aiService.js", () => ({
   generateCompletion: (...args: unknown[]) => mockGenerateCompletion(...args),
@@ -31,6 +32,7 @@ vi.mock("../services/aiService.js", () => ({
   suggestTags: (...args: unknown[]) => mockSuggestTags(...args),
   rewriteText: (...args: unknown[]) => mockRewriteText(...args),
   structureTranscript: (...args: unknown[]) => mockStructureTranscript(...args),
+  answerQuestion: (...args: unknown[]) => mockAnswerQuestion(...args),
 }));
 
 const mockTranscribeAudio = vi.fn();
@@ -55,6 +57,16 @@ vi.mock("../services/embeddingProcessor.js", () => ({
   processAllPendingEmbeddings: () => mockProcessAllPendingEmbeddings(),
   startEmbeddingProcessor: () => ({ stop: () => {} }),
 }));
+
+const mockFindRelevantNotes = vi.fn();
+
+vi.mock("../store/noteStore.js", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    findRelevantNotes: (...args: unknown[]) => mockFindRelevantNotes(...args),
+  };
+});
 
 import { buildApp } from "../app.js";
 
@@ -640,6 +652,87 @@ describe("AI routes", () => {
       });
 
       expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- POST /ai/ask ---
+
+  describe("POST /ai/ask", () => {
+    it("returns 200 SSE stream with sources and text", async () => {
+      const token = await getAccessToken();
+      mockFindRelevantNotes.mockResolvedValue([
+        { id: VALID_UUID, title: "Test Note", content: "Some content here" },
+        { id: "660e8400-e29b-41d4-a716-446655440001", title: "Second Note", content: "More content" },
+      ]);
+      mockAnswerQuestion.mockImplementation(async function* () {
+        yield "Based on";
+        yield " your notes";
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/ask",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { question: "What is in my notes?" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).toBe("text/event-stream");
+      expect(res.body).toContain("sources");
+      expect(res.body).toContain("Test Note");
+      expect(res.body).toContain("Second Note");
+      expect(res.body).toContain("Based on");
+      expect(res.body).toContain("[DONE]");
+      expect(mockFindRelevantNotes).toHaveBeenCalledWith("What is in my notes?", 5);
+      expect(mockAnswerQuestion).toHaveBeenCalledWith(
+        "What is in my notes?",
+        expect.arrayContaining([
+          expect.objectContaining({ title: "Test Note" }),
+        ]),
+        expect.any(Object),
+      );
+    });
+
+    it("returns 400 with missing question", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/ask",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/ask",
+        payload: { question: "What is in my notes?" },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it("handles no relevant notes gracefully", async () => {
+      const token = await getAccessToken();
+      mockFindRelevantNotes.mockResolvedValue([]);
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/ask",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { question: "Something with no matching notes" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).toBe("text/event-stream");
+      expect(res.body).toContain("sources");
+      expect(res.body).toContain("couldn't find any relevant notes");
+      expect(res.body).toContain("[DONE]");
+      expect(mockAnswerQuestion).not.toHaveBeenCalled();
     });
   });
 });
