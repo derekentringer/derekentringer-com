@@ -7,6 +7,7 @@ export interface MockModel {
   create: Mock;
   createMany: Mock;
   findUnique: Mock;
+  findFirst: Mock;
   findMany: Mock;
   update: Mock;
   updateMany: Mock;
@@ -34,6 +35,7 @@ function createMockModel(): MockModel {
     create: vi.fn(),
     createMany: vi.fn(),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),

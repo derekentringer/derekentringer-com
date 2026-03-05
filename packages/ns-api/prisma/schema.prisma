@@ -12,6 +12,8 @@ model Note {
   title              String
   content            String
   folder             String?
+  folderId           String?
+  folderRef          Folder?                      @relation(fields: [folderId], references: [id], onDelete: SetNull)
   tags               Json                         @default("[]")
   summary            String?
   sortOrder          Int                          @default(0)
@@ -22,6 +24,7 @@ model Note {
   deletedAt          DateTime?
 
   @@index([folder])
+  @@index([folderId])
   @@index([deletedAt])
   @@index([sortOrder])
   @@map("notes")
@@ -37,9 +40,16 @@ model Setting {
 
 model Folder {
   id        String   @id @default(uuid())
-  name      String   @unique
+  name      String
+  parentId  String?
+  sortOrder Int      @default(0)
+  parent    Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Folder[] @relation("FolderTree")
+  notes     Note[]
   createdAt DateTime @default(now())
 
+  @@unique([parentId, name])
+  @@index([parentId])
   @@map("folders")
 }
 

@@ -13,6 +13,8 @@ import {
   reorderNotes,
   renameFolderApi,
   deleteFolderApi,
+  moveFolderApi,
+  reorderFoldersApi,
   fetchTags,
   renameTagApi,
   deleteTagApi,
@@ -79,6 +81,17 @@ describe("fetchNotes", () => {
     await fetchNotes({ folder: "work" });
 
     expect(mockApiFetch).toHaveBeenCalledWith("/notes?folder=work");
+  });
+
+  it("fetches notes with folderId param", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ notes: [], total: 0 }),
+    });
+
+    await fetchNotes({ folderId: "f1" });
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes?folderId=f1");
   });
 
   it("fetches notes with sortBy and sortOrder params", async () => {
@@ -297,7 +310,7 @@ describe("createFolderApi", () => {
   it("sends POST with folder name", async () => {
     mockApiFetch.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ name: "projects" }),
+      json: () => Promise.resolve({ id: "f1", name: "projects", parentId: null, sortOrder: 0 }),
     });
 
     const result = await createFolderApi("projects");
@@ -306,7 +319,22 @@ describe("createFolderApi", () => {
       method: "POST",
       body: JSON.stringify({ name: "projects" }),
     });
-    expect(result).toEqual({ name: "projects" });
+    expect(result.name).toBe("projects");
+  });
+
+  it("sends POST with parentId", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "f2", name: "alpha", parentId: "f1", sortOrder: 0 }),
+    });
+
+    const result = await createFolderApi("alpha", "f1");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders", {
+      method: "POST",
+      body: JSON.stringify({ name: "alpha", parentId: "f1" }),
+    });
+    expect(result.parentId).toBe("f1");
   });
 
   it("throws on non-ok response", async () => {
@@ -344,50 +372,128 @@ describe("reorderNotes", () => {
 });
 
 describe("renameFolderApi", () => {
-  it("sends PATCH with newName", async () => {
+  it("sends PATCH with newName by folder ID", async () => {
     mockApiFetch.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ updated: 3 }),
+      json: () => Promise.resolve({ id: "f1", name: "office" }),
     });
 
-    const result = await renameFolderApi("work", "office");
+    const result = await renameFolderApi("f1", "office");
 
-    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/work", {
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/f1", {
       method: "PATCH",
       body: JSON.stringify({ newName: "office" }),
     });
-    expect(result).toEqual({ updated: 3 });
+    expect(result.name).toBe("office");
   });
 
   it("throws on non-ok response", async () => {
     mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
 
-    await expect(renameFolderApi("work", "office")).rejects.toThrow(
+    await expect(renameFolderApi("f1", "office")).rejects.toThrow(
       "Failed to rename folder: 500",
     );
   });
 });
 
 describe("deleteFolderApi", () => {
-  it("sends DELETE request", async () => {
+  it("sends DELETE with mode query param", async () => {
     mockApiFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ updated: 2 }),
     });
 
-    const result = await deleteFolderApi("work");
+    const result = await deleteFolderApi("f1", "move-up");
 
-    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/work", {
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/f1?mode=move-up", {
       method: "DELETE",
     });
     expect(result).toEqual({ updated: 2 });
   });
 
+  it("sends DELETE with recursive mode", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ updated: 5 }),
+    });
+
+    const result = await deleteFolderApi("f1", "recursive");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/f1?mode=recursive", {
+      method: "DELETE",
+    });
+    expect(result).toEqual({ updated: 5 });
+  });
+
   it("throws on non-ok response", async () => {
     mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
 
-    await expect(deleteFolderApi("work")).rejects.toThrow(
+    await expect(deleteFolderApi("f1", "move-up")).rejects.toThrow(
       "Failed to delete folder: 500",
+    );
+  });
+});
+
+describe("moveFolderApi", () => {
+  it("sends PATCH to move endpoint", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "f1", name: "work", parentId: "f2", sortOrder: 0 }),
+    });
+
+    const result = await moveFolderApi("f1", "f2");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/f1/move", {
+      method: "PATCH",
+      body: JSON.stringify({ parentId: "f2" }),
+    });
+    expect(result.parentId).toBe("f2");
+  });
+
+  it("sends PATCH with sortOrder", async () => {
+    mockApiFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "f1", name: "work", parentId: null, sortOrder: 3 }),
+    });
+
+    await moveFolderApi("f1", null, 3);
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/f1/move", {
+      method: "PATCH",
+      body: JSON.stringify({ parentId: null, sortOrder: 3 }),
+    });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 400 });
+
+    await expect(moveFolderApi("f1", "f1")).rejects.toThrow(
+      "Failed to move folder: 400",
+    );
+  });
+});
+
+describe("reorderFoldersApi", () => {
+  it("sends PUT with order body", async () => {
+    mockApiFetch.mockResolvedValue({ ok: true });
+
+    const order = [
+      { id: "f1", sortOrder: 1 },
+      { id: "f2", sortOrder: 0 },
+    ];
+    await reorderFoldersApi(order);
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/notes/folders/reorder", {
+      method: "PUT",
+      body: JSON.stringify({ order }),
+    });
+  });
+
+  it("throws on non-ok response", async () => {
+    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
+
+    await expect(reorderFoldersApi([])).rejects.toThrow(
+      "Failed to reorder folders: 500",
     );
   });
 });

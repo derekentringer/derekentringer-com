@@ -6,13 +6,16 @@ import type {
   NoteSortField,
   SortOrder,
   FolderListResponse,
+  FolderInfo,
   ReorderNotesRequest,
+  ReorderFoldersRequest,
   TagListResponse,
 } from "@derekentringer/shared/ns";
 import { apiFetch } from "./client.ts";
 
 export async function fetchNotes(params?: {
   folder?: string;
+  folderId?: string;
   search?: string;
   searchMode?: "keyword" | "semantic" | "hybrid";
   tags?: string[];
@@ -22,7 +25,8 @@ export async function fetchNotes(params?: {
   sortOrder?: SortOrder;
 }): Promise<NoteListResponse> {
   const qs = new URLSearchParams();
-  if (params?.folder) qs.set("folder", params.folder);
+  if (params?.folderId) qs.set("folderId", params.folderId);
+  else if (params?.folder) qs.set("folder", params.folder);
   if (params?.search) qs.set("search", params.search);
   if (params?.searchMode) qs.set("searchMode", params.searchMode);
   if (params?.tags && params.tags.length > 0) qs.set("tags", params.tags.join(","));
@@ -150,10 +154,14 @@ export async function fetchFolders(): Promise<FolderListResponse> {
 
 export async function createFolderApi(
   name: string,
-): Promise<{ name: string }> {
+  parentId?: string,
+): Promise<{ id: string; name: string; parentId: string | null; sortOrder: number }> {
+  const body: Record<string, string> = { name };
+  if (parentId) body.parentId = parentId;
+
   const response = await apiFetch("/notes/folders", {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -177,10 +185,10 @@ export async function reorderNotes(
 }
 
 export async function renameFolderApi(
-  name: string,
+  folderId: string,
   newName: string,
-): Promise<{ updated: number }> {
-  const response = await apiFetch(`/notes/folders/${encodeURIComponent(name)}`, {
+): Promise<{ id: string; name: string }> {
+  const response = await apiFetch(`/notes/folders/${encodeURIComponent(folderId)}`, {
     method: "PATCH",
     body: JSON.stringify({ newName }),
   });
@@ -193,9 +201,10 @@ export async function renameFolderApi(
 }
 
 export async function deleteFolderApi(
-  name: string,
+  folderId: string,
+  mode: "move-up" | "recursive" = "move-up",
 ): Promise<{ updated: number }> {
-  const response = await apiFetch(`/notes/folders/${encodeURIComponent(name)}`, {
+  const response = await apiFetch(`/notes/folders/${encodeURIComponent(folderId)}?mode=${mode}`, {
     method: "DELETE",
   });
 
@@ -204,6 +213,39 @@ export async function deleteFolderApi(
   }
 
   return response.json();
+}
+
+export async function moveFolderApi(
+  folderId: string,
+  parentId: string | null,
+  sortOrder?: number,
+): Promise<{ id: string; name: string; parentId: string | null; sortOrder: number }> {
+  const body: Record<string, unknown> = { parentId };
+  if (sortOrder !== undefined) body.sortOrder = sortOrder;
+
+  const response = await apiFetch(`/notes/folders/${encodeURIComponent(folderId)}/move`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to move folder: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function reorderFoldersApi(
+  order: { id: string; sortOrder: number }[],
+): Promise<void> {
+  const response = await apiFetch("/notes/folders/reorder", {
+    method: "PUT",
+    body: JSON.stringify({ order }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to reorder folders: ${response.status}`);
+  }
 }
 
 export async function fetchTags(): Promise<TagListResponse> {

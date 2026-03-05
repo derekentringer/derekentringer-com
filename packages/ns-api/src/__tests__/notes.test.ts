@@ -243,13 +243,13 @@ describe("Note routes", () => {
   // --- GET /notes/folders ---
 
   describe("GET /notes/folders", () => {
-    it("returns folder list (200)", async () => {
+    it("returns folder tree (200)", async () => {
       const token = await getAccessToken();
       mockPrisma.folder.findMany.mockResolvedValue([
-        { id: "f1", name: "work", createdAt: new Date() },
+        { id: "f1", name: "work", parentId: null, sortOrder: 0, createdAt: new Date() },
       ]);
       mockPrisma.note.groupBy.mockResolvedValue([
-        { folder: "work", _count: { id: 3 } },
+        { folderId: "f1", _count: { id: 3 } },
       ]);
 
       const res = await app.inject({
@@ -263,6 +263,8 @@ describe("Note routes", () => {
       expect(body.folders).toHaveLength(1);
       expect(body.folders[0].name).toBe("work");
       expect(body.folders[0].count).toBe(3);
+      expect(body.folders[0].id).toBe("f1");
+      expect(body.folders[0].children).toEqual([]);
     });
 
     it("returns 401 without auth", async () => {
@@ -278,11 +280,14 @@ describe("Note routes", () => {
   // --- POST /notes/folders ---
 
   describe("POST /notes/folders", () => {
-    it("creates a folder (201)", async () => {
+    it("creates a root folder (201)", async () => {
       const token = await getAccessToken();
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
       mockPrisma.folder.create.mockResolvedValue({
         id: "f1",
         name: "projects",
+        parentId: null,
+        sortOrder: 1,
         createdAt: new Date(),
       });
 
@@ -296,10 +301,35 @@ describe("Note routes", () => {
       expect(res.statusCode).toBe(201);
       const body = res.json();
       expect(body.name).toBe("projects");
+      expect(body.id).toBe("f1");
+    });
+
+    it("creates a nested folder with parentId (201)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: -1 } });
+      mockPrisma.folder.create.mockResolvedValue({
+        id: "f2",
+        name: "alpha",
+        parentId: "f1",
+        sortOrder: 0,
+        createdAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/notes/folders",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { name: "alpha", parentId: "f1" },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.parentId).toBe("f1");
     });
 
     it("returns 409 for duplicate folder", async () => {
       const token = await getAccessToken();
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
       const err = new Error("Unique constraint failed") as Error & { code: string };
       err.code = "P2002";
       mockPrisma.folder.create.mockRejectedValue(err);
@@ -370,12 +400,35 @@ describe("Note routes", () => {
     });
   });
 
-  // --- PATCH /notes/folders/:name ---
+  // --- PATCH /notes/folders/:id ---
 
-  describe("PATCH /notes/folders/:name", () => {
-    it("renames a folder (200)", async () => {
+  describe("PATCH /notes/folders/:id", () => {
+    it("renames a folder by UUID (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.folder.update.mockResolvedValue({
+        id: VALID_UUID,
+        name: "office",
+        parentId: null,
+        sortOrder: 0,
+        createdAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/folders/${VALID_UUID}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { newName: "office" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().name).toBe("office");
+    });
+
+    it("renames a folder by name (legacy, 200)", async () => {
       const token = await getAccessToken();
       mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
+      mockPrisma.folder.findFirst.mockResolvedValue({ id: "f1", name: "work" });
+      mockPrisma.folder.update.mockResolvedValue({});
 
       const res = await app.inject({
         method: "PATCH",
@@ -393,7 +446,7 @@ describe("Note routes", () => {
 
       const res = await app.inject({
         method: "PATCH",
-        url: "/notes/folders/work",
+        url: `/notes/folders/${VALID_UUID}`,
         headers: { authorization: `Bearer ${token}` },
         payload: {},
       });
@@ -404,7 +457,7 @@ describe("Note routes", () => {
     it("returns 401 without auth", async () => {
       const res = await app.inject({
         method: "PATCH",
-        url: "/notes/folders/work",
+        url: `/notes/folders/${VALID_UUID}`,
         payload: { newName: "office" },
       });
 
@@ -412,12 +465,59 @@ describe("Note routes", () => {
     });
   });
 
-  // --- DELETE /notes/folders/:name ---
+  // --- DELETE /notes/folders/:id ---
 
-  describe("DELETE /notes/folders/:name", () => {
-    it("deletes a folder and unfiles notes (200)", async () => {
+  describe("DELETE /notes/folders/:id", () => {
+    it("deletes folder with move-up mode by UUID (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        id: VALID_UUID,
+        name: "work",
+        parentId: null,
+        sortOrder: 0,
+        createdAt: new Date(),
+      });
+      mockPrisma.folder.updateMany.mockResolvedValue({ count: 0 });
+      mockPrisma.note.updateMany.mockResolvedValue({ count: 2 });
+      mockPrisma.folder.delete.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/notes/folders/${VALID_UUID}?mode=move-up`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().updated).toBe(2);
+    });
+
+    it("deletes folder with recursive mode by UUID (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        id: VALID_UUID,
+        name: "work",
+        parentId: null,
+        sortOrder: 0,
+        createdAt: new Date(),
+      });
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+      mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
+      mockPrisma.folder.delete.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: `/notes/folders/${VALID_UUID}?mode=recursive`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().updated).toBe(3);
+    });
+
+    it("deletes folder by name (legacy, 200)", async () => {
       const token = await getAccessToken();
       mockPrisma.note.updateMany.mockResolvedValue({ count: 2 });
+      mockPrisma.folder.deleteMany.mockResolvedValue({ count: 1 });
 
       const res = await app.inject({
         method: "DELETE",
@@ -432,10 +532,121 @@ describe("Note routes", () => {
     it("returns 401 without auth", async () => {
       const res = await app.inject({
         method: "DELETE",
-        url: "/notes/folders/work",
+        url: `/notes/folders/${VALID_UUID}`,
       });
 
       expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- PATCH /notes/folders/:id/move ---
+
+  describe("PATCH /notes/folders/:id/move", () => {
+    it("moves folder to new parent (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      mockPrisma.folder.update.mockResolvedValue({
+        id: VALID_UUID,
+        name: "projects",
+        parentId: VALID_UUID_2,
+        sortOrder: 1,
+        createdAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/folders/${VALID_UUID}/move`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { parentId: VALID_UUID_2 },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().parentId).toBe(VALID_UUID_2);
+    });
+
+    it("moves folder to root (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      mockPrisma.folder.update.mockResolvedValue({
+        id: VALID_UUID,
+        name: "projects",
+        parentId: null,
+        sortOrder: 1,
+        createdAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/folders/${VALID_UUID}/move`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { parentId: null },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().parentId).toBeNull();
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/folders/${VALID_UUID}/move`,
+        payload: { parentId: null },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- PUT /notes/folders/reorder ---
+
+  describe("PUT /notes/folders/reorder", () => {
+    it("reorders folders (204)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.folder.update.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/folders/reorder",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          order: [
+            { id: VALID_UUID, sortOrder: 1 },
+            { id: VALID_UUID_2, sortOrder: 0 },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(204);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/folders/reorder",
+        payload: { order: [] },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- GET /notes?folderId ---
+
+  describe("GET /notes with folderId", () => {
+    it("filters by folderId", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      const res = await app.inject({
+        method: "GET",
+        url: `/notes?folderId=${VALID_UUID}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
     });
   });
 
