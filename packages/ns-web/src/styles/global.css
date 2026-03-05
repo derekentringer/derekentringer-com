@@ -241,6 +241,25 @@
   }
 }
 
+/* Wiki-link styles */
+.wiki-link {
+  color: var(--color-primary);
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.wiki-link:hover {
+  color: var(--color-primary-hover);
+}
+
+.wiki-link-broken {
+  color: var(--color-muted-foreground);
+  text-decoration: underline dashed;
+  text-decoration-color: var(--color-destructive);
+  text-underline-offset: 2px;
+}
+
 /* Search highlight (FTS headline) */
 .search-highlight mark {
   background-color: rgba(212, 225, 87, 0.3);

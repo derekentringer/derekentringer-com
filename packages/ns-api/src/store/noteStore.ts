@@ -9,6 +9,7 @@ import type {
 } from "@derekentringer/shared/ns";
 import type { Note as PrismaNote, Folder as PrismaFolder } from "../generated/prisma/client.js";
 import { generateQueryEmbedding } from "../services/embeddingService.js";
+import { syncNoteLinks } from "./linkStore.js";
 
 function isNotFoundError(error: unknown): boolean {
   return (
@@ -40,7 +41,7 @@ export async function createNote(
     }
   }
 
-  return prisma.note.create({
+  const created = await prisma.note.create({
     data: {
       title: data.title,
       content: data.content ?? "",
@@ -50,6 +51,12 @@ export async function createNote(
       sortOrder: nextSortOrder,
     },
   });
+
+  if (created.content) {
+    syncNoteLinks(created.id, created.content).catch(() => {});
+  }
+
+  return created;
 }
 
 export async function getNote(id: string): Promise<PrismaNote | null> {
@@ -356,10 +363,16 @@ export async function updateNote(
     if (data.tags !== undefined) updateData.tags = data.tags;
     if (data.summary !== undefined) updateData.summary = data.summary;
 
-    return await prisma.note.update({
+    const updated = await prisma.note.update({
       where: { id, deletedAt: null },
       data: updateData,
     });
+
+    if (data.content !== undefined) {
+      syncNoteLinks(updated.id, updated.content).catch(() => {});
+    }
+
+    return updated;
   } catch (error) {
     if (isNotFoundError(error)) return null;
     throw error;

@@ -2,7 +2,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { NotesPage } from "../pages/NotesPage.tsx";
 
 vi.mock("../components/MarkdownEditor.tsx", () => ({
@@ -55,10 +55,14 @@ const mockFetchTags = vi.fn();
 const mockRenameTagApi = vi.fn();
 const mockDeleteTagApi = vi.fn();
 const mockEmptyTrash = vi.fn();
+const mockFetchNoteTitles = vi.fn();
+const mockFetchBacklinks = vi.fn();
+const mockFetchNote = vi.fn();
 const mockLogout = vi.fn();
 
 vi.mock("../api/offlineNotes.ts", () => ({
   fetchNotes: (...args: unknown[]) => mockFetchNotes(...args),
+  fetchNote: (...args: unknown[]) => mockFetchNote(...args),
   createNote: (...args: unknown[]) => mockCreateNote(...args),
   updateNote: (...args: unknown[]) => mockUpdateNote(...args),
   deleteNote: (...args: unknown[]) => mockDeleteNote(...args),
@@ -76,6 +80,8 @@ vi.mock("../api/offlineNotes.ts", () => ({
   fetchTags: (...args: unknown[]) => mockFetchTags(...args),
   renameTagApi: (...args: unknown[]) => mockRenameTagApi(...args),
   deleteTagApi: (...args: unknown[]) => mockDeleteTagApi(...args),
+  fetchNoteTitles: (...args: unknown[]) => mockFetchNoteTitles(...args),
+  fetchBacklinks: (...args: unknown[]) => mockFetchBacklinks(...args),
 }));
 
 vi.mock("../hooks/useOfflineCache.ts", () => ({
@@ -105,6 +111,10 @@ vi.mock("../editor/ghostText.ts", () => ({
 
 vi.mock("../editor/rewriteMenu.ts", () => ({
   rewriteExtension: vi.fn(() => []),
+}));
+
+vi.mock("../editor/wikiLinkComplete.ts", () => ({
+  wikiLinkAutocomplete: vi.fn(() => []),
 }));
 
 vi.mock("../api/ai.ts", () => ({
@@ -156,6 +166,8 @@ beforeEach(() => {
   mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
   mockFetchFolders.mockResolvedValue({ folders: [] });
   mockFetchTags.mockResolvedValue({ tags: [] });
+  mockFetchNoteTitles.mockResolvedValue({ notes: [] });
+  mockFetchBacklinks.mockResolvedValue({ backlinks: [] });
 });
 
 describe("NotesPage", () => {
@@ -690,6 +702,36 @@ describe("NotesPage", () => {
       await userEvent.click(noteButton);
 
       expect(screen.getByLabelText("Add tag")).toBeInTheDocument();
+    });
+  });
+
+  describe("Deep linking", () => {
+    it("navigating to /notes/:id selects that note", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      render(
+        <MemoryRouter initialEntries={["/notes/note-1"]}>
+          <Routes>
+            <Route path="/notes/:noteId" element={<NotesPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      // Should show the note content since it was found in the list
+      await waitFor(() => {
+        expect(screen.getByDisplayValue("Test Note")).toBeInTheDocument();
+      });
+    });
+
+    it("shows copy link button when a note is selected", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.click(noteButton);
+
+      expect(screen.getByTitle("Copy link to note")).toBeInTheDocument();
     });
   });
 

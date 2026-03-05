@@ -1225,6 +1225,89 @@ describe("Note routes", () => {
     });
   });
 
+  // --- GET /notes/titles ---
+
+  describe("GET /notes/titles", () => {
+    it("returns note titles (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: VALID_UUID, title: "Alpha" },
+        { id: VALID_UUID_2, title: "Beta" },
+      ]);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/titles",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.notes).toHaveLength(2);
+      expect(body.notes[0].title).toBe("Alpha");
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/titles",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- GET /notes/:id/backlinks ---
+
+  describe("GET /notes/:id/backlinks", () => {
+    it("returns backlinks (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.noteLink.findMany.mockResolvedValue([
+        {
+          id: "link-1",
+          sourceNoteId: VALID_UUID_2,
+          targetNoteId: VALID_UUID,
+          linkText: "Test Note",
+          sourceNote: { id: VALID_UUID_2, title: "Source", deletedAt: null },
+        },
+      ]);
+
+      const res = await app.inject({
+        method: "GET",
+        url: `/notes/${VALID_UUID}/backlinks`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.backlinks).toHaveLength(1);
+      expect(body.backlinks[0].noteId).toBe(VALID_UUID_2);
+      expect(body.backlinks[0].linkText).toBe("Test Note");
+    });
+
+    it("returns 400 for invalid UUID", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/invalid-id/backlinks",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toBe("Invalid note ID format");
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: `/notes/${VALID_UUID}/backlinks`,
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
   describe("GET /notes with tags filter", () => {
     it("passes tags filter to store", async () => {
       const token = await getAccessToken();

@@ -35,6 +35,7 @@ import {
   renameTag,
   removeTag,
 } from "../store/noteStore.js";
+import { getBacklinks, listNoteTitles } from "../store/linkStore.js";
 import {
   getTrashRetentionDays,
   setTrashRetentionDays,
@@ -177,6 +178,15 @@ const renameTagSchema = {
 
 export default async function noteRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  // GET /notes/titles — MUST be before /:id
+  fastify.get(
+    "/titles",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const notes = await listNoteTitles();
+      return reply.send({ notes });
+    },
+  );
 
   // GET /notes/folders — MUST be before /:id
   fastify.get(
@@ -432,6 +442,27 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         total: result.total,
       };
       return reply.send(response);
+    },
+  );
+
+  // GET /notes/:id/backlinks — MUST be before generic /:id
+  fastify.get(
+    "/:id/backlinks",
+    async (
+      request: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply,
+    ) => {
+      const { id } = request.params;
+      if (!UUID_REGEX.test(id)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid note ID format",
+        });
+      }
+
+      const backlinks = await getBacklinks(id);
+      return reply.send({ backlinks });
     },
   );
 

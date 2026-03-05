@@ -215,4 +215,6 @@ export {
   deleteTagApi,
   getTrashRetention,
   setTrashRetention,
+  fetchBacklinks,
+  fetchNoteTitles,
 } from "./notes.ts";

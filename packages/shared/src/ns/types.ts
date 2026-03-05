@@ -141,3 +141,22 @@ export interface QASource {
   id: string;
   title: string;
 }
+
+export interface BacklinkInfo {
+  noteId: string;
+  noteTitle: string;
+  linkText: string;
+}
+
+export interface BacklinksResponse {
+  backlinks: BacklinkInfo[];
+}
+
+export interface NoteTitleEntry {
+  id: string;
+  title: string;
+}
+
+export interface NoteTitlesResponse {
+  notes: NoteTitleEntry[];
+}
