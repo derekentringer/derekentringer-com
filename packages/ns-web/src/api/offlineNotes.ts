@@ -204,6 +204,7 @@ export {
   fetchTrash,
   restoreNote,
   permanentDeleteNote,
+  emptyTrash,
   createFolderApi,
   renameFolderApi,
   deleteFolderApi,
@@ -212,4 +213,6 @@ export {
   reorderNotes,
   renameTagApi,
   deleteTagApi,
+  getTrashRetention,
+  setTrashRetention,
 } from "./notes.ts";

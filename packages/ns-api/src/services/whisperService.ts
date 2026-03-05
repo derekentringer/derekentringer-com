@@ -1,4 +1,5 @@
 import { loadConfig } from "../config.js";
+import { splitAudioIfNeeded } from "./audioChunker.js";
 
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
 
@@ -27,4 +28,19 @@ export async function transcribeAudio(
 
   const result = (await response.json()) as { text: string };
   return result.text;
+}
+
+export async function transcribeAudioChunked(
+  audioBuffer: Buffer,
+  filename: string,
+): Promise<string> {
+  const chunks = await splitAudioIfNeeded(audioBuffer, filename);
+
+  const transcripts: string[] = [];
+  for (const chunk of chunks) {
+    const text = await transcribeAudio(chunk, filename);
+    transcripts.push(text);
+  }
+
+  return transcripts.join(" ");
 }

@@ -20,6 +20,7 @@ import {
   softDeleteNote,
   restoreNote,
   permanentDeleteNote,
+  permanentDeleteTrash,
   createFolder,
   listFolders,
   reorderNotes,
@@ -34,6 +35,10 @@ import {
   renameTag,
   removeTag,
 } from "../store/noteStore.js";
+import {
+  getTrashRetentionDays,
+  setTrashRetentionDays,
+} from "../store/settingStore.js";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -274,6 +279,40 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // GET /notes/trash/retention — MUST be before /:id
+  fastify.get(
+    "/trash/retention",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const days = await getTrashRetentionDays();
+      return reply.send({ days });
+    },
+  );
+
+  // PUT /notes/trash/retention
+  fastify.put<{ Body: { days: number } }>(
+    "/trash/retention",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["days"],
+          additionalProperties: false,
+          properties: {
+            days: { type: "integer", minimum: 0, maximum: 365 },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { days: number } }>,
+      reply: FastifyReply,
+    ) => {
+      const { days } = request.body;
+      await setTrashRetentionDays(days);
+      return reply.send({ days });
+    },
+  );
+
   // GET /notes/trash — MUST be before /:id
   fastify.get(
     "/trash",
@@ -294,6 +333,26 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         total: result.total,
       };
       return reply.send(response);
+    },
+  );
+
+  // DELETE /notes/trash — bulk permanent delete (all or specific IDs)
+  fastify.delete<{ Body?: { ids?: string[] } }>(
+    "/trash",
+    async (
+      request: FastifyRequest<{ Body?: { ids?: string[] } }>,
+      reply: FastifyReply,
+    ) => {
+      const ids = request.body?.ids;
+      if (ids !== undefined && (!Array.isArray(ids) || ids.some((id) => typeof id !== "string"))) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "ids must be an array of strings",
+        });
+      }
+      const deleted = await permanentDeleteTrash(ids);
+      return reply.send({ deleted });
     },
   );
 

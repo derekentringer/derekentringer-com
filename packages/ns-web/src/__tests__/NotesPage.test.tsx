@@ -54,6 +54,7 @@ const mockReorderFoldersApi = vi.fn();
 const mockFetchTags = vi.fn();
 const mockRenameTagApi = vi.fn();
 const mockDeleteTagApi = vi.fn();
+const mockEmptyTrash = vi.fn();
 const mockLogout = vi.fn();
 
 vi.mock("../api/offlineNotes.ts", () => ({
@@ -64,6 +65,7 @@ vi.mock("../api/offlineNotes.ts", () => ({
   fetchTrash: (...args: unknown[]) => mockFetchTrash(...args),
   restoreNote: (...args: unknown[]) => mockRestoreNote(...args),
   permanentDeleteNote: (...args: unknown[]) => mockPermanentDeleteNote(...args),
+  emptyTrash: (...args: unknown[]) => mockEmptyTrash(...args),
   fetchFolders: (...args: unknown[]) => mockFetchFolders(...args),
   createFolderApi: (...args: unknown[]) => mockCreateFolderApi(...args),
   reorderNotes: (...args: unknown[]) => mockReorderNotes(...args),
@@ -418,6 +420,119 @@ describe("NotesPage", () => {
       await screen.findByText("No notes yet");
     });
 
+    it("shows Delete All button in trash view when items exist", async () => {
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("Trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trashed Note");
+      expect(screen.getByText("Delete All")).toBeInTheDocument();
+    });
+
+    it("Delete All triggers ConfirmDialog and confirming calls emptyTrash", async () => {
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+      mockEmptyTrash.mockResolvedValue({ deleted: 1 });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("Trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trashed Note");
+
+      await userEvent.click(screen.getByText("Delete All"));
+
+      // Confirm dialog should appear
+      expect(screen.getByText("Empty Trash")).toBeInTheDocument();
+
+      // Confirm
+      await userEvent.click(screen.getByText("Delete"));
+
+      await waitFor(() => {
+        expect(mockEmptyTrash).toHaveBeenCalledWith();
+      });
+    });
+
+    it("shows checkboxes on trash items", async () => {
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("Trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trashed Note");
+      expect(screen.getByLabelText("Select Trashed Note")).toBeInTheDocument();
+    });
+
+    it("shows Delete Selected when items are checked", async () => {
+      const trash2 = { ...mockTrashedNote, id: "trash-2", title: "Trashed Note 2" };
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote, trash2],
+        total: 2,
+      });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("Trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trashed Note");
+
+      // Check one item
+      const checkbox = screen.getByLabelText("Select Trashed Note");
+      await userEvent.click(checkbox);
+
+      expect(screen.getByText("Delete Selected (1)")).toBeInTheDocument();
+    });
+
+    it("Delete Selected with confirmation calls emptyTrash with IDs", async () => {
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+      mockEmptyTrash.mockResolvedValue({ deleted: 1 });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("Trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trashed Note");
+
+      // Check the item
+      const checkbox = screen.getByLabelText("Select Trashed Note");
+      await userEvent.click(checkbox);
+
+      await userEvent.click(screen.getByText("Delete Selected (1)"));
+
+      // Confirm dialog
+      expect(screen.getByText("Delete Selected")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByText("Delete"));
+
+      await waitFor(() => {
+        expect(mockEmptyTrash).toHaveBeenCalledWith(["trash-1"]);
+      });
+    });
+
     it("hides new note button in trash view", async () => {
       mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
 
@@ -468,8 +583,8 @@ describe("NotesPage", () => {
       const noteButton = await screen.findByText("Test Note");
       await userEvent.click(noteButton);
 
-      const folderSelect = screen.getByTestId("note-folder-select") as HTMLSelectElement;
-      expect(folderSelect.value).toBe("f1");
+      const folderButton = screen.getByTestId("note-folder-select");
+      expect(folderButton).toHaveAttribute("title", "Work");
     });
 
     it("renders Unfiled when note has no folder", async () => {
@@ -480,8 +595,8 @@ describe("NotesPage", () => {
       const noteButton = await screen.findByText("Test Note");
       await userEvent.click(noteButton);
 
-      const folderSelect = screen.getByTestId("note-folder-select") as HTMLSelectElement;
-      expect(folderSelect.value).toBe("");
+      const folderButton = screen.getByTestId("note-folder-select");
+      expect(folderButton).toHaveAttribute("title", "Unfiled");
     });
 
     it("calls updateNote when folder is changed via selector", async () => {
@@ -495,8 +610,13 @@ describe("NotesPage", () => {
       const noteButton = await screen.findByText("Test Note");
       await userEvent.click(noteButton);
 
-      const folderSelect = screen.getByTestId("note-folder-select");
-      await userEvent.selectOptions(folderSelect, "f1");
+      const folderButton = screen.getByTestId("note-folder-select");
+      await userEvent.click(folderButton);
+
+      const workOptions = await screen.findAllByText("Work");
+      const dropdownOption = workOptions.find((el) => el.tagName === "BUTTON" && el.classList.contains("text-left"));
+      expect(dropdownOption).toBeTruthy();
+      await userEvent.click(dropdownOption!);
 
       await waitFor(() => {
         expect(mockUpdateNote).toHaveBeenCalledWith("note-1", { folderId: "f1" });
@@ -515,8 +635,11 @@ describe("NotesPage", () => {
       const noteButton = await screen.findByText("Test Note");
       await userEvent.click(noteButton);
 
-      const folderSelect = screen.getByTestId("note-folder-select");
-      await userEvent.selectOptions(folderSelect, "");
+      const folderButton = screen.getByTestId("note-folder-select");
+      await userEvent.click(folderButton);
+
+      const unfiledOption = await screen.findByRole("button", { name: "Unfiled" });
+      await userEvent.click(unfiledOption);
 
       await waitFor(() => {
         expect(mockUpdateNote).toHaveBeenCalledWith("note-1", { folderId: null });
@@ -567,6 +690,38 @@ describe("NotesPage", () => {
       await userEvent.click(noteButton);
 
       expect(screen.getByLabelText("Add tag")).toBeInTheDocument();
+    });
+  });
+
+  describe("Import/Export", () => {
+    it("renders import button in sidebar footer", async () => {
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+      expect(screen.getByTitle("Import")).toBeInTheDocument();
+    });
+
+    it("hides import button in trash view", async () => {
+      mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("Trash");
+      await userEvent.click(trashButton);
+      await screen.findByText("Trash is empty");
+
+      expect(screen.queryByTitle("Import")).not.toBeInTheDocument();
+    });
+
+    it("shows all export format options in note context menu", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.pointer({ keys: "[MouseRight]", target: noteButton });
+
+      expect(screen.getByText("Export as .md")).toBeInTheDocument();
+      expect(screen.getByText("Export as .txt")).toBeInTheDocument();
+      expect(screen.getByText("Export as .pdf")).toBeInTheDocument();
     });
   });
 });

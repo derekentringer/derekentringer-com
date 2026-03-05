@@ -5,6 +5,7 @@ import { useEditorSettings, ACCENT_PRESETS, type ThemeMode, type ViewModeDefault
 
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
 import { enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
+import { getTrashRetention, setTrashRetention } from "../api/offlineNotes.ts";
 import { clearAllCaches, getDB } from "../lib/db.ts";
 import type { EmbeddingStatus } from "@derekentringer/shared/ns";
 
@@ -164,6 +165,15 @@ const MAX_CACHE_OPTIONS: { value: number; label: string }[] = [
   { value: 500, label: "500" },
 ];
 
+const TRASH_RETENTION_OPTIONS: { value: number; label: string }[] = [
+  { value: 7, label: "7 days" },
+  { value: 14, label: "14 days" },
+  { value: 30, label: "30 days (default)" },
+  { value: 60, label: "60 days" },
+  { value: 90, label: "90 days" },
+  { value: 0, label: "Never" },
+];
+
 export function SettingsPage() {
   const navigate = useNavigate();
   const { settings: aiSettings, updateSetting: updateAiSetting } = useAiSettings();
@@ -173,6 +183,7 @@ export function SettingsPage() {
   const [cachedNoteCount, setCachedNoteCount] = useState<number | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [trashRetentionDays, setTrashRetentionDays] = useState<number>(30);
 
   const loadEmbeddingStatus = useCallback(async () => {
     try {
@@ -190,6 +201,13 @@ export function SettingsPage() {
       return () => clearInterval(timer);
     }
   }, [aiSettings.masterAiEnabled, aiSettings.semanticSearch, loadEmbeddingStatus]);
+
+  // Load trash retention setting
+  useEffect(() => {
+    getTrashRetention()
+      .then((res) => setTrashRetentionDays(res.days))
+      .catch(() => {});
+  }, []);
 
   // Load cached note count
   useEffect(() => {
@@ -221,6 +239,16 @@ export function SettingsPage() {
     } catch {
       // Revert on failure
       updateAiSetting("semanticSearch", !enabled);
+    }
+  }
+
+  async function handleTrashRetentionChange(days: number) {
+    setTrashRetentionDays(days);
+    try {
+      await setTrashRetention(days);
+    } catch {
+      // Revert on failure
+      setTrashRetentionDays(trashRetentionDays);
     }
   }
 
@@ -574,6 +602,26 @@ export function SettingsPage() {
                   Clear Cache
                 </button>
               )}
+            </div>
+          </SectionCard>
+
+          {/* Trash */}
+          <SectionCard title="Trash">
+            <div>
+              <label className="text-sm text-foreground mb-1 block flex items-center">
+                Auto-delete after
+                <InfoIcon tooltip="Trashed notes are permanently deleted after this period. Set to 'Never' to keep trashed notes indefinitely." />
+              </label>
+              <select
+                value={trashRetentionDays}
+                onChange={(e) => handleTrashRetentionChange(Number(e.target.value))}
+                className="bg-input border border-border rounded-md px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label="Trash retention period"
+              >
+                {TRASH_RETENTION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           </SectionCard>
 

@@ -15,6 +15,14 @@ vi.mock("../api/ai.ts", () => ({
   getEmbeddingStatus: vi.fn().mockResolvedValue({ enabled: false, pendingCount: 0, totalWithEmbeddings: 0 }),
 }));
 
+const mockGetTrashRetention = vi.fn().mockResolvedValue({ days: 30 });
+const mockSetTrashRetention = vi.fn().mockResolvedValue({ days: 30 });
+
+vi.mock("../api/offlineNotes.ts", () => ({
+  getTrashRetention: (...args: unknown[]) => mockGetTrashRetention(...args),
+  setTrashRetention: (...args: unknown[]) => mockSetTrashRetention(...args),
+}));
+
 vi.mock("../hooks/useOfflineCache.ts", () => ({
   useOfflineCache: () => ({ isOnline: true, lastSyncedAt: new Date(), pendingCount: 0, isSyncing: false, reconciledIds: new Map() }),
 }));
@@ -53,6 +61,7 @@ describe("SettingsPage", () => {
     renderSettingsPage();
     expect(screen.getByText("Editor Preferences")).toBeInTheDocument();
     expect(screen.getByText("Appearance")).toBeInTheDocument();
+    expect(screen.getByText("Trash")).toBeInTheDocument();
     expect(screen.getByText("AI Features")).toBeInTheDocument();
     expect(screen.getByText("Offline Cache")).toBeInTheDocument();
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
@@ -300,6 +309,30 @@ describe("SettingsPage", () => {
   it("renders Keyboard Shortcuts heading", () => {
     renderSettingsPage();
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
+  });
+
+  // --- Trash Retention ---
+
+  it("renders trash retention dropdown with default value", async () => {
+    renderSettingsPage();
+    const select = await screen.findByLabelText("Trash retention period");
+    expect(select).toBeInTheDocument();
+    expect((select as HTMLSelectElement).value).toBe("30");
+  });
+
+  it("renders trash retention dropdown with value from API", async () => {
+    mockGetTrashRetention.mockResolvedValue({ days: 7 });
+    renderSettingsPage();
+    const select = await screen.findByLabelText("Trash retention period");
+    expect((select as HTMLSelectElement).value).toBe("7");
+  });
+
+  it("changing trash retention calls setTrashRetention", async () => {
+    mockSetTrashRetention.mockResolvedValue({ days: 14 });
+    renderSettingsPage();
+    const select = await screen.findByLabelText("Trash retention period");
+    await userEvent.selectOptions(select, "14");
+    expect(mockSetTrashRetention).toHaveBeenCalledWith(14);
   });
 
   it("displays all shortcut descriptions", () => {

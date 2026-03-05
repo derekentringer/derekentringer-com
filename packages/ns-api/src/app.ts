@@ -9,6 +9,7 @@ import { loadConfig } from "./config.js";
 import { getPrisma } from "./lib/prisma.js";
 import { cleanupExpiredTokens } from "./store/refreshTokenStore.js";
 import { purgeOldTrash } from "./store/noteStore.js";
+import { getTrashRetentionDays } from "./store/settingStore.js";
 import { startEmbeddingProcessor } from "./services/embeddingProcessor.js";
 import authRoutes from "./routes/auth.js";
 import healthRoutes from "./routes/health.js";
@@ -49,7 +50,7 @@ export function buildApp(opts?: BuildAppOptions) {
       timeWindow: "1 minute",
     });
   }
-  app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
+  app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1 } });
   app.register(authPlugin, {
     jwtSecret: config.jwtSecret,
   });
@@ -86,12 +87,19 @@ export function buildApp(opts?: BuildAppOptions) {
   let cleanupTimer: ReturnType<typeof setInterval> | null = null;
   let embeddingProcessor: { stop: () => void } | null = null;
 
+  async function runTrashPurge() {
+    const days = await getTrashRetentionDays();
+    if (days > 0) {
+      await purgeOldTrash(days);
+    }
+  }
+
   app.addHook("onReady", async () => {
     cleanupExpiredTokens().catch(() => {});
-    purgeOldTrash().catch(() => {});
+    runTrashPurge().catch(() => {});
     cleanupTimer = setInterval(() => {
       cleanupExpiredTokens().catch(() => {});
-      purgeOldTrash().catch(() => {});
+      runTrashPurge().catch(() => {});
     }, TOKEN_CLEANUP_INTERVAL_MS);
     embeddingProcessor = startEmbeddingProcessor();
   });

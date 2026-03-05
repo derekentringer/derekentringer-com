@@ -12,6 +12,7 @@ interface FolderTreeProps {
   onRenameFolder: (folderId: string, newName: string) => void;
   onDeleteFolder: (folderId: string, mode: "move-up" | "recursive") => void;
   onMoveFolder: (folderId: string, parentId: string | null) => void;
+  onExportFolder?: (folderId: string) => void;
 }
 
 interface FolderTreeNodeProps {
@@ -223,6 +224,7 @@ export function FolderTree({
   onRenameFolder,
   onDeleteFolder,
   onMoveFolder,
+  onExportFolder,
 }: FolderTreeProps) {
   const [expandedMap, setExpandedMap] = useState<Map<string, boolean>>(() => {
     const stored = loadExpandedState();
@@ -484,6 +486,17 @@ export function FolderTree({
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
             >
               Move to Root
+            </button>
+          )}
+          {onExportFolder && (
+            <button
+              onClick={() => {
+                onExportFolder(contextMenu.folder.id);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+            >
+              Export as .zip
             </button>
           )}
           <button
