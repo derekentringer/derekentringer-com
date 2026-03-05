@@ -52,7 +52,7 @@
 
 ### Phase 3: AI & Offline — Medium Priority
 
-- [~] [04 — AI Features](features/04-ai-features.md)
+- [x] [04 — AI Features](features/04-ai-features.md)
   - [x] 04a — Summarize, Auto-Tag, Inline Completions (Anthropic Claude API via ns-api, SSE streaming ghost text, AI settings page with toggles, sidebar footer redesign)
   - [x] 04a.1 — Completion Style Options (configurable styles: Continue writing, Markdown assist, Brief — per-style system prompts and max_tokens)
   - [x] 04b — Select-and-Rewrite (floating menu with 6 actions, Cmd/Ctrl+Shift+R shortcut, right-click trigger, settings toggle, keyboard shortcuts reference on settings page)
@@ -61,9 +61,9 @@
   - [x] 04d.1 — Search Quality & Settings Info Tooltips (hybrid keyword-match bonus, semantic content-length filter, embedding processor empty-content fix, hover info tooltips on all AI settings)
   - [x] 04e — AI Assistant Chat (collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, right-click context menus on notes, cursor-positioned context menus on folders/notes)
   - [x] 04e.1 — UI Polish (AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button)
-  - [ ] 04f — Duplicate Detection
+  - [x] 04f — Duplicate Detection (skipped)
   - [x] 04g — Continue Writing & Structure Suggestions (Cmd/Ctrl+Shift+Space for paragraph continuation or structure suggestions, separate settings toggle, tag suggestion prompt fix, QA panel auto-focus and header removal, placeholder hidden on editor focus, save-before-AI-call fix)
-- [ ] [05 — Offline Cache](feature_planning/05-offline-cache.md)
+- [x] [05 — Offline Cache](features/05-offline-cache.md) — IndexedDB caching layer with offline note reading, queued offline edits (create/update/delete), auto-sync on reconnect with temp ID reconciliation, online status indicator, 100-note cache limit with LRU eviction
 
 ### Phase 4: Polish — Low Priority
 

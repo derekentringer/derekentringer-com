@@ -56,7 +56,7 @@ const mockRenameTagApi = vi.fn();
 const mockDeleteTagApi = vi.fn();
 const mockLogout = vi.fn();
 
-vi.mock("../api/notes.ts", () => ({
+vi.mock("../api/offlineNotes.ts", () => ({
   fetchNotes: (...args: unknown[]) => mockFetchNotes(...args),
   createNote: (...args: unknown[]) => mockCreateNote(...args),
   updateNote: (...args: unknown[]) => mockUpdateNote(...args),
@@ -74,6 +74,16 @@ vi.mock("../api/notes.ts", () => ({
   fetchTags: (...args: unknown[]) => mockFetchTags(...args),
   renameTagApi: (...args: unknown[]) => mockRenameTagApi(...args),
   deleteTagApi: (...args: unknown[]) => mockDeleteTagApi(...args),
+}));
+
+vi.mock("../hooks/useOfflineCache.ts", () => ({
+  useOfflineCache: () => ({
+    isOnline: true,
+    lastSyncedAt: null,
+    pendingCount: 0,
+    isSyncing: false,
+    reconciledIds: new Map(),
+  }),
 }));
 
 vi.mock("../context/AuthContext.tsx", () => ({

@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04g Complete; 04f Not Started)
+**Status:** Complete (04f skipped)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -19,15 +19,12 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 | **04d** | Audio notes — voice recording → AI-structured markdown via Whisper transcription + Claude processing, AudioRecorder component, draggable split view divider | **Complete** |
 | **04e** | AI assistant chat — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | **Complete** |
 | **04e.1** | UI polish — AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button | **Complete** |
-| **04f** | Duplicate detection (embedding similarity for review/merge) | Not Started |
+| **04f** | Duplicate detection (embedding similarity for review/merge) | Skipped |
 | **04g** | Continue writing & structure suggestions, tag suggestion prompt fix, AI assistant chat UX polish | **Complete** |
 
-## Remaining Requirements (04f)
+## Skipped (04f)
 
-- **Duplicate detection** (04f):
-  - Use embeddings to find notes with similar content
-  - Surface duplicates for review; user can merge or dismiss
-  - API: `POST /ai/duplicates`
+- **Duplicate detection** (04f): Skipped — deprioritized in favor of other features.
 
 ## Technical Considerations
 
