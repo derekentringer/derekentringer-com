@@ -6,7 +6,7 @@
 
 ## Summary
 
-Full-text search across all notes using PostgreSQL tsvector, plus a folder and tag system with drag-and-drop reorganization and sort/filter capabilities. Implemented incrementally across three sub-releases.
+Full-text search across all notes using PostgreSQL tsvector, plus a folder and tag system with drag-and-drop reorganization and sort/filter capabilities. Implemented incrementally across four sub-releases.
 
 ## Incremental Releases
 
@@ -15,6 +15,7 @@ Full-text search across all notes using PostgreSQL tsvector, plus a folder and t
 | **03a** | `feature/ns-03a-trash-sort` | Trash view (list/restore/permanent delete), sort controls, auto-purge | Complete |
 | **03b** | `feature/ns-03b-folders-dnd` | Flat folders, folder CRUD, @dnd-kit drag-and-drop reordering | Complete |
 | **03c** | `feature/ns-03c-tags-fts` | Tag browser, tag CRUD, PostgreSQL tsvector full-text search with snippets, resizable sidebar, logo/branding, favicon | Complete |
+| **03d** | `feature/ns-03d-nested-folders` | Nested folders (unlimited depth), drag-and-drop folder nesting/reordering, FolderTree component, two-mode delete, global search, collapsible tag browser | Complete |
 
 Each release includes: API changes, frontend changes, shared type updates, tests, and doc updates.
 
@@ -90,6 +91,47 @@ Each release includes: API changes, frontend changes, shared type updates, tests
 - TagBrowser component in sidebar with counts, click to filter, rename/delete
 - TagInput component below title with type-ahead autocomplete
 - SearchSnippet component for `ts_headline` HTML in search results
+
+---
+
+## Release 03d: Nested Folders
+
+**Prisma migration needed** — add `parentId`, `sortOrder` to Folder; add `folderId` to Note.
+
+### Schema Changes
+- Add `parentId String?` and `sortOrder Int @default(0)` to Folder model with self-relation
+- Add `folderId String?` to Note model (replaces folder name string reference)
+- Compound unique `@@unique([parentId, name])` for sibling name uniqueness
+- Backfill `folderId` from existing folder name strings
+
+### API Changes
+- `createFolder(name, parentId?)` — creates folder with auto-incremented sortOrder among siblings
+- `listFolders()` — returns tree of `FolderInfo[]` with `totalCount` aggregation
+- `moveFolder(folderId, newParentId, sortOrder?)` — changes parent, validates no circular reference via recursive CTE
+- `reorderFolders(order[])` — batch update sortOrder for siblings
+- `renameFolder(folderId, newName)` — update by ID
+- `deleteFolder(folderId, mode)` — two modes: `"move-up"` (children/notes move to parent) or `"recursive"` (delete all descendants, unfile notes)
+- `getDescendantIds(folderId)` — recursive CTE for cycle detection and recursive operations
+- `getFolderPath(folderId)` — recursive CTE to build path string like "Work / Projects / Alpha"
+- Updated `listNotes` filter: `folderId` parameter for direct notes only (not descendants)
+
+### Routes
+- `POST /notes/folders` — create folder with optional `parentId`
+- `PATCH /notes/folders/:id` — rename folder by ID
+- `DELETE /notes/folders/:id?mode=move-up|recursive` — delete with mode
+- `PATCH /notes/folders/:id/move` — move folder to new parent
+- `PUT /notes/folders/reorder` — reorder siblings
+- `GET /notes?folderId=xxx` — filter notes by folder ID
+
+### Frontend
+- FolderTree component (replaces FolderList): macOS Finder-inspired tree with disclosure triangles, indentation per depth, expand/collapse state persisted in localStorage
+- "All Notes" and "Unfiled" special entries at top of tree
+- Context menu (right-click): New Subfolder, Rename, Move to Root, Delete
+- Delete dialog: ConfirmDialog with "Move contents to parent" vs "Delete all subfolders" choices
+- Drag-and-drop overhaul: folder→folder nesting, note→folder moves, folder→root zone un-nesting
+- Global search: search query ignores active folder filter, searches across all folders
+- Collapsible tag browser: limits display to 3 rows with "show more"/"show less" toggle
+- Breadcrumb folder path above note title with folder picker dropdown
 
 ---
 

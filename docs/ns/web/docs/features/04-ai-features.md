@@ -6,7 +6,7 @@
 
 ## Summary
 
-AI-powered features using the Claude API (via ns-api) for inline ghost text completions, note summarization, smart auto-tagging, and per-feature settings toggles. Implemented incrementally — 04a delivers the core AI trio (completions, summarize, auto-tag); semantic search, Q&A, and duplicate detection are deferred to later sub-releases.
+AI-powered features using the Claude API (via ns-api) for inline ghost text completions, note summarization, smart auto-tagging, and per-feature settings toggles. Implemented incrementally — 04a delivers the core AI trio (completions, summarize, auto-tag); semantic search, AI assistant chat, and duplicate detection are deferred to later sub-releases.
 
 ## Incremental Releases
 
@@ -17,10 +17,10 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | **04b** | `feature/ns-04b-select-and-rewrite` | Select-and-rewrite with floating menu, keyboard shortcut, right-click trigger, settings toggle | Complete |
 | **04c** | `feature/ns-04c-semantic-search` | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | Complete |
 | **04d** | `feature/ns-04d-audio-notes` | Audio notes — voice recording → AI-structured markdown via Whisper + Claude, AudioRecorder component, draggable split view divider | Complete |
-| **04e** | `feature/ns-04e-qa-over-notes` | Q&A over notes — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | Complete |
+| **04e** | `feature/ns-04e-qa-over-notes` | AI assistant chat — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | Complete |
 | **04e.1** | — | UI polish — AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button | Complete |
 | **04f** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
-| **04g** | — | Continue writing & structure suggestions, tag suggestion prompt fix, QA panel UX polish | Complete |
+| **04g** | — | Continue writing & structure suggestions, tag suggestion prompt fix, AI assistant chat UX polish | Complete |
 
 ---
 
@@ -457,11 +457,11 @@ Improves hybrid and semantic search ranking quality and adds informational toolt
 
 ---
 
-## Release 04e: Q&A Over Notes
+## Release 04e: AI Assistant Chat
 
 ### Summary
 
-Adds a Q&A assistant panel: users ask natural language questions about their notes and receive AI-generated answers with citations. The panel is a collapsible right-side drawer with animated slide-in, a tab button attached to the input footer, streaming responses rendered as markdown, and clickable source pills linking to cited notes. Also adds right-click context menus on notes (delete) and improves folder context menus with click-outside dismissal and cursor-positioned rendering.
+Adds an AI assistant chat panel: users ask natural language questions about their notes and receive AI-generated answers with citations. The panel is a collapsible right-side drawer with animated slide-in, a tab button attached to the input footer, streaming responses rendered as markdown, and clickable source pills linking to cited notes. Also adds right-click context menus on notes (delete) and improves folder context menus with click-outside dismissal and cursor-positioned rendering.
 
 ### API Changes
 
@@ -496,12 +496,12 @@ Adds a Q&A assistant panel: users ask natural language questions about their not
 - Validated in `loadSettings()` with boolean fallback
 
 #### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
-- Added `{ key: "qaAssistant", label: "Q&A assistant", info: "..." }` to `TOGGLE_SETTINGS`
+- Added `{ key: "qaAssistant", label: "AI assistant chat", info: "..." }` to `TOGGLE_SETTINGS`
 - Added `disabled` prop to `ToggleSwitch` — disabled when `semanticSearch` is off (opacity-50, cursor-not-allowed)
 - When semantic search toggled off, `qaAssistant` auto-disabled
 
 #### QAPanel Component (`packages/ns-web/src/components/QAPanel.tsx`) — NEW
-- Chat panel with streaming Q&A, header with "Q&A Assistant" title + Clear button
+- Chat panel with streaming AI assistant chat, Clear button (no header)
 - Scrollable messages area with auto-scroll to bottom
 - User messages: right-aligned accent-colored bubbles
 - Assistant messages: left-aligned card-styled with ReactMarkdown + remarkGfm rendering
@@ -535,7 +535,7 @@ Adds a Q&A assistant panel: users ask natural language questions about their not
 - `ai-api.test.ts` — 2 new tests: yields sources then text chunks, throws on non-ok response
 - `useAiSettings.test.ts` — 3 new tests: `qaAssistant` defaults, localStorage read, persistence
 - `SettingsPage.test.tsx` — updated toggle count to 7, added Q&A toggle and disabled state tests
-- `QAPanel.test.tsx` — NEW, 5 tests: empty state, header, Ask button disabled/enabled, source pill click
+- `QAPanel.test.tsx` — NEW, 4 tests: Clear button, Ask button disabled/enabled, source pill click
 - `NotesPage.test.tsx` — updated mocks for `askQuestion`
 
 ---
@@ -582,7 +582,7 @@ Moves the AudioRecorder button from the editor toolbar and empty state into the 
 
 ### Summary
 
-Adds an on-demand "Continue writing / Suggest structure" feature triggered by Cmd/Ctrl+Shift+Space. When pressed on a note with content, it generates a full paragraph continuation; on a short or empty note, it suggests a markdown outline based on the title. This is a separate settings toggle from inline completions. Also fixes tag suggestion prompt to suggest new tags (not just reuse existing), adds code fence stripping to tag/AI response parsing, auto-focuses the Q&A panel input, removes the Q&A panel header, and hides the editor placeholder on focus.
+Adds an on-demand "Continue writing / Suggest structure" feature triggered by Cmd/Ctrl+Shift+Space. When pressed on a note with content, it generates a full paragraph continuation; on a short or empty note, it suggests a markdown outline based on the title. This is a separate settings toggle from inline completions. Also fixes tag suggestion prompt to suggest new tags (not just reuse existing), adds code fence stripping to tag/AI response parsing, auto-focuses the AI assistant chat input, and hides the editor placeholder on focus.
 
 ### API Changes
 
@@ -624,7 +624,7 @@ Adds an on-demand "Continue writing / Suggest structure" feature triggered by Cm
 
 #### QAPanel (`packages/ns-web/src/components/QAPanel.tsx`)
 - Added auto-focus: input receives focus when panel opens (`useEffect` with `[isOpen]` dependency)
-- Removed header bar ("Q&A Assistant" title and top border) — Clear button rendered conditionally without header
+- Clear button rendered conditionally without header
 
 #### MarkdownEditor (`packages/ns-web/src/components/MarkdownEditor.tsx`)
 - Added CSS rule `"&.cm-focused .cm-placeholder": { display: "none" }` — hides "Start writing..." placeholder when editor is focused

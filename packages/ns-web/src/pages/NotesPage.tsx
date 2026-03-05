@@ -10,7 +10,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import type { Note, NoteSearchResult, NoteSortField, FolderSortField, SortOrder, FolderInfo, TagInfo } from "@derekentringer/shared/ns";
+import type { Note, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import {
   fetchNotes,
@@ -25,6 +25,7 @@ import {
   reorderNotes as apiReorderNotes,
   renameFolderApi,
   deleteFolderApi,
+  moveFolderApi,
   fetchTags,
   renameTagApi,
   deleteTagApi,
@@ -38,7 +39,7 @@ import {
   EditorToolbar,
   type ViewMode,
 } from "../components/EditorToolbar.tsx";
-import { FolderList } from "../components/FolderList.tsx";
+import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
 import { NoteList } from "../components/NoteList.tsx";
 import { TagBrowser } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
@@ -78,10 +79,6 @@ export function NotesPage() {
   // Note sort state
   const [sortBy, setSortBy] = useState<NoteSortField>("sortOrder");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
-
-  // Folder sort state
-  const [folderSortBy, setFolderSortBy] = useState<FolderSortField>("name");
-  const [folderSortOrder, setFolderSortOrder] = useState<SortOrder>("asc");
 
   // Folder state
   const [folders, setFolders] = useState<FolderInfo[]>([]);
@@ -180,22 +177,22 @@ export function NotesPage() {
   const loadNotes = useCallback(
     async (searchQuery?: string) => {
       try {
-        const folderParam =
-          activeFolder === "__unfiled__"
-            ? undefined
-            : activeFolder ?? undefined;
+        const folderIdParam =
+          !searchQuery && activeFolder && activeFolder !== "__unfiled__"
+            ? activeFolder
+            : undefined;
         const result = await fetchNotes({
           search: searchQuery || undefined,
           searchMode: searchQuery && settings.semanticSearch ? searchMode : undefined,
-          folder: folderParam,
+          folderId: folderIdParam,
           tags: activeTags.length > 0 ? activeTags : undefined,
           sortBy,
           sortOrder,
         });
         let filtered = result.notes;
-        // Client-side filter for "unfiled" (notes with no folder)
-        if (activeFolder === "__unfiled__") {
-          filtered = filtered.filter((n) => !n.folder);
+        // Client-side filter for "unfiled" (notes with no folder) — skip during search
+        if (!searchQuery && activeFolder === "__unfiled__") {
+          filtered = filtered.filter((n) => !n.folderId);
         }
         setNotes(filtered);
       } catch {
@@ -266,11 +263,11 @@ export function NotesPage() {
 
   async function handleCreate() {
     try {
-      const folder =
+      const folderId =
         activeFolder && activeFolder !== "__unfiled__"
           ? activeFolder
           : undefined;
-      const note = await createNote({ title: "Untitled", folder });
+      const note = await createNote({ title: "Untitled", folderId });
       setNotes((prev) => [note, ...prev]);
       selectNote(note);
       loadFolders();
@@ -405,15 +402,41 @@ export function NotesPage() {
     const { active, over } = event;
     if (!over) return;
 
+    const activeId = String(active.id);
     const overId = String(over.id);
 
+    // Folder → Folder (nesting) or Folder → Root
+    if (activeId.startsWith("drag-folder:")) {
+      const folderId = activeId.slice("drag-folder:".length);
+      if (overId.startsWith("folder:")) {
+        const targetId = overId.slice("folder:".length);
+        const newParentId =
+          targetId === "__root__" || targetId === "__unfiled__"
+            ? null
+            : targetId;
+        // Don't move to self
+        if (folderId === newParentId) return;
+        try {
+          await moveFolderApi(folderId, newParentId);
+          loadFolders();
+        } catch {
+          showError("Failed to move folder");
+        }
+      }
+      return;
+    }
+
+    // Note → Folder
     if (overId.startsWith("folder:")) {
-      const noteId = String(active.id);
+      const noteId = activeId;
       const folderTarget = overId.slice("folder:".length);
-      const folder = folderTarget === "__unfiled__" ? null : folderTarget;
+      const folderId =
+        folderTarget === "__unfiled__" || folderTarget === "__root__"
+          ? null
+          : folderTarget;
 
       try {
-        const updated = await updateNote(noteId, { folder });
+        const updated = await updateNote(noteId, { folderId });
         setNotes((prev) =>
           prev.map((n) => (n.id === updated.id ? updated : n)),
         );
@@ -422,32 +445,42 @@ export function NotesPage() {
       } catch {
         showError("Failed to move note");
       }
-    } else if (active.id !== over.id) {
-      handleReorder(String(active.id), overId);
+      return;
+    }
+
+    // Note reorder
+    if (active.id !== over.id) {
+      handleReorder(activeId, overId);
     }
   }
 
-  async function handleCreateFolder(name: string) {
+  async function handleCreateFolder(name: string, parentId?: string) {
     try {
-      await createFolderApi(name);
+      const result = await createFolderApi(name, parentId);
       const foldersResult = await fetchFolders();
       setFolders(foldersResult.folders);
-      setActiveFolder(name);
+      setActiveFolder(result.id);
     } catch {
       showError("Failed to create folder");
     }
   }
 
-  async function handleRenameFolder(oldName: string, newName: string) {
+  async function handleRenameFolder(folderId: string, newName: string) {
     try {
-      await renameFolderApi(oldName, newName);
-      if (activeFolder === oldName) {
-        setActiveFolder(newName);
-      }
+      await renameFolderApi(folderId, newName);
       loadFolders();
       loadNotes(debouncedSearch || undefined);
     } catch {
       showError("Failed to rename folder");
+    }
+  }
+
+  async function handleMoveFolder(folderId: string, parentId: string | null) {
+    try {
+      await moveFolderApi(folderId, parentId);
+      loadFolders();
+    } catch {
+      showError("Failed to move folder");
     }
   }
 
@@ -494,10 +527,13 @@ export function NotesPage() {
     }
   }
 
-  async function handleDeleteFolder(name: string) {
+  async function handleDeleteFolder(
+    folderId: string,
+    mode: "move-up" | "recursive",
+  ) {
     try {
-      await deleteFolderApi(name);
-      if (activeFolder === name) {
+      await deleteFolderApi(folderId, mode);
+      if (activeFolder === folderId) {
         setActiveFolder(null);
       }
       loadFolders();
@@ -548,19 +584,7 @@ export function NotesPage() {
     return () => clearTimeout(timer);
   }, [isDirty, title, content, selectedId, handleSave]);
 
-  const sortedFolders = useMemo(() => {
-    const sorted = [...folders];
-    sorted.sort((a, b) => {
-      let cmp: number;
-      if (folderSortBy === "createdAt") {
-        cmp = a.createdAt.localeCompare(b.createdAt);
-      } else {
-        cmp = a.name.localeCompare(b.name);
-      }
-      return folderSortOrder === "desc" ? -cmp : cmp;
-    });
-    return sorted;
-  }, [folders, folderSortBy, folderSortOrder]);
+  const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
   const aiExtensions = useMemo(
     () => [
@@ -770,18 +794,15 @@ export function NotesPage() {
             </div>
 
             <div className="shrink-0 overflow-y-auto" style={{ height: folderResize.size }}>
-              <FolderList
-                folders={sortedFolders}
+              <FolderTree
+                folders={folders}
                 activeFolder={activeFolder}
                 totalNotes={allNotesCount}
-                folderSortBy={folderSortBy}
-                folderSortOrder={folderSortOrder}
-                onFolderSortByChange={setFolderSortBy}
-                onFolderSortOrderChange={setFolderSortOrder}
                 onSelectFolder={setActiveFolder}
                 onCreateFolder={handleCreateFolder}
                 onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
+                onMoveFolder={handleMoveFolder}
               />
             </div>
 
@@ -987,15 +1008,15 @@ export function NotesPage() {
               )}
             </div>
 
-            {/* Folder + Title */}
+            {/* Breadcrumb + Title */}
             <div className="flex items-center border-b border-border">
               <select
-                value={selectedNote?.folder ?? ""}
+                value={selectedNote?.folderId ?? ""}
                 onChange={async (e) => {
-                  const folder = e.target.value || null;
+                  const folderId = e.target.value || null;
                   if (!selectedId) return;
                   try {
-                    const updated = await updateNote(selectedId, { folder });
+                    const updated = await updateNote(selectedId, { folderId });
                     setNotes((prev) =>
                       prev.map((n) => (n.id === updated.id ? updated : n)),
                     );
@@ -1011,8 +1032,8 @@ export function NotesPage() {
                 data-testid="note-folder-select"
               >
                 <option value="">Unfiled</option>
-                {sortedFolders.map((f) => (
-                  <option key={f.name} value={f.name}>{f.name}</option>
+                {flatFolders.map((f) => (
+                  <option key={f.id} value={f.id}>{f.displayName}</option>
                 ))}
               </select>
               <input

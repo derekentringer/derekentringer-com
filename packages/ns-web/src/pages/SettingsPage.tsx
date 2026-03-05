@@ -65,7 +65,7 @@ const TOGGLE_SETTINGS: { key: "completions" | "continueWriting" | "summarize" | 
   { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
   { key: "semanticSearch", label: "Semantic search", info: "Search by meaning, not just keywords. Uses AI embeddings to find related notes." },
   { key: "audioNotes", label: "Audio notes", info: "Record audio and transcribe it into a note using AI." },
-  { key: "qaAssistant", label: "Q&A assistant", info: "Ask natural language questions about your notes. Requires semantic search to be enabled." },
+  { key: "qaAssistant", label: "AI assistant chat", info: "Ask natural language questions about your notes. Requires semantic search to be enabled." },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [

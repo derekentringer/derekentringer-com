@@ -29,6 +29,11 @@ import {
   reorderNotes,
   renameFolder,
   deleteFolder,
+  renameFolderById,
+  deleteFolderById,
+  moveFolder,
+  reorderFolders,
+  getDescendantIds,
   listTags,
   renameTag,
   removeTag,
@@ -69,7 +74,8 @@ describe("noteStore", () => {
     it("creates a note with all fields and auto-assigns sortOrder", async () => {
       const row = makeMockNoteRow();
       mockPrisma.note.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
-      mockPrisma.folder.upsert.mockResolvedValue({});
+      mockPrisma.folder.findFirst.mockResolvedValue(null);
+      mockPrisma.folder.create.mockResolvedValue({});
       mockPrisma.note.create.mockResolvedValue(row);
 
       const result = await createNote({
@@ -80,16 +86,18 @@ describe("noteStore", () => {
       });
 
       expect(result).toEqual(row);
-      expect(mockPrisma.folder.upsert).toHaveBeenCalledWith({
-        where: { name: "work" },
-        update: {},
-        create: { name: "work" },
+      expect(mockPrisma.folder.findFirst).toHaveBeenCalledWith({
+        where: { parentId: null, name: "work" },
+      });
+      expect(mockPrisma.folder.create).toHaveBeenCalledWith({
+        data: { name: "work" },
       });
       expect(mockPrisma.note.create).toHaveBeenCalledWith({
         data: {
           title: "Test Note",
           content: "Some content",
           folder: "work",
+          folderId: null,
           tags: ["tag1"],
           sortOrder: 3,
         },
@@ -108,6 +116,7 @@ describe("noteStore", () => {
           title: "Minimal",
           content: "",
           folder: null,
+          folderId: null,
           tags: [],
           sortOrder: 0,
         },
@@ -475,55 +484,63 @@ describe("noteStore", () => {
   });
 
   describe("createFolder", () => {
-    it("creates a standalone folder", async () => {
+    it("creates a root folder with auto-incremented sortOrder", async () => {
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
       mockPrisma.folder.create.mockResolvedValue({
         id: "folder-1",
         name: "work",
+        parentId: null,
+        sortOrder: 3,
         createdAt: new Date(),
       });
 
-      await createFolder("work");
+      const result = await createFolder("work");
 
+      expect(result.name).toBe("work");
       expect(mockPrisma.folder.create).toHaveBeenCalledWith({
-        data: { name: "work" },
+        data: { name: "work", parentId: null, sortOrder: 3 },
+      });
+    });
+
+    it("creates a nested folder with parentId", async () => {
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      mockPrisma.folder.create.mockResolvedValue({
+        id: "folder-2",
+        name: "projects",
+        parentId: "folder-1",
+        sortOrder: 1,
+        createdAt: new Date(),
+      });
+
+      const result = await createFolder("projects", "folder-1");
+
+      expect(result.parentId).toBe("folder-1");
+      expect(mockPrisma.folder.create).toHaveBeenCalledWith({
+        data: { name: "projects", parentId: "folder-1", sortOrder: 1 },
       });
     });
   });
 
   describe("listFolders", () => {
-    it("returns folder names with counts from folders table", async () => {
+    it("returns folder tree with counts", async () => {
       mockPrisma.folder.findMany.mockResolvedValue([
-        { id: "f1", name: "personal", createdAt: new Date() },
-        { id: "f2", name: "work", createdAt: new Date() },
+        { id: "f1", name: "work", parentId: null, sortOrder: 0, createdAt: new Date() },
+        { id: "f2", name: "projects", parentId: "f1", sortOrder: 0, createdAt: new Date() },
       ]);
       mockPrisma.note.groupBy.mockResolvedValue([
-        { folder: "personal", _count: { id: 3 } },
-        { folder: "work", _count: { id: 5 } },
+        { folderId: "f1", _count: { id: 2 } },
+        { folderId: "f2", _count: { id: 3 } },
       ]);
 
       const result = await listFolders();
 
-      expect(result).toEqual([
-        { name: "personal", count: 3, createdAt: expect.any(String) },
-        { name: "work", count: 5, createdAt: expect.any(String) },
-      ]);
-    });
-
-    it("includes empty folders with count 0", async () => {
-      mockPrisma.folder.findMany.mockResolvedValue([
-        { id: "f1", name: "empty-folder", createdAt: new Date() },
-        { id: "f2", name: "work", createdAt: new Date() },
-      ]);
-      mockPrisma.note.groupBy.mockResolvedValue([
-        { folder: "work", _count: { id: 2 } },
-      ]);
-
-      const result = await listFolders();
-
-      expect(result).toEqual([
-        { name: "empty-folder", count: 0, createdAt: expect.any(String) },
-        { name: "work", count: 2, createdAt: expect.any(String) },
-      ]);
+      expect(result).toHaveLength(1); // Only root
+      expect(result[0].name).toBe("work");
+      expect(result[0].count).toBe(2);
+      expect(result[0].totalCount).toBe(5); // 2 + 3 from child
+      expect(result[0].children).toHaveLength(1);
+      expect(result[0].children[0].name).toBe("projects");
+      expect(result[0].children[0].count).toBe(3);
     });
 
     it("returns empty array when no folders", async () => {
@@ -532,6 +549,166 @@ describe("noteStore", () => {
 
       const result = await listFolders();
       expect(result).toEqual([]);
+    });
+
+    it("includes empty folders with count 0", async () => {
+      mockPrisma.folder.findMany.mockResolvedValue([
+        { id: "f1", name: "empty", parentId: null, sortOrder: 0, createdAt: new Date() },
+      ]);
+      mockPrisma.note.groupBy.mockResolvedValue([]);
+
+      const result = await listFolders();
+
+      expect(result[0].count).toBe(0);
+      expect(result[0].totalCount).toBe(0);
+    });
+  });
+
+  describe("renameFolderById", () => {
+    it("renames a folder by ID", async () => {
+      mockPrisma.folder.update.mockResolvedValue({
+        id: "f1",
+        name: "new-name",
+        parentId: null,
+        sortOrder: 0,
+        createdAt: new Date(),
+      });
+
+      const result = await renameFolderById("f1", "new-name");
+
+      expect(result.name).toBe("new-name");
+      expect(mockPrisma.folder.update).toHaveBeenCalledWith({
+        where: { id: "f1" },
+        data: { name: "new-name" },
+      });
+    });
+  });
+
+  describe("moveFolder", () => {
+    it("moves folder to new parent", async () => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      mockPrisma.folder.update.mockResolvedValue({
+        id: "f2",
+        name: "projects",
+        parentId: "f1",
+        sortOrder: 1,
+        createdAt: new Date(),
+      });
+
+      const result = await moveFolder("f2", "f1");
+
+      expect(result.parentId).toBe("f1");
+    });
+
+    it("rejects circular move", async () => {
+      // f2 is a descendant of itself (the query returns f2)
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([{ id: "f3" }]);
+
+      // moveFolder("f1", "f3") — f3 is a descendant of f1
+      await expect(moveFolder("f1", "f3")).rejects.toThrow(
+        "Cannot move folder into its own descendant",
+      );
+    });
+  });
+
+  describe("reorderFolders", () => {
+    it("updates sortOrder for each folder in a transaction", async () => {
+      mockPrisma.folder.update.mockResolvedValue({});
+
+      await reorderFolders([
+        { id: "f1", sortOrder: 1 },
+        { id: "f2", sortOrder: 0 },
+      ]);
+
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteFolderById", () => {
+    it("move-up mode: promotes children and notes to parent", async () => {
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        id: "f1",
+        name: "work",
+        parentId: null,
+        sortOrder: 0,
+        createdAt: new Date(),
+      });
+      mockPrisma.folder.updateMany.mockResolvedValue({ count: 2 });
+      mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
+      mockPrisma.folder.delete.mockResolvedValue({});
+
+      const result = await deleteFolderById("f1", "move-up");
+
+      expect(result).toBe(3);
+      expect(mockPrisma.folder.updateMany).toHaveBeenCalledWith({
+        where: { parentId: "f1" },
+        data: { parentId: null },
+      });
+    });
+
+    it("recursive mode: deletes descendants and unfiles notes", async () => {
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        id: "f1",
+        name: "work",
+        parentId: null,
+        sortOrder: 0,
+        createdAt: new Date(),
+      });
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([{ id: "f2" }, { id: "f3" }]);
+      mockPrisma.note.updateMany.mockResolvedValue({ count: 5 });
+      mockPrisma.folder.deleteMany.mockResolvedValue({ count: 2 });
+      mockPrisma.folder.delete.mockResolvedValue({});
+
+      const result = await deleteFolderById("f1", "recursive");
+
+      expect(result).toBe(5);
+      expect(mockPrisma.note.updateMany).toHaveBeenCalledWith({
+        where: { folderId: { in: ["f1", "f2", "f3"] }, deletedAt: null },
+        data: { folderId: null, folder: null },
+      });
+    });
+
+    it("returns 0 when folder not found", async () => {
+      mockPrisma.folder.findUnique.mockResolvedValue(null);
+
+      const result = await deleteFolderById("nonexistent");
+      expect(result).toBe(0);
+    });
+  });
+
+  describe("getDescendantIds", () => {
+    it("returns descendant folder IDs", async () => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([
+        { id: "f2" },
+        { id: "f3" },
+      ]);
+
+      const result = await getDescendantIds("f1");
+
+      expect(result).toEqual(["f2", "f3"]);
+    });
+
+    it("returns empty array when no descendants", async () => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      const result = await getDescendantIds("f1");
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("listNotes with folderId", () => {
+    it("filters by folderId (direct notes only)", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      await listNotes({ folderId: "f1" });
+
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { deletedAt: null, folderId: "f1" },
+        }),
+      );
     });
   });
 
@@ -548,10 +725,11 @@ describe("noteStore", () => {
     });
   });
 
-  describe("renameFolder", () => {
+  describe("renameFolder (legacy)", () => {
     it("renames all notes in folder and updates folders table", async () => {
       mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
-      mockPrisma.folder.upsert.mockResolvedValue({});
+      mockPrisma.folder.findFirst.mockResolvedValue({ id: "f1", name: "old-name" });
+      mockPrisma.folder.update.mockResolvedValue({});
 
       const result = await renameFolder("old-name", "new-name");
 
@@ -560,15 +738,10 @@ describe("noteStore", () => {
         where: { folder: "old-name", deletedAt: null },
         data: { folder: "new-name" },
       });
-      expect(mockPrisma.folder.upsert).toHaveBeenCalledWith({
-        where: { name: "old-name" },
-        update: { name: "new-name" },
-        create: { name: "new-name" },
-      });
     });
   });
 
-  describe("deleteFolder", () => {
+  describe("deleteFolder (legacy)", () => {
     it("unfiles all notes in folder and removes from folders table", async () => {
       mockPrisma.note.updateMany.mockResolvedValue({ count: 2 });
       mockPrisma.folder.deleteMany.mockResolvedValue({ count: 1 });

@@ -12,6 +12,8 @@ export function toNote(row: PrismaNote): Note {
     title: row.title,
     content: row.content,
     folder: row.folder,
+    folderId: row.folderId,
+    folderPath: null,
     tags,
     summary: row.summary,
     sortOrder: row.sortOrder,

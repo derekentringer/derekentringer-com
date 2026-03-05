@@ -13,7 +13,7 @@
 | Markdown Preview | react-markdown + remark-gfm | Rendered preview pane |
 | Full-Text Search | PostgreSQL tsvector | Server-side keyword search |
 | Vector Search | pgvector | Server-side semantic search via embeddings |
-| AI | Anthropic Claude API | Tagging, summarization, semantic search, Q&A, inline markdown completions |
+| AI | Anthropic Claude API | Tagging, summarization, semantic search, AI assistant chat, inline markdown completions |
 | Offline Cache | IndexedDB | Light cache for recently viewed notes; brief offline tolerance |
 | Auth | Reuse @derekentringer/shared auth plugin | Single-user JWT + bcrypt, same pattern as fin-web |
 | Styling | Tailwind CSS | Consistent with desktop app |
@@ -48,6 +48,7 @@
   - [x] 03a — Trash View + Sort (trash list/restore/permanent delete, sort controls, auto-purge)
   - [x] 03b — Flat Folders + Drag-and-Drop (folder CRUD, @dnd-kit reordering, sortOrder, drag-to-folder via cross-component DndContext, inline folder selector)
   - [x] 03c — Tags + Full-Text Search (tag browser/CRUD, PostgreSQL tsvector with snippets, resizable sidebar dividers, NoteSync logo/branding/favicon)
+  - [x] 03d — Nested Folders (unlimited-depth folder tree with adjacency list model, drag-and-drop folder nesting/reordering/note-to-folder, macOS Finder-inspired FolderTree component with disclosure triangles, two-mode delete dialog, global search across all folders, collapsible tag browser with show more/less)
 
 ### Phase 3: AI & Offline — Medium Priority
 
@@ -58,7 +59,7 @@
   - [x] 04c — Semantic Search (pgvector embeddings via Voyage AI, keyword/semantic/hybrid search modes, server-side embedding toggle, background processor, hybrid keyword-match bonus, content-length filter for search quality)
   - [x] 04d — Audio Notes (voice recording → AI-structured markdown via Whisper + Claude, AudioRecorder component with mode selection, draggable split view divider)
   - [x] 04d.1 — Search Quality & Settings Info Tooltips (hybrid keyword-match bonus, semantic content-length filter, embedding processor empty-content fix, hover info tooltips on all AI settings)
-  - [x] 04e — Q&A Over Notes (collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, right-click context menus on notes, cursor-positioned context menus on folders/notes)
+  - [x] 04e — AI Assistant Chat (collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, right-click context menus on notes, cursor-positioned context menus on folders/notes)
   - [x] 04e.1 — UI Polish (AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button)
   - [ ] 04f — Duplicate Detection
   - [x] 04g — Continue Writing & Structure Suggestions (Cmd/Ctrl+Shift+Space for paragraph continuation or structure suggestions, separate settings toggle, tag suggestion prompt fix, QA panel auto-focus and header removal, placeholder hidden on editor focus, save-before-AI-call fix)
