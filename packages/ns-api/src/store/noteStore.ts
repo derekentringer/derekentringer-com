@@ -532,6 +532,35 @@ export async function renameTag(
   return toUpdate.length;
 }
 
+export async function findRelevantNotes(
+  query: string,
+  limit: number = 5,
+): Promise<{ id: string; title: string; content: string }[]> {
+  const prisma = getPrisma();
+  const queryEmbedding = await generateQueryEmbedding(query);
+  const vectorStr = `[${queryEmbedding.join(",")}]`;
+
+  const SIM_THRESHOLD = 0.3;
+  const MIN_CONTENT_LEN = 20;
+
+  const notes = await prisma.$queryRawUnsafe<
+    { id: string; title: string; content: string }[]
+  >(
+    `SELECT "id", "title", "content"
+     FROM "notes"
+     WHERE "deletedAt" IS NULL
+       AND "embedding" IS NOT NULL
+       AND LENGTH("content") >= ${MIN_CONTENT_LEN}
+       AND (1 - ("embedding" <=> $1::vector)) > ${SIM_THRESHOLD}
+     ORDER BY "embedding" <=> $1::vector ASC
+     LIMIT $2`,
+    vectorStr,
+    limit,
+  );
+
+  return notes;
+}
+
 export async function removeTag(name: string): Promise<number> {
   const prisma = getPrisma();
   const notes = await prisma.note.findMany({

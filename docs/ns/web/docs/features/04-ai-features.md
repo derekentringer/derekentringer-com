@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04d Complete; 04e–04g Not Started)
+**Status:** Partial (04a–04e Complete; 04f–04g Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -17,7 +17,7 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | **04b** | `feature/ns-04b-select-and-rewrite` | Select-and-rewrite with floating menu, keyboard shortcut, right-click trigger, settings toggle | Complete |
 | **04c** | `feature/ns-04c-semantic-search` | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | Complete |
 | **04d** | `feature/ns-04d-audio-notes` | Audio notes — voice recording → AI-structured markdown via Whisper + Claude, AudioRecorder component, draggable split view divider | Complete |
-| **04e** | — | Q&A over notes (natural language questions with citations) | Not Started |
+| **04e** | `feature/ns-04e-qa-over-notes` | Q&A over notes — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | Complete |
 | **04f** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
 | **04g** | — | Continue writing, heading/structure suggestions for empty notes | Not Started |
 
@@ -453,6 +453,89 @@ Improves hybrid and semantic search ranking quality and adds informational toolt
 
 ### Tests
 - `NotesPage.test.tsx` — 4 new tests for folder selector (renders current folder, renders Unfiled, calls updateNote on change, sets folder to null)
+
+---
+
+## Release 04e: Q&A Over Notes
+
+### Summary
+
+Adds a Q&A assistant panel: users ask natural language questions about their notes and receive AI-generated answers with citations. The panel is a collapsible right-side drawer with animated slide-in, a tab button attached to the input footer, streaming responses rendered as markdown, and clickable source pills linking to cited notes. Also adds right-click context menus on notes (delete) and improves folder context menus with click-outside dismissal and cursor-positioned rendering.
+
+### API Changes
+
+#### AI Service (`packages/ns-api/src/services/aiService.ts`)
+- Added `NoteContext` interface: `{ id, title, content }`
+- Added `answerQuestion(question, noteContexts, signal?)` — async generator, `claude-sonnet-4-20250514`, `max_tokens: 1000`, `temperature: 0.3`, `stream: true`
+- System prompt: answer based ONLY on provided notes, cite by title in `[brackets]`
+- Yields text chunks, respects abort signal
+
+#### Note Store (`packages/ns-api/src/store/noteStore.ts`)
+- Added `findRelevantNotes(query, limit?)` — simplified semantic search for Q&A context retrieval
+- Calls `generateQueryEmbedding(query)`, pgvector cosine similarity > 0.3, `LENGTH("content") >= 20`, `deletedAt IS NULL`
+- Returns top `limit` (default 5) notes ordered by similarity
+
+#### Routes (`packages/ns-api/src/routes/ai.ts`)
+- `POST /ai/ask` — SSE endpoint; body `{ question: string (1–2000 chars) }`, `additionalProperties: false`
+- Flow: `findRelevantNotes(question, 5)` → send `data: {"sources": [{ id, title }]}\n\n` → stream `answerQuestion()` chunks as `data: {"text":"..."}\n\n` → end with `data: [DONE]\n\n`
+- If no relevant notes found, sends helpful text message instead
+- Uses `PassThrough` stream, abort on socket close (same pattern as `/ai/complete`)
+
+### Shared Types (`packages/shared/src/ns/types.ts`)
+- Added `QASource` interface: `{ id: string, title: string }`
+
+### Frontend Changes
+
+#### AI API Client (`packages/ns-web/src/api/ai.ts`)
+- Added `AskQuestionEvent` interface: `{ sources?: QASource[], text?: string }`
+- Added `askQuestion(question, signal)` — async generator, same SSE parsing as `fetchCompletion`, yields `AskQuestionEvent` objects
+
+#### Settings Hook (`packages/ns-web/src/hooks/useAiSettings.ts`)
+- Added `qaAssistant: boolean` to `AiSettings` (default: `false`)
+- Validated in `loadSettings()` with boolean fallback
+
+#### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
+- Added `{ key: "qaAssistant", label: "Q&A assistant", info: "..." }` to `TOGGLE_SETTINGS`
+- Added `disabled` prop to `ToggleSwitch` — disabled when `semanticSearch` is off (opacity-50, cursor-not-allowed)
+- When semantic search toggled off, `qaAssistant` auto-disabled
+
+#### QAPanel Component (`packages/ns-web/src/components/QAPanel.tsx`) — NEW
+- Chat panel with streaming Q&A, header with "Q&A Assistant" title + Clear button
+- Scrollable messages area with auto-scroll to bottom
+- User messages: right-aligned accent-colored bubbles
+- Assistant messages: left-aligned card-styled with ReactMarkdown + remarkGfm rendering
+- Citation handling: `[Title]` references stripped from displayed text via regex, deduplicated cited titles shown as clickable source pills at bottom of each reply with `border-t` separator
+- Source pills: `rounded-md` styling, click calls `onSelectNote(id)`
+- Input area: text input + Ask/Stop button, AbortController for cancellation
+- Tab button: embedded in input footer with `absolute right-full top-0`, slides with the panel
+- Props: `onSelectNote`, `isOpen`, `onToggle`
+
+#### NotesPage Integration (`packages/ns-web/src/pages/NotesPage.tsx`)
+- Added `qaOpen` state + `qaResize` hook (useResizable, vertical, 250–600px, `ns-qa-panel-width`)
+- QA panel rendered as fixed overlay with CSS `transition-transform duration-300 ease-in-out` slide animation
+- Tab always visible when `settings.qaAssistant` is enabled
+- `handleQaSelectNote` callback: loads note list, finds/selects the note, navigates out of trash view
+- Close QA panel when `qaAssistant` setting turned off (useEffect)
+- Added `handleDeleteNoteById(noteId)` for right-click delete on notes
+
+#### FolderList (`packages/ns-web/src/components/FolderList.tsx`)
+- Context menu now uses `fixed` positioning at cursor coordinates (`e.clientX`, `e.clientY`) with `z-50`
+- Added click-outside dismissal via `useEffect` + `useRef` with `mousedown` listener on document
+
+#### NoteList (`packages/ns-web/src/components/NoteList.tsx`)
+- Added `onDeleteNote` optional prop
+- Right-click context menu with "Delete" option on notes
+- Context menu uses `fixed` positioning at cursor coordinates with `z-50`
+- Click-outside dismissal via `useEffect` + `useRef`
+
+### Tests
+- `aiService.test.ts` — 3 new tests: `answerQuestion` yields streamed chunks, includes note contexts, stops on abort
+- `aiRoutes.test.ts` — 4 new tests: 200 SSE with sources+text, 400 missing question, 401 without auth, handles no relevant notes
+- `ai-api.test.ts` — 2 new tests: yields sources then text chunks, throws on non-ok response
+- `useAiSettings.test.ts` — 3 new tests: `qaAssistant` defaults, localStorage read, persistence
+- `SettingsPage.test.tsx` — updated toggle count to 7, added Q&A toggle and disabled state tests
+- `QAPanel.test.tsx` — NEW, 5 tests: empty state, header, Ask button disabled/enabled, source pill click
+- `NotesPage.test.tsx` — updated mocks for `askQuestion`
 
 ---
 

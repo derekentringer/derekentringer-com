@@ -19,6 +19,7 @@ describe("useAiSettings", () => {
       semanticSearch: false,
       audioNotes: false,
       audioMode: "memo",
+      qaAssistant: false,
     });
   });
 
@@ -34,6 +35,7 @@ describe("useAiSettings", () => {
         semanticSearch: true,
         audioNotes: true,
         audioMode: "lecture",
+        qaAssistant: true,
       }),
     );
 
@@ -48,6 +50,7 @@ describe("useAiSettings", () => {
       semanticSearch: true,
       audioNotes: true,
       audioMode: "lecture",
+      qaAssistant: true,
     });
   });
 
@@ -118,6 +121,7 @@ describe("useAiSettings", () => {
         semanticSearch: true,
         audioNotes: false,
         audioMode: "memo",
+        qaAssistant: false,
       }),
     );
 
@@ -136,6 +140,7 @@ describe("useAiSettings", () => {
       semanticSearch: true,
       audioNotes: false,
       audioMode: "memo",
+      qaAssistant: false,
     });
   });
 
@@ -153,6 +158,7 @@ describe("useAiSettings", () => {
       semanticSearch: false,
       audioNotes: false,
       audioMode: "memo",
+      qaAssistant: false,
     });
   });
 
@@ -173,6 +179,7 @@ describe("useAiSettings", () => {
       semanticSearch: false,
       audioNotes: false,
       audioMode: "memo",
+      qaAssistant: false,
     });
   });
 
@@ -231,5 +238,37 @@ describe("useAiSettings", () => {
 
     const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
     expect(stored.audioMode).toBe("lecture");
+  });
+
+  it("defaults qaAssistant to false", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.qaAssistant).toBe(false);
+  });
+
+  it("reads qaAssistant from localStorage", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({
+        qaAssistant: true,
+      }),
+    );
+
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.qaAssistant).toBe(true);
+  });
+
+  it("updateSetting persists qaAssistant to localStorage", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    act(() => {
+      result.current.updateSetting("qaAssistant", true);
+    });
+
+    expect(result.current.settings.qaAssistant).toBe(true);
+
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.qaAssistant).toBe(true);
   });
 });

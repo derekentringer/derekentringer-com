@@ -15,6 +15,7 @@ export interface AiSettings {
   semanticSearch: boolean;
   audioNotes: boolean;
   audioMode: AudioMode;
+  qaAssistant: boolean;
 }
 
 const STORAGE_KEY = "ns-ai-settings";
@@ -28,6 +29,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   semanticSearch: false,
   audioNotes: false,
   audioMode: "memo",
+  qaAssistant: false,
 };
 
 function loadSettings(): AiSettings {
@@ -46,6 +48,7 @@ function loadSettings(): AiSettings {
       semanticSearch: typeof parsed.semanticSearch === "boolean" ? parsed.semanticSearch : false,
       audioNotes: typeof parsed.audioNotes === "boolean" ? parsed.audioNotes : false,
       audioMode: VALID_AUDIO_MODES.includes(parsed.audioMode) ? parsed.audioMode : "memo",
+      qaAssistant: typeof parsed.qaAssistant === "boolean" ? parsed.qaAssistant : false,
     };
   } catch {
     return DEFAULT_SETTINGS;
