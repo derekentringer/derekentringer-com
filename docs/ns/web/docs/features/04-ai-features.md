@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04g Complete; 04f Not Started)
+**Status:** Complete (04f skipped)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -19,7 +19,7 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | **04d** | `feature/ns-04d-audio-notes` | Audio notes — voice recording → AI-structured markdown via Whisper + Claude, AudioRecorder component, draggable split view divider | Complete |
 | **04e** | `feature/ns-04e-qa-over-notes` | AI assistant chat — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | Complete |
 | **04e.1** | — | UI polish — AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button | Complete |
-| **04f** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
+| **04f** | — | Duplicate detection (embedding similarity for review/merge) | Skipped |
 | **04g** | — | Continue writing & structure suggestions, tag suggestion prompt fix, AI assistant chat UX polish | Complete |
 
 ---

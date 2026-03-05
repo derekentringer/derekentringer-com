@@ -17,19 +17,21 @@ import {
   createNote,
   updateNote,
   deleteNote,
+  fetchFolders,
+  fetchTags,
   fetchTrash,
   restoreNote as apiRestoreNote,
   permanentDeleteNote as apiPermanentDeleteNote,
-  fetchFolders,
   createFolderApi,
   reorderNotes as apiReorderNotes,
   renameFolderApi,
   deleteFolderApi,
   moveFolderApi,
-  fetchTags,
   renameTagApi,
   deleteTagApi,
-} from "../api/notes.ts";
+} from "../api/offlineNotes.ts";
+import { useOfflineCache } from "../hooks/useOfflineCache.ts";
+import { OnlineStatusIndicator } from "../components/OnlineStatusIndicator.tsx";
 import {
   MarkdownEditor,
   type MarkdownEditorHandle,
@@ -59,6 +61,7 @@ export function NotesPage() {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const { settings } = useAiSettings();
+  const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -237,6 +240,21 @@ export function NotesPage() {
       loadTrash();
     }
   }, [sidebarView, loadTrash]);
+
+  // Reconcile temp IDs after offline sync
+  useEffect(() => {
+    if (reconciledIds.size === 0) return;
+    setNotes((prev) =>
+      prev.map((n) => {
+        const realId = reconciledIds.get(n.id);
+        return realId ? { ...n, id: realId } : n;
+      }),
+    );
+    setSelectedId((prev) =>
+      prev && reconciledIds.has(prev) ? reconciledIds.get(prev)! : prev,
+    );
+    loadNotes(debouncedSearch || undefined);
+  }, [reconciledIds]);
 
   const selectedNote =
     sidebarView === "notes"
@@ -455,6 +473,7 @@ export function NotesPage() {
   }
 
   async function handleCreateFolder(name: string, parentId?: string) {
+    if (!isOnline) { showError("Folder operations require a connection"); return; }
     try {
       const result = await createFolderApi(name, parentId);
       const foldersResult = await fetchFolders();
@@ -466,6 +485,7 @@ export function NotesPage() {
   }
 
   async function handleRenameFolder(folderId: string, newName: string) {
+    if (!isOnline) { showError("Folder operations require a connection"); return; }
     try {
       await renameFolderApi(folderId, newName);
       loadFolders();
@@ -476,6 +496,7 @@ export function NotesPage() {
   }
 
   async function handleMoveFolder(folderId: string, parentId: string | null) {
+    if (!isOnline) { showError("Folder operations require a connection"); return; }
     try {
       await moveFolderApi(folderId, parentId);
       loadFolders();
@@ -491,6 +512,7 @@ export function NotesPage() {
   }
 
   async function handleRenameTag(oldName: string, newName: string) {
+    if (!isOnline) { showError("Tag operations require a connection"); return; }
     try {
       await renameTagApi(oldName, newName);
       setActiveTags((prev) =>
@@ -504,6 +526,7 @@ export function NotesPage() {
   }
 
   async function handleDeleteTag(name: string) {
+    if (!isOnline) { showError("Tag operations require a connection"); return; }
     try {
       await deleteTagApi(name);
       setActiveTags((prev) => prev.filter((t) => t !== name));
@@ -531,6 +554,7 @@ export function NotesPage() {
     folderId: string,
     mode: "move-up" | "recursive",
   ) {
+    if (!isOnline) { showError("Folder operations require a connection"); return; }
     try {
       await deleteFolderApi(folderId, mode);
       if (activeFolder === folderId) {
@@ -907,6 +931,11 @@ export function NotesPage() {
 
         <div className="px-4 py-3 border-t border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
+            <OnlineStatusIndicator
+              isOnline={isOnline}
+              pendingCount={pendingCount}
+              lastSyncedAt={lastSyncedAt}
+            />
             {sidebarView === "notes" && (
               <button
                 onClick={switchToTrash}
@@ -953,11 +982,13 @@ export function NotesPage() {
             {/* Toolbar */}
             <div className="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
               <span className="text-xs text-muted-foreground">
-                {isSaving
-                  ? "Saving..."
-                  : isDirty
-                    ? "Unsaved changes"
-                    : "Saved"}
+                {isSyncing
+                  ? "Syncing..."
+                  : isSaving
+                    ? "Saving..."
+                    : isDirty
+                      ? "Unsaved changes"
+                      : "Saved"}
               </span>
               <div className="flex-1" />
               {settings.summarize && (
