@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 
-export type CompletionStyle = "continue" | "markdown" | "brief";
+export type CompletionStyle = "continue" | "markdown" | "brief" | "paragraph" | "structure";
 export type AudioMode = "meeting" | "lecture" | "memo" | "verbatim";
 
 const VALID_COMPLETION_STYLES: CompletionStyle[] = ["continue", "markdown", "brief"];
@@ -9,6 +9,7 @@ const VALID_AUDIO_MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"
 export interface AiSettings {
   completions: boolean;
   completionStyle: CompletionStyle;
+  continueWriting: boolean;
   summarize: boolean;
   tagSuggestions: boolean;
   rewrite: boolean;
@@ -23,6 +24,7 @@ const STORAGE_KEY = "ns-ai-settings";
 const DEFAULT_SETTINGS: AiSettings = {
   completions: false,
   completionStyle: "continue",
+  continueWriting: false,
   summarize: false,
   tagSuggestions: false,
   rewrite: false,
@@ -42,6 +44,7 @@ function loadSettings(): AiSettings {
       completionStyle: VALID_COMPLETION_STYLES.includes(parsed.completionStyle)
         ? parsed.completionStyle
         : "continue",
+      continueWriting: typeof parsed.continueWriting === "boolean" ? parsed.continueWriting : false,
       summarize: typeof parsed.summarize === "boolean" ? parsed.summarize : false,
       tagSuggestions: typeof parsed.tagSuggestions === "boolean" ? parsed.tagSuggestions : false,
       rewrite: typeof parsed.rewrite === "boolean" ? parsed.rewrite : false,

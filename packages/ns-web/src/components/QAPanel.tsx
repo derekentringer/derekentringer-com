@@ -40,6 +40,13 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      inputRef.current?.focus();
+    }
+  }, [isOpen]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -127,20 +134,16 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
 
   return (
     <div className="flex flex-col h-full bg-background" data-testid="qa-panel">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
-        <span className="text-sm font-medium text-foreground">
-          Q&A Assistant
-        </span>
-        {messages.length > 0 && (
+      {messages.length > 0 && (
+        <div className="flex justify-end px-3 py-2 shrink-0">
           <button
             onClick={handleClear}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
             Clear
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -228,6 +231,7 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
         </button>
         <div className="flex gap-2">
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}

@@ -12,7 +12,7 @@ function getClient(): Anthropic {
   return client;
 }
 
-export type CompletionStyle = "continue" | "markdown" | "brief";
+export type CompletionStyle = "continue" | "markdown" | "brief" | "paragraph" | "structure";
 
 export type RewriteAction =
   | "rewrite"
@@ -53,12 +53,18 @@ const COMPLETION_PROMPTS: Record<CompletionStyle, string> = {
     "You are a markdown formatting assistant. Help the user with markdown syntax — suggest tables, code blocks, links, lists, headings, or other formatting based on context. Output only the markdown, no commentary.",
   brief:
     "You are a writing assistant. Complete the user's current thought with just a few words (at most one short sentence). Output only the brief completion, no commentary.",
+  paragraph:
+    "You are a writing assistant. Write the next full paragraph continuing the user's markdown text. Match the tone, style, and topic. Output only the paragraph, no commentary.",
+  structure:
+    "You are a document structure assistant. Based on the user's note title or opening text, suggest a markdown outline with headings (##) and brief placeholder descriptions. Output only the markdown structure, no commentary.",
 };
 
 const COMPLETION_MAX_TOKENS: Record<CompletionStyle, number> = {
   continue: 200,
   markdown: 200,
   brief: 50,
+  paragraph: 500,
+  structure: 500,
 };
 
 export async function* generateCompletion(
@@ -126,7 +132,7 @@ export async function suggestTags(
     model: "claude-sonnet-4-20250514",
     max_tokens: 100,
     temperature: 0.3,
-    system: `You are a tagging assistant. Given a note's title and content, suggest relevant tags. Reuse existing tags when applicable. Existing tags in the system: ${JSON.stringify(existingTags)}. Return a JSON array of tag strings, e.g. ["tag1", "tag2"]. Output only the JSON array, nothing else.`,
+    system: `You are a tagging assistant. Given a note's title and content, suggest 3-6 relevant tags. Prefer reusing existing tags when they fit, but always create new tags when the content covers topics not represented by existing tags. Existing tags in the system: ${JSON.stringify(existingTags)}. Return a JSON array of lowercase tag strings, e.g. ["tag1", "tag2"]. Output only the JSON array, nothing else.`,
     messages: [
       {
         role: "user",
@@ -137,8 +143,11 @@ export async function suggestTags(
 
   const block = response.content[0];
   if (block.type === "text") {
+    const raw = block.text.trim();
+    // Strip markdown code fences if present
+    const cleaned = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "").trim();
     try {
-      const parsed = JSON.parse(block.text.trim());
+      const parsed = JSON.parse(cleaned);
       if (Array.isArray(parsed)) {
         return parsed.filter((t): t is string => typeof t === "string");
       }

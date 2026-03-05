@@ -30,7 +30,7 @@ const completeSchema = {
     additionalProperties: false,
     properties: {
       context: { type: "string", minLength: 1 },
-      style: { type: "string", enum: ["continue", "markdown", "brief"] },
+      style: { type: "string", enum: ["continue", "markdown", "brief", "paragraph", "structure"] },
     },
   },
 };
@@ -128,7 +128,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
           for await (const chunk of generateCompletion(
             context,
             abortController.signal,
-            (style as "continue" | "markdown" | "brief") ?? "continue",
+            (style as "continue" | "markdown" | "brief" | "paragraph" | "structure") ?? "continue",
           )) {
             if (abortController.signal.aborted) break;
             passthrough.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);

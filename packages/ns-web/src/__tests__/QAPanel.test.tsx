@@ -26,10 +26,20 @@ describe("QAPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders 'Q&A Assistant' header", () => {
+  it("renders Clear button when messages exist", async () => {
+    mockAskQuestion.mockImplementation(async function* (): AsyncGenerator<AskQuestionEvent> {
+      yield { text: "Hello" };
+    });
+
     render(<QAPanel onSelectNote={vi.fn()} isOpen={true} onToggle={vi.fn()} />);
 
-    expect(screen.getByText("Q&A Assistant")).toBeInTheDocument();
+    const input = screen.getByPlaceholderText("Ask about your notes...");
+    await userEvent.type(input, "test");
+    await userEvent.click(screen.getByText("Ask"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Clear")).toBeInTheDocument();
+    });
   });
 
   it("Ask button disabled when input is empty", () => {

@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04e Complete; 04f–04g Not Started)
+**Status:** Partial (04a–04g Complete; 04f Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -20,7 +20,7 @@ AI-powered features using the Claude API (via ns-api) for inline ghost text comp
 | **04e** | `feature/ns-04e-qa-over-notes` | Q&A over notes — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | Complete |
 | **04e.1** | — | UI polish — AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button | Complete |
 | **04f** | — | Duplicate detection (embedding similarity for review/merge) | Not Started |
-| **04g** | — | Continue writing, heading/structure suggestions for empty notes | Not Started |
+| **04g** | — | Continue writing & structure suggestions, tag suggestion prompt fix, QA panel UX polish | Complete |
 
 ---
 
@@ -575,6 +575,66 @@ Moves the AudioRecorder button from the editor toolbar and empty state into the 
 
 ### Tests
 - `AudioRecorder.test.tsx` — updated test to find Record button by `title` attribute instead of text content
+
+---
+
+## Release 04g: Continue Writing, Structure Suggestions & UX Polish
+
+### Summary
+
+Adds an on-demand "Continue writing / Suggest structure" feature triggered by Cmd/Ctrl+Shift+Space. When pressed on a note with content, it generates a full paragraph continuation; on a short or empty note, it suggests a markdown outline based on the title. This is a separate settings toggle from inline completions. Also fixes tag suggestion prompt to suggest new tags (not just reuse existing), adds code fence stripping to tag/AI response parsing, auto-focuses the Q&A panel input, removes the Q&A panel header, and hides the editor placeholder on focus.
+
+### API Changes
+
+#### AI Service (`packages/ns-api/src/services/aiService.ts`)
+- Extended `CompletionStyle` type: `"continue" | "markdown" | "brief" | "paragraph" | "structure"`
+- Added `COMPLETION_PROMPTS` entries:
+  - `"paragraph"`: "Write the next full paragraph continuing the user's markdown text. Match tone, style, and topic."
+  - `"structure"`: "Based on the user's note title or opening text, suggest a markdown outline with headings (##) and brief placeholder descriptions."
+- Added `COMPLETION_MAX_TOKENS` entries: `paragraph` → 500, `structure` → 500
+- Updated `suggestTags()` prompt: now instructs AI to suggest 3-6 tags and always create new tags when content covers topics not in existing tags (fixes empty tag suggestions for notes with no matching existing tags)
+- Added code fence stripping to `suggestTags()` response parsing: strips `` ```json ... ``` `` wrappers before JSON.parse
+
+#### Routes (`packages/ns-api/src/routes/ai.ts`)
+- Updated `/ai/complete` style enum to include `"paragraph"` and `"structure"`
+- Updated type cast to include new styles
+
+### Frontend Changes
+
+#### Ghost Text Extension (`packages/ns-web/src/editor/ghostText.ts`)
+- Added `continueWritingKeymap(fetchFn, getTitle?)` — new exported function
+- Returns a self-contained CodeMirror extension bundling `ghostTextField`, `ghostTextDecorations`, `ghostTextKeymap`, and a `Prec.highest` keymap for `Mod-Shift-Space`
+- On trigger: extracts editor context (up to 500 chars before cursor); falls back to title (via `getTitle` callback) when editor content is empty
+- Auto-selects style: `doc.trim().length < 50` → `"structure"`, otherwise → `"paragraph"`
+- Reuses existing ghost text rendering (Tab to accept, Escape to dismiss)
+
+#### Settings Hook (`packages/ns-web/src/hooks/useAiSettings.ts`)
+- Added `continueWriting: boolean` to `AiSettings` (default: `false`)
+- Updated `CompletionStyle` type to include `"paragraph"` and `"structure"`
+
+#### Settings Page (`packages/ns-web/src/pages/SettingsPage.tsx`)
+- Added "Continue writing" toggle to AI Features section (separate from inline completions)
+- Added "Continue writing / suggest structure" to Keyboard Shortcuts reference (Cmd/Ctrl+Shift+Space)
+- Changed "Back to notes" link text to "Back"
+
+#### NotesPage (`packages/ns-web/src/pages/NotesPage.tsx`)
+- Wired `continueWritingKeymap` in `aiExtensions` memo, gated on `settings.continueWriting`
+- Uses `titleRef` (React ref) to pass current note title without recreating extensions on every keystroke
+- Added save-before-API-call pattern: `handleSuggestTags` and `handleSummarize` now save dirty notes before calling the AI API, fixing race condition where autosave hadn't fired yet
+
+#### QAPanel (`packages/ns-web/src/components/QAPanel.tsx`)
+- Added auto-focus: input receives focus when panel opens (`useEffect` with `[isOpen]` dependency)
+- Removed header bar ("Q&A Assistant" title and top border) — Clear button rendered conditionally without header
+
+#### MarkdownEditor (`packages/ns-web/src/components/MarkdownEditor.tsx`)
+- Added CSS rule `"&.cm-focused .cm-placeholder": { display: "none" }` — hides "Start writing..." placeholder when editor is focused
+
+### Tests
+- `aiService.test.ts` — 2 new tests: paragraph and structure system prompts and max_tokens
+- `aiRoutes.test.ts` — 2 new tests: accepts `"paragraph"` and `"structure"` styles on POST `/ai/complete`
+- `ghostText.test.ts` — 3 new tests: `continueWritingKeymap` returns Extension, uses `"paragraph"` style for substantial content, uses `"structure"` style for short content
+- `SettingsPage.test.tsx` — updated toggle count from 7 to 8, updated switch indices, added shortcut description test, updated "Back" link text
+- `useAiSettings.test.ts` — added `continueWriting: false` to all expected settings objects
 
 ---
 

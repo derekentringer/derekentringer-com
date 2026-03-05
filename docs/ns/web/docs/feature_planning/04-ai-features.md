@@ -1,6 +1,6 @@
 # 04 — AI Features
 
-**Status:** Partial (04a–04e Complete; 04f–04g Not Started)
+**Status:** Partial (04a–04g Complete; 04f Not Started)
 **Phase:** 3 — AI & Offline
 **Priority:** Medium
 
@@ -20,17 +20,14 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 | **04e** | Q&A over notes — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | **Complete** |
 | **04e.1** | UI polish — AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button | **Complete** |
 | **04f** | Duplicate detection (embedding similarity for review/merge) | Not Started |
-| **04g** | Continue writing, heading/structure suggestions for empty notes | Not Started |
+| **04g** | Continue writing & structure suggestions, tag suggestion prompt fix, QA panel UX polish | **Complete** |
 
-## Remaining Requirements (04f–04g)
+## Remaining Requirements (04f)
 
 - **Duplicate detection** (04f):
   - Use embeddings to find notes with similar content
   - Surface duplicates for review; user can merge or dismiss
   - API: `POST /ai/duplicates`
-- **Continue writing & structure suggestions** (04g):
-  - Ctrl+Shift+Space to generate next paragraph
-  - Heading/structure suggestions for new/empty notes based on title
 
 ## Technical Considerations
 
