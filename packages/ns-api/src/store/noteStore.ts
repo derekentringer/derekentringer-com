@@ -406,6 +406,16 @@ export async function permanentDeleteNote(id: string): Promise<boolean> {
   }
 }
 
+export async function permanentDeleteTrash(ids?: string[]): Promise<number> {
+  const prisma = getPrisma();
+  const where: Record<string, unknown> = { deletedAt: { not: null } };
+  if (ids && ids.length > 0) {
+    where.id = { in: ids };
+  }
+  const result = await prisma.note.deleteMany({ where });
+  return result.count;
+}
+
 export async function purgeOldTrash(days = 30): Promise<number> {
   const prisma = getPrisma();
   const cutoff = new Date();

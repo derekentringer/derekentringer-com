@@ -36,6 +36,13 @@ The settings page was built incrementally across several releases:
 - **Tab size**: 2 or 4 spaces radio group
 - **Settings persisted in localStorage** under `"ns-editor-settings"`
 
+### Trash (06)
+- **Trash retention period**: Server-side setting for how long trashed notes are kept before auto-purge (7/14/30/60/90 days or Never)
+- **Dropdown selector**: Settings page UI with immediate save to server
+- **Purge job integration**: Hourly purge job reads retention setting; skips purging when set to "Never" (0 days)
+- **API endpoints**: `GET/PUT /notes/trash/retention` with 0–365 validation
+- **Default**: 30 days (matches previous hardcoded behavior)
+
 ### Offline Cache (implemented as part of 05)
 - **Cached notes count**: Live count from IndexedDB
 - **Max cached notes**: Select (50–500)
@@ -62,6 +69,8 @@ The settings page was built incrementally across several releases:
 | `hooks/useEditorSettings.ts` | Editor settings hook, `ACCENT_PRESETS`, `resolveAccentColor()` |
 | `hooks/useAiSettings.ts` | AI settings hook with validation |
 | `pages/SettingsPage.tsx` | Settings UI with all sections |
+| `store/settingStore.ts` | Server-side settings helpers (`getTrashRetentionDays`, `setTrashRetentionDays`) |
+| `routes/notes.ts` | `GET/PUT /notes/trash/retention` endpoints |
 | `App.tsx` | `useThemeAttribute()`, `applyAccentCssVars()` |
 | `components/MarkdownEditor.tsx` | Theme factory functions, `accentColor` prop |
 | `styles/global.css` | CSS custom properties for dark/light/system themes |
@@ -76,6 +85,5 @@ The settings page was built incrementally across several releases:
 ## Future Considerations
 
 - Account settings (change password, active sessions, logout)
-- Trash settings (auto-purge interval, empty trash)
 - Server-synced settings (Prisma `Settings` model) for cross-device consistency
 - Keyboard shortcut customization

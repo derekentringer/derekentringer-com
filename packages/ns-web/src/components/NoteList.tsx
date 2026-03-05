@@ -6,6 +6,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { NoteSearchResult } from "@derekentringer/shared/ns";
+import type { ExportFormat } from "../lib/importExport.ts";
 import { SearchSnippet } from "./SearchSnippet.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 
@@ -14,6 +15,7 @@ interface NoteListProps {
   selectedId: string | null;
   onSelect: (note: NoteSearchResult) => void;
   onDeleteNote?: (noteId: string) => void;
+  onExportNote?: (noteId: string, format: ExportFormat) => void;
   sortByManual: boolean;
 }
 
@@ -28,6 +30,7 @@ interface SortableNoteItemProps {
   isSelected: boolean;
   onSelect: (note: NoteSearchResult) => void;
   onDeleteNote?: (noteId: string) => void;
+  onExportNote?: (noteId: string, format: ExportFormat) => void;
   sortByManual: boolean;
   contextMenu: ContextMenuState | null;
   onContextMenuOpen: (noteId: string, x: number, y: number) => void;
@@ -41,6 +44,7 @@ function SortableNoteItem({
   isSelected,
   onSelect,
   onDeleteNote,
+  onExportNote,
   sortByManual,
   contextMenu,
   onContextMenuOpen,
@@ -78,7 +82,7 @@ function SortableNoteItem({
       <button
         onClick={() => onSelect(note)}
         onContextMenu={(e) => {
-          if (!onDeleteNote) return;
+          if (!onDeleteNote && !onExportNote) return;
           e.preventDefault();
           onContextMenuOpen(note.id, e.clientX, e.clientY);
         }}
@@ -91,18 +95,51 @@ function SortableNoteItem({
         <span className="block truncate">{note.title || "Untitled"}</span>
         {note.headline && <SearchSnippet headline={note.headline} />}
       </button>
-      {contextMenu?.noteId === note.id && onDeleteNote && (
+      {contextMenu?.noteId === note.id && (onDeleteNote || onExportNote) && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[100px]"
+          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
-          <button
-            onClick={() => onDeleteClick(note.id)}
-            className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors"
-          >
-            Delete
-          </button>
+          {onExportNote && (
+            <>
+              <button
+                onClick={() => {
+                  onExportNote(note.id, "md");
+                  onContextMenuClose();
+                }}
+                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+              >
+                Export as .md
+              </button>
+              <button
+                onClick={() => {
+                  onExportNote(note.id, "txt");
+                  onContextMenuClose();
+                }}
+                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+              >
+                Export as .txt
+              </button>
+              <button
+                onClick={() => {
+                  onExportNote(note.id, "pdf");
+                  onContextMenuClose();
+                }}
+                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+              >
+                Export as .pdf
+              </button>
+            </>
+          )}
+          {onDeleteNote && (
+            <button
+              onClick={() => onDeleteClick(note.id)}
+              className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors"
+            >
+              Delete
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -114,6 +151,7 @@ export function NoteList({
   selectedId,
   onSelect,
   onDeleteNote,
+  onExportNote,
   sortByManual,
 }: NoteListProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -151,6 +189,7 @@ export function NoteList({
             isSelected={note.id === selectedId}
             onSelect={onSelect}
             onDeleteNote={onDeleteNote}
+            onExportNote={onExportNote}
             sortByManual={sortByManual}
             contextMenu={contextMenu}
             onContextMenuOpen={(noteId, x, y) => setContextMenu({ noteId, x, y })}

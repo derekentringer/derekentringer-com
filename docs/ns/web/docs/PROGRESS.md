@@ -67,7 +67,7 @@
 
 ### Phase 4: Polish — Low Priority
 
-- [x] [06 — Settings](features/06-settings.md) — Theme toggle (dark/light/system), configurable accent color (11-preset palette with dark/light variants and contrast-aware text), editor font size slider, default view mode, line numbers, word wrap, auto-save delay, tab size, AI feature toggles with master switch, completion styles and delay, audio modes, info tooltips, keyboard shortcuts reference, offline cache management (cached note count, max cache size, last synced, clear cache), `useEditorSettings` and `useAiSettings` hooks with localStorage persistence and validated loading
+- [x] [06 — Settings](features/06-settings.md) — Theme toggle (dark/light/system), configurable accent color (11-preset palette with dark/light variants and contrast-aware text), editor font size slider, default view mode, line numbers, word wrap, auto-save delay, tab size, AI feature toggles with master switch, completion styles and delay, audio modes, info tooltips, keyboard shortcuts reference, offline cache management (cached note count, max cache size, last synced, clear cache), trash retention period (server-side setting with 7/14/30/60/90 days or Never, purge job integration), `useEditorSettings` and `useAiSettings` hooks with localStorage persistence and validated loading
 
 ## Extension Ideas (Future)
 

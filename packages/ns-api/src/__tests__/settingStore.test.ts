@@ -13,6 +13,8 @@ import {
   setSetting,
   isEmbeddingEnabled,
   setEmbeddingEnabled,
+  getTrashRetentionDays,
+  setTrashRetentionDays,
 } from "../store/settingStore.js";
 
 describe("settingStore", () => {
@@ -110,6 +112,63 @@ describe("settingStore", () => {
         where: { id: "embeddingEnabled" },
         update: { value: "false" },
         create: { id: "embeddingEnabled", value: "false" },
+      });
+    });
+  });
+
+  describe("getTrashRetentionDays", () => {
+    it("returns default 30 when no setting exists", async () => {
+      mockPrisma.setting.findUnique.mockResolvedValue(null);
+
+      const result = await getTrashRetentionDays();
+      expect(result).toBe(30);
+    });
+
+    it("returns parsed value when setting exists", async () => {
+      mockPrisma.setting.findUnique.mockResolvedValue({
+        id: "trashRetentionDays",
+        value: "7",
+        updatedAt: new Date(),
+      });
+
+      const result = await getTrashRetentionDays();
+      expect(result).toBe(7);
+    });
+
+    it("returns default 30 for non-numeric value", async () => {
+      mockPrisma.setting.findUnique.mockResolvedValue({
+        id: "trashRetentionDays",
+        value: "invalid",
+        updatedAt: new Date(),
+      });
+
+      const result = await getTrashRetentionDays();
+      expect(result).toBe(30);
+    });
+  });
+
+  describe("setTrashRetentionDays", () => {
+    it("stores days as string via setSetting", async () => {
+      mockPrisma.setting.upsert.mockResolvedValue({});
+
+      await setTrashRetentionDays(14);
+
+      expect(mockPrisma.setting.upsert).toHaveBeenCalledWith({
+        where: { id: "trashRetentionDays" },
+        update: { value: "14" },
+        create: { id: "trashRetentionDays", value: "14" },
+      });
+    });
+
+    it("stores 0 for never-delete", async () => {
+      mockPrisma.setting.upsert.mockResolvedValue({});
+
+      await setTrashRetentionDays(0);
+
+      expect(mockPrisma.setting.upsert).toHaveBeenCalledWith({
+        where: { id: "trashRetentionDays" },
+        update: { value: "0" },
+        create: { id: "trashRetentionDays", value: "0" },
       });
     });
   });

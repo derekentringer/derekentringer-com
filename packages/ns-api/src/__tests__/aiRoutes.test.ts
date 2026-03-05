@@ -35,10 +35,10 @@ vi.mock("../services/aiService.js", () => ({
   answerQuestion: (...args: unknown[]) => mockAnswerQuestion(...args),
 }));
 
-const mockTranscribeAudio = vi.fn();
+const mockTranscribeAudioChunked = vi.fn();
 
 vi.mock("../services/whisperService.js", () => ({
-  transcribeAudio: (...args: unknown[]) => mockTranscribeAudio(...args),
+  transcribeAudioChunked: (...args: unknown[]) => mockTranscribeAudioChunked(...args),
 }));
 
 const mockSetEmbeddingEnabled = vi.fn();
@@ -575,7 +575,7 @@ describe("AI routes", () => {
   describe("POST /ai/transcribe", () => {
     it("returns 200 with structured note", async () => {
       const token = await getAccessToken();
-      mockTranscribeAudio.mockResolvedValue("This is a test transcript.");
+      mockTranscribeAudioChunked.mockResolvedValue("This is a test transcript.");
       mockStructureTranscript.mockResolvedValue({
         title: "Test Meeting",
         content: "# Meeting Notes\n\nDiscussion points...",
@@ -634,7 +634,7 @@ describe("AI routes", () => {
 
     it("returns 422 when transcript is empty", async () => {
       const token = await getAccessToken();
-      mockTranscribeAudio.mockResolvedValue("");
+      mockTranscribeAudioChunked.mockResolvedValue("");
 
       const form = new FormData();
       form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
@@ -652,7 +652,7 @@ describe("AI routes", () => {
 
     it("defaults mode to memo", async () => {
       const token = await getAccessToken();
-      mockTranscribeAudio.mockResolvedValue("Some transcript text.");
+      mockTranscribeAudioChunked.mockResolvedValue("Some transcript text.");
       mockStructureTranscript.mockResolvedValue({
         title: "Quick Note",
         content: "Some transcript text.",

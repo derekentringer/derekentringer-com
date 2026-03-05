@@ -142,6 +142,20 @@ export async function permanentDeleteNote(id: string): Promise<void> {
   }
 }
 
+export async function emptyTrash(ids?: string[]): Promise<{ deleted: number }> {
+  const options: RequestInit = { method: "DELETE" };
+  if (ids) {
+    options.body = JSON.stringify({ ids });
+  }
+  const response = await apiFetch("/notes/trash", options);
+
+  if (!response.ok) {
+    throw new Error(`Failed to empty trash: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function fetchFolders(): Promise<FolderListResponse> {
   const response = await apiFetch("/notes/folders");
 
@@ -269,6 +283,29 @@ export async function renameTagApi(
 
   if (!response.ok) {
     throw new Error(`Failed to rename tag: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getTrashRetention(): Promise<{ days: number }> {
+  const response = await apiFetch("/notes/trash/retention");
+
+  if (!response.ok) {
+    throw new Error(`Failed to get trash retention: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function setTrashRetention(days: number): Promise<{ days: number }> {
+  const response = await apiFetch("/notes/trash/retention", {
+    method: "PUT",
+    body: JSON.stringify({ days }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to set trash retention: ${response.status}`);
   }
 
   return response.json();

@@ -8,7 +8,7 @@ import {
   structureTranscript,
   answerQuestion,
 } from "../services/aiService.js";
-import { transcribeAudio } from "../services/whisperService.js";
+import { transcribeAudioChunked } from "../services/whisperService.js";
 import { getNote, updateNote, createNote, findRelevantNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
@@ -359,7 +359,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const transcript = await transcribeAudio(file.buffer, file.filename);
+      const transcript = await transcribeAudioChunked(file.buffer, file.filename);
 
       if (!transcript || transcript.trim().length === 0) {
         return reply.status(422).send({

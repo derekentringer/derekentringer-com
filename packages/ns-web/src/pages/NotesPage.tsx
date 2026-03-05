@@ -22,6 +22,7 @@ import {
   fetchTrash,
   restoreNote as apiRestoreNote,
   permanentDeleteNote as apiPermanentDeleteNote,
+  emptyTrash as apiEmptyTrash,
   createFolderApi,
   reorderNotes as apiReorderNotes,
   renameFolderApi,
@@ -55,6 +56,17 @@ import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteT
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
+import { ImportButton } from "../components/ImportButton.tsx";
+import {
+  parseFileList,
+  importFiles,
+  exportNoteAsMarkdown,
+  exportNoteAsText,
+  exportNoteAsPdf,
+  exportNotesAsZip,
+  type ImportProgress,
+  type ExportFormat,
+} from "../lib/importExport.ts";
 
 type SidebarView = "notes" | "trash";
 
@@ -100,9 +112,33 @@ export function NotesPage() {
   const [trashTotal, setTrashTotal] = useState(0);
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
   const [confirmDeleteSummary, setConfirmDeleteSummary] = useState(false);
+  const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState<"all" | "selected" | null>(null);
 
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchMode, setSearchMode] = useState<"keyword" | "semantic" | "hybrid">(settings.semanticSearch ? "hybrid" : "keyword");
+
+  // Folder dropdown state
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
+  const folderDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (folderDropdownRef.current && !folderDropdownRef.current.contains(e.target as Node)) {
+        setShowFolderDropdown(false);
+      }
+    }
+    if (showFolderDropdown) {
+      document.addEventListener("mousedown", handleClick);
+      return () => document.removeEventListener("mousedown", handleClick);
+    }
+  }, [showFolderDropdown]);
+
+  // Import/export state
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -576,6 +612,7 @@ export function NotesPage() {
     setContent("");
     setIsDirty(false);
     setConfirmDelete(false);
+    setSelectedTrashIds(new Set());
   }
 
   function switchToNotes() {
@@ -585,6 +622,160 @@ export function NotesPage() {
     setContent("");
     setIsDirty(false);
     setConfirmPermanentDelete(false);
+    setSelectedTrashIds(new Set());
+  }
+
+  function toggleTrashSelect(id: string) {
+    setSelectedTrashIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedTrashIds.size === trashNotes.length) {
+      setSelectedTrashIds(new Set());
+    } else {
+      setSelectedTrashIds(new Set(trashNotes.map((n) => n.id)));
+    }
+  }
+
+  async function handleEmptyTrash() {
+    try {
+      await apiEmptyTrash();
+      setTrashNotes([]);
+      setTrashTotal(0);
+      setSelectedId(null);
+      setTitle("");
+      setContent("");
+      setSelectedTrashIds(new Set());
+      setConfirmBulkDelete(null);
+    } catch {
+      showError("Failed to empty trash");
+    }
+  }
+
+  async function handleDeleteSelected() {
+    try {
+      const ids = [...selectedTrashIds];
+      const result = await apiEmptyTrash(ids);
+      setTrashNotes((prev) => prev.filter((n) => !selectedTrashIds.has(n.id)));
+      setTrashTotal((prev) => prev - result.deleted);
+      if (selectedId && selectedTrashIds.has(selectedId)) {
+        setSelectedId(null);
+        setTitle("");
+        setContent("");
+      }
+      setSelectedTrashIds(new Set());
+      setConfirmBulkDelete(null);
+    } catch {
+      showError("Failed to delete selected notes");
+    }
+  }
+
+  // Import/export handlers
+  async function handleImportFiles(files: FileList, autoSelect = false) {
+    const entries = parseFileList(files);
+    if (entries.length === 0) {
+      showError("No supported files found (.md, .txt, .markdown)");
+      return;
+    }
+    const targetFolderId = activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null;
+    let lastCreatedNote: NoteSearchResult | null = null;
+    const wrappedCreateNote = async (data: { title: string; content: string; folderId?: string }) => {
+      const note = await createNote(data);
+      lastCreatedNote = note;
+      return note;
+    };
+    const result = await importFiles(
+      entries,
+      targetFolderId,
+      folders,
+      wrappedCreateNote,
+      createFolderApi,
+      (progress) => setImportProgress(progress),
+    );
+    setImportProgress(null);
+    loadNotes(debouncedSearch || undefined);
+    loadFolders();
+    if (autoSelect && lastCreatedNote && result.successCount > 0) {
+      selectNote(lastCreatedNote);
+    }
+    if (result.failedCount > 0) {
+      showError(`Imported ${result.successCount}, failed ${result.failedCount}`);
+    } else {
+      setSuccessToast(`Imported ${result.successCount} note${result.successCount === 1 ? "" : "s"}`);
+      setTimeout(() => setSuccessToast(null), 3000);
+    }
+  }
+
+  function handleExportNote(noteId: string, format: ExportFormat = "md") {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    if (format === "txt") {
+      exportNoteAsText(note);
+    } else if (format === "pdf") {
+      import("marked").then(({ marked }) => {
+        exportNoteAsPdf(note, (md) => marked(md) as string);
+      });
+    } else {
+      exportNoteAsMarkdown(note);
+    }
+  }
+
+  async function handleExportFolder(folderId: string) {
+    const folder = findFolderById(folders, folderId);
+    if (!folder) return;
+    // Collect all folder IDs in this subtree
+    const folderIds = new Set<string>();
+    function collectIds(f: FolderInfo) {
+      folderIds.add(f.id);
+      f.children.forEach(collectIds);
+    }
+    collectIds(folder);
+    // Fetch all notes, then filter to ones in these folders
+    try {
+      const allResult = await fetchNotes({ pageSize: 10000 });
+      const folderNotes = allResult.notes.filter((n) => n.folderId && folderIds.has(n.folderId));
+      if (folderNotes.length === 0) {
+        showError("No notes in this folder to export");
+        return;
+      }
+      await exportNotesAsZip(folderNotes, folders, folder.name);
+    } catch {
+      showError("Failed to export folder");
+    }
+  }
+
+  function findFolderById(items: FolderInfo[], id: string): FolderInfo | undefined {
+    for (const f of items) {
+      if (f.id === id) return f;
+      const found = findFolderById(f.children, id);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (mainRef.current?.contains(e.relatedTarget as Node)) return;
+    setIsDragOver(false);
+  }
+
+  function handleFileDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      handleImportFiles(e.dataTransfer.files, true);
+    }
   }
 
   // Keyboard shortcut: Cmd/Ctrl+S
@@ -756,17 +947,10 @@ export function NotesPage() {
     <div className="flex h-full">
       {/* Sidebar */}
       <aside className="bg-sidebar flex flex-col shrink-0" style={{ width: sidebarResize.size }}>
-        <div className="p-4 flex items-center justify-between">
+        <div className="pl-4 pr-2 py-4 flex items-center justify-between">
           <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
           {sidebarView === "notes" && (
             <div className="flex items-center gap-1.5">
-              <button
-                onClick={handleCreate}
-                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none"
-                title="New note"
-              >
-                +
-              </button>
               {settings.masterAiEnabled && settings.audioNotes && (
                 <AudioRecorder
                   defaultMode={settings.audioMode}
@@ -774,6 +958,13 @@ export function NotesPage() {
                   onError={showError}
                 />
               )}
+              <button
+                onClick={handleCreate}
+                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none"
+                title="New note"
+              >
+                +
+              </button>
             </div>
           )}
         </div>
@@ -845,6 +1036,7 @@ export function NotesPage() {
                 onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
                 onMoveFolder={handleMoveFolder}
+                onExportFolder={handleExportFolder}
               />
             </div>
 
@@ -907,6 +1099,7 @@ export function NotesPage() {
                   selectedId={selectedId}
                   onSelect={selectNote}
                   onDeleteNote={handleDeleteNoteById}
+                  onExportNote={handleExportNote}
                   sortByManual={sortBy === "sortOrder"}
                 />
               )}
@@ -923,6 +1116,41 @@ export function NotesPage() {
               </button>
             </div>
 
+            {trashNotes.length > 0 && (
+              <div className="px-2 pb-1 flex items-center gap-2">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedTrashIds.size === trashNotes.length}
+                    onChange={toggleSelectAll}
+                    className="mr-1.5 accent-primary"
+                    aria-label="Select all"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {selectedTrashIds.size > 0
+                      ? `${selectedTrashIds.size} selected`
+                      : `${trashNotes.length} items`}
+                  </span>
+                </label>
+                <div className="flex-1" />
+                {selectedTrashIds.size > 0 ? (
+                  <button
+                    onClick={() => setConfirmBulkDelete("selected")}
+                    className="text-xs text-destructive hover:text-destructive-hover transition-colors"
+                  >
+                    Delete Selected ({selectedTrashIds.size})
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setConfirmBulkDelete("all")}
+                    className="text-xs text-destructive hover:text-destructive-hover transition-colors"
+                  >
+                    Delete All
+                  </button>
+                )}
+              </div>
+            )}
+
             <nav className="flex-1 overflow-y-auto p-2">
               {trashNotes.length === 0 ? (
                 <div className="px-3 py-2 text-sm text-muted-foreground">
@@ -930,17 +1158,28 @@ export function NotesPage() {
                 </div>
               ) : (
                 trashNotes.map((note) => (
-                  <button
+                  <div
                     key={note.id}
-                    onClick={() => selectNote(note)}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors truncate ${
+                    className={`flex items-center gap-1.5 rounded-md text-sm transition-colors ${
                       note.id === selectedId
                         ? "bg-accent text-foreground"
                         : "text-muted hover:bg-accent hover:text-foreground"
                     }`}
                   >
-                    {note.title || "Untitled"}
-                  </button>
+                    <input
+                      type="checkbox"
+                      checked={selectedTrashIds.has(note.id)}
+                      onChange={() => toggleTrashSelect(note.id)}
+                      className="ml-2 shrink-0 accent-primary"
+                      aria-label={`Select ${note.title || "Untitled"}`}
+                    />
+                    <button
+                      onClick={() => selectNote(note)}
+                      className="flex-1 text-left px-1 py-2 truncate"
+                    >
+                      {note.title || "Untitled"}
+                    </button>
+                  </div>
                 ))
               )}
             </nav>
@@ -955,18 +1194,24 @@ export function NotesPage() {
               lastSyncedAt={lastSyncedAt}
             />
             {sidebarView === "notes" && (
-              <button
-                onClick={switchToTrash}
-                className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="Trash"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                {trashTotal > 0 && (
-                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
-                    {trashTotal}
-                  </span>
-                )}
-              </button>
+              <>
+                <button
+                  onClick={switchToTrash}
+                  className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  title="Trash"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  {trashTotal > 0 && (
+                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
+                      {trashTotal}
+                    </span>
+                  )}
+                </button>
+                <ImportButton
+                  onImportFiles={(files) => handleImportFiles(files)}
+                  onImportDirectory={(files) => handleImportFiles(files)}
+                />
+              </>
             )}
             <button
               onClick={() => navigate("/settings")}
@@ -993,7 +1238,18 @@ export function NotesPage() {
       />
 
       {/* Editor area */}
-      <main className="flex-1 flex min-w-0">
+      <main
+        ref={mainRef}
+        className="flex-1 flex min-w-0 relative"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleFileDrop}
+      >
+        {isDragOver && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg pointer-events-none">
+            <span className="text-lg text-primary font-medium">Drop files to import</span>
+          </div>
+        )}
         <div className="flex-1 flex flex-col min-w-0">
         {selectedNote && sidebarView === "notes" ? (
           <>
@@ -1058,33 +1314,51 @@ export function NotesPage() {
             </div>
 
             {/* Breadcrumb + Title */}
-            <div className="flex items-center border-b border-border">
-              <select
-                value={selectedNote?.folderId ?? ""}
-                onChange={async (e) => {
-                  const folderId = e.target.value || null;
-                  if (!selectedId) return;
-                  try {
-                    const updated = await updateNote(selectedId, { folderId });
-                    setNotes((prev) =>
-                      prev.map((n) => (n.id === updated.id ? updated : n)),
-                    );
-                    loadNotes(debouncedSearch || undefined);
-                    loadFolders();
-                  } catch {
-                    showError("Failed to move note");
-                  }
-                }}
-                className="bg-transparent border-none text-[11px] text-muted-foreground pl-3 pr-0 py-1.5 focus:outline-none cursor-pointer appearance-none"
-                style={{ backgroundImage: "none" }}
-                aria-label="Note folder"
-                data-testid="note-folder-select"
-              >
-                <option value="">Unfiled</option>
-                {flatFolders.map((f) => (
-                  <option key={f.id} value={f.id}>{f.displayName}</option>
-                ))}
-              </select>
+            <div className="relative border-b border-border">
+              <div className="absolute left-1.5 bottom-1.5" ref={folderDropdownRef}>
+                <button
+                  onClick={() => setShowFolderDropdown((v) => !v)}
+                  className="w-8 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  title={selectedNote?.folderId ? flatFolders.find((f) => f.id === selectedNote.folderId)?.displayName ?? "Unfiled" : "Unfiled"}
+                  aria-label="Note folder"
+                  data-testid="note-folder-select"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  </svg>
+                </button>
+                {showFolderDropdown && (
+                  <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-md shadow-lg py-1 z-50 min-w-[140px]">
+                    {[{ id: "", displayName: "Unfiled" }, ...flatFolders].map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={async () => {
+                          const folderId = f.id || null;
+                          setShowFolderDropdown(false);
+                          if (!selectedId) return;
+                          try {
+                            const updated = await updateNote(selectedId, { folderId });
+                            setNotes((prev) =>
+                              prev.map((n) => (n.id === updated.id ? updated : n)),
+                            );
+                            loadNotes(debouncedSearch || undefined);
+                            loadFolders();
+                          } catch {
+                            showError("Failed to move note");
+                          }
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                          (selectedNote?.folderId ?? "") === f.id
+                            ? "text-foreground bg-accent"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                        }`}
+                      >
+                        {f.displayName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <input
                 type="text"
                 value={title}
@@ -1111,8 +1385,13 @@ export function NotesPage() {
                   }
                 }}
                 placeholder="Note title"
-                className="flex-1 px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
+                className="w-full px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
               />
+              <p className="pl-9 pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate">
+                {selectedNote?.folderId
+                  ? getFolderBreadcrumb(folders, selectedNote.folderId).map((f) => f.name).join(" / ")
+                  : "Unfiled"}
+              </p>
             </div>
 
             {/* Summary */}
@@ -1307,6 +1586,49 @@ export function NotesPage() {
             <QAPanel onSelectNote={handleQaSelectNote} isOpen={qaOpen} onToggle={() => setQaOpen((v) => !v)} />
           </div>
         </div>
+      )}
+
+      {/* Import progress overlay */}
+      {importProgress && (
+        <div className="fixed bottom-4 right-4 bg-card border border-border rounded-md px-4 py-3 shadow-lg min-w-[240px]">
+          <p className="text-sm text-foreground mb-1">
+            Importing {importProgress.current} of {importProgress.total}...
+          </p>
+          <p className="text-xs text-muted-foreground truncate mb-2">{importProgress.currentFile}</p>
+          <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all rounded-full"
+              style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Success toast */}
+      {successToast && (
+        <div className="fixed bottom-4 right-4 bg-card border border-primary rounded-md px-4 py-3 shadow-lg flex items-center gap-3">
+          <span className="text-sm text-foreground">{successToast}</span>
+          <button
+            onClick={() => setSuccessToast(null)}
+            className="text-muted-foreground hover:text-foreground text-sm"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Bulk delete confirm dialog */}
+      {confirmBulkDelete && (
+        <ConfirmDialog
+          title={confirmBulkDelete === "all" ? "Empty Trash" : "Delete Selected"}
+          message={
+            confirmBulkDelete === "all"
+              ? `Permanently delete all ${trashNotes.length} trashed note${trashNotes.length === 1 ? "" : "s"}? This cannot be undone.`
+              : `Permanently delete ${selectedTrashIds.size} selected note${selectedTrashIds.size === 1 ? "" : "s"}? This cannot be undone.`
+          }
+          onConfirm={confirmBulkDelete === "all" ? handleEmptyTrash : handleDeleteSelected}
+          onCancel={() => setConfirmBulkDelete(null)}
+        />
       )}
 
       {/* Error toast */}

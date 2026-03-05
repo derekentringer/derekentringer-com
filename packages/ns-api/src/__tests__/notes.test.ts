@@ -1068,6 +1068,163 @@ describe("Note routes", () => {
     });
   });
 
+  // --- DELETE /notes/trash ---
+
+  describe("DELETE /notes/trash", () => {
+    it("empties all trash (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.deleteMany.mockResolvedValue({ count: 3 });
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/notes/trash",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().deleted).toBe(3);
+    });
+
+    it("deletes specific notes by IDs (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.deleteMany.mockResolvedValue({ count: 2 });
+
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/notes/trash",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ids: [VALID_UUID, VALID_UUID_2] },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().deleted).toBe(2);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "DELETE",
+        url: "/notes/trash",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- GET /notes/trash/retention ---
+
+  describe("GET /notes/trash/retention", () => {
+    it("returns default retention of 30 days", async () => {
+      const token = await getAccessToken();
+      mockPrisma.setting.findUnique.mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/trash/retention",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ days: 30 });
+    });
+
+    it("returns stored retention value", async () => {
+      const token = await getAccessToken();
+      mockPrisma.setting.findUnique.mockResolvedValue({
+        id: "trashRetentionDays",
+        value: "7",
+        updatedAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/trash/retention",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ days: 7 });
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/trash/retention",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- PUT /notes/trash/retention ---
+
+  describe("PUT /notes/trash/retention", () => {
+    it("sets retention and returns updated value", async () => {
+      const token = await getAccessToken();
+      mockPrisma.setting.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/trash/retention",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { days: 14 },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ days: 14 });
+    });
+
+    it("accepts 0 for never-delete", async () => {
+      const token = await getAccessToken();
+      mockPrisma.setting.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/trash/retention",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { days: 0 },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ days: 0 });
+    });
+
+    it("returns 400 for out-of-range value (negative)", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/trash/retention",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { days: -1 },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 400 for out-of-range value (over 365)", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/trash/retention",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { days: 400 },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/trash/retention",
+        payload: { days: 14 },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
   describe("GET /notes with tags filter", () => {
     it("passes tags filter to store", async () => {
       const token = await getAccessToken();
