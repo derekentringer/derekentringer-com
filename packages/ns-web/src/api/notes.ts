@@ -10,6 +10,8 @@ import type {
   ReorderNotesRequest,
   ReorderFoldersRequest,
   TagListResponse,
+  BacklinksResponse,
+  NoteTitlesResponse,
 } from "@derekentringer/shared/ns";
 import { apiFetch } from "./client.ts";
 
@@ -320,6 +322,26 @@ export async function deleteTagApi(
 
   if (!response.ok) {
     throw new Error(`Failed to delete tag: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchBacklinks(noteId: string): Promise<BacklinksResponse> {
+  const response = await apiFetch(`/notes/${noteId}/backlinks`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch backlinks: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchNoteTitles(): Promise<NoteTitlesResponse> {
+  const response = await apiFetch("/notes/titles");
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch note titles: ${response.status}`);
   }
 
   return response.json();

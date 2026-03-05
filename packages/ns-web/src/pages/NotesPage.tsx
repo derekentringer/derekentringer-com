@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   DndContext,
   closestCenter,
@@ -10,7 +10,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import type { Note, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo } from "@derekentringer/shared/ns";
+import type { Note, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import {
   fetchNotes,
@@ -30,6 +30,7 @@ import {
   moveFolderApi,
   renameTagApi,
   deleteTagApi,
+  fetchNoteTitles,
 } from "../api/offlineNotes.ts";
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
 import { OnlineStatusIndicator } from "../components/OnlineStatusIndicator.tsx";
@@ -52,10 +53,12 @@ import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
 import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
+import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
+import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import { ImportButton } from "../components/ImportButton.tsx";
 import {
   parseFileList,
@@ -73,6 +76,7 @@ type SidebarView = "notes" | "trash";
 export function NotesPage() {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const { noteId: routeNoteId } = useParams<{ noteId?: string }>();
   const { settings } = useAiSettings();
   const { settings: editorSettings } = useEditorSettings();
   const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
@@ -139,6 +143,14 @@ export function NotesPage() {
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
+
+  // Note titles state (for wiki-link autocomplete)
+  const [noteTitles, setNoteTitles] = useState<NoteTitleEntry[]>([]);
+  const noteTitlesRef = useRef<NoteTitleEntry[]>([]);
+  noteTitlesRef.current = noteTitles;
+
+  // Copy link state
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -255,6 +267,15 @@ export function NotesPage() {
     }
   }, []);
 
+  const loadNoteTitles = useCallback(async () => {
+    try {
+      const result = await fetchNoteTitles();
+      setNoteTitles(result.notes);
+    } catch {
+      // Silent fail
+    }
+  }, []);
+
   // Load notes on mount and when search/sort/folder/mode changes
   useEffect(() => {
     loadNotes(debouncedSearch || undefined);
@@ -264,6 +285,11 @@ export function NotesPage() {
   useEffect(() => {
     loadFolders();
   }, [loadFolders]);
+
+  // Load note titles on mount
+  useEffect(() => {
+    loadNoteTitles();
+  }, [loadNoteTitles]);
 
   // Load trash count on mount (for badge)
   useEffect(() => {
@@ -294,10 +320,45 @@ export function NotesPage() {
     loadNotes(debouncedSearch || undefined);
   }, [reconciledIds]);
 
+  // Deep-link: navigate to note from URL on mount
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (!routeNoteId || deepLinkHandled.current || isLoading) return;
+    deepLinkHandled.current = true;
+
+    // Try to find the note in the already-loaded list
+    const found = notes.find((n) => n.id === routeNoteId);
+    if (found) {
+      selectNote(found);
+    } else {
+      // Fetch the specific note
+      import("../api/offlineNotes.ts").then(({ fetchNote }) => {
+        fetchNote(routeNoteId)
+          .then((note) => {
+            setNotes((prev) => {
+              if (prev.some((n) => n.id === note.id)) return prev;
+              return [note, ...prev];
+            });
+            selectNote(note);
+          })
+          .catch(() => {
+            showError("Note not found");
+            navigate("/", { replace: true });
+          });
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeNoteId, isLoading]);
+
   const selectedNote =
     sidebarView === "notes"
       ? notes.find((n) => n.id === selectedId) ?? null
       : trashNotes.find((n) => n.id === selectedId) ?? null;
+
+  useEffect(() => {
+    document.title = selectedNote ? `${selectedNote.title} — NoteSync` : "NoteSync";
+    return () => { document.title = "NoteSync"; };
+  }, [selectedNote]);
 
   function showError(message: string) {
     setError(message);
@@ -315,6 +376,8 @@ export function NotesPage() {
     setIsDirty(false);
     setConfirmDelete(false);
     setConfirmPermanentDelete(false);
+    setLinkCopied(false);
+    navigate(`/notes/${note.id}`, { replace: true });
   }
 
   async function handleCreate() {
@@ -327,6 +390,7 @@ export function NotesPage() {
       setNotes((prev) => [note, ...prev]);
       selectNote(note);
       loadFolders();
+      loadNoteTitles();
     } catch {
       showError("Failed to create note");
     }
@@ -342,12 +406,13 @@ export function NotesPage() {
         prev.map((n) => (n.id === updated.id ? updated : n)),
       );
       setIsDirty(false);
+      loadNoteTitles();
     } catch {
       showError("Failed to save note");
     } finally {
       setIsSaving(false);
     }
-  }, [selectedId, isDirty, isSaving, title, content]);
+  }, [selectedId, isDirty, isSaving, title, content, loadNoteTitles]);
 
   async function handleDelete() {
     if (!selectedId) return;
@@ -367,6 +432,8 @@ export function NotesPage() {
       setConfirmDelete(false);
       setTrashTotal((prev) => prev + 1);
       loadFolders();
+      loadNoteTitles();
+      navigate("/", { replace: true });
     } catch {
       showError("Failed to delete note");
     }
@@ -613,6 +680,7 @@ export function NotesPage() {
     setIsDirty(false);
     setConfirmDelete(false);
     setSelectedTrashIds(new Set());
+    navigate("/", { replace: true });
   }
 
   function switchToNotes() {
@@ -623,6 +691,7 @@ export function NotesPage() {
     setIsDirty(false);
     setConfirmPermanentDelete(false);
     setSelectedTrashIds(new Set());
+    navigate("/", { replace: true });
   }
 
   function toggleTrashSelect(id: string) {
@@ -831,6 +900,50 @@ export function NotesPage() {
     },
     [settings.masterAiEnabled, settings.rewrite, settings.completions, settings.completionStyle, settings.completionDebounceMs, settings.continueWriting],
   );
+
+  // Wiki-link title map for preview rendering
+  const wikiLinkTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of noteTitles) {
+      map.set(t.title.toLowerCase(), t.id);
+    }
+    return map;
+  }, [noteTitles]);
+
+  // Wiki-link autocomplete extension (stable, reads from ref)
+  const wikiLinkExt = useMemo(
+    () => wikiLinkAutocomplete(() => noteTitlesRef.current),
+    [],
+  );
+
+  function handleWikiLinkClick(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      selectNote(note);
+    } else {
+      // Note may not be in the current list, fetch it
+      import("../api/offlineNotes.ts").then(({ fetchNote }) => {
+        fetchNote(noteId)
+          .then((fetched) => {
+            setNotes((prev) => {
+              if (prev.some((n) => n.id === fetched.id)) return prev;
+              return [fetched, ...prev];
+            });
+            selectNote(fetched);
+          })
+          .catch(() => showError("Linked note not found"));
+      });
+    }
+  }
+
+  function handleCopyLink() {
+    if (!selectedId) return;
+    const url = `${window.location.origin}/notes/${selectedId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  }
 
   async function handleSummarize() {
     if (!selectedId || isSummarizing) return;
@@ -1287,6 +1400,14 @@ export function NotesPage() {
                   {isSuggestingTags ? "Suggesting..." : "Suggest tags"}
                 </button>
               )}
+              <button
+                onClick={handleCopyLink}
+                className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center gap-1"
+                title="Copy link to note"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                {linkCopied ? "Copied!" : "Copy link"}
+              </button>
               {confirmDelete ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-destructive">Delete?</span>
@@ -1482,7 +1603,7 @@ export function NotesPage() {
                   fontSize={editorSettings.editorFontSize}
                   theme={resolvedTheme}
                   accentColor={resolvedAccentColor}
-                  extensions={aiExtensions}
+                  extensions={[wikiLinkExt, ...aiExtensions]}
                   className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                   style={viewMode === "split" ? { width: splitResize.size } : undefined}
                 />
@@ -1498,9 +1619,19 @@ export function NotesPage() {
                 <MarkdownPreview
                   content={content}
                   className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
+                  wikiLinkTitleMap={wikiLinkTitleMap}
+                  onWikiLinkClick={handleWikiLinkClick}
                 />
               )}
             </div>
+
+            {/* Backlinks panel */}
+            {selectedId && (
+              <BacklinksPanel
+                noteId={selectedId}
+                onNavigate={handleWikiLinkClick}
+              />
+            )}
           </>
         ) : selectedNote && sidebarView === "trash" ? (
           <>

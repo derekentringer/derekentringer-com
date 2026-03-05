@@ -69,9 +69,12 @@
 
 - [x] [06 — Settings](features/06-settings.md) — Theme toggle (dark/light/system), configurable accent color (11-preset palette with dark/light variants and contrast-aware text), editor font size slider, default view mode, line numbers, word wrap, auto-save delay, tab size, AI feature toggles with master switch, completion styles and delay, audio modes, info tooltips, keyboard shortcuts reference, offline cache management (cached note count, max cache size, last synced, clear cache), trash retention period (server-side setting with 7/14/30/60/90 days or Never, purge job integration), `useEditorSettings` and `useAiSettings` hooks with localStorage persistence and validated loading
 
+## Extensions
+
+- [x] [07 — Note Linking + Deep-Linking](features/07-note-linking.md) — Wiki-link `[[note title]]` syntax with case-insensitive resolution, CodeMirror autocomplete on `[[`, remark preview plugin with resolved/broken link styles, NoteLink database model with cascade delete, backlinks panel with collapsible incoming references and flash-free navigation, deep-linking via `/notes/:id` URL routes with URL sync on navigation, copy-link button with clipboard feedback, browser tab title sync for bookmarks, 23 new tests across ns-api and ns-web
+
 ## Extension Ideas (Future)
 
-- Note linking / backlinks with graph visualization
 - Note templates (meeting notes, journal, project plan)
 - Version history (DB revisions with diff view)
 - PDF / Markdown / HTML export
