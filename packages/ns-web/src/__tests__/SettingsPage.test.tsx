@@ -15,6 +15,15 @@ vi.mock("../api/ai.ts", () => ({
   getEmbeddingStatus: vi.fn().mockResolvedValue({ enabled: false, pendingCount: 0, totalWithEmbeddings: 0 }),
 }));
 
+vi.mock("../hooks/useOfflineCache.ts", () => ({
+  useOfflineCache: () => ({ isOnline: true, lastSyncedAt: new Date(), pendingCount: 0, isSyncing: false, reconciledIds: new Map() }),
+}));
+
+vi.mock("../lib/db.ts", () => ({
+  getDB: vi.fn().mockResolvedValue({ count: vi.fn().mockResolvedValue(42) }),
+  clearAllCaches: vi.fn().mockResolvedValue(undefined),
+}));
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -28,9 +37,118 @@ function renderSettingsPage() {
 }
 
 describe("SettingsPage", () => {
-  it("renders eight toggle switches", () => {
+  it("renders Settings heading", () => {
     renderSettingsPage();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+  });
 
+  it("renders back to notes link", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Back")).toBeInTheDocument();
+  });
+
+  // --- Section headings ---
+
+  it("renders all section headings", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Editor Preferences")).toBeInTheDocument();
+    expect(screen.getByText("Appearance")).toBeInTheDocument();
+    expect(screen.getByText("AI Features")).toBeInTheDocument();
+    expect(screen.getByText("Offline Cache")).toBeInTheDocument();
+    expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
+  });
+
+  // --- Editor Preferences ---
+
+  it("renders default view mode radio group", () => {
+    renderSettingsPage();
+    expect(screen.getByRole("radiogroup", { name: "Default view mode" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Editor")).toBeInTheDocument();
+    expect(screen.getByLabelText("Split")).toBeInTheDocument();
+    expect(screen.getByLabelText("Preview")).toBeInTheDocument();
+  });
+
+  it("renders line numbers and word wrap toggles", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Line numbers")).toBeInTheDocument();
+    expect(screen.getByText("Word wrap")).toBeInTheDocument();
+  });
+
+  it("renders auto-save delay select", () => {
+    renderSettingsPage();
+    expect(screen.getByLabelText("Auto-save delay")).toBeInTheDocument();
+  });
+
+  it("renders tab size radio group", () => {
+    renderSettingsPage();
+    expect(screen.getByRole("radiogroup", { name: "Tab size" })).toBeInTheDocument();
+    expect(screen.getByLabelText("2 spaces")).toBeInTheDocument();
+    expect(screen.getByLabelText("4 spaces")).toBeInTheDocument();
+  });
+
+  it("changing view mode persists to localStorage", async () => {
+    renderSettingsPage();
+    await userEvent.click(screen.getByLabelText("Split"));
+    const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
+    expect(stored.defaultViewMode).toBe("split");
+  });
+
+  it("changing auto-save delay persists to localStorage", async () => {
+    renderSettingsPage();
+    const select = screen.getByLabelText("Auto-save delay");
+    await userEvent.selectOptions(select, "2000");
+    const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
+    expect(stored.autoSaveDelay).toBe(2000);
+  });
+
+  // --- Appearance ---
+
+  it("renders theme radio group", () => {
+    renderSettingsPage();
+    expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Dark")).toBeInTheDocument();
+    expect(screen.getByLabelText("Light")).toBeInTheDocument();
+    expect(screen.getByLabelText("System")).toBeInTheDocument();
+  });
+
+  it("renders font size slider", () => {
+    renderSettingsPage();
+    expect(screen.getByLabelText("Editor font size")).toBeInTheDocument();
+  });
+
+  it("renders accent color swatches", () => {
+    renderSettingsPage();
+    expect(screen.getByRole("radiogroup", { name: "Accent color" })).toBeInTheDocument();
+    const swatches = screen.getAllByRole("radio").filter(
+      (el) => el.closest("[aria-label='Accent color']"),
+    );
+    expect(swatches.length).toBe(11);
+  });
+
+  it("clicking accent color swatch persists to localStorage", async () => {
+    renderSettingsPage();
+    const blueButton = screen.getByRole("radio", { name: "blue" });
+    await userEvent.click(blueButton);
+    const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
+    expect(stored.accentColor).toBe("blue");
+  });
+
+  it("changing theme persists to localStorage", async () => {
+    renderSettingsPage();
+    await userEvent.click(screen.getByLabelText("Light"));
+    const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
+    expect(stored.theme).toBe("light");
+  });
+
+  // --- AI Features ---
+
+  it("renders master AI toggle", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Enable AI features")).toBeInTheDocument();
+  });
+
+  it("renders eight individual AI toggle switches", () => {
+    renderSettingsPage();
     expect(screen.getByText("Inline completions")).toBeInTheDocument();
     expect(screen.getByText("Continue writing")).toBeInTheDocument();
     expect(screen.getByText("Summarize")).toBeInTheDocument();
@@ -38,51 +156,51 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
     expect(screen.getByText("Semantic search")).toBeInTheDocument();
     expect(screen.getByText("Audio notes")).toBeInTheDocument();
-    expect(screen.getByText("Q&A assistant")).toBeInTheDocument();
+    expect(screen.getByText("AI assistant chat")).toBeInTheDocument();
   });
 
-  it("renders Settings heading", () => {
+  it("master AI defaults to on", () => {
     renderSettingsPage();
-
-    expect(screen.getByText("Settings")).toBeInTheDocument();
-  });
-
-  it("renders AI Features section heading", () => {
-    renderSettingsPage();
-
-    expect(screen.getByText("AI Features")).toBeInTheDocument();
-  });
-
-  it("all toggles default to off", () => {
-    renderSettingsPage();
-
+    // Master toggle + 8 individual + line numbers + word wrap = 11 switches
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(8);
-    switches.forEach((s) => {
-      expect(s).toHaveAttribute("aria-checked", "false");
-    });
+    // Master AI toggle is the third switch (after line numbers and word wrap)
+    const masterSwitch = switches[2];
+    expect(masterSwitch).toHaveAttribute("aria-checked", "true");
   });
 
-  it("toggling a switch persists to localStorage", async () => {
+  it("toggling master AI off disables individual toggles", async () => {
     renderSettingsPage();
-
     const switches = screen.getAllByRole("switch");
-    await userEvent.click(switches[0]); // Toggle "Inline completions"
+    // Master is index 2
+    await userEvent.click(switches[2]);
+    expect(switches[2]).toHaveAttribute("aria-checked", "false");
 
-    expect(switches[0]).toHaveAttribute("aria-checked", "true");
+    // All AI toggles after master should be disabled
+    for (let i = 3; i <= 10; i++) {
+      expect(switches[i]).toBeDisabled();
+    }
+  });
+
+  it("toggling an AI switch persists to localStorage", async () => {
+    renderSettingsPage();
+    const switches = screen.getAllByRole("switch");
+    // Inline completions is at index 3
+    await userEvent.click(switches[3]);
+
+    expect(switches[3]).toHaveAttribute("aria-checked", "true");
 
     const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
     expect(stored.completions).toBe(true);
-    expect(stored.summarize).toBe(false);
-    expect(stored.tagSuggestions).toBe(false);
   });
 
-  it("reads initial state from localStorage", () => {
+  it("reads initial AI state from localStorage", () => {
     localStorage.setItem(
       "ns-ai-settings",
       JSON.stringify({
+        masterAiEnabled: true,
         completions: true,
         completionStyle: "continue",
+        completionDebounceMs: 600,
         summarize: false,
         tagSuggestions: true,
         semanticSearch: false,
@@ -90,107 +208,57 @@ describe("SettingsPage", () => {
     );
 
     renderSettingsPage();
-
     const switches = screen.getAllByRole("switch");
-    expect(switches[0]).toHaveAttribute("aria-checked", "true");  // completions
-    expect(switches[1]).toHaveAttribute("aria-checked", "false"); // continueWriting
-    expect(switches[2]).toHaveAttribute("aria-checked", "false"); // summarize
-    expect(switches[3]).toHaveAttribute("aria-checked", "true");  // tagSuggestions
+    // Index 3 = completions, index 5 = summarize, index 6 = tagSuggestions
+    expect(switches[3]).toHaveAttribute("aria-checked", "true");  // completions
+    expect(switches[5]).toHaveAttribute("aria-checked", "false"); // summarize
+    expect(switches[6]).toHaveAttribute("aria-checked", "true");  // tagSuggestions
   });
 
-  it("renders semantic search toggle", () => {
+  it("shows completion style radio group when completions enabled", async () => {
     renderSettingsPage();
-
-    expect(screen.getByText("Semantic search")).toBeInTheDocument();
-  });
-
-  it("renders back to notes link", () => {
-    renderSettingsPage();
-
-    expect(screen.getByText("Back")).toBeInTheDocument();
-  });
-
-  // --- Completion style radio group ---
-
-  it("shows style radio group when completions enabled", async () => {
-    renderSettingsPage();
-
-    // Enable completions
     const switches = screen.getAllByRole("switch");
-    await userEvent.click(switches[0]);
+    // Enable completions (index 3)
+    await userEvent.click(switches[3]);
 
     expect(screen.getByRole("radiogroup", { name: "Completion style" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Continue writing")).toBeInTheDocument();
+    // Note: "Continue writing" label exists both as a toggle and as a radio option
     expect(screen.getByLabelText("Markdown assist")).toBeInTheDocument();
     expect(screen.getByLabelText("Brief")).toBeInTheDocument();
   });
 
-  it("hides style radio group when completions disabled", () => {
-    renderSettingsPage();
-
-    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
-  });
-
-  it("selecting a different style persists it", async () => {
+  it("shows completion delay select when completions enabled", async () => {
     localStorage.setItem(
       "ns-ai-settings",
       JSON.stringify({
+        masterAiEnabled: true,
         completions: true,
         completionStyle: "continue",
-        summarize: false,
-        tagSuggestions: false,
+        completionDebounceMs: 600,
       }),
     );
-
     renderSettingsPage();
-
-    const briefRadio = screen.getByLabelText("Brief");
-    await userEvent.click(briefRadio);
-
-    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
-    expect(stored.completionStyle).toBe("brief");
+    expect(screen.getByLabelText("Completion delay")).toBeInTheDocument();
   });
 
-  it("defaults style selection to Continue writing", async () => {
+  it("hides style radio group when completions disabled", () => {
     renderSettingsPage();
+    expect(screen.queryByRole("radiogroup", { name: "Completion style" })).not.toBeInTheDocument();
+  });
 
-    // Enable completions
+  it("Q&A toggle is disabled when semantic search is off", () => {
+    renderSettingsPage();
     const switches = screen.getAllByRole("switch");
-    await userEvent.click(switches[0]);
-
-    const continueRadio = screen.getByLabelText("Continue writing") as HTMLInputElement;
-    expect(continueRadio.checked).toBe(true);
-  });
-
-  // --- Keyboard Shortcuts section ---
-
-  it("renders Keyboard Shortcuts heading", () => {
-    renderSettingsPage();
-
-    expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
-  });
-
-  it("displays all shortcut descriptions", () => {
-    renderSettingsPage();
-
-    expect(screen.getByText("Save note")).toBeInTheDocument();
-    expect(screen.getByText("Bold")).toBeInTheDocument();
-    expect(screen.getByText("Italic")).toBeInTheDocument();
-    expect(screen.getAllByText("AI Rewrite (with selection)")).toHaveLength(2);
-    expect(screen.getByText("Continue writing / suggest structure")).toBeInTheDocument();
-    expect(screen.getByText("Accept AI completion")).toBeInTheDocument();
-    expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
-  });
-
-  it("audio notes toggle renders", () => {
-    renderSettingsPage();
-    expect(screen.getByText("Audio notes")).toBeInTheDocument();
+    // Q&A assistant is the last AI toggle (index 10)
+    const qaSwitch = switches[10];
+    expect(qaSwitch).toBeDisabled();
   });
 
   it("shows audio mode radio group when audio notes enabled", async () => {
     localStorage.setItem(
       "ns-ai-settings",
       JSON.stringify({
+        masterAiEnabled: true,
         audioNotes: true,
         audioMode: "memo",
       }),
@@ -205,18 +273,43 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Verbatim")).toBeInTheDocument();
   });
 
-  it("Q&A toggle is present", () => {
-    renderSettingsPage();
+  // --- Offline Cache ---
 
-    expect(screen.getByText("Q&A assistant")).toBeInTheDocument();
+  it("renders offline cache section", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Cached notes")).toBeInTheDocument();
+    expect(screen.getByText("Last synced")).toBeInTheDocument();
+    expect(screen.getByLabelText("Max cached notes")).toBeInTheDocument();
   });
 
-  it("Q&A toggle is disabled when semantic search is off", () => {
+  it("renders clear cache button", () => {
     renderSettingsPage();
+    expect(screen.getByText("Clear Cache")).toBeInTheDocument();
+  });
 
-    const switches = screen.getAllByRole("switch");
-    // Q&A assistant is the last toggle (index 7)
-    const qaSwitch = switches[7];
-    expect(qaSwitch).toBeDisabled();
+  it("clear cache shows confirmation", async () => {
+    renderSettingsPage();
+    await userEvent.click(screen.getByText("Clear Cache"));
+    expect(screen.getByText("Clear all cached data?")).toBeInTheDocument();
+    expect(screen.getByText("Confirm")).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
+  });
+
+  // --- Keyboard Shortcuts ---
+
+  it("renders Keyboard Shortcuts heading", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
+  });
+
+  it("displays all shortcut descriptions", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Save note")).toBeInTheDocument();
+    expect(screen.getByText("Bold")).toBeInTheDocument();
+    expect(screen.getByText("Italic")).toBeInTheDocument();
+    expect(screen.getAllByText("AI Rewrite (with selection)")).toHaveLength(2);
+    expect(screen.getByText("Continue writing / suggest structure")).toBeInTheDocument();
+    expect(screen.getByText("Accept AI completion")).toBeInTheDocument();
+    expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
   });
 });

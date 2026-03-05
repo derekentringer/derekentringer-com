@@ -33,7 +33,7 @@ export function EditorToolbar({
             onClick={() => onViewModeChange(mode.value)}
             className={`px-2.5 py-0.5 text-xs transition-colors ${
               viewMode === mode.value
-                ? "bg-primary text-black font-medium"
+                ? "bg-primary text-primary-contrast font-medium"
                 : "text-muted-foreground hover:text-foreground hover:bg-accent"
             }`}
           >

@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
+import { useEditorSettings, ACCENT_PRESETS, type ThemeMode, type ViewModeDefault, type TabSizeOption, type AccentColorPreset } from "../hooks/useEditorSettings.ts";
+
+import { useOfflineCache } from "../hooks/useOfflineCache.ts";
 import { enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
+import { clearAllCaches, getDB } from "../lib/db.ts";
 import type { EmbeddingStatus } from "@derekentringer/shared/ns";
 
 function InfoIcon({ tooltip }: { tooltip: string }) {
@@ -57,6 +61,49 @@ function ToggleSwitch({
   );
 }
 
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
+        {title}
+      </h2>
+      {children}
+    </div>
+  );
+}
+
+function RadioOption<T extends string | number>({
+  name,
+  value,
+  currentValue,
+  label,
+  onChange,
+  disabled,
+}: {
+  name: string;
+  value: T;
+  currentValue: T;
+  label: string;
+  onChange: (value: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className={`flex items-center gap-2 py-1 ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+      <input
+        type="radio"
+        name={name}
+        value={String(value)}
+        checked={currentValue === value}
+        onChange={() => !disabled && onChange(value)}
+        className="accent-primary"
+        disabled={disabled}
+        aria-label={label}
+      />
+      <span className="text-sm text-foreground">{label}</span>
+    </label>
+  );
+}
+
 const TOGGLE_SETTINGS: { key: "completions" | "continueWriting" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes" | "qaAssistant"; label: string; info: string }[] = [
   { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
   { key: "continueWriting", label: "Continue writing", info: "Press Cmd/Ctrl+Shift+Space to generate a full paragraph or suggest document structure." },
@@ -92,10 +139,40 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
   { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
 ];
 
+const AUTO_SAVE_OPTIONS: { value: number; label: string }[] = [
+  { value: 500, label: "500ms" },
+  { value: 1000, label: "1s" },
+  { value: 1500, label: "1.5s" },
+  { value: 2000, label: "2s" },
+  { value: 3000, label: "3s" },
+  { value: 5000, label: "5s" },
+];
+
+const DEBOUNCE_OPTIONS: { value: number; label: string }[] = [
+  { value: 200, label: "200ms" },
+  { value: 400, label: "400ms" },
+  { value: 600, label: "600ms" },
+  { value: 800, label: "800ms" },
+  { value: 1000, label: "1s" },
+  { value: 1500, label: "1.5s" },
+];
+
+const MAX_CACHE_OPTIONS: { value: number; label: string }[] = [
+  { value: 50, label: "50" },
+  { value: 100, label: "100" },
+  { value: 200, label: "200" },
+  { value: 500, label: "500" },
+];
+
 export function SettingsPage() {
   const navigate = useNavigate();
-  const { settings, updateSetting } = useAiSettings();
+  const { settings: aiSettings, updateSetting: updateAiSetting } = useAiSettings();
+  const { settings: editorSettings, updateSetting: updateEditorSetting } = useEditorSettings();
+  const { lastSyncedAt } = useOfflineCache();
   const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus | null>(null);
+  const [cachedNoteCount, setCachedNoteCount] = useState<number | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const loadEmbeddingStatus = useCallback(async () => {
     try {
@@ -107,17 +184,31 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (settings.semanticSearch) {
+    if (aiSettings.masterAiEnabled && aiSettings.semanticSearch) {
       loadEmbeddingStatus();
       const timer = setInterval(loadEmbeddingStatus, 10_000);
       return () => clearInterval(timer);
     }
-  }, [settings.semanticSearch, loadEmbeddingStatus]);
+  }, [aiSettings.masterAiEnabled, aiSettings.semanticSearch, loadEmbeddingStatus]);
+
+  // Load cached note count
+  useEffect(() => {
+    async function loadCount() {
+      try {
+        const db = await getDB();
+        const count = await db.count("notes");
+        setCachedNoteCount(count);
+      } catch {
+        setCachedNoteCount(null);
+      }
+    }
+    loadCount();
+  }, [clearingCache]);
 
   async function handleSemanticSearchToggle(enabled: boolean) {
-    updateSetting("semanticSearch", enabled);
+    updateAiSetting("semanticSearch", enabled);
     if (!enabled) {
-      updateSetting("qaAssistant", false);
+      updateAiSetting("qaAssistant", false);
     }
     try {
       if (enabled) {
@@ -129,8 +220,42 @@ export function SettingsPage() {
       }
     } catch {
       // Revert on failure
-      updateSetting("semanticSearch", !enabled);
+      updateAiSetting("semanticSearch", !enabled);
     }
+  }
+
+  async function handleClearCache() {
+    setClearingCache(true);
+    try {
+      await clearAllCaches();
+      setCachedNoteCount(0);
+      setConfirmClear(false);
+    } catch {
+      // Silent fail
+    } finally {
+      setClearingCache(false);
+    }
+  }
+
+  function handleThemeChange(theme: ThemeMode) {
+    updateEditorSetting("theme", theme);
+    document.documentElement.setAttribute("data-theme", theme);
+    // Re-apply accent CSS vars for new theme
+    const preset = ACCENT_PRESETS[editorSettings.accentColor];
+    const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
+    document.documentElement.style.setProperty("--color-primary", isLight ? preset.light : preset.dark);
+    document.documentElement.style.setProperty("--color-ring", isLight ? preset.light : preset.dark);
+    document.documentElement.style.setProperty("--color-primary-contrast", editorSettings.accentColor === "black" ? "#ffffff" : "#000000");
+  }
+
+  function handleAccentColorChange(preset: AccentColorPreset) {
+    updateEditorSetting("accentColor", preset);
+    const colors = ACCENT_PRESETS[preset];
+    const theme = editorSettings.theme;
+    const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
+    document.documentElement.style.setProperty("--color-primary", isLight ? colors.light : colors.dark);
+    document.documentElement.style.setProperty("--color-ring", isLight ? colors.light : colors.dark);
+    document.documentElement.style.setProperty("--color-primary-contrast", preset === "black" ? "#ffffff" : "#000000");
   }
 
   const isMac = useMemo(
@@ -138,9 +263,23 @@ export function SettingsPage() {
     [],
   );
 
+  const aiDisabled = !aiSettings.masterAiEnabled;
+
+  function formatLastSynced(): string {
+    if (!lastSyncedAt) return "Never";
+    const diff = Date.now() - lastSyncedAt.getTime();
+    const minutes = Math.floor(diff / 60_000);
+    if (minutes < 1) return "Just now";
+    if (minutes === 1) return "1 minute ago";
+    if (minutes < 60) return `${minutes} minutes ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours === 1) return "1 hour ago";
+    return `${hours} hours ago`;
+  }
+
   return (
     <div className="flex h-full items-start justify-center bg-background overflow-auto">
-      <div className="w-full max-w-3xl p-6">
+      <div className="w-full max-w-2xl p-6">
         <button
           onClick={() => navigate("/")}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
@@ -164,53 +303,191 @@ export function SettingsPage() {
 
         <h1 className="text-xl font-semibold text-foreground mb-6">Settings</h1>
 
-        <div className="flex flex-col md:flex-row gap-4 items-start">
-          <div className="bg-card border border-border rounded-lg p-4 flex-1 min-w-0">
-            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-2">
-              AI Features
-            </h2>
+        <div className="flex flex-col gap-4">
+          {/* Appearance */}
+          <SectionCard title="Appearance">
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-foreground mb-1 block">Theme</label>
+                <div className="flex gap-4" role="radiogroup" aria-label="Theme">
+                  <RadioOption name="theme" value={"dark" as ThemeMode} currentValue={editorSettings.theme} label="Dark" onChange={handleThemeChange} />
+                  <RadioOption name="theme" value={"light" as ThemeMode} currentValue={editorSettings.theme} label="Light" onChange={handleThemeChange} />
+                  <RadioOption name="theme" value={"system" as ThemeMode} currentValue={editorSettings.theme} label="System" onChange={handleThemeChange} />
+                </div>
+              </div>
 
+              <div>
+                <label className="text-sm text-foreground mb-1 block">
+                  Editor font size: {editorSettings.editorFontSize}px
+                </label>
+                <input
+                  type="range"
+                  min="10"
+                  max="24"
+                  value={editorSettings.editorFontSize}
+                  onChange={(e) => updateEditorSetting("editorFontSize", Number(e.target.value))}
+                  className="w-full accent-primary"
+                  aria-label="Editor font size"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span>10px</span>
+                  <span>24px</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-foreground mb-2 block">Accent color</label>
+                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Accent color">
+                  {(Object.keys(ACCENT_PRESETS) as AccentColorPreset[]).map((preset) => (
+                    <button
+                      key={preset}
+                      role="radio"
+                      aria-checked={editorSettings.accentColor === preset}
+                      aria-label={preset}
+                      onClick={() => handleAccentColorChange(preset)}
+                      className="relative w-7 h-7 rounded-full border-2 transition-all"
+                      style={{
+                        backgroundColor: ACCENT_PRESETS[preset].dark,
+                        borderColor: editorSettings.accentColor === preset ? "var(--color-foreground)" : "transparent",
+                      }}
+                    >
+                      {editorSettings.accentColor === preset && (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke={preset === "white" || preset === "amber" ? "#000" : "#fff"}
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="absolute inset-0 w-4 h-4 m-auto"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* Editor Preferences */}
+          <SectionCard title="Editor Preferences">
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-foreground mb-1 block">Default view mode</label>
+                <div className="flex gap-4" role="radiogroup" aria-label="Default view mode">
+                  <RadioOption name="defaultViewMode" value={"editor" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Editor" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
+                  <RadioOption name="defaultViewMode" value={"split" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Split" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
+                  <RadioOption name="defaultViewMode" value={"preview" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Preview" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
+                </div>
+              </div>
+
+              <div className="divide-y divide-border">
+                <ToggleSwitch
+                  label="Line numbers"
+                  checked={editorSettings.showLineNumbers}
+                  onChange={(v) => updateEditorSetting("showLineNumbers", v)}
+                  info="Show line numbers in the editor gutter."
+                />
+                <ToggleSwitch
+                  label="Word wrap"
+                  checked={editorSettings.wordWrap}
+                  onChange={(v) => updateEditorSetting("wordWrap", v)}
+                  info="Wrap long lines instead of horizontal scrolling."
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-foreground mb-1 block">Auto-save delay</label>
+                <select
+                  value={editorSettings.autoSaveDelay}
+                  onChange={(e) => updateEditorSetting("autoSaveDelay", Number(e.target.value))}
+                  className="bg-input border border-border rounded-md px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  aria-label="Auto-save delay"
+                >
+                  {AUTO_SAVE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-foreground mb-1 block">Tab size</label>
+                <div className="flex gap-4" role="radiogroup" aria-label="Tab size">
+                  <RadioOption name="tabSize" value={2 as TabSizeOption} currentValue={editorSettings.tabSize} label="2 spaces" onChange={(v) => updateEditorSetting("tabSize", v)} />
+                  <RadioOption name="tabSize" value={4 as TabSizeOption} currentValue={editorSettings.tabSize} label="4 spaces" onChange={(v) => updateEditorSetting("tabSize", v)} />
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* AI Features */}
+          <SectionCard title="AI Features">
             <div className="divide-y divide-border">
+              <ToggleSwitch
+                label="Enable AI features"
+                checked={aiSettings.masterAiEnabled}
+                onChange={(v) => updateAiSetting("masterAiEnabled", v)}
+                info="Master toggle for all AI features. When off, all AI features are disabled."
+              />
+
               {TOGGLE_SETTINGS.map(({ key, label, info }) => (
                 <div key={key}>
                   <ToggleSwitch
                     label={label}
-                    checked={settings[key]}
+                    checked={aiSettings[key]}
                     onChange={(value) =>
                       key === "semanticSearch"
                         ? handleSemanticSearchToggle(value)
-                        : updateSetting(key, value)
+                        : updateAiSetting(key, value)
                     }
                     info={info}
-                    disabled={key === "qaAssistant" && !settings.semanticSearch}
+                    disabled={aiDisabled || (key === "qaAssistant" && !aiSettings.semanticSearch)}
                   />
-                  {key === "semanticSearch" && settings.semanticSearch && embeddingStatus && (
+                  {key === "semanticSearch" && aiSettings.semanticSearch && !aiDisabled && embeddingStatus && (
                     <div className="pb-3 pl-1 text-xs text-muted-foreground">
                       {embeddingStatus.pendingCount > 0
                         ? `${embeddingStatus.totalWithEmbeddings} embedded, ${embeddingStatus.pendingCount} pending`
                         : `${embeddingStatus.totalWithEmbeddings} notes embedded`}
                     </div>
                   )}
-                  {key === "completions" && settings.completions && (
-                    <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">
-                      {STYLE_OPTIONS.map(({ value, label: styleLabel, info: styleInfo }) => (
-                        <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="completionStyle"
-                            value={value}
-                            checked={settings.completionStyle === value}
-                            onChange={() => updateSetting("completionStyle", value)}
-                            className="accent-primary"
-                            aria-label={styleLabel}
-                          />
-                          <span className="text-sm text-muted-foreground">{styleLabel}</span>
-                          <InfoIcon tooltip={styleInfo} />
-                        </label>
-                      ))}
-                    </div>
+                  {key === "completions" && aiSettings.completions && !aiDisabled && (
+                    <>
+                      <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">
+                        {STYLE_OPTIONS.map(({ value, label: styleLabel, info: styleInfo }) => (
+                          <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="completionStyle"
+                              value={value}
+                              checked={aiSettings.completionStyle === value}
+                              onChange={() => updateAiSetting("completionStyle", value)}
+                              className="accent-primary"
+                              aria-label={styleLabel}
+                            />
+                            <span className="text-sm text-muted-foreground">{styleLabel}</span>
+                            <InfoIcon tooltip={styleInfo} />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="pb-3 pl-1">
+                        <label className="text-sm text-muted-foreground mb-1 block">Completion delay</label>
+                        <select
+                          value={aiSettings.completionDebounceMs}
+                          onChange={(e) => updateAiSetting("completionDebounceMs", Number(e.target.value))}
+                          className="bg-input border border-border rounded-md px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                          aria-label="Completion delay"
+                        >
+                          {DEBOUNCE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
                   )}
-                  {key === "audioNotes" && settings.audioNotes && (
+                  {key === "audioNotes" && aiSettings.audioNotes && !aiDisabled && (
                     <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
                       {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel, info: modeInfo }) => (
                         <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
@@ -218,8 +495,8 @@ export function SettingsPage() {
                             type="radio"
                             name="audioMode"
                             value={value}
-                            checked={settings.audioMode === value}
-                            onChange={() => updateSetting("audioMode", value)}
+                            checked={aiSettings.audioMode === value}
+                            onChange={() => updateAiSetting("audioMode", value)}
                             className="accent-primary"
                             aria-label={modeLabel}
                           />
@@ -232,12 +509,76 @@ export function SettingsPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </SectionCard>
 
-          <div className="bg-card border border-border rounded-lg p-4 flex-1 min-w-0">
-            <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-3">
-              Keyboard Shortcuts
-            </h2>
+          {/* Offline Cache */}
+          <SectionCard title="Offline Cache">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between py-1">
+                <span className="text-sm text-foreground flex items-center">
+                  Cached notes
+                  <InfoIcon tooltip="Notes stored locally in IndexedDB for offline access. When you go offline, cached notes are available to read and edit." />
+                </span>
+                <span className="text-sm text-muted-foreground" data-testid="cached-note-count">
+                  {cachedNoteCount !== null ? cachedNoteCount : "..."}
+                </span>
+              </div>
+
+              <div>
+                <label className="text-sm text-foreground mb-1 block flex items-center">
+                  Max cached notes
+                  <InfoIcon tooltip="Maximum number of notes to keep in the local cache. Oldest notes are evicted when this limit is exceeded." />
+                </label>
+                <select
+                  value={editorSettings.maxCachedNotes}
+                  onChange={(e) => updateEditorSetting("maxCachedNotes", Number(e.target.value))}
+                  className="bg-input border border-border rounded-md px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  aria-label="Max cached notes"
+                >
+                  {MAX_CACHE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between py-1">
+                <span className="text-sm text-foreground flex items-center">
+                  Last synced
+                  <InfoIcon tooltip="When your offline edits were last synced with the server. Queued changes are automatically sent when you reconnect." />
+                </span>
+                <span className="text-sm text-muted-foreground">{formatLastSynced()}</span>
+              </div>
+
+              {confirmClear ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-destructive">Clear all cached data?</span>
+                  <button
+                    onClick={handleClearCache}
+                    disabled={clearingCache}
+                    className="px-3 py-1 rounded-md bg-destructive text-foreground text-sm hover:bg-destructive-hover transition-colors disabled:opacity-50"
+                  >
+                    {clearingCache ? "Clearing..." : "Confirm"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmClear(false)}
+                    className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmClear(true)}
+                  className="px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-destructive hover:border-destructive transition-colors"
+                >
+                  Clear Cache
+                </button>
+              )}
+            </div>
+          </SectionCard>
+
+          {/* Keyboard Shortcuts */}
+          <SectionCard title="Keyboard Shortcuts">
             <div className="space-y-2">
               {KEYBOARD_SHORTCUTS.map(({ shortcut, macShortcut, description }) => (
                 <div key={`${shortcut}-${description}`} className="flex items-center justify-between py-1">
@@ -248,7 +589,7 @@ export function SettingsPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </SectionCard>
         </div>
       </div>
     </div>

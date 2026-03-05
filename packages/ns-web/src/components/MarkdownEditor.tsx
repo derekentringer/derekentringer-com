@@ -13,10 +13,12 @@ import {
   defaultKeymap,
   history,
   historyKeymap,
+  indentWithTab,
 } from "@codemirror/commands";
 import {
   HighlightStyle,
   syntaxHighlighting,
+  indentUnit,
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 
@@ -36,6 +38,11 @@ interface MarkdownEditorProps {
   showLineNumbers?: boolean;
   readOnly?: boolean;
   extensions?: Extension[];
+  wordWrap?: boolean;
+  tabSize?: number;
+  fontSize?: number;
+  theme?: "dark" | "light";
+  accentColor?: string;
 }
 
 function wrapSelection(view: EditorView, marker: string) {
@@ -51,104 +58,218 @@ function wrapSelection(view: EditorView, marker: string) {
   });
 }
 
-const darkTheme = EditorView.theme(
-  {
-    "&": {
-      backgroundColor: "#0f1117",
-      color: "#ececec",
-      fontFamily: "'Roboto Mono', monospace",
-      fontSize: "14px",
-    },
-    ".cm-content": {
-      caretColor: "#d4e157",
-      padding: "12px 0",
-    },
-    ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "#d4e157",
-    },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-      backgroundColor: "rgba(212, 225, 87, 0.15)",
-    },
-    ".cm-gutters": {
-      backgroundColor: "#10121a",
-      color: "#666666",
-      borderRight: "1px solid #1e2028",
-    },
-    ".cm-activeLineGutter": {
-      backgroundColor: "rgba(212, 225, 87, 0.05)",
-    },
-    ".cm-activeLine": {
-      backgroundColor: "rgba(255, 255, 255, 0.02)",
-    },
-    "&.cm-focused": {
-      outline: "none",
-    },
-    ".cm-scroller": {
-      overflow: "auto",
-    },
-    ".cm-placeholder": {
-      color: "#666666",
-    },
-    "&.cm-focused .cm-placeholder": {
-      display: "none",
-    },
-    ".cm-ghost-text": {
-      opacity: "0.4",
-      fontStyle: "italic",
-    },
-    ".cm-tooltip .cm-rewrite-menu": {
-      backgroundColor: "#10121a",
-      border: "1px solid #1e2028",
-      borderRadius: "6px",
-      display: "flex",
-      flexDirection: "column",
-      padding: "4px",
-      boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)",
-      minWidth: "160px",
-    },
-    ".cm-rewrite-action": {
-      width: "100%",
-      backgroundColor: "transparent",
-      color: "#ececec",
-      border: "none",
-      borderRadius: "4px",
-      padding: "6px 10px",
-      textAlign: "left",
-      cursor: "pointer",
-      fontSize: "13px",
-      lineHeight: "1.4",
-    },
-    ".cm-rewrite-action:hover": {
-      backgroundColor: "rgba(212, 225, 87, 0.1)",
-      color: "#d4e157",
-    },
-    ".cm-rewrite-loading": {
-      color: "#d4e157",
-      padding: "6px 10px",
-      fontSize: "13px",
-    },
-    ".cm-rewrite-error": {
-      color: "#dc2626",
-      padding: "6px 10px",
-      fontSize: "13px",
-    },
-  },
-  { dark: true },
-);
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
-const highlightStyle = HighlightStyle.define([
-  { tag: tags.heading1, color: "#d4e157", fontWeight: "bold", fontSize: "1.4em" },
-  { tag: tags.heading2, color: "#d4e157", fontWeight: "bold", fontSize: "1.2em" },
-  { tag: tags.heading3, color: "#d4e157", fontWeight: "bold", fontSize: "1.1em" },
-  { tag: [tags.heading4, tags.heading5, tags.heading6], color: "#d4e157", fontWeight: "bold" },
-  { tag: tags.strong, fontWeight: "bold" },
-  { tag: tags.emphasis, fontStyle: "italic" },
-  { tag: [tags.monospace, tags.processingInstruction], color: "#999999", fontFamily: "'Roboto Mono', monospace" },
-  { tag: tags.link, color: "#d4e157", textDecoration: "underline" },
-  { tag: tags.url, color: "#999999" },
-  { tag: tags.quote, color: "#999999", fontStyle: "italic" },
-  { tag: tags.strikethrough, textDecoration: "line-through" },
-]);
+function createDarkTheme(accent: string) {
+  return EditorView.theme(
+    {
+      "&": {
+        backgroundColor: "#0f1117",
+        color: "#ececec",
+        fontFamily: "'Roboto Mono', monospace",
+        fontSize: "14px",
+      },
+      ".cm-content": {
+        caretColor: accent,
+        padding: "12px 0",
+      },
+      ".cm-cursor, .cm-dropCursor": {
+        borderLeftColor: accent,
+      },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+        backgroundColor: hexToRgba(accent, 0.15),
+      },
+      ".cm-gutters": {
+        backgroundColor: "#10121a",
+        color: "#666666",
+        borderRight: "1px solid #1e2028",
+      },
+      ".cm-activeLineGutter": {
+        backgroundColor: hexToRgba(accent, 0.05),
+      },
+      ".cm-activeLine": {
+        backgroundColor: "rgba(255, 255, 255, 0.02)",
+      },
+      "&.cm-focused": {
+        outline: "none",
+      },
+      ".cm-scroller": {
+        overflow: "auto",
+      },
+      ".cm-placeholder": {
+        color: "#666666",
+      },
+      "&.cm-focused .cm-placeholder": {
+        display: "none",
+      },
+      ".cm-ghost-text": {
+        opacity: "0.4",
+        fontStyle: "italic",
+      },
+      ".cm-tooltip .cm-rewrite-menu": {
+        backgroundColor: "#10121a",
+        border: "1px solid #1e2028",
+        borderRadius: "6px",
+        display: "flex",
+        flexDirection: "column",
+        padding: "4px",
+        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)",
+        minWidth: "160px",
+      },
+      ".cm-rewrite-action": {
+        width: "100%",
+        backgroundColor: "transparent",
+        color: "#ececec",
+        border: "none",
+        borderRadius: "4px",
+        padding: "6px 10px",
+        textAlign: "left",
+        cursor: "pointer",
+        fontSize: "13px",
+        lineHeight: "1.4",
+      },
+      ".cm-rewrite-action:hover": {
+        backgroundColor: hexToRgba(accent, 0.1),
+        color: accent,
+      },
+      ".cm-rewrite-loading": {
+        color: accent,
+        padding: "6px 10px",
+        fontSize: "13px",
+      },
+      ".cm-rewrite-error": {
+        color: "#dc2626",
+        padding: "6px 10px",
+        fontSize: "13px",
+      },
+    },
+    { dark: true },
+  );
+}
+
+function createDarkHighlightStyle(accent: string) {
+  return HighlightStyle.define([
+    { tag: tags.heading1, color: accent, fontWeight: "bold", fontSize: "1.4em" },
+    { tag: tags.heading2, color: accent, fontWeight: "bold", fontSize: "1.2em" },
+    { tag: tags.heading3, color: accent, fontWeight: "bold", fontSize: "1.1em" },
+    { tag: [tags.heading4, tags.heading5, tags.heading6], color: accent, fontWeight: "bold" },
+    { tag: tags.strong, fontWeight: "bold" },
+    { tag: tags.emphasis, fontStyle: "italic" },
+    { tag: [tags.monospace, tags.processingInstruction], color: "#999999", fontFamily: "'Roboto Mono', monospace" },
+    { tag: tags.link, color: accent, textDecoration: "underline" },
+    { tag: tags.url, color: "#999999" },
+    { tag: tags.quote, color: "#999999", fontStyle: "italic" },
+    { tag: tags.strikethrough, textDecoration: "line-through" },
+  ]);
+}
+
+function createLightTheme(accent: string) {
+  return EditorView.theme(
+    {
+      "&": {
+        backgroundColor: "#ffffff",
+        color: "#1a1a2e",
+        fontFamily: "'Roboto Mono', monospace",
+        fontSize: "14px",
+      },
+      ".cm-content": {
+        caretColor: accent,
+        padding: "12px 0",
+      },
+      ".cm-cursor, .cm-dropCursor": {
+        borderLeftColor: accent,
+      },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+        backgroundColor: hexToRgba(accent, 0.15),
+      },
+      ".cm-gutters": {
+        backgroundColor: "#f5f5f5",
+        color: "#999999",
+        borderRight: "1px solid #e0e0e0",
+      },
+      ".cm-activeLineGutter": {
+        backgroundColor: hexToRgba(accent, 0.08),
+      },
+      ".cm-activeLine": {
+        backgroundColor: "rgba(0, 0, 0, 0.03)",
+      },
+      "&.cm-focused": {
+        outline: "none",
+      },
+      ".cm-scroller": {
+        overflow: "auto",
+      },
+      ".cm-placeholder": {
+        color: "#999999",
+      },
+      "&.cm-focused .cm-placeholder": {
+        display: "none",
+      },
+      ".cm-ghost-text": {
+        opacity: "0.4",
+        fontStyle: "italic",
+      },
+      ".cm-tooltip .cm-rewrite-menu": {
+        backgroundColor: "#ffffff",
+        border: "1px solid #e0e0e0",
+        borderRadius: "6px",
+        display: "flex",
+        flexDirection: "column",
+        padding: "4px",
+        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+        minWidth: "160px",
+      },
+      ".cm-rewrite-action": {
+        width: "100%",
+        backgroundColor: "transparent",
+        color: "#1a1a2e",
+        border: "none",
+        borderRadius: "4px",
+        padding: "6px 10px",
+        textAlign: "left",
+        cursor: "pointer",
+        fontSize: "13px",
+        lineHeight: "1.4",
+      },
+      ".cm-rewrite-action:hover": {
+        backgroundColor: hexToRgba(accent, 0.1),
+        color: accent,
+      },
+      ".cm-rewrite-loading": {
+        color: accent,
+        padding: "6px 10px",
+        fontSize: "13px",
+      },
+      ".cm-rewrite-error": {
+        color: "#dc2626",
+        padding: "6px 10px",
+        fontSize: "13px",
+      },
+    },
+    { dark: false },
+  );
+}
+
+function createLightHighlightStyle(accent: string) {
+  return HighlightStyle.define([
+    { tag: tags.heading1, color: accent, fontWeight: "bold", fontSize: "1.4em" },
+    { tag: tags.heading2, color: accent, fontWeight: "bold", fontSize: "1.2em" },
+    { tag: tags.heading3, color: accent, fontWeight: "bold", fontSize: "1.1em" },
+    { tag: [tags.heading4, tags.heading5, tags.heading6], color: accent, fontWeight: "bold" },
+    { tag: tags.strong, fontWeight: "bold" },
+    { tag: tags.emphasis, fontStyle: "italic" },
+    { tag: [tags.monospace, tags.processingInstruction], color: "#666666", fontFamily: "'Roboto Mono', monospace" },
+    { tag: tags.link, color: accent, textDecoration: "underline" },
+    { tag: tags.url, color: "#666666" },
+    { tag: tags.quote, color: "#666666", fontStyle: "italic" },
+    { tag: tags.strikethrough, textDecoration: "line-through" },
+  ]);
+}
 
 export const MarkdownEditor = forwardRef(function MarkdownEditor(
   props: MarkdownEditorProps,
@@ -164,6 +285,11 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     showLineNumbers = false,
     readOnly = false,
     extensions: extraExtensions = [],
+    wordWrap = true,
+    tabSize = 2,
+    fontSize,
+    theme = "dark",
+    accentColor,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -171,6 +297,9 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const lineNumberCompartment = useRef(new Compartment());
+  const wordWrapCompartment = useRef(new Compartment());
+  const tabSizeCompartment = useRef(new Compartment());
+  const themeCompartment = useRef(new Compartment());
 
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
@@ -189,21 +318,34 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const isDark = theme === "dark";
+    const defaultAccent = isDark ? "#d4e157" : "#7c8a00";
+    const accent = accentColor || defaultAccent;
+
     const view = new EditorView({
       state: EditorState.create({
         doc: value,
         extensions: [
           markdown({ codeLanguages: languages }),
-          darkTheme,
-          syntaxHighlighting(highlightStyle),
+          themeCompartment.current.of([
+            isDark ? createDarkTheme(accent) : createLightTheme(accent),
+            syntaxHighlighting(isDark ? createDarkHighlightStyle(accent) : createLightHighlightStyle(accent)),
+          ]),
           lineNumberCompartment.current.of(
             showLineNumbers ? lineNumbers() : [],
           ),
-          EditorView.lineWrapping,
+          wordWrapCompartment.current.of(
+            wordWrap ? EditorView.lineWrapping : [],
+          ),
+          tabSizeCompartment.current.of([
+            EditorState.tabSize.of(tabSize),
+            indentUnit.of(" ".repeat(tabSize)),
+          ]),
           history(),
           keymap.of([
             ...defaultKeymap,
             ...historyKeymap,
+            indentWithTab,
             {
               key: "Mod-s",
               run: () => {
@@ -272,5 +414,48 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     });
   }, [showLineNumbers]);
 
-  return <div ref={containerRef} className={className} style={style} />;
+  // Toggle word wrap
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: wordWrapCompartment.current.reconfigure(
+        wordWrap ? EditorView.lineWrapping : [],
+      ),
+    });
+  }, [wordWrap]);
+
+  // Update tab size
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: tabSizeCompartment.current.reconfigure([
+        EditorState.tabSize.of(tabSize),
+        indentUnit.of(" ".repeat(tabSize)),
+      ]),
+    });
+  }, [tabSize]);
+
+  // Switch theme / accent color
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const isDark = theme === "dark";
+    const defaultAccent = isDark ? "#d4e157" : "#7c8a00";
+    const accent = accentColor || defaultAccent;
+    view.dispatch({
+      effects: themeCompartment.current.reconfigure([
+        isDark ? createDarkTheme(accent) : createLightTheme(accent),
+        syntaxHighlighting(isDark ? createDarkHighlightStyle(accent) : createLightHighlightStyle(accent)),
+      ]),
+    });
+  }, [theme, accentColor]);
+
+  const containerStyle: React.CSSProperties = {
+    ...style,
+    ...(fontSize ? { fontSize: `${fontSize}px` } : {}),
+  };
+
+  return <div ref={containerRef} className={className} style={containerStyle} />;
 });

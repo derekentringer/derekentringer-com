@@ -51,6 +51,7 @@ vi.mock("@codemirror/state", () => {
         doc: { toString: () => "" },
       }),
       readOnly: { of: () => [] },
+      tabSize: { of: () => [] },
     },
     Compartment: MockCompartment,
   };
@@ -68,11 +69,13 @@ vi.mock("@codemirror/commands", () => ({
   defaultKeymap: [],
   history: () => [],
   historyKeymap: [],
+  indentWithTab: {},
 }));
 
 vi.mock("@codemirror/language", () => ({
   HighlightStyle: { define: () => ({}) },
   syntaxHighlighting: () => [],
+  indentUnit: { of: () => [] },
 }));
 
 vi.mock("@lezer/highlight", () => ({

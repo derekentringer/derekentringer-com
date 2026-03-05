@@ -3,7 +3,19 @@ import type { Note, FolderInfo, TagInfo } from "@derekentringer/shared/ns";
 
 const DB_NAME = "notesync-cache";
 const DB_VERSION = 1;
-const MAX_CACHED_NOTES = 100;
+
+function getMaxCachedNotes(): number {
+  try {
+    const raw = localStorage.getItem("ns-editor-settings");
+    if (!raw) return 100;
+    const parsed = JSON.parse(raw);
+    return typeof parsed.maxCachedNotes === "number"
+      ? Math.max(10, Math.min(500, parsed.maxCachedNotes))
+      : 100;
+  } catch {
+    return 100;
+  }
+}
 
 export interface OfflineQueueEntry {
   id?: number;
@@ -84,10 +96,11 @@ export async function getDB(): Promise<IDBPDatabase<NoteSyncDB>> {
 }
 
 async function enforceNoteLimit(db: IDBPDatabase<NoteSyncDB>) {
+  const maxNotes = getMaxCachedNotes();
   const count = await db.count("notes");
-  if (count <= MAX_CACHED_NOTES) return;
+  if (count <= maxNotes) return;
 
-  const excess = count - MAX_CACHED_NOTES;
+  const excess = count - maxNotes;
   const tx = db.transaction("notes", "readwrite");
   let cursor = await tx.store.index("by-updatedAt").openCursor();
   let deleted = 0;
