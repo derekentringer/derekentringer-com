@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import type { FolderInfo, FolderSortField, SortOrder } from "@derekentringer/shared/ns";
+import { ConfirmDialog } from "./ConfirmDialog.tsx";
 
 interface FolderListProps {
   folders: FolderInfo[];
@@ -48,6 +49,7 @@ export function FolderList({
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [contextMenu, setContextMenu] = useState<{ name: string; x: number; y: number } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -88,8 +90,8 @@ export function FolderList({
     setContextMenu(null);
   }
 
-  function handleDelete(name: string) {
-    onDeleteFolder(name);
+  function handleDeleteClick(name: string) {
+    setPendingDelete(name);
     setContextMenu(null);
   }
 
@@ -214,7 +216,7 @@ export function FolderList({
                 Rename
               </button>
               <button
-                onClick={() => handleDelete(folder.name)}
+                onClick={() => handleDeleteClick(folder.name)}
                 className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors"
               >
                 Delete
@@ -242,6 +244,19 @@ export function FolderList({
           autoFocus
           placeholder="Folder name"
           className="w-full px-2 py-1 rounded text-sm bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      )}
+
+      {/* Delete confirmation dialog */}
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete Folder"
+          message={pendingDelete}
+          onConfirm={() => {
+            onDeleteFolder(pendingDelete);
+            setPendingDelete(null);
+          }}
+          onCancel={() => setPendingDelete(null)}
         />
       )}
     </div>

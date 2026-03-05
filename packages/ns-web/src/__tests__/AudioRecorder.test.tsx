@@ -22,7 +22,7 @@ describe("AudioRecorder", () => {
   it("renders Record button and mode dropdown", () => {
     render(<AudioRecorder {...defaultProps} />);
 
-    expect(screen.getByText("Record")).toBeInTheDocument();
+    expect(screen.getByTitle("Record audio (Memo)")).toBeInTheDocument();
     expect(screen.getByLabelText("Recording mode")).toBeInTheDocument();
   });
 
