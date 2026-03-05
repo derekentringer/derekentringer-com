@@ -44,8 +44,8 @@ import { TagBrowser } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
-import { useAiSettings } from "../hooks/useAiSettings.ts";
-import { ghostTextExtension } from "../editor/ghostText.ts";
+import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
+import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
@@ -72,6 +72,8 @@ export function NotesPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const editorRef = useRef<MarkdownEditorHandle>(null);
+  const titleRef = useRef(title);
+  titleRef.current = title;
 
   // Note sort state
   const [sortBy, setSortBy] = useState<NoteSortField>("sortOrder");
@@ -566,14 +568,22 @@ export function NotesPage() {
       ...(settings.completions
         ? [ghostTextExtension((ctx, sig) => fetchCompletion(ctx, sig, settings.completionStyle))]
         : []),
+      ...(settings.continueWriting
+        ? [continueWritingKeymap((ctx, sig, style) => fetchCompletion(ctx, sig, style as CompletionStyle), () => titleRef.current)]
+        : []),
     ],
-    [settings.rewrite, settings.completions, settings.completionStyle],
+    [settings.rewrite, settings.completions, settings.completionStyle, settings.continueWriting],
   );
 
   async function handleSummarize() {
     if (!selectedId || isSummarizing) return;
     setIsSummarizing(true);
     try {
+      // Save first so the API has fresh content
+      if (isDirty) {
+        await updateNote(selectedId, { title, content });
+        setIsDirty(false);
+      }
       const summary = await summarizeNote(selectedId);
       setNotes((prev) =>
         prev.map((n) => (n.id === selectedId ? { ...n, summary } : n)),
@@ -601,6 +611,11 @@ export function NotesPage() {
     if (!selectedId || isSuggestingTags) return;
     setIsSuggestingTags(true);
     try {
+      // Save first so the API has fresh content
+      if (isDirty) {
+        await updateNote(selectedId, { title, content });
+        setIsDirty(false);
+      }
       const tags = await suggestTagsApi(selectedId);
       setSuggestedTags(tags);
     } catch {

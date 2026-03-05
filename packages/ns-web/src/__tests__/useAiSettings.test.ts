@@ -13,6 +13,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings).toEqual({
       completions: false,
       completionStyle: "continue",
+      continueWriting: false,
       summarize: false,
       tagSuggestions: false,
       rewrite: false,
@@ -44,6 +45,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings).toEqual({
       completions: true,
       completionStyle: "markdown",
+      continueWriting: false,
       summarize: true,
       tagSuggestions: false,
       rewrite: true,
@@ -115,6 +117,7 @@ describe("useAiSettings", () => {
       JSON.stringify({
         completions: true,
         completionStyle: "markdown",
+        continueWriting: false,
         summarize: false,
         tagSuggestions: true,
         rewrite: true,
@@ -134,6 +137,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings).toEqual({
       completions: true,
       completionStyle: "markdown",
+      continueWriting: false,
       summarize: true,
       tagSuggestions: true,
       rewrite: true,
@@ -152,6 +156,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings).toEqual({
       completions: false,
       completionStyle: "continue",
+      continueWriting: false,
       summarize: false,
       tagSuggestions: false,
       rewrite: false,
@@ -173,6 +178,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings).toEqual({
       completions: true,
       completionStyle: "continue",
+      continueWriting: false,
       summarize: false,
       tagSuggestions: false,
       rewrite: false,

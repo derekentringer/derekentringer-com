@@ -57,8 +57,9 @@ function ToggleSwitch({
   );
 }
 
-const TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes" | "qaAssistant"; label: string; info: string }[] = [
+const TOGGLE_SETTINGS: { key: "completions" | "continueWriting" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes" | "qaAssistant"; label: string; info: string }[] = [
   { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
+  { key: "continueWriting", label: "Continue writing", info: "Press Cmd/Ctrl+Shift+Space to generate a full paragraph or suggest document structure." },
   { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
   { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
   { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
@@ -86,6 +87,7 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
   { shortcut: "Ctrl + I", macShortcut: "Cmd + I", description: "Italic" },
   { shortcut: "Ctrl + Shift + R", macShortcut: "Cmd + Shift + R", description: "AI Rewrite (with selection)" },
   { shortcut: "Right-click", macShortcut: "Right-click", description: "AI Rewrite (with selection)" },
+  { shortcut: "Ctrl + Shift + Space", macShortcut: "Cmd + Shift + Space", description: "Continue writing / suggest structure" },
   { shortcut: "Tab", macShortcut: "Tab", description: "Accept AI completion" },
   { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
 ];
@@ -157,7 +159,7 @@ export function SettingsPage() {
             <path d="M19 12H5" />
             <polyline points="12 19 5 12 12 5" />
           </svg>
-          Back to notes
+          Back
         </button>
 
         <h1 className="text-xl font-semibold text-foreground mb-6">Settings</h1>

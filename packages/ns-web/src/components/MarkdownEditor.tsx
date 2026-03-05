@@ -89,6 +89,9 @@ const darkTheme = EditorView.theme(
     ".cm-placeholder": {
       color: "#666666",
     },
+    "&.cm-focused .cm-placeholder": {
+      display: "none",
+    },
     ".cm-ghost-text": {
       opacity: "0.4",
       fontStyle: "italic",

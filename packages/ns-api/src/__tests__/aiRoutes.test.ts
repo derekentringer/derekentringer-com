@@ -173,6 +173,48 @@ describe("AI routes", () => {
       );
     });
 
+    it("accepts paragraph style", async () => {
+      const token = await getAccessToken();
+      mockGenerateCompletion.mockImplementation(async function* () {
+        yield "A full paragraph.";
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/complete",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { context: "Some context", style: "paragraph" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockGenerateCompletion).toHaveBeenCalledWith(
+        "Some context",
+        expect.any(Object),
+        "paragraph",
+      );
+    });
+
+    it("accepts structure style", async () => {
+      const token = await getAccessToken();
+      mockGenerateCompletion.mockImplementation(async function* () {
+        yield "## Section 1";
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/complete",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { context: "My note title", style: "structure" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockGenerateCompletion).toHaveBeenCalledWith(
+        "My note title",
+        expect.any(Object),
+        "structure",
+      );
+    });
+
     it("returns 400 with invalid style", async () => {
       const token = await getAccessToken();
 

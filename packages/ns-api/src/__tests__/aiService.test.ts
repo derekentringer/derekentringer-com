@@ -167,6 +167,34 @@ describe("aiService", () => {
       );
     });
 
+    it("uses paragraph system prompt and 500 max_tokens", async () => {
+      mockStreamResponse([]);
+
+      for await (const _chunk of generateCompletion("test", undefined, "paragraph")) {
+        // consume
+      }
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: expect.stringContaining("Write the next full paragraph"),
+          max_tokens: 500,
+        }),
+      );
+    });
+
+    it("uses structure system prompt and 500 max_tokens", async () => {
+      mockStreamResponse([]);
+
+      for await (const _chunk of generateCompletion("test", undefined, "structure")) {
+        // consume
+      }
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: expect.stringContaining("document structure assistant"),
+          max_tokens: 500,
+        }),
+      );
+    });
+
     it("defaults to continue style", async () => {
       mockStreamResponse([]);
 

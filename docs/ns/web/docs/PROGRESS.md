@@ -61,7 +61,7 @@
   - [x] 04e — Q&A Over Notes (collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, right-click context menus on notes, cursor-positioned context menus on folders/notes)
   - [x] 04e.1 — UI Polish (AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button)
   - [ ] 04f — Duplicate Detection
-  - [ ] 04g — Continue Writing, Structure Suggestions
+  - [x] 04g — Continue Writing & Structure Suggestions (Cmd/Ctrl+Shift+Space for paragraph continuation or structure suggestions, separate settings toggle, tag suggestion prompt fix, QA panel auto-focus and header removal, placeholder hidden on editor focus, save-before-AI-call fix)
 - [ ] [05 — Offline Cache](feature_planning/05-offline-cache.md)
 
 ### Phase 4: Polish — Low Priority

@@ -28,10 +28,11 @@ function renderSettingsPage() {
 }
 
 describe("SettingsPage", () => {
-  it("renders seven toggle switches", () => {
+  it("renders eight toggle switches", () => {
     renderSettingsPage();
 
     expect(screen.getByText("Inline completions")).toBeInTheDocument();
+    expect(screen.getByText("Continue writing")).toBeInTheDocument();
     expect(screen.getByText("Summarize")).toBeInTheDocument();
     expect(screen.getByText("Auto-tag suggestions")).toBeInTheDocument();
     expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
@@ -56,7 +57,7 @@ describe("SettingsPage", () => {
     renderSettingsPage();
 
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(7);
+    expect(switches).toHaveLength(8);
     switches.forEach((s) => {
       expect(s).toHaveAttribute("aria-checked", "false");
     });
@@ -91,9 +92,10 @@ describe("SettingsPage", () => {
     renderSettingsPage();
 
     const switches = screen.getAllByRole("switch");
-    expect(switches[0]).toHaveAttribute("aria-checked", "true");
-    expect(switches[1]).toHaveAttribute("aria-checked", "false");
-    expect(switches[2]).toHaveAttribute("aria-checked", "true");
+    expect(switches[0]).toHaveAttribute("aria-checked", "true");  // completions
+    expect(switches[1]).toHaveAttribute("aria-checked", "false"); // continueWriting
+    expect(switches[2]).toHaveAttribute("aria-checked", "false"); // summarize
+    expect(switches[3]).toHaveAttribute("aria-checked", "true");  // tagSuggestions
   });
 
   it("renders semantic search toggle", () => {
@@ -105,7 +107,7 @@ describe("SettingsPage", () => {
   it("renders back to notes link", () => {
     renderSettingsPage();
 
-    expect(screen.getByText("Back to notes")).toBeInTheDocument();
+    expect(screen.getByText("Back")).toBeInTheDocument();
   });
 
   // --- Completion style radio group ---
@@ -175,6 +177,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Bold")).toBeInTheDocument();
     expect(screen.getByText("Italic")).toBeInTheDocument();
     expect(screen.getAllByText("AI Rewrite (with selection)")).toHaveLength(2);
+    expect(screen.getByText("Continue writing / suggest structure")).toBeInTheDocument();
     expect(screen.getByText("Accept AI completion")).toBeInTheDocument();
     expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
   });
@@ -212,8 +215,8 @@ describe("SettingsPage", () => {
     renderSettingsPage();
 
     const switches = screen.getAllByRole("switch");
-    // Q&A assistant is the last toggle (index 6)
-    const qaSwitch = switches[6];
+    // Q&A assistant is the last toggle (index 7)
+    const qaSwitch = switches[7];
     expect(qaSwitch).toBeDisabled();
   });
 });
