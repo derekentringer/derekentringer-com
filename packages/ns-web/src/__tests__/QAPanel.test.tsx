@@ -18,14 +18,6 @@ beforeEach(() => {
 });
 
 describe("QAPanel", () => {
-  it("renders empty state with 'Ask a question about your notes'", () => {
-    render(<QAPanel onSelectNote={vi.fn()} isOpen={true} onToggle={vi.fn()} />);
-
-    expect(
-      screen.getByText("Ask a question about your notes"),
-    ).toBeInTheDocument();
-  });
-
   it("renders Clear button when messages exist", async () => {
     mockAskQuestion.mockImplementation(async function* (): AsyncGenerator<AskQuestionEvent> {
       yield { text: "Hello" };
@@ -33,7 +25,7 @@ describe("QAPanel", () => {
 
     render(<QAPanel onSelectNote={vi.fn()} isOpen={true} onToggle={vi.fn()} />);
 
-    const input = screen.getByPlaceholderText("Ask about your notes...");
+    const input = screen.getByPlaceholderText("Ask anything about your notes...");
     await userEvent.type(input, "test");
     await userEvent.click(screen.getByText("Ask"));
 
@@ -52,7 +44,7 @@ describe("QAPanel", () => {
   it("Ask button enabled when input has text", async () => {
     render(<QAPanel onSelectNote={vi.fn()} isOpen={true} onToggle={vi.fn()} />);
 
-    const input = screen.getByPlaceholderText("Ask about your notes...");
+    const input = screen.getByPlaceholderText("Ask anything about your notes...");
     await userEvent.type(input, "What is React?");
 
     const askButton = screen.getByText("Ask");
@@ -70,7 +62,7 @@ describe("QAPanel", () => {
 
     render(<QAPanel onSelectNote={onSelectNote} isOpen={true} onToggle={vi.fn()} />);
 
-    const input = screen.getByPlaceholderText("Ask about your notes...");
+    const input = screen.getByPlaceholderText("Ask anything about your notes...");
     await userEvent.type(input, "What is React?");
 
     const askButton = screen.getByText("Ask");

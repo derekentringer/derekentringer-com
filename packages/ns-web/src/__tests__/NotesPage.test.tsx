@@ -49,6 +49,8 @@ const mockCreateFolderApi = vi.fn();
 const mockReorderNotes = vi.fn();
 const mockRenameFolderApi = vi.fn();
 const mockDeleteFolderApi = vi.fn();
+const mockMoveFolderApi = vi.fn();
+const mockReorderFoldersApi = vi.fn();
 const mockFetchTags = vi.fn();
 const mockRenameTagApi = vi.fn();
 const mockDeleteTagApi = vi.fn();
@@ -67,6 +69,8 @@ vi.mock("../api/notes.ts", () => ({
   reorderNotes: (...args: unknown[]) => mockReorderNotes(...args),
   renameFolderApi: (...args: unknown[]) => mockRenameFolderApi(...args),
   deleteFolderApi: (...args: unknown[]) => mockDeleteFolderApi(...args),
+  moveFolderApi: (...args: unknown[]) => mockMoveFolderApi(...args),
+  reorderFoldersApi: (...args: unknown[]) => mockReorderFoldersApi(...args),
   fetchTags: (...args: unknown[]) => mockFetchTags(...args),
   renameTagApi: (...args: unknown[]) => mockRenameTagApi(...args),
   deleteTagApi: (...args: unknown[]) => mockDeleteTagApi(...args),
@@ -108,6 +112,8 @@ const mockNote = {
   title: "Test Note",
   content: "Test content",
   folder: null,
+  folderId: null,
+  folderPath: null,
   tags: [],
   summary: null,
   sortOrder: 0,
@@ -184,7 +190,9 @@ describe("NotesPage", () => {
     const createButtons = screen.getAllByTitle("New note");
     await userEvent.click(createButtons[0]);
 
-    expect(mockCreateNote).toHaveBeenCalledWith({ title: "Untitled" });
+    expect(mockCreateNote).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Untitled" }),
+    );
   });
 
   it("handles delete with confirmation flow", async () => {
@@ -427,12 +435,23 @@ describe("NotesPage", () => {
   });
 
   describe("Folder selector", () => {
+    const treeFolders = [
+      {
+        id: "f1",
+        name: "Work",
+        parentId: null,
+        sortOrder: 0,
+        count: 1,
+        totalCount: 1,
+        createdAt: "2025-01-01T00:00:00.000Z",
+        children: [],
+      },
+    ];
+
     it("renders folder selector showing current folder when note is selected", async () => {
-      const noteInFolder = { ...mockNote, folder: "Work" };
+      const noteInFolder = { ...mockNote, folderId: "f1", folder: "Work" };
       mockFetchNotes.mockResolvedValue({ notes: [noteInFolder], total: 1 });
-      mockFetchFolders.mockResolvedValue({
-        folders: [{ name: "Work", count: 1, createdAt: "2025-01-01T00:00:00.000Z" }],
-      });
+      mockFetchFolders.mockResolvedValue({ folders: treeFolders });
 
       renderNotesPage();
 
@@ -440,7 +459,7 @@ describe("NotesPage", () => {
       await userEvent.click(noteButton);
 
       const folderSelect = screen.getByTestId("note-folder-select") as HTMLSelectElement;
-      expect(folderSelect.value).toBe("Work");
+      expect(folderSelect.value).toBe("f1");
     });
 
     it("renders Unfiled when note has no folder", async () => {
@@ -456,11 +475,9 @@ describe("NotesPage", () => {
     });
 
     it("calls updateNote when folder is changed via selector", async () => {
-      const updatedNote = { ...mockNote, folder: "Work" };
+      const updatedNote = { ...mockNote, folderId: "f1", folder: "Work" };
       mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
-      mockFetchFolders.mockResolvedValue({
-        folders: [{ name: "Work", count: 0, createdAt: "2025-01-01T00:00:00.000Z" }],
-      });
+      mockFetchFolders.mockResolvedValue({ folders: treeFolders });
       mockUpdateNote.mockResolvedValue(updatedNote);
 
       renderNotesPage();
@@ -469,20 +486,18 @@ describe("NotesPage", () => {
       await userEvent.click(noteButton);
 
       const folderSelect = screen.getByTestId("note-folder-select");
-      await userEvent.selectOptions(folderSelect, "Work");
+      await userEvent.selectOptions(folderSelect, "f1");
 
       await waitFor(() => {
-        expect(mockUpdateNote).toHaveBeenCalledWith("note-1", { folder: "Work" });
+        expect(mockUpdateNote).toHaveBeenCalledWith("note-1", { folderId: "f1" });
       });
     });
 
-    it("sets folder to null when Unfiled is selected", async () => {
-      const noteInFolder = { ...mockNote, folder: "Work" };
-      const updatedNote = { ...mockNote, folder: null };
+    it("sets folderId to null when Unfiled is selected", async () => {
+      const noteInFolder = { ...mockNote, folderId: "f1", folder: "Work" };
+      const updatedNote = { ...mockNote, folderId: null, folder: null };
       mockFetchNotes.mockResolvedValue({ notes: [noteInFolder], total: 1 });
-      mockFetchFolders.mockResolvedValue({
-        folders: [{ name: "Work", count: 1, createdAt: "2025-01-01T00:00:00.000Z" }],
-      });
+      mockFetchFolders.mockResolvedValue({ folders: treeFolders });
       mockUpdateNote.mockResolvedValue(updatedNote);
 
       renderNotesPage();
@@ -494,7 +509,7 @@ describe("NotesPage", () => {
       await userEvent.selectOptions(folderSelect, "");
 
       await waitFor(() => {
-        expect(mockUpdateNote).toHaveBeenCalledWith("note-1", { folder: null });
+        expect(mockUpdateNote).toHaveBeenCalledWith("note-1", { folderId: null });
       });
     });
   });

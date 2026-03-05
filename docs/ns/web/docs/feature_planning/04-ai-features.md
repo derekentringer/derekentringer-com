@@ -6,7 +6,7 @@
 
 ## Summary
 
-AI-powered features using the Claude API (via ns-api) for smart tagging, summarization, semantic search, Q&A over notes, duplicate detection, and inline AI-assisted markdown writing via the custom CodeMirror 6 extension.
+AI-powered features using the Claude API (via ns-api) for smart tagging, summarization, semantic search, AI assistant chat, duplicate detection, and inline AI-assisted markdown writing via the custom CodeMirror 6 extension.
 
 ## Sub-Releases
 
@@ -17,10 +17,10 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 | **04b** | Select-and-rewrite (rewrite, concise, grammar, list, expand, summarize) with floating menu, keyboard shortcut, right-click trigger, and settings toggle | **Complete** |
 | **04c** | Semantic search (Voyage AI embeddings via pgvector, keyword/semantic/hybrid search modes, server-side toggle, background processor) | **Complete** |
 | **04d** | Audio notes — voice recording → AI-structured markdown via Whisper transcription + Claude processing, AudioRecorder component, draggable split view divider | **Complete** |
-| **04e** | Q&A over notes — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | **Complete** |
+| **04e** | AI assistant chat — collapsible right-side panel with streaming AI answers, citation pills, markdown rendering, cursor-positioned context menus on folders/notes | **Complete** |
 | **04e.1** | UI polish — AudioRecorder moved to sidebar header, ConfirmDialog for delete actions on notes/folders/summaries, summary delete button | **Complete** |
 | **04f** | Duplicate detection (embedding similarity for review/merge) | Not Started |
-| **04g** | Continue writing & structure suggestions, tag suggestion prompt fix, QA panel UX polish | **Complete** |
+| **04g** | Continue writing & structure suggestions, tag suggestion prompt fix, AI assistant chat UX polish | **Complete** |
 
 ## Remaining Requirements (04f)
 

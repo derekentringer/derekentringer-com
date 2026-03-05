@@ -7,7 +7,7 @@ import type {
   FolderInfo,
   TagInfo,
 } from "@derekentringer/shared/ns";
-import type { Note as PrismaNote } from "../generated/prisma/client.js";
+import type { Note as PrismaNote, Folder as PrismaFolder } from "../generated/prisma/client.js";
 import { generateQueryEmbedding } from "../services/embeddingService.js";
 
 function isNotFoundError(error: unknown): boolean {
@@ -30,13 +30,14 @@ export async function createNote(
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
-  // Ensure folder exists in folders table
-  if (data.folder) {
-    await prisma.folder.upsert({
-      where: { name: data.folder },
-      update: {},
-      create: { name: data.folder },
+  // Ensure folder exists in folders table (legacy name-based path)
+  if (data.folder && !data.folderId) {
+    const existing = await prisma.folder.findFirst({
+      where: { parentId: null, name: data.folder },
     });
+    if (!existing) {
+      await prisma.folder.create({ data: { name: data.folder } });
+    }
   }
 
   return prisma.note.create({
@@ -44,6 +45,7 @@ export async function createNote(
       title: data.title,
       content: data.content ?? "",
       folder: data.folder ?? null,
+      folderId: data.folderId ?? null,
       tags: data.tags ?? [],
       sortOrder: nextSortOrder,
     },
@@ -61,6 +63,7 @@ export type SearchMode = "keyword" | "semantic" | "hybrid";
 
 export interface ListNotesFilter {
   folder?: string;
+  folderId?: string;
   search?: string;
   searchMode?: SearchMode;
   tags?: string[];
@@ -102,7 +105,9 @@ export async function listNotes(
   // Standard Prisma query (no search)
   const where: Record<string, unknown> = { deletedAt: null };
 
-  if (filter?.folder) {
+  if (filter?.folderId) {
+    where.folderId = filter.folderId;
+  } else if (filter?.folder) {
     where.folder = filter.folder;
   }
 
@@ -131,7 +136,11 @@ function buildFilterClause(
   const params: unknown[] = [];
   let idx = startIdx;
 
-  if (filter.folder) {
+  if (filter.folderId) {
+    clause += ` AND "folderId" = $${idx}`;
+    params.push(filter.folderId);
+    idx++;
+  } else if (filter.folder) {
     clause += ` AND "folder" = $${idx}`;
     params.push(filter.folder);
     idx++;
@@ -343,6 +352,7 @@ export async function updateNote(
     if (data.title !== undefined) updateData.title = data.title;
     if (data.content !== undefined) updateData.content = data.content;
     if (data.folder !== undefined) updateData.folder = data.folder;
+    if (data.folderId !== undefined) updateData.folderId = data.folderId;
     if (data.tags !== undefined) updateData.tags = data.tags;
     if (data.summary !== undefined) updateData.summary = data.summary;
 
@@ -410,36 +420,143 @@ export async function purgeOldTrash(days = 30): Promise<number> {
   return result.count;
 }
 
-export async function createFolder(name: string): Promise<void> {
+export async function createFolder(
+  name: string,
+  parentId?: string | null,
+): Promise<PrismaFolder> {
   const prisma = getPrisma();
-  await prisma.folder.create({ data: { name } });
+
+  // Auto-increment sortOrder among siblings
+  const maxResult = await prisma.folder.aggregate({
+    _max: { sortOrder: true },
+    where: { parentId: parentId ?? null },
+  });
+  const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
+
+  return prisma.folder.create({
+    data: {
+      name,
+      parentId: parentId ?? null,
+      sortOrder: nextSortOrder,
+    },
+  });
+}
+
+export async function getDescendantIds(folderId: string): Promise<string[]> {
+  const prisma = getPrisma();
+  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `WITH RECURSIVE descendants AS (
+      SELECT "id" FROM "folders" WHERE "parentId" = $1
+      UNION ALL
+      SELECT f."id" FROM "folders" f
+      INNER JOIN descendants d ON f."parentId" = d."id"
+    )
+    SELECT "id" FROM descendants`,
+    folderId,
+  );
+  return rows.map((r) => r.id);
+}
+
+export async function getSelfAndDescendantIds(
+  folderId: string,
+): Promise<string[]> {
+  const descendants = await getDescendantIds(folderId);
+  return [folderId, ...descendants];
+}
+
+export async function getFolderPath(folderId: string): Promise<string> {
+  const prisma = getPrisma();
+  const rows = await prisma.$queryRawUnsafe<{ name: string }[]>(
+    `WITH RECURSIVE ancestors AS (
+      SELECT "id", "name", "parentId" FROM "folders" WHERE "id" = $1
+      UNION ALL
+      SELECT f."id", f."name", f."parentId" FROM "folders" f
+      INNER JOIN ancestors a ON f."id" = a."parentId"
+    )
+    SELECT "name" FROM ancestors`,
+    folderId,
+  );
+  // Rows come child→root, reverse for path
+  return rows.reverse().map((r) => r.name).join(" / ");
+}
+
+function buildFolderTree(
+  flatFolders: (PrismaFolder & { count: number })[],
+): FolderInfo[] {
+  const map = new Map<string, FolderInfo>();
+  const roots: FolderInfo[] = [];
+
+  // Create FolderInfo nodes
+  for (const f of flatFolders) {
+    map.set(f.id, {
+      id: f.id,
+      name: f.name,
+      parentId: f.parentId,
+      sortOrder: f.sortOrder,
+      count: f.count,
+      totalCount: f.count,
+      createdAt: f.createdAt.toISOString(),
+      children: [],
+    });
+  }
+
+  // Build tree
+  for (const f of flatFolders) {
+    const node = map.get(f.id)!;
+    if (f.parentId && map.has(f.parentId)) {
+      map.get(f.parentId)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  // Sort children by sortOrder
+  for (const node of map.values()) {
+    node.children.sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+  roots.sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // Post-order traversal to compute totalCount
+  function computeTotalCount(node: FolderInfo): number {
+    let total = node.count;
+    for (const child of node.children) {
+      total += computeTotalCount(child);
+    }
+    node.totalCount = total;
+    return total;
+  }
+  for (const root of roots) {
+    computeTotalCount(root);
+  }
+
+  return roots;
 }
 
 export async function listFolders(): Promise<FolderInfo[]> {
   const prisma = getPrisma();
 
-  // Get all standalone folders
+  // Get all folders
   const allFolders = await prisma.folder.findMany({
-    orderBy: { name: "asc" },
+    orderBy: { sortOrder: "asc" },
   });
 
-  // Get note counts grouped by folder
+  // Get note counts grouped by folderId
   const groups = await prisma.note.groupBy({
-    by: ["folder"],
-    where: { deletedAt: null, folder: { not: null } },
+    by: ["folderId"],
+    where: { deletedAt: null, folderId: { not: null } },
     _count: { id: true },
   });
 
   const countMap = new Map(
-    groups.map((g) => [g.folder as string, g._count.id]),
+    groups.map((g) => [g.folderId as string, g._count.id]),
   );
 
-  // Merge: every folder from the folders table, with count from notes
-  return allFolders.map((f) => ({
-    name: f.name,
-    count: countMap.get(f.name) ?? 0,
-    createdAt: f.createdAt.toISOString(),
+  const foldersWithCount = allFolders.map((f) => ({
+    ...f,
+    count: countMap.get(f.id) ?? 0,
   }));
+
+  return buildFolderTree(foldersWithCount);
 }
 
 export async function reorderNotes(
@@ -456,6 +573,117 @@ export async function reorderNotes(
   );
 }
 
+export async function renameFolderById(
+  folderId: string,
+  newName: string,
+): Promise<PrismaFolder> {
+  const prisma = getPrisma();
+  return prisma.folder.update({
+    where: { id: folderId },
+    data: { name: newName },
+  });
+}
+
+export async function moveFolder(
+  folderId: string,
+  newParentId: string | null,
+  sortOrder?: number,
+): Promise<PrismaFolder> {
+  const prisma = getPrisma();
+
+  // Validate no circular reference
+  if (newParentId) {
+    const descendants = await getSelfAndDescendantIds(folderId);
+    if (descendants.includes(newParentId)) {
+      throw new Error("Cannot move folder into its own descendant");
+    }
+  }
+
+  const data: Record<string, unknown> = { parentId: newParentId };
+  if (sortOrder !== undefined) {
+    data.sortOrder = sortOrder;
+  } else {
+    // Auto-increment sortOrder among new siblings
+    const maxResult = await prisma.folder.aggregate({
+      _max: { sortOrder: true },
+      where: { parentId: newParentId },
+    });
+    data.sortOrder = (maxResult._max.sortOrder ?? -1) + 1;
+  }
+
+  return prisma.folder.update({
+    where: { id: folderId },
+    data,
+  });
+}
+
+export async function reorderFolders(
+  order: { id: string; sortOrder: number }[],
+): Promise<void> {
+  const prisma = getPrisma();
+  await prisma.$transaction(
+    order.map((item) =>
+      prisma.folder.update({
+        where: { id: item.id },
+        data: { sortOrder: item.sortOrder },
+      }),
+    ),
+  );
+}
+
+export type FolderDeleteMode = "move-up" | "recursive";
+
+export async function deleteFolderById(
+  folderId: string,
+  mode: FolderDeleteMode = "move-up",
+): Promise<number> {
+  const prisma = getPrisma();
+
+  const folder = await prisma.folder.findUnique({ where: { id: folderId } });
+  if (!folder) return 0;
+
+  if (mode === "recursive") {
+    // Get all descendant folder IDs
+    const descendantIds = await getDescendantIds(folderId);
+    const allIds = [folderId, ...descendantIds];
+
+    // Unfile all notes in this folder and descendants
+    const result = await prisma.note.updateMany({
+      where: { folderId: { in: allIds }, deletedAt: null },
+      data: { folderId: null, folder: null },
+    });
+
+    // Delete all descendant folders then this folder
+    if (descendantIds.length > 0) {
+      await prisma.folder.deleteMany({ where: { id: { in: descendantIds } } });
+    }
+    await prisma.folder.delete({ where: { id: folderId } });
+
+    return result.count;
+  }
+
+  // "move-up" mode: children and notes move to parent folder
+  const parentId = folder.parentId;
+
+  // Move children to parent
+  await prisma.folder.updateMany({
+    where: { parentId: folderId },
+    data: { parentId },
+  });
+
+  // Move notes to parent folder
+  const result = await prisma.note.updateMany({
+    where: { folderId, deletedAt: null },
+    data: { folderId: parentId, folder: null },
+  });
+
+  // Delete the folder
+  await prisma.folder.delete({ where: { id: folderId } });
+
+  return result.count;
+}
+
+// Legacy name-based rename (kept for backward compat during transition)
 export async function renameFolder(
   oldName: string,
   newName: string,
@@ -465,15 +693,18 @@ export async function renameFolder(
     where: { folder: oldName, deletedAt: null },
     data: { folder: newName },
   });
-  // Rename in folders table (upsert to handle edge cases)
-  await prisma.folder.upsert({
-    where: { name: oldName },
-    update: { name: newName },
-    create: { name: newName },
-  });
+  // Find the folder by name and rename it
+  const folder = await prisma.folder.findFirst({ where: { name: oldName, parentId: null } });
+  if (folder) {
+    await prisma.folder.update({
+      where: { id: folder.id },
+      data: { name: newName },
+    });
+  }
   return result.count;
 }
 
+// Legacy name-based delete (kept for backward compat during transition)
 export async function deleteFolder(name: string): Promise<number> {
   const prisma = getPrisma();
   const result = await prisma.note.updateMany({

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { TagInfo } from "@derekentringer/shared/ns";
+
+const MAX_COLLAPSED_ROWS = 3;
 
 interface TagBrowserProps {
   tags: TagInfo[];
@@ -23,6 +25,20 @@ export function TagBrowser({
   } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [collapsedHeight, setCollapsedHeight] = useState<number | undefined>(undefined);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    // Measure full height vs collapsed height (MAX_COLLAPSED_ROWS of pill height ~24px + 4px gap)
+    const rowHeight = 24 + 4; // pill height + gap
+    const maxHeight = rowHeight * MAX_COLLAPSED_ROWS;
+    setCollapsedHeight(maxHeight);
+    setIsOverflowing(el.scrollHeight > maxHeight + 4);
+  }, [tags]);
 
   if (tags.length === 0) return null;
 
@@ -52,7 +68,15 @@ export function TagBrowser({
 
   return (
     <div>
-      <div className="flex flex-wrap gap-1">
+      <div
+        ref={wrapRef}
+        className="flex flex-wrap gap-1 overflow-hidden transition-all"
+        style={
+          !expanded && isOverflowing && collapsedHeight
+            ? { maxHeight: collapsedHeight }
+            : undefined
+        }
+      >
         {tags.map((tag) => {
           const isActive = activeTags.includes(tag.name);
 
@@ -94,6 +118,15 @@ export function TagBrowser({
           );
         })}
       </div>
+
+      {isOverflowing && (
+        <button
+          onClick={() => setExpanded((prev) => !prev)}
+          className="text-xs text-muted-foreground hover:text-foreground mt-1"
+        >
+          {expanded ? "show less" : "show more"}
+        </button>
+      )}
 
       {activeTags.length > 0 && (
         <button

@@ -15,6 +15,7 @@ Full-text search across all notes using PostgreSQL tsvector, plus a folder and t
 | **03a** | `feature/ns-03a-trash-sort` | Trash view (list/restore/permanent delete), sort controls, auto-purge | Complete |
 | **03b** | `feature/ns-03b-folders-dnd` | Flat folders, folder CRUD, @dnd-kit drag-and-drop reordering | Complete |
 | **03c** | `feature/ns-03c-tags-fts` | Tag browser, tag CRUD, PostgreSQL tsvector full-text search with snippets, resizable sidebar, logo/branding, favicon | Complete |
+| **03d** | `feature/ns-03d-nested-folders` | Nested folders (unlimited depth), drag-and-drop folder nesting/reordering, FolderTree component, two-mode delete, global search, collapsible tag browser | Complete |
 
 Each release includes: API changes, frontend changes, shared type updates, tests, and doc updates.
 

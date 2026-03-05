@@ -147,11 +147,6 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        {messages.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center mt-8">
-            Ask a question about your notes
-          </p>
-        )}
         {messages.map((msg, i) => (
           <div
             key={i}
@@ -212,7 +207,7 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
               ? "bg-primary text-black"
               : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-accent"
           }`}
-          title="Q&A Assistant"
+          title="AI Assistant Chat"
           data-testid="qa-tab"
         >
           <svg
@@ -236,7 +231,7 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about your notes..."
+            placeholder="Ask anything about your notes..."
             className="flex-1 px-3 py-2 rounded-md bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             disabled={isStreaming}
           />
