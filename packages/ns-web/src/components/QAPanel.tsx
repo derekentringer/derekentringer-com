@@ -153,7 +153,7 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             {msg.role === "user" ? (
-              <div className="max-w-[85%] px-3 py-2 rounded-lg bg-primary text-black text-sm">
+              <div className="max-w-[85%] px-3 py-2 rounded-lg bg-primary text-primary-contrast text-sm">
                 {msg.content}
               </div>
             ) : (
@@ -173,7 +173,7 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
                             <button
                               key={source.id}
                               onClick={() => onSelectNote(source.id)}
-                              className="inline-flex items-center px-2 py-0.5 rounded-md bg-accent text-xs text-foreground border border-border hover:bg-primary hover:text-black transition-colors"
+                              className="inline-flex items-center px-2 py-0.5 rounded-md bg-accent text-xs text-foreground border border-border hover:bg-primary hover:text-primary-contrast transition-colors"
                               data-testid="source-pill"
                             >
                               {source.title}
@@ -204,7 +204,7 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
           onClick={onToggle}
           className={`absolute right-full top-0 flex items-center justify-center w-8 h-full rounded-l-md shadow-md transition-colors ${
             isOpen
-              ? "bg-primary text-black"
+              ? "bg-primary text-primary-contrast"
               : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-accent"
           }`}
           title="AI Assistant Chat"
@@ -246,7 +246,7 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
             <button
               onClick={handleAsk}
               disabled={!input.trim()}
-              className="px-3 py-2 rounded-md bg-primary text-black text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+              className="px-3 py-2 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
             >
               Ask
             </button>

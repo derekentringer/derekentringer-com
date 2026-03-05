@@ -48,6 +48,7 @@ import { TagInput } from "../components/TagInput.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
+import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
 import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
@@ -61,6 +62,7 @@ export function NotesPage() {
   const { logout } = useAuth();
   const navigate = useNavigate();
   const { settings } = useAiSettings();
+  const { settings: editorSettings } = useEditorSettings();
   const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
@@ -73,8 +75,8 @@ export function NotesPage() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("editor");
-  const [showLineNumbers, setShowLineNumbers] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>(editorSettings.defaultViewMode);
+  const [showLineNumbers, setShowLineNumbers] = useState(editorSettings.showLineNumbers);
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const titleRef = useRef(title);
   titleRef.current = title;
@@ -597,30 +599,46 @@ export function NotesPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleSave]);
 
-  // Autosave: debounce 1.5s after changes
+  // Autosave: debounce after changes
   useEffect(() => {
     if (!isDirty || !selectedId) return;
 
     const timer = setTimeout(() => {
       handleSave();
-    }, 1500);
+    }, editorSettings.autoSaveDelay);
 
     return () => clearTimeout(timer);
-  }, [isDirty, title, content, selectedId, handleSave]);
+  }, [isDirty, title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
 
   const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
+  // Resolve "system" theme to actual "dark" or "light" for CodeMirror
+  const resolvedTheme = useMemo((): "dark" | "light" => {
+    if (editorSettings.theme === "system") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    return editorSettings.theme;
+  }, [editorSettings.theme]);
+
+  const resolvedAccentColor = useMemo(
+    () => resolveAccentColor(editorSettings.accentColor, resolvedTheme),
+    [editorSettings.accentColor, resolvedTheme],
+  );
+
   const aiExtensions = useMemo(
-    () => [
-      ...(settings.rewrite ? [rewriteExtension(rewriteText)] : []),
-      ...(settings.completions
-        ? [ghostTextExtension((ctx, sig) => fetchCompletion(ctx, sig, settings.completionStyle))]
-        : []),
-      ...(settings.continueWriting
-        ? [continueWritingKeymap((ctx, sig, style) => fetchCompletion(ctx, sig, style as CompletionStyle), () => titleRef.current)]
-        : []),
-    ],
-    [settings.rewrite, settings.completions, settings.completionStyle, settings.continueWriting],
+    () => {
+      if (!settings.masterAiEnabled) return [];
+      return [
+        ...(settings.rewrite ? [rewriteExtension(rewriteText)] : []),
+        ...(settings.completions
+          ? [ghostTextExtension((ctx, sig) => fetchCompletion(ctx, sig, settings.completionStyle), settings.completionDebounceMs)]
+          : []),
+        ...(settings.continueWriting
+          ? [continueWritingKeymap((ctx, sig, style) => fetchCompletion(ctx, sig, style as CompletionStyle), () => titleRef.current)]
+          : []),
+      ];
+    },
+    [settings.masterAiEnabled, settings.rewrite, settings.completions, settings.completionStyle, settings.completionDebounceMs, settings.continueWriting],
   );
 
   async function handleSummarize() {
@@ -744,12 +762,12 @@ export function NotesPage() {
             <div className="flex items-center gap-1.5">
               <button
                 onClick={handleCreate}
-                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-black hover:bg-primary-hover transition-colors text-lg leading-none"
+                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none"
                 title="New note"
               >
                 +
               </button>
-              {settings.audioNotes && (
+              {settings.masterAiEnabled && settings.audioNotes && (
                 <AudioRecorder
                   defaultMode={settings.audioMode}
                   onNoteCreated={handleAudioNoteCreated}
@@ -764,7 +782,7 @@ export function NotesPage() {
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <div className="p-2">
               <div className="relative flex items-center rounded-md bg-input border border-border focus-within:ring-2 focus-within:ring-ring">
-                {settings.semanticSearch && (
+                {settings.masterAiEnabled && settings.semanticSearch && (
                   <select
                     value={searchMode}
                     onChange={(e) => setSearchMode(e.target.value as "keyword" | "semantic" | "hybrid")}
@@ -991,7 +1009,7 @@ export function NotesPage() {
                       : "Saved"}
               </span>
               <div className="flex-1" />
-              {settings.summarize && (
+              {settings.masterAiEnabled && settings.summarize && (
                 <button
                   onClick={handleSummarize}
                   disabled={isSummarizing}
@@ -1002,7 +1020,7 @@ export function NotesPage() {
                   {isSummarizing ? "Summarizing..." : "Summarize"}
                 </button>
               )}
-              {settings.tagSuggestions && (
+              {settings.masterAiEnabled && settings.tagSuggestions && (
                 <button
                   onClick={handleSuggestTags}
                   disabled={isSuggestingTags}
@@ -1180,6 +1198,11 @@ export function NotesPage() {
                   }}
                   onSave={handleSave}
                   showLineNumbers={showLineNumbers}
+                  wordWrap={editorSettings.wordWrap}
+                  tabSize={editorSettings.tabSize}
+                  fontSize={editorSettings.editorFontSize}
+                  theme={resolvedTheme}
+                  accentColor={resolvedAccentColor}
                   extensions={aiExtensions}
                   className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                   style={viewMode === "split" ? { width: splitResize.size } : undefined}
@@ -1213,7 +1236,7 @@ export function NotesPage() {
               <div className="flex-1" />
               <button
                 onClick={handleRestore}
-                className="px-3 py-1 rounded-md bg-primary text-black text-sm font-medium hover:bg-primary-hover transition-colors"
+                className="px-3 py-1 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors"
               >
                 Restore
               </button>
@@ -1272,7 +1295,7 @@ export function NotesPage() {
       </main>
 
       {/* Q&A sliding panel */}
-      {settings.qaAssistant && (
+      {settings.masterAiEnabled && settings.qaAssistant && (
         <div
           className="fixed top-0 right-0 h-full z-10 overflow-visible transition-transform duration-300 ease-in-out"
           style={{

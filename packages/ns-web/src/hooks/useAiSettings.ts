@@ -7,8 +7,10 @@ const VALID_COMPLETION_STYLES: CompletionStyle[] = ["continue", "markdown", "bri
 const VALID_AUDIO_MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 
 export interface AiSettings {
+  masterAiEnabled: boolean;
   completions: boolean;
   completionStyle: CompletionStyle;
+  completionDebounceMs: number;
   continueWriting: boolean;
   summarize: boolean;
   tagSuggestions: boolean;
@@ -22,8 +24,10 @@ export interface AiSettings {
 const STORAGE_KEY = "ns-ai-settings";
 
 const DEFAULT_SETTINGS: AiSettings = {
+  masterAiEnabled: true,
   completions: false,
   completionStyle: "continue",
+  completionDebounceMs: 600,
   continueWriting: false,
   summarize: false,
   tagSuggestions: false,
@@ -40,10 +44,14 @@ function loadSettings(): AiSettings {
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
     return {
+      masterAiEnabled: typeof parsed.masterAiEnabled === "boolean" ? parsed.masterAiEnabled : true,
       completions: typeof parsed.completions === "boolean" ? parsed.completions : false,
       completionStyle: VALID_COMPLETION_STYLES.includes(parsed.completionStyle)
         ? parsed.completionStyle
         : "continue",
+      completionDebounceMs: typeof parsed.completionDebounceMs === "number"
+        ? Math.max(200, Math.min(1500, parsed.completionDebounceMs))
+        : 600,
       continueWriting: typeof parsed.continueWriting === "boolean" ? parsed.continueWriting : false,
       summarize: typeof parsed.summarize === "boolean" ? parsed.summarize : false,
       tagSuggestions: typeof parsed.tagSuggestions === "boolean" ? parsed.tagSuggestions : false,

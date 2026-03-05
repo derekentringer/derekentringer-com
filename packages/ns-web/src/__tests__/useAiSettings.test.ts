@@ -11,8 +11,10 @@ describe("useAiSettings", () => {
     const { result } = renderHook(() => useAiSettings());
 
     expect(result.current.settings).toEqual({
+      masterAiEnabled: true,
       completions: false,
       completionStyle: "continue",
+      completionDebounceMs: 600,
       continueWriting: false,
       summarize: false,
       tagSuggestions: false,
@@ -28,8 +30,10 @@ describe("useAiSettings", () => {
     localStorage.setItem(
       "ns-ai-settings",
       JSON.stringify({
+        masterAiEnabled: false,
         completions: true,
         completionStyle: "markdown",
+        completionDebounceMs: 400,
         summarize: true,
         tagSuggestions: false,
         rewrite: true,
@@ -43,8 +47,10 @@ describe("useAiSettings", () => {
     const { result } = renderHook(() => useAiSettings());
 
     expect(result.current.settings).toEqual({
+      masterAiEnabled: false,
       completions: true,
       completionStyle: "markdown",
+      completionDebounceMs: 400,
       continueWriting: false,
       summarize: true,
       tagSuggestions: false,
@@ -115,8 +121,10 @@ describe("useAiSettings", () => {
     localStorage.setItem(
       "ns-ai-settings",
       JSON.stringify({
+        masterAiEnabled: true,
         completions: true,
         completionStyle: "markdown",
+        completionDebounceMs: 600,
         continueWriting: false,
         summarize: false,
         tagSuggestions: true,
@@ -135,8 +143,10 @@ describe("useAiSettings", () => {
     });
 
     expect(result.current.settings).toEqual({
+      masterAiEnabled: true,
       completions: true,
       completionStyle: "markdown",
+      completionDebounceMs: 600,
       continueWriting: false,
       summarize: true,
       tagSuggestions: true,
@@ -154,8 +164,10 @@ describe("useAiSettings", () => {
     const { result } = renderHook(() => useAiSettings());
 
     expect(result.current.settings).toEqual({
+      masterAiEnabled: true,
       completions: false,
       completionStyle: "continue",
+      completionDebounceMs: 600,
       continueWriting: false,
       summarize: false,
       tagSuggestions: false,
@@ -176,8 +188,10 @@ describe("useAiSettings", () => {
     const { result } = renderHook(() => useAiSettings());
 
     expect(result.current.settings).toEqual({
+      masterAiEnabled: true,
       completions: true,
       completionStyle: "continue",
+      completionDebounceMs: 600,
       continueWriting: false,
       summarize: false,
       tagSuggestions: false,
@@ -276,5 +290,91 @@ describe("useAiSettings", () => {
 
     const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
     expect(stored.qaAssistant).toBe(true);
+  });
+
+  // --- masterAiEnabled ---
+
+  it("defaults masterAiEnabled to true", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.masterAiEnabled).toBe(true);
+  });
+
+  it("reads masterAiEnabled from localStorage", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: false }),
+    );
+
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.masterAiEnabled).toBe(false);
+  });
+
+  it("updateSetting persists masterAiEnabled to localStorage", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    act(() => {
+      result.current.updateSetting("masterAiEnabled", false);
+    });
+
+    expect(result.current.settings.masterAiEnabled).toBe(false);
+
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.masterAiEnabled).toBe(false);
+  });
+
+  // --- completionDebounceMs ---
+
+  it("defaults completionDebounceMs to 600", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.completionDebounceMs).toBe(600);
+  });
+
+  it("reads completionDebounceMs from localStorage", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ completionDebounceMs: 1000 }),
+    );
+
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.completionDebounceMs).toBe(1000);
+  });
+
+  it("clamps completionDebounceMs to valid range", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ completionDebounceMs: 50 }),
+    );
+
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.completionDebounceMs).toBe(200);
+  });
+
+  it("clamps completionDebounceMs upper bound", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ completionDebounceMs: 3000 }),
+    );
+
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.completionDebounceMs).toBe(1500);
+  });
+
+  it("updateSetting persists completionDebounceMs to localStorage", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    act(() => {
+      result.current.updateSetting("completionDebounceMs", 800);
+    });
+
+    expect(result.current.settings.completionDebounceMs).toBe(800);
+
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.completionDebounceMs).toBe(800);
   });
 });
