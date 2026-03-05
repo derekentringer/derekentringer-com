@@ -107,7 +107,7 @@ export function TagBrowser({
               onContextMenu={(e) => handleContextMenu(e, tag.name)}
               className={`px-2 py-0.5 rounded-full text-xs transition-colors ${
                 isActive
-                  ? "bg-primary text-black"
+                  ? "bg-primary text-primary-contrast"
                   : "bg-border text-muted-foreground hover:text-foreground"
               }`}
               title={`${tag.name} (${tag.count})`}

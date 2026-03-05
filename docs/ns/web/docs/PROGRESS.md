@@ -67,7 +67,7 @@
 
 ### Phase 4: Polish — Low Priority
 
-- [~] [06 — Settings](feature_planning/06-settings.md) — AI settings with per-feature toggles, completion styles, audio modes, info tooltips, and keyboard shortcuts reference already implemented as part of AI features; remaining: theme, editor preferences, account, offline cache, trash settings
+- [x] [06 — Settings](features/06-settings.md) — Theme toggle (dark/light/system), configurable accent color (11-preset palette with dark/light variants and contrast-aware text), editor font size slider, default view mode, line numbers, word wrap, auto-save delay, tab size, AI feature toggles with master switch, completion styles and delay, audio modes, info tooltips, keyboard shortcuts reference, offline cache management (cached note count, max cache size, last synced, clear cache), `useEditorSettings` and `useAiSettings` hooks with localStorage persistence and validated loading
 
 ## Extension Ideas (Future)
 

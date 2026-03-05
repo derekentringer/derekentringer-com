@@ -73,7 +73,7 @@ type FetchFn = (
 ) => AsyncGenerator<string>;
 
 // ViewPlugin to manage debounce and fetch lifecycle
-function createGhostTextPlugin(fetchFn: FetchFn) {
+function createGhostTextPlugin(fetchFn: FetchFn, debounceMs = 600) {
   return ViewPlugin.fromClass(
     class {
       private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -88,7 +88,7 @@ function createGhostTextPlugin(fetchFn: FetchFn) {
         // Start debounce
         this.debounceTimer = setTimeout(() => {
           this.fetchGhostText(update.view);
-        }, 600);
+        }, debounceMs);
       }
 
       private cancelPending() {
@@ -244,11 +244,11 @@ export function continueWritingKeymap(
 
 export { ghostTextField, setGhostText, clearGhostText };
 
-export function ghostTextExtension(fetchFn: FetchFn): Extension {
+export function ghostTextExtension(fetchFn: FetchFn, debounceMs?: number): Extension {
   return [
     ghostTextField,
     ghostTextDecorations,
-    createGhostTextPlugin(fetchFn),
+    createGhostTextPlugin(fetchFn, debounceMs),
     ghostTextKeymap,
   ];
 }
