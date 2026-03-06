@@ -25,10 +25,6 @@ beforeAll(() => {
 
 import { buildApp } from "../app.js";
 
-interface P2025Error extends Error {
-  code: string;
-}
-
 function makeMockAccountRow(type: AccountType = AccountType.Investment) {
   const encrypted = encryptAccountForCreate({
     name: "Test Account",

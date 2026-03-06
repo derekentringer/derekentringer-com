@@ -28,10 +28,6 @@ import {
   listAllHoldingsWithTickers,
 } from "../store/holdingStore.js";
 
-interface P2025Error extends Error {
-  code: string;
-}
-
 function makeMockRow(overrides: Record<string, unknown> = {}) {
   const encrypted = encryptHoldingForCreate({
     accountId: "acc-1",
@@ -53,11 +49,6 @@ function makeMockRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeP2025Error(): P2025Error {
-  const e = new Error("Record not found") as P2025Error;
-  e.code = "P2025";
-  return e;
-}
 
 describe("holdingStore", () => {
   beforeEach(() => {

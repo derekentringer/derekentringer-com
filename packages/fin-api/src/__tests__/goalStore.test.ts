@@ -26,10 +26,6 @@ import {
 
 const TEST_USER_ID = "test-user-1";
 
-interface P2025Error extends Error {
-  code: string;
-}
-
 function makeMockRow(overrides: Record<string, unknown> = {}) {
   const encrypted = encryptGoalForCreate({
     name: "Test Goal",
@@ -50,11 +46,6 @@ function makeMockRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeP2025Error(): P2025Error {
-  const e = new Error("Record not found") as P2025Error;
-  e.code = "P2025";
-  return e;
-}
 
 describe("goalStore", () => {
   beforeEach(() => {

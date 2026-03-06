@@ -140,7 +140,6 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { accountId?: string } }>,
       reply: FastifyReply,
     ) => {
-      const userId = request.user.sub;
       const { accountId } = request.query;
 
       if (!accountId || !CUID_PATTERN.test(accountId)) {

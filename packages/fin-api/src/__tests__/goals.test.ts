@@ -23,10 +23,6 @@ beforeAll(() => {
 
 import { buildApp } from "../app.js";
 
-interface P2025Error extends Error {
-  code: string;
-}
-
 describe("Goal routes", () => {
   const app = buildApp({ disableRateLimit: true });
 

@@ -4,7 +4,7 @@ import { adminGuard } from "../middleware/adminGuard.js";
 import { listUsers, getUserById, updateUser, deleteUser } from "../store/userStore.js";
 import { revokeAllRefreshTokens } from "../store/refreshTokenStore.js";
 import { getSetting, setSetting } from "../store/settingStore.js";
-import { toUserResponse } from "../lib/mappers.js";
+
 
 export default async function adminRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
