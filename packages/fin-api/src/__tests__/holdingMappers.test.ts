@@ -197,6 +197,7 @@ describe("TargetAllocation mappers", () => {
 
     const row = {
       id: "ta-1",
+      userId: "test-user-1",
       ...encrypted,
       createdAt: now,
       updatedAt: now,

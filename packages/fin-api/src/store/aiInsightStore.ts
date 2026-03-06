@@ -5,9 +5,11 @@ import { encryptField, decryptField } from "../lib/encryption.js";
 
 // ─── Preferences ─────────────────────────────────────────────────────────────
 
-export async function getAiPreferences(): Promise<AiInsightPreferences> {
+export async function getAiPreferences(userId: string): Promise<AiInsightPreferences> {
   const prisma = getPrisma();
-  const row = await prisma.aiInsightPreference.findFirst();
+  const row = await prisma.aiInsightPreference.findFirst({
+    where: { userId },
+  });
   if (!row) return { ...DEFAULT_AI_INSIGHT_PREFERENCES };
 
   try {
@@ -20,14 +22,17 @@ export async function getAiPreferences(): Promise<AiInsightPreferences> {
 }
 
 export async function updateAiPreferences(
+  userId: string,
   updates: Partial<AiInsightPreferences>,
 ): Promise<AiInsightPreferences> {
   const prisma = getPrisma();
-  const current = await getAiPreferences();
+  const current = await getAiPreferences(userId);
   const merged = { ...current, ...updates };
   const encrypted = encryptField(JSON.stringify(merged));
 
-  const existing = await prisma.aiInsightPreference.findFirst();
+  const existing = await prisma.aiInsightPreference.findFirst({
+    where: { userId },
+  });
   if (existing) {
     await prisma.aiInsightPreference.update({
       where: { id: existing.id },
@@ -35,7 +40,7 @@ export async function updateAiPreferences(
     });
   } else {
     await prisma.aiInsightPreference.create({
-      data: { config: encrypted },
+      data: { userId, config: encrypted },
     });
   }
 
@@ -45,12 +50,13 @@ export async function updateAiPreferences(
 // ─── Cache ───────────────────────────────────────────────────────────────────
 
 export async function getCachedInsights(
+  userId: string,
   scope: string,
   contentHash: string,
 ): Promise<AiInsight[] | null> {
   const prisma = getPrisma();
   const row = await prisma.aiInsightCache.findUnique({
-    where: { scope_contentHash: { scope, contentHash } },
+    where: { userId_scope_contentHash: { userId, scope, contentHash } },
   });
 
   if (!row) return null;
@@ -68,6 +74,7 @@ export async function getCachedInsights(
 }
 
 export async function setCachedInsights(
+  userId: string,
   scope: string,
   contentHash: string,
   insights: AiInsight[],
@@ -77,17 +84,17 @@ export async function setCachedInsights(
   const encrypted = encryptField(JSON.stringify(insights));
 
   await prisma.aiInsightCache.upsert({
-    where: { scope_contentHash: { scope, contentHash } },
-    create: { scope, contentHash, response: encrypted, expiresAt },
+    where: { userId_scope_contentHash: { userId, scope, contentHash } },
+    create: { userId, scope, contentHash, response: encrypted, expiresAt },
     update: { response: encrypted, expiresAt },
   });
 }
 
-export async function clearInsightCache(scope?: string): Promise<number> {
+export async function clearInsightCache(userId: string, scope?: string): Promise<number> {
   const prisma = getPrisma();
-  const result = await prisma.aiInsightCache.deleteMany(
-    scope ? { where: { scope } } : undefined,
-  );
+  const result = await prisma.aiInsightCache.deleteMany({
+    where: { userId, ...(scope ? { scope } : {}) },
+  });
   return result.count;
 }
 
@@ -106,20 +113,21 @@ function todayKey(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
-export async function getDailyUsage(): Promise<number> {
+export async function getDailyUsage(userId: string): Promise<number> {
   const prisma = getPrisma();
+  const date = todayKey();
   const row = await prisma.aiInsightUsage.findUnique({
-    where: { date: todayKey() },
+    where: { userId_date: { userId, date } },
   });
   return row?.count ?? 0;
 }
 
-export async function incrementDailyUsage(): Promise<number> {
+export async function incrementDailyUsage(userId: string): Promise<number> {
   const prisma = getPrisma();
   const date = todayKey();
   const row = await prisma.aiInsightUsage.upsert({
-    where: { date },
-    create: { date, count: 1 },
+    where: { userId_date: { userId, date } },
+    create: { userId, date, count: 1 },
     update: { count: { increment: 1 } },
   });
   return row.count;

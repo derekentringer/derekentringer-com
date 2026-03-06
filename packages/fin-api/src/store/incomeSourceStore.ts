@@ -6,42 +6,42 @@ import {
   encryptIncomeSourceForUpdate,
 } from "../lib/mappers.js";
 
-function isNotFoundError(e: unknown): boolean {
-  return (
-    e !== null &&
-    typeof e === "object" &&
-    "code" in e &&
-    (e as { code: string }).code === "P2025"
-  );
-}
-
-export async function createIncomeSource(data: {
-  name: string;
-  amount: number;
-  frequency: string;
-  isActive?: boolean;
-  notes?: string | null;
-}): Promise<IncomeSource> {
+export async function createIncomeSource(
+  userId: string,
+  data: {
+    name: string;
+    amount: number;
+    frequency: string;
+    isActive?: boolean;
+    notes?: string | null;
+  },
+): Promise<IncomeSource> {
   const prisma = getPrisma();
   const encrypted = encryptIncomeSourceForCreate(data);
-  const row = await prisma.incomeSource.create({ data: encrypted });
+  const row = await prisma.incomeSource.create({
+    data: { ...encrypted, userId },
+  });
   return decryptIncomeSource(row);
 }
 
 export async function getIncomeSource(
+  userId: string,
   id: string,
 ): Promise<IncomeSource | null> {
   const prisma = getPrisma();
   const row = await prisma.incomeSource.findUnique({ where: { id } });
-  if (!row) return null;
+  if (!row || row.userId !== userId) return null;
   return decryptIncomeSource(row);
 }
 
-export async function listIncomeSources(filter?: {
-  isActive?: boolean;
-}): Promise<IncomeSource[]> {
+export async function listIncomeSources(
+  userId: string,
+  filter?: {
+    isActive?: boolean;
+  },
+): Promise<IncomeSource[]> {
   const prisma = getPrisma();
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { userId };
   if (filter?.isActive !== undefined) {
     where.isActive = filter.isActive;
   }
@@ -50,6 +50,7 @@ export async function listIncomeSources(filter?: {
 }
 
 export async function updateIncomeSource(
+  userId: string,
   id: string,
   data: {
     name?: string;
@@ -60,27 +61,27 @@ export async function updateIncomeSource(
   },
 ): Promise<IncomeSource | null> {
   const prisma = getPrisma();
-  const encrypted = encryptIncomeSourceForUpdate(data);
 
-  try {
-    const row = await prisma.incomeSource.update({
-      where: { id },
-      data: encrypted,
-    });
-    return decryptIncomeSource(row);
-  } catch (e: unknown) {
-    if (isNotFoundError(e)) return null;
-    throw e;
-  }
+  const existing = await prisma.incomeSource.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return null;
+
+  const encrypted = encryptIncomeSourceForUpdate(data);
+  const row = await prisma.incomeSource.update({
+    where: { id },
+    data: encrypted,
+  });
+  return decryptIncomeSource(row);
 }
 
-export async function deleteIncomeSource(id: string): Promise<boolean> {
+export async function deleteIncomeSource(
+  userId: string,
+  id: string,
+): Promise<boolean> {
   const prisma = getPrisma();
-  try {
-    await prisma.incomeSource.delete({ where: { id } });
-    return true;
-  } catch (e: unknown) {
-    if (isNotFoundError(e)) return false;
-    throw e;
-  }
+
+  const existing = await prisma.incomeSource.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return false;
+
+  await prisma.incomeSource.delete({ where: { id } });
+  return true;
 }

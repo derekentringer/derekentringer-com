@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { SetTargetAllocationsRequest, PerformancePeriod } from "@derekentringer/shared";
 import { ASSET_CLASSES } from "@derekentringer/shared";
-import { loadConfig } from "../config.js";
 import {
   computeAssetAllocation,
   computePerformance,
@@ -40,8 +39,6 @@ const setTargetAllocationsSchema = {
 export default async function portfolioRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  loadConfig();
-
   // GET /allocation — asset allocation breakdown
   fastify.get<{ Querystring: { accountId?: string } }>(
     "/allocation",
@@ -49,6 +46,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { accountId?: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId } = request.query;
       if (accountId && !CUID_PATTERN.test(accountId)) {
         return reply.status(400).send({
@@ -59,7 +57,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const result = await computeAssetAllocation(accountId || null);
+        const result = await computeAssetAllocation(userId, accountId || null);
         return reply.send(result);
       } catch (e) {
         request.log.error(e, "Failed to compute asset allocation");
@@ -79,6 +77,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { accountId?: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId } = request.query;
       if (accountId && !CUID_PATTERN.test(accountId)) {
         return reply.status(400).send({
@@ -89,7 +88,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const allocations = await listTargetAllocations(accountId ?? null);
+        const allocations = await listTargetAllocations(userId, accountId ?? null);
         return reply.send({ allocations });
       } catch (e) {
         request.log.error(e, "Failed to list target allocations");
@@ -110,6 +109,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: SetTargetAllocationsRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId, allocations } = request.body;
 
       if (accountId && !CUID_PATTERN.test(accountId)) {
@@ -149,7 +149,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const result = await setTargetAllocations(accountId ?? null, allocations);
+        const result = await setTargetAllocations(userId, accountId ?? null, allocations);
         return reply.send({ allocations: result });
       } catch (e) {
         request.log.error(e, "Failed to set target allocations");
@@ -169,6 +169,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { period?: string; accountId?: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { period, accountId } = request.query;
 
       if (accountId && !CUID_PATTERN.test(accountId)) {
@@ -185,7 +186,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
           : "12m";
 
       try {
-        const result = await computePerformance(validPeriod, accountId || null);
+        const result = await computePerformance(userId, validPeriod, accountId || null);
         return reply.send(result);
       } catch (e) {
         request.log.error(e, "Failed to compute performance");
@@ -205,6 +206,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { accountId?: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId } = request.query;
 
       if (accountId && !CUID_PATTERN.test(accountId)) {
@@ -216,7 +218,7 @@ export default async function portfolioRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const result = await computeRebalanceSuggestions(accountId || null);
+        const result = await computeRebalanceSuggestions(userId, accountId || null);
         return reply.send(result);
       } catch (e) {
         request.log.error(e, "Failed to compute rebalance suggestions");

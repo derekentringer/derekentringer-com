@@ -35,24 +35,28 @@ function toCategory(row: {
   };
 }
 
-export async function listCategories(): Promise<Category[]> {
+export async function listCategories(userId: string): Promise<Category[]> {
   const prisma = getPrisma();
   const rows = await prisma.category.findMany({
+    where: { userId },
     orderBy: { sortOrder: "asc" },
   });
   return rows.map(toCategory);
 }
 
-export async function createCategory(data: {
-  name: string;
-}): Promise<Category> {
+export async function createCategory(
+  userId: string,
+  data: { name: string },
+): Promise<Category> {
   const prisma = getPrisma();
   const maxSort = await prisma.category.aggregate({
+    where: { userId },
     _max: { sortOrder: true },
   });
   const nextSort = (maxSort._max.sortOrder ?? -1) + 1;
   const row = await prisma.category.create({
     data: {
+      userId,
       name: data.name,
       sortOrder: nextSort,
     },
@@ -61,10 +65,13 @@ export async function createCategory(data: {
 }
 
 export async function updateCategory(
+  userId: string,
   id: string,
   data: { name?: string; sortOrder?: number },
 ): Promise<Category | null> {
   const prisma = getPrisma();
+  const existing = await prisma.category.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return null;
   try {
     const row = await prisma.category.update({
       where: { id },
@@ -84,10 +91,13 @@ export async function updateCategory(
   }
 }
 
-export async function deleteCategory(id: string): Promise<boolean> {
+export async function deleteCategory(
+  userId: string,
+  id: string,
+): Promise<boolean> {
   const prisma = getPrisma();
   const existing = await prisma.category.findUnique({ where: { id } });
-  if (!existing) return false;
+  if (!existing || existing.userId !== userId) return false;
   if (existing.isDefault) {
     throw new Error("Cannot delete default category");
   }
@@ -95,13 +105,14 @@ export async function deleteCategory(id: string): Promise<boolean> {
   return true;
 }
 
-export async function seedDefaultCategories(): Promise<void> {
+export async function seedDefaultCategories(userId: string): Promise<void> {
   const prisma = getPrisma();
   for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
     await prisma.category.upsert({
-      where: { name: DEFAULT_CATEGORIES[i] },
+      where: { userId_name: { userId, name: DEFAULT_CATEGORIES[i] } },
       update: {},
       create: {
+        userId,
         name: DEFAULT_CATEGORIES[i],
         isDefault: true,
         sortOrder: i,

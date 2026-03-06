@@ -79,6 +79,7 @@ describe("Account mappers", () => {
 
     const row = {
       id: "cuid-123",
+      userId: "test-user-1",
       ...encrypted,
       isActive: encrypted.isActive ?? true,
       isFavorite: encrypted.isFavorite ?? false,
@@ -118,6 +119,7 @@ describe("Account mappers", () => {
 
     const row = {
       id: "cuid-456",
+      userId: "test-user-1",
       ...encrypted,
       isActive: true, // Prisma @default(true) provides this
       isFavorite: false,
@@ -149,6 +151,7 @@ describe("Account mappers", () => {
 
     const row = {
       id: "cuid-789",
+      userId: "test-user-1",
       ...encrypted,
       isActive: encrypted.isActive ?? true,
       isFavorite: encrypted.isFavorite ?? false,

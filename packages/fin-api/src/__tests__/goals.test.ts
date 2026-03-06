@@ -5,16 +5,12 @@ const TEST_PASSWORD = "testpassword123";
 const VALID_CUID = "cm1a2b3c4d5e6f7g8h9i0j";
 const VALID_CUID_2 = "cm9z8y7x6w5v4u3t2s1r0q";
 
-process.env.ADMIN_USERNAME = "admin";
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-goal-tests-min32ch";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
-process.env.PIN_TOKEN_SECRET = "dev-pin-secret-do-not-use-in-prod";
 process.env.CORS_ORIGIN = "http://localhost:3003";
 process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
 import { describe, it, expect, afterAll, afterEach, vi, beforeAll } from "vitest";
-import { signPinToken } from "@derekentringer/shared/auth/pinVerify";
 import { createMockPrisma } from "./helpers/mockPrisma.js";
 import type { MockPrisma } from "./helpers/mockPrisma.js";
 import { encryptGoalForCreate } from "../lib/mappers.js";
@@ -45,19 +41,43 @@ describe("Goal routes", () => {
     );
   });
 
+  const TEST_USER_ID = "test-user-1";
+  const TEST_EMAIL = "admin@test.com";
+  const TEST_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
+
+  function setupUserMock() {
+    mockPrisma.user.findUnique.mockImplementation(
+      async (args: { where: { email?: string; id?: string } }) => {
+        if (args.where.email === TEST_EMAIL || args.where.id === TEST_USER_ID) {
+          return {
+            id: TEST_USER_ID,
+            email: TEST_EMAIL,
+            passwordHash: TEST_PASSWORD_HASH,
+            displayName: "Test Admin",
+            role: "admin",
+            totpEnabled: false,
+            totpSecret: null,
+            backupCodes: "[]",
+            mustChangePassword: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        }
+        return null;
+      },
+    );
+  }
+
   async function getAccessToken(): Promise<string> {
+    setupUserMock();
     mockPrisma.refreshToken.create.mockResolvedValue({});
 
     const res = await app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { email: "admin", password: TEST_PASSWORD },
+      payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
     });
     return res.json().accessToken;
-  }
-
-  function getPinToken(): string {
-    return signPinToken({ sub: "admin-001", type: "pin" }, "dev-pin-secret-do-not-use-in-prod");
   }
 
   function makeMockGoalRow(overrides: Record<string, unknown> = {}) {
@@ -69,6 +89,7 @@ describe("Goal routes", () => {
 
     return {
       id: VALID_CUID,
+      userId: TEST_USER_ID,
       ...encrypted,
       isActive: true,
       isCompleted: false,
@@ -367,6 +388,7 @@ describe("Goal routes", () => {
     it("updates goal fields (200)", async () => {
       const token = await getAccessToken();
       const row = makeMockGoalRow();
+      mockPrisma.goal.findUnique.mockResolvedValue(row);
       mockPrisma.goal.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -389,9 +411,7 @@ describe("Goal routes", () => {
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const notFoundError = new Error("Not found") as P2025Error;
-      notFoundError.code = "P2025";
-      mockPrisma.goal.update.mockRejectedValue(notFoundError);
+      mockPrisma.goal.findUnique.mockResolvedValue(null);
 
       const res = await app.inject({
         method: "PATCH",
@@ -464,19 +484,8 @@ describe("Goal routes", () => {
   describe("DELETE /goals/:id", () => {
     it("deletes goal (204)", async () => {
       const token = await getAccessToken();
+      mockPrisma.goal.findUnique.mockResolvedValue(makeMockGoalRow());
       mockPrisma.goal.delete.mockResolvedValue({});
-
-      const res = await app.inject({
-        method: "DELETE",
-        url: `/goals/${VALID_CUID}`,
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
-      });
-
-      expect(res.statusCode).toBe(204);
-    });
-
-    it("returns 403 without PIN token", async () => {
-      const token = await getAccessToken();
 
       const res = await app.inject({
         method: "DELETE",
@@ -484,20 +493,17 @@ describe("Goal routes", () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      expect(res.statusCode).toBe(403);
-      expect(res.json().message).toBe("PIN verification required");
+      expect(res.statusCode).toBe(204);
     });
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const notFoundError = new Error("Not found") as P2025Error;
-      notFoundError.code = "P2025";
-      mockPrisma.goal.delete.mockRejectedValue(notFoundError);
+      mockPrisma.goal.findUnique.mockResolvedValue(null);
 
       const res = await app.inject({
         method: "DELETE",
         url: `/goals/${VALID_CUID_2}`,
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
+        headers: { authorization: `Bearer ${token}` },
       });
 
       expect(res.statusCode).toBe(404);
@@ -509,7 +515,7 @@ describe("Goal routes", () => {
       const res = await app.inject({
         method: "DELETE",
         url: "/goals/invalid-id",
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
+        headers: { authorization: `Bearer ${token}` },
       });
 
       expect(res.statusCode).toBe(400);
@@ -590,7 +596,7 @@ describe("Goal routes", () => {
       const res = await app.inject({
         method: "DELETE",
         url: "/goals/invalid-id",
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
+        headers: { authorization: `Bearer ${token}` },
       });
 
       expect(res.statusCode).toBe(400);

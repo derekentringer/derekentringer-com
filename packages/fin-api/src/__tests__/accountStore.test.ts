@@ -9,6 +9,8 @@ import type { MockPrisma } from "./helpers/mockPrisma.js";
 import { encryptAccountForCreate } from "../lib/mappers.js";
 import { AccountType } from "@derekentringer/shared";
 
+const TEST_USER_ID = "test-user-1";
+
 let mockPrisma: MockPrisma;
 
 beforeAll(() => {
@@ -77,7 +79,7 @@ describe("accountStore", () => {
         }),
       );
 
-      const result = await createAccount({
+      const result = await createAccount(TEST_USER_ID, {
         name: "My Checking",
         type: AccountType.Checking,
         institution: "Chase",
@@ -94,9 +96,9 @@ describe("accountStore", () => {
 
   describe("getAccount", () => {
     it("returns decrypted account when found", async () => {
-      mockPrisma.account.findUnique.mockResolvedValue(makeMockRow());
+      mockPrisma.account.findUnique.mockResolvedValue(makeMockRow({ userId: TEST_USER_ID }));
 
-      const result = await getAccount("acc-1");
+      const result = await getAccount(TEST_USER_ID, "acc-1");
 
       expect(result).not.toBeNull();
       expect(result!.name).toBe("Test");
@@ -106,7 +108,7 @@ describe("accountStore", () => {
     it("returns null when not found", async () => {
       mockPrisma.account.findUnique.mockResolvedValue(null);
 
-      const result = await getAccount("nonexistent");
+      const result = await getAccount(TEST_USER_ID, "nonexistent");
       expect(result).toBeNull();
     });
   });
@@ -134,13 +136,13 @@ describe("accountStore", () => {
         { ...rowB, ...encZ, id: "acc-z" },
       ]);
 
-      const result = await listAccounts();
+      const result = await listAccounts(TEST_USER_ID);
 
       expect(result).toHaveLength(2);
       expect(result[0].name).toBe("Alpha");
       expect(result[1].name).toBe("Zulu");
       expect(mockPrisma.account.findMany).toHaveBeenCalledWith({
-        where: {},
+        where: { userId: TEST_USER_ID },
         orderBy: { sortOrder: "asc" },
       });
     });
@@ -148,10 +150,10 @@ describe("accountStore", () => {
     it("filters by isActive", async () => {
       mockPrisma.account.findMany.mockResolvedValue([]);
 
-      await listAccounts({ isActive: true });
+      await listAccounts(TEST_USER_ID, { isActive: true });
 
       expect(mockPrisma.account.findMany).toHaveBeenCalledWith({
-        where: { isActive: true },
+        where: { userId: TEST_USER_ID, isActive: true },
         orderBy: { sortOrder: "asc" },
       });
     });
@@ -160,6 +162,7 @@ describe("accountStore", () => {
   describe("updateAccount", () => {
     it("updates and returns decrypted account", async () => {
       const row = makeMockRow();
+      mockPrisma.account.findUnique.mockResolvedValue({ ...row, userId: TEST_USER_ID });
       mockPrisma.account.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -168,22 +171,22 @@ describe("accountStore", () => {
         }),
       );
 
-      const result = await updateAccount("acc-1", { name: "Updated" });
+      const result = await updateAccount(TEST_USER_ID, "acc-1", { name: "Updated" });
 
       expect(result).not.toBeNull();
       expect(result!.name).toBe("Updated");
     });
 
     it("returns null when account not found (P2025)", async () => {
-      mockPrisma.account.update.mockRejectedValue(makeP2025Error());
+      mockPrisma.account.findUnique.mockResolvedValue(null);
 
-      const result = await updateAccount("nonexistent", { name: "Nope" });
+      const result = await updateAccount(TEST_USER_ID, "nonexistent", { name: "Nope" });
       expect(result).toBeNull();
     });
 
     it("creates balance snapshot when currentBalance changes", async () => {
       const row = makeMockRow(); // currentBalance encrypted from 500
-      mockPrisma.account.findUnique.mockResolvedValue({ currentBalance: row.currentBalance });
+      mockPrisma.account.findUnique.mockResolvedValue({ ...row, userId: TEST_USER_ID });
       mockPrisma.account.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -193,14 +196,14 @@ describe("accountStore", () => {
       );
       mockPrisma.balance.create.mockResolvedValue({});
 
-      await updateAccount("acc-1", { currentBalance: 2000 });
+      await updateAccount(TEST_USER_ID, "acc-1", { currentBalance: 2000 });
 
       expect(mockPrisma.balance.create).toHaveBeenCalledTimes(1);
     });
 
     it("does not create balance snapshot when balance is unchanged", async () => {
       const row = makeMockRow(); // currentBalance encrypted from 500
-      mockPrisma.account.findUnique.mockResolvedValue({ currentBalance: row.currentBalance });
+      mockPrisma.account.findUnique.mockResolvedValue({ ...row, userId: TEST_USER_ID });
       mockPrisma.account.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -209,13 +212,14 @@ describe("accountStore", () => {
         }),
       );
 
-      await updateAccount("acc-1", { currentBalance: 500 });
+      await updateAccount(TEST_USER_ID, "acc-1", { currentBalance: 500 });
 
       expect(mockPrisma.balance.create).not.toHaveBeenCalled();
     });
 
     it("does not create balance snapshot without balance change", async () => {
       const row = makeMockRow();
+      mockPrisma.account.findUnique.mockResolvedValue({ ...row, userId: TEST_USER_ID });
       mockPrisma.account.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -224,13 +228,14 @@ describe("accountStore", () => {
         }),
       );
 
-      await updateAccount("acc-1", { name: "Renamed" });
+      await updateAccount(TEST_USER_ID, "acc-1", { name: "Renamed" });
 
       expect(mockPrisma.balance.create).not.toHaveBeenCalled();
     });
 
     it("uses $transaction for atomicity", async () => {
       const row = makeMockRow();
+      mockPrisma.account.findUnique.mockResolvedValue({ ...row, userId: TEST_USER_ID });
       mockPrisma.account.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -239,39 +244,43 @@ describe("accountStore", () => {
         }),
       );
 
-      await updateAccount("acc-1", { name: "Transactional" });
+      await updateAccount(TEST_USER_ID, "acc-1", { name: "Transactional" });
 
       expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
     });
 
     it("re-throws non-P2025 errors", async () => {
+      const row = makeMockRow();
+      mockPrisma.account.findUnique.mockResolvedValue({ ...row, userId: TEST_USER_ID });
       mockPrisma.account.update.mockRejectedValue(new Error("DB connection failed"));
 
       await expect(
-        updateAccount("acc-1", { name: "Fail" }),
+        updateAccount(TEST_USER_ID, "acc-1", { name: "Fail" }),
       ).rejects.toThrow("DB connection failed");
     });
   });
 
   describe("deleteAccount", () => {
     it("returns true when deleted", async () => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: "acc-1", userId: TEST_USER_ID });
       mockPrisma.account.delete.mockResolvedValue({});
 
-      const result = await deleteAccount("acc-1");
+      const result = await deleteAccount(TEST_USER_ID, "acc-1");
       expect(result).toBe(true);
     });
 
     it("returns false when not found (P2025)", async () => {
-      mockPrisma.account.delete.mockRejectedValue(makeP2025Error());
+      mockPrisma.account.findUnique.mockResolvedValue(null);
 
-      const result = await deleteAccount("nonexistent");
+      const result = await deleteAccount(TEST_USER_ID, "nonexistent");
       expect(result).toBe(false);
     });
 
     it("re-throws non-P2025 errors", async () => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: "acc-1", userId: TEST_USER_ID });
       mockPrisma.account.delete.mockRejectedValue(new Error("DB connection failed"));
 
-      await expect(deleteAccount("acc-1")).rejects.toThrow(
+      await expect(deleteAccount(TEST_USER_ID, "acc-1")).rejects.toThrow(
         "DB connection failed",
       );
     });

@@ -14,7 +14,7 @@
 | Monorepo | Turborepo | Shared builds across packages |
 | Hosting | Railway | API + web + Postgres in one platform |
 | Encryption | AES-256-GCM | Application-level field encryption |
-| Auth | JWT + bcrypt | Single-user gated access |
+| Auth | JWT + bcrypt + TOTP | Multi-user with email registration, password reset, admin panel, 2FA |
 | AI Extraction | Anthropic Claude API | PDF statement parsing via tool use |
 | PDF Parsing | pdf-parse | Text extraction from PDF statements |
 | Push Notifications | Firebase Admin SDK | FCM for mobile push (web uses polling) |
@@ -22,7 +22,8 @@
 ## Architecture Decisions
 
 - **Monorepo** — `packages/api`, `packages/web`, `packages/fin-mobile`, `packages/shared`
-- **No Plaid** — CSV import from banks instead (Chase, Amex); Plaid too expensive for single-user tool
+- **Multi-user with admin-gated registration** — email-based registration gated by admin-managed approved email list; per-user data isolation via userId columns on all user-scoped tables
+- **No Plaid** — CSV import from banks instead (Chase, Amex); Plaid too expensive for personal tool
 - **Railway hosting** — API as Node.js service, web as static/Node service, Postgres via Railway plugin
 - **Field-level encryption** — sensitive fields (account numbers, balances, profile data) encrypted with AES-256-GCM before storing in Postgres; master key stored as Railway env var
 - **Custom domains** — `fin.derekentringer.com` (web) + `fin-api.derekentringer.com` (API); subdomain approach avoids routing conflicts with portfolio site
@@ -70,6 +71,10 @@
 - [x] [13 — Investment Portfolio Analysis](features/13-investment-portfolio-analysis.md) — holdings CRUD with Finnhub live pricing, daily price scheduler, asset allocation donut chart with target comparison, portfolio vs. SPY benchmark performance tracking (parallelized fetches), drift-based rebalancing suggestions, savings/HYS cash inclusion in portfolio totals, 4-tab investments page (Overview, Holdings, Allocation, Performance), encrypted storage for all financial fields
 - [x] [14 — Financial Decision Tools](features/14-financial-decision-tools.md) — HYS vs. Debt Payoff calculator (two-scenario comparison with break-even analysis, account pre-population, LineChart), 401(k) Contribution Optimizer (income-source salary estimation, employer match optimization, 30-year AreaChart projections), info tooltips on all KPI cards, localStorage persistence, frontend-only computation; Emergency Fund and Opportunity Cost calculators deferred
 - [x] [15 — AI Financial Insights](features/15-ai-financial-insights.md) — contextual AI-powered insights (not chat) via Claude API with tool_use structured output; collapsible dashboard card with unseen-indicator, page-level nudges (Budgets, Goals), permanent monthly/quarterly digest reports for completed periods, AI-powered smart alerts via notification system; server-side only with SHA-256 content-hash caching, encrypted preferences, 10 daily request limit; disabled by default with granular per-feature opt-in in Settings > AI Insights tab
+
+### Phase 8: Multi-User Support — High Priority
+
+- [x] [18 — Multi-User Auth & Admin](features/01-auth-and-security.md) — User model with per-user data isolation (userId on 16 tables), email-based registration gated by approved email list, password reset via Resend email, TOTP two-factor authentication with backup codes, admin panel (user management, approved emails, global AI toggle), PIN system removed
 
 ### Phase 7: Mobile & PWA — Low Priority
 

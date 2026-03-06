@@ -10,15 +10,11 @@ export function loadConfig(): Config {
 
   if (enforceSecrets) {
     const required = [
-      "ADMIN_USERNAME",
-      "ADMIN_PASSWORD_HASH",
       "JWT_SECRET",
       "REFRESH_TOKEN_SECRET",
-      "PIN_TOKEN_SECRET",
       "CORS_ORIGIN",
       "DATABASE_URL",
       "ENCRYPTION_KEY",
-      "PIN_HASH",
     ];
     for (const name of required) {
       if (!process.env[name]) {
@@ -28,23 +24,19 @@ export function loadConfig(): Config {
   }
 
   cachedConfig = {
-    adminUsername: process.env.ADMIN_USERNAME || "admin",
-    adminPasswordHash: process.env.ADMIN_PASSWORD_HASH || "",
     jwtSecret:
       process.env.JWT_SECRET || "dev-jwt-secret-do-not-use-in-prod",
     refreshTokenSecret:
       process.env.REFRESH_TOKEN_SECRET ||
       "dev-refresh-secret-do-not-use-in-prod",
-    pinTokenSecret:
-      process.env.PIN_TOKEN_SECRET ||
-      "dev-pin-secret-do-not-use-in-prod",
-    pinHash: process.env.PIN_HASH || null,
     corsOrigin: process.env.CORS_ORIGIN || "http://localhost:3003",
     port: Number(process.env.PORT) || 3002,
     nodeEnv,
     isProduction,
     databaseUrl: process.env.DATABASE_URL || "",
     encryptionKey: process.env.ENCRYPTION_KEY || "",
+    resendApiKey: process.env.RESEND_API_KEY || "",
+    appUrl: process.env.APP_URL || "http://localhost:3003",
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
     fredApiKey: process.env.FRED_API_KEY || "",
     finnhubApiKey: process.env.FINNHUB_API_KEY || "",
@@ -58,18 +50,16 @@ export function loadConfig(): Config {
 }
 
 export interface Config {
-  adminUsername: string;
-  adminPasswordHash: string;
   jwtSecret: string;
   refreshTokenSecret: string;
-  pinTokenSecret: string;
-  pinHash: string | null;
   corsOrigin: string;
   port: number;
   nodeEnv: string;
   isProduction: boolean;
   databaseUrl: string;
   encryptionKey: string;
+  resendApiKey: string;
+  appUrl: string;
   anthropicApiKey: string;
   fredApiKey: string;
   finnhubApiKey: string;

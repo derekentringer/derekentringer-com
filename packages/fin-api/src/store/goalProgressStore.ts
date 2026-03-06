@@ -97,7 +97,7 @@ interface MonthlyFinancialSummary {
   debtAccounts: DebtAccountSummary[];
 }
 
-async function computeMonthlyFinancialSummary(): Promise<MonthlyFinancialSummary> {
+async function computeMonthlyFinancialSummary(userId: string): Promise<MonthlyFinancialSummary> {
   const now = new Date();
   const currentMonth = formatMonth(now);
 
@@ -110,13 +110,13 @@ async function computeMonthlyFinancialSummary(): Promise<MonthlyFinancialSummary
     savingsAccounts,
     netWorthSummary,
   ] = await Promise.all([
-    detectIncomePatterns(),
-    listIncomeSources({ isActive: true }),
-    listBills({ isActive: true }),
-    getActiveBudgetsForMonth(currentMonth),
-    listDebtAccounts(true),
-    listSavingsAccounts(),
-    computeNetWorthSummary(),
+    detectIncomePatterns(userId),
+    listIncomeSources(userId, { isActive: true }),
+    listBills(userId, { isActive: true }),
+    getActiveBudgetsForMonth(userId, currentMonth),
+    listDebtAccounts(userId, true),
+    listSavingsAccounts(userId),
+    computeNetWorthSummary(userId),
   ]);
 
   // Monthly income
@@ -414,6 +414,7 @@ function computeDebtPayoffGoalProgress(
 }
 
 async function computeNetWorthGoalProgress(
+  userId: string,
   goal: Goal,
   summary: MonthlyFinancialSummary,
   months: number,
@@ -427,7 +428,7 @@ async function computeNetWorthGoalProgress(
   let projectedCompletionDate: string | null = null;
 
   try {
-    const accountProjections = await computeAccountProjections({
+    const accountProjections = await computeAccountProjections(userId, {
       months,
       incomeAdjustmentPct: 0,
       expenseAdjustmentPct: 0,
@@ -548,14 +549,14 @@ function computeCustomGoalProgress(
 
 // ─── Main Entry Point ───────────────────────────────────────────────────────
 
-export async function computeGoalProgress(params: {
+export async function computeGoalProgress(userId: string, params: {
   months: number;
 }): Promise<GoalProgressResponse> {
   const { months } = params;
 
   const [goals, summary] = await Promise.all([
-    listGoals({ isActive: true }),
-    computeMonthlyFinancialSummary(),
+    listGoals(userId, { isActive: true }),
+    computeMonthlyFinancialSummary(userId),
   ]);
 
   const goalProgressList: GoalProgress[] = [];
@@ -571,7 +572,7 @@ export async function computeGoalProgress(params: {
         progress = computeDebtPayoffGoalProgress(goal, summary.debtAccounts, months);
         break;
       case "net_worth":
-        progress = await computeNetWorthGoalProgress(goal, summary, months);
+        progress = await computeNetWorthGoalProgress(userId, goal, summary, months);
         break;
       case "custom":
       default:

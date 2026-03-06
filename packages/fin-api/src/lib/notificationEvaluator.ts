@@ -54,6 +54,7 @@ function toDateStr(d: Date): string {
  * Reuses existing generateDueDates() from billStore.
  */
 async function evaluateBillDue(
+  userId: string,
   config: NotificationConfig | null,
 ): Promise<PendingNotification[]> {
   const { reminderDaysBefore } = getConfig<BillDueConfig>(config, NotificationType.BillDue);
@@ -65,8 +66,8 @@ async function evaluateBillDue(
   const endDate = new Date(today);
   endDate.setDate(endDate.getDate() + reminderDaysBefore);
 
-  const bills = await listBills({ isActive: true });
-  const payments = await getPaymentsInRange(today, endDate);
+  const bills = await listBills(userId, { isActive: true });
+  const payments = await getPaymentsInRange(userId, today, endDate);
 
   // Index payments by "billId:dueDateISO"
   const paidSet = new Set<string>();
@@ -102,6 +103,7 @@ async function evaluateBillDue(
  * Reads paymentDueDate from the latest balance's credit profile.
  */
 async function evaluateCreditPaymentDue(
+  userId: string,
   config: NotificationConfig | null,
 ): Promise<PendingNotification[]> {
   const { reminderDaysBefore } = getConfig<CreditPaymentDueConfig>(
@@ -116,7 +118,7 @@ async function evaluateCreditPaymentDue(
 
   // Get all active credit accounts
   const creditAccounts = await prisma.account.findMany({
-    where: { type: "credit", isActive: true },
+    where: { userId, type: "credit", isActive: true },
     select: { id: true, name: true },
   });
 
@@ -177,6 +179,7 @@ async function evaluateCreditPaymentDue(
  * Reads nextPaymentDate from the latest balance's loan profile.
  */
 async function evaluateLoanPaymentDue(
+  userId: string,
   config: NotificationConfig | null,
 ): Promise<PendingNotification[]> {
   const { reminderDaysBefore } = getConfig<LoanPaymentDueConfig>(
@@ -191,7 +194,7 @@ async function evaluateLoanPaymentDue(
 
   // Get all active loan accounts
   const loanAccounts = await prisma.account.findMany({
-    where: { type: "loan", isActive: true },
+    where: { userId, type: "loan", isActive: true },
     select: { id: true, name: true },
   });
 
@@ -252,6 +255,7 @@ async function evaluateLoanPaymentDue(
  * Fires when credit balance / credit limit exceeds configured thresholds.
  */
 async function evaluateHighCreditUtilization(
+  userId: string,
   config: NotificationConfig | null,
 ): Promise<PendingNotification[]> {
   const { thresholds } = getConfig<HighCreditUtilizationConfig>(
@@ -268,7 +272,7 @@ async function evaluateHighCreditUtilization(
   const sortedThresholds = [...thresholds].sort((a, b) => b - a);
 
   const creditAccounts = await prisma.account.findMany({
-    where: { type: "credit", isActive: true },
+    where: { userId, type: "credit", isActive: true },
     select: { id: true, name: true },
   });
 
@@ -329,6 +333,7 @@ async function evaluateHighCreditUtilization(
  * Fires when monthly category spending hits warning or exceeded thresholds.
  */
 async function evaluateBudgetOverspend(
+  userId: string,
   config: NotificationConfig | null,
 ): Promise<PendingNotification[]> {
   const { warnAtPercent, alertAtPercent } = getConfig<BudgetOverspendConfig>(
@@ -340,10 +345,10 @@ async function evaluateBudgetOverspend(
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  const budgets = await getActiveBudgetsForMonth(monthKey);
+  const budgets = await getActiveBudgetsForMonth(userId, monthKey);
   if (budgets.length === 0) return notifications;
 
-  const spending = await computeSpendingSummary(monthKey);
+  const spending = await computeSpendingSummary(userId, monthKey);
 
   // Index spending by category
   const spendingByCategory = new Map(
@@ -388,6 +393,7 @@ async function evaluateBudgetOverspend(
  * Scheduler-based: checks transactions from the last 7 days against a dollar threshold.
  */
 async function evaluateLargeTransaction(
+  userId: string,
   config: NotificationConfig | null,
 ): Promise<PendingNotification[]> {
   const { threshold } = getConfig<LargeTransactionConfig>(
@@ -404,6 +410,7 @@ async function evaluateLargeTransaction(
 
   const recentTransactions = await prisma.transaction.findMany({
     where: {
+      account: { userId },
       date: { gte: sevenDaysAgo },
     },
     select: {
@@ -440,6 +447,7 @@ async function evaluateLargeTransaction(
  * or falls back to a configurable day of the month.
  */
 async function evaluateStatementReminder(
+  userId: string,
   config: NotificationConfig | null,
 ): Promise<PendingNotification[]> {
   const { reminderDaysBefore, fallbackDayOfMonth } = getConfig<StatementReminderConfig>(
@@ -454,7 +462,7 @@ async function evaluateStatementReminder(
 
   // Get all active accounts (credit, loan, savings, investment — anything with statements)
   const accounts = await prisma.account.findMany({
-    where: { isActive: true },
+    where: { userId, isActive: true },
     select: { id: true, name: true, type: true },
   });
 
@@ -539,6 +547,7 @@ async function evaluateStatementReminder(
  * Fires when net worth crosses configured thresholds or loan payoff reaches milestones.
  */
 async function evaluateMilestones(
+  userId: string,
   config: NotificationConfig | null,
 ): Promise<PendingNotification[]> {
   const { netWorthMilestones, loanPayoffPercentMilestones } = getConfig<MilestonesConfig>(
@@ -548,7 +557,7 @@ async function evaluateMilestones(
   const notifications: PendingNotification[] = [];
 
   // --- Net worth milestones ---
-  const nwSummary = await computeNetWorthSummary();
+  const nwSummary = await computeNetWorthSummary(userId);
   const currentNetWorth = nwSummary.netWorth;
 
   // Sort ascending and fire the highest crossed milestone
@@ -572,7 +581,7 @@ async function evaluateMilestones(
   // --- Loan payoff milestones ---
   const prisma = getPrisma();
   const loanAccounts = await prisma.account.findMany({
-    where: { type: "loan", isActive: true },
+    where: { userId, type: "loan", isActive: true },
   });
 
   const sortedPayoffMilestones = [...loanPayoffPercentMilestones].sort((a, b) => a - b);
@@ -614,15 +623,15 @@ async function evaluateMilestones(
  * Evaluate all enabled notification types.
  * Returns pending notifications filtered by enabled preferences and deduplication.
  */
-export async function evaluateAllNotifications(): Promise<PendingNotification[]> {
-  const preferences = await listNotificationPreferences();
+export async function evaluateAllNotifications(userId: string): Promise<PendingNotification[]> {
+  const preferences = await listNotificationPreferences(userId);
   const prefMap = new Map(preferences.map((p) => [p.type, p]));
 
   const allPending: PendingNotification[] = [];
 
   const evaluators: Array<{
     type: NotificationType;
-    fn: (config: NotificationConfig | null) => Promise<PendingNotification[]>;
+    fn: (userId: string, config: NotificationConfig | null) => Promise<PendingNotification[]>;
   }> = [
     // Phase 1
     { type: NotificationType.BillDue, fn: evaluateBillDue },
@@ -639,7 +648,7 @@ export async function evaluateAllNotifications(): Promise<PendingNotification[]>
 
   // AI alerts (runs independently, catches own errors)
   try {
-    const aiAlerts = await evaluateAiAlerts();
+    const aiAlerts = await evaluateAiAlerts(userId);
     allPending.push(...aiAlerts);
   } catch {
     // AI alerts are non-critical — skip silently
@@ -650,7 +659,7 @@ export async function evaluateAllNotifications(): Promise<PendingNotification[]>
     if (!pref?.enabled) continue;
 
     try {
-      const pending = await fn(pref.config);
+      const pending = await fn(userId, pref.config);
       allPending.push(...pending);
     } catch {
       // Log silently and continue with other evaluators

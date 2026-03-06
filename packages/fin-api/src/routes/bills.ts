@@ -1,8 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { CreateBillRequest, UpdateBillRequest } from "@derekentringer/shared";
 import { BILL_FREQUENCIES } from "@derekentringer/shared";
-import { requirePin } from "@derekentringer/shared/auth/pinVerify";
-import { loadConfig } from "../config.js";
 import {
   createBill,
   getBill,
@@ -111,9 +109,6 @@ function validateFrequencyFields(
 export default async function billRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  const config = loadConfig();
-  const pinGuard = requirePin(config.pinTokenSecret);
-
   // GET / — list bills
   fastify.get<{ Querystring: { active?: string } }>(
     "/",
@@ -122,12 +117,13 @@ export default async function billRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const { active } = request.query;
         const filter: { isActive?: boolean } = {};
         if (active === "true") filter.isActive = true;
         if (active === "false") filter.isActive = false;
 
-        const bills = await listBills(filter);
+        const bills = await listBills(userId, filter);
         return reply.send({ bills });
       } catch (e) {
         request.log.error(e, "Failed to list bills");
@@ -148,6 +144,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const days = Math.min(parseInt(request.query.days || "30", 10) || 30, 365);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -157,8 +154,8 @@ export default async function billRoutes(fastify: FastifyInstance) {
         endDate.setDate(endDate.getDate() + days);
 
         const [bills, payments] = await Promise.all([
-          listBills({ isActive: true }),
-          getPaymentsInRange(startDate, endDate),
+          listBills(userId, { isActive: true }),
+          getPaymentsInRange(userId, startDate, endDate),
         ]);
 
         const instances = computeUpcomingInstances(
@@ -197,6 +194,8 @@ export default async function billRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -206,7 +205,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const bill = await getBill(request.params.id);
+        const bill = await getBill(userId, request.params.id);
         if (!bill) {
           return reply.status(404).send({
             statusCode: 404,
@@ -234,6 +233,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateBillRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { amount, frequency, dueDay, dueMonth, dueWeekday } =
         request.body;
 
@@ -260,7 +260,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const bill = await createBill(request.body);
+        const bill = await createBill(userId, request.body);
         return reply.status(201).send({ bill });
       } catch (e) {
         request.log.error(e, "Failed to create bill");
@@ -284,6 +284,8 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -305,7 +307,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       // If frequency is being changed, validate all frequency fields together
       if (frequency !== undefined || dueDay !== undefined) {
         // Need to fetch existing bill for complete validation
-        const existing = await getBill(request.params.id);
+        const existing = await getBill(userId, request.params.id);
         if (!existing) {
           return reply.status(404).send({
             statusCode: 404,
@@ -337,7 +339,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const bill = await updateBill(request.params.id, request.body);
+        const bill = await updateBill(userId, request.params.id, request.body);
         if (!bill) {
           return reply.status(404).send({
             statusCode: 404,
@@ -357,14 +359,15 @@ export default async function billRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete bill (cascades payments, PIN required)
+  // DELETE /:id — delete bill (cascades payments)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
-    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -374,7 +377,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteBill(request.params.id);
+        const deleted = await deleteBill(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,
@@ -408,6 +411,8 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -426,7 +431,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }
 
       // Get the bill to use its amount as default
-      const bill = await getBill(request.params.id);
+      const bill = await getBill(userId, request.params.id);
       if (!bill) {
         return reply.status(404).send({
           statusCode: 404,
@@ -438,7 +443,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       const amount = request.body.amount ?? bill.amount;
 
       try {
-        const payment = await markBillPaid(request.params.id, dueDate, amount);
+        const payment = await markBillPaid(userId, request.params.id, dueDate, amount);
         return reply.status(201).send({ payment });
       } catch (e) {
         request.log.error(e, "Failed to mark bill as paid");
@@ -464,6 +469,8 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -482,7 +489,7 @@ export default async function billRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await unmarkBillPaid(request.params.id, dueDate);
+        const deleted = await unmarkBillPaid(userId, request.params.id, dueDate);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,

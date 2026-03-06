@@ -24,6 +24,8 @@ import {
   reorderGoals,
 } from "../store/goalStore.js";
 
+const TEST_USER_ID = "test-user-1";
+
 interface P2025Error extends Error {
   code: string;
 }
@@ -36,6 +38,7 @@ function makeMockRow(overrides: Record<string, unknown> = {}) {
   });
   return {
     id: "goal-1",
+    userId: TEST_USER_ID,
     ...encrypted,
     isActive: true,
     isCompleted: false,
@@ -77,7 +80,7 @@ describe("goalStore", () => {
         }),
       );
 
-      const result = await createGoal({
+      const result = await createGoal(TEST_USER_ID, {
         name: "Emergency Fund",
         type: "savings",
         targetAmount: 10000,
@@ -108,7 +111,7 @@ describe("goalStore", () => {
         }),
       );
 
-      const result = await createGoal({
+      const result = await createGoal(TEST_USER_ID, {
         name: "First Goal",
         type: "custom",
         targetAmount: 1000,
@@ -122,7 +125,7 @@ describe("goalStore", () => {
     it("returns decrypted goal when found", async () => {
       mockPrisma.goal.findUnique.mockResolvedValue(makeMockRow());
 
-      const result = await getGoal("goal-1");
+      const result = await getGoal(TEST_USER_ID, "goal-1");
 
       expect(result).not.toBeNull();
       expect(result!.name).toBe("Test Goal");
@@ -133,7 +136,7 @@ describe("goalStore", () => {
     it("returns null when not found", async () => {
       mockPrisma.goal.findUnique.mockResolvedValue(null);
 
-      const result = await getGoal("nonexistent");
+      const result = await getGoal(TEST_USER_ID, "nonexistent");
       expect(result).toBeNull();
     });
   });
@@ -174,13 +177,13 @@ describe("goalStore", () => {
         },
       ]);
 
-      const result = await listGoals();
+      const result = await listGoals(TEST_USER_ID);
 
       expect(result).toHaveLength(2);
       expect(result[0].name).toBe("Goal A");
       expect(result[1].name).toBe("Goal B");
       expect(mockPrisma.goal.findMany).toHaveBeenCalledWith({
-        where: {},
+        where: { userId: TEST_USER_ID },
         orderBy: { sortOrder: "asc" },
       });
     });
@@ -188,10 +191,10 @@ describe("goalStore", () => {
     it("filters by isActive", async () => {
       mockPrisma.goal.findMany.mockResolvedValue([]);
 
-      await listGoals({ isActive: true });
+      await listGoals(TEST_USER_ID, { isActive: true });
 
       expect(mockPrisma.goal.findMany).toHaveBeenCalledWith({
-        where: { isActive: true },
+        where: { userId: TEST_USER_ID, isActive: true },
         orderBy: { sortOrder: "asc" },
       });
     });
@@ -199,10 +202,10 @@ describe("goalStore", () => {
     it("filters by type", async () => {
       mockPrisma.goal.findMany.mockResolvedValue([]);
 
-      await listGoals({ type: "debt_payoff" });
+      await listGoals(TEST_USER_ID, { type: "debt_payoff" });
 
       expect(mockPrisma.goal.findMany).toHaveBeenCalledWith({
-        where: { type: "debt_payoff" },
+        where: { userId: TEST_USER_ID, type: "debt_payoff" },
         orderBy: { sortOrder: "asc" },
       });
     });
@@ -210,10 +213,10 @@ describe("goalStore", () => {
     it("filters by both isActive and type", async () => {
       mockPrisma.goal.findMany.mockResolvedValue([]);
 
-      await listGoals({ isActive: true, type: "savings" });
+      await listGoals(TEST_USER_ID, { isActive: true, type: "savings" });
 
       expect(mockPrisma.goal.findMany).toHaveBeenCalledWith({
-        where: { isActive: true, type: "savings" },
+        where: { userId: TEST_USER_ID, isActive: true, type: "savings" },
         orderBy: { sortOrder: "asc" },
       });
     });
@@ -222,6 +225,7 @@ describe("goalStore", () => {
   describe("updateGoal", () => {
     it("updates and returns decrypted goal", async () => {
       const row = makeMockRow();
+      mockPrisma.goal.findUnique.mockResolvedValue(row);
       mockPrisma.goal.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -230,47 +234,50 @@ describe("goalStore", () => {
         }),
       );
 
-      const result = await updateGoal("goal-1", { name: "Updated Goal" });
+      const result = await updateGoal(TEST_USER_ID, "goal-1", { name: "Updated Goal" });
 
       expect(result).not.toBeNull();
       expect(result!.name).toBe("Updated Goal");
     });
 
-    it("returns null when goal not found (P2025)", async () => {
-      mockPrisma.goal.update.mockRejectedValue(makeP2025Error());
+    it("returns null when goal not found", async () => {
+      mockPrisma.goal.findUnique.mockResolvedValue(null);
 
-      const result = await updateGoal("nonexistent", { name: "Nope" });
+      const result = await updateGoal(TEST_USER_ID, "nonexistent", { name: "Nope" });
       expect(result).toBeNull();
     });
 
     it("re-throws non-P2025 errors", async () => {
+      mockPrisma.goal.findUnique.mockResolvedValue(makeMockRow());
       mockPrisma.goal.update.mockRejectedValue(new Error("DB connection failed"));
 
       await expect(
-        updateGoal("goal-1", { name: "Fail" }),
+        updateGoal(TEST_USER_ID, "goal-1", { name: "Fail" }),
       ).rejects.toThrow("DB connection failed");
     });
   });
 
   describe("deleteGoal", () => {
     it("returns true when deleted", async () => {
+      mockPrisma.goal.findUnique.mockResolvedValue(makeMockRow());
       mockPrisma.goal.delete.mockResolvedValue({});
 
-      const result = await deleteGoal("goal-1");
+      const result = await deleteGoal(TEST_USER_ID, "goal-1");
       expect(result).toBe(true);
     });
 
-    it("returns false when not found (P2025)", async () => {
-      mockPrisma.goal.delete.mockRejectedValue(makeP2025Error());
+    it("returns false when not found", async () => {
+      mockPrisma.goal.findUnique.mockResolvedValue(null);
 
-      const result = await deleteGoal("nonexistent");
+      const result = await deleteGoal(TEST_USER_ID, "nonexistent");
       expect(result).toBe(false);
     });
 
     it("re-throws non-P2025 errors", async () => {
+      mockPrisma.goal.findUnique.mockResolvedValue(makeMockRow());
       mockPrisma.goal.delete.mockRejectedValue(new Error("DB connection failed"));
 
-      await expect(deleteGoal("goal-1")).rejects.toThrow("DB connection failed");
+      await expect(deleteGoal(TEST_USER_ID, "goal-1")).rejects.toThrow("DB connection failed");
     });
   });
 
@@ -280,7 +287,7 @@ describe("goalStore", () => {
       mockPrisma.$transaction.mockResolvedValue([{}, {}]);
       mockPrisma.goal.update.mockResolvedValue({});
 
-      await reorderGoals([
+      await reorderGoals(TEST_USER_ID, [
         { id: "goal-a", sortOrder: 1 },
         { id: "goal-b", sortOrder: 0 },
       ]);

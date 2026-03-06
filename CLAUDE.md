@@ -34,7 +34,7 @@ This project uses **gitflow**:
 - **Web production server**: `serve` static file server bound to `0.0.0.0:$PORT` with SPA fallback (`-s` flag)
 - **API**: `packages/api/Dockerfile` — multi-stage Node build on port 3001
 - **Finance Web**: Railpack; start command `npm run start --workspace=@derekentringer/fin-web`; `serve` static file server with SPA fallback; custom domain `fin.derekentringer.com`; env: `VITE_API_URL=https://fin-api.derekentringer.com` (build-time)
-- **Finance API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `PIN_TOKEN_SECRET`, `PIN_HASH`, `CORS_ORIGIN=https://fin.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `ENCRYPTION_KEY` (64-char hex)
+- **Finance API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`; Fastify on `0.0.0.0:$PORT`; custom domain `fin-api.derekentringer.com`; env: `NODE_ENV`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN=https://fin.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `ENCRYPTION_KEY` (64-char hex), `RESEND_API_KEY` (password reset emails), `APP_URL=https://fin.derekentringer.com` (frontend URL for email links)
 - **NoteSync Web**: Railpack; start command `npm run start --workspace=@derekentringer/ns-web`; `serve` static file server with SPA fallback; custom domain `ns.derekentringer.com`; env: `VITE_API_URL=https://ns-api.derekentringer.com` (build-time)
 - **NoteSync API**: Railpack; start command `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`; Fastify on `0.0.0.0:$PORT`; custom domain `ns-api.derekentringer.com`; env: `NODE_ENV`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN=https://ns.derekentringer.com`, `DATABASE_URL` (from Railway Postgres plugin), `OPENAI_API_KEY` (for Whisper audio transcription), `RESEND_API_KEY` (password reset emails), `APP_URL=https://ns.derekentringer.com` (frontend URL for email links), `RP_ID=ns.derekentringer.com` (WebAuthn passkey domain)
 - **CI**: GitHub Actions (`.github/workflows/ci.yml`) — type-check + build on PRs and pushes to main
@@ -77,8 +77,8 @@ packages/
 
 - React + Vite SPA for personal finance dashboard
 - `src/App.tsx` — Routes + auth-gated layout
-- `src/pages/LoginPage.tsx` — Login form with logo and PIN support
-- `src/contexts/AuthContext.tsx` — JWT auth state management
+- `src/pages/LoginPage.tsx` — Login form with email/password and TOTP 2FA support
+- `src/context/AuthContext.tsx` — JWT auth state management with multi-user support
 - `src/components/FinLogo.tsx` — Inline SVG logo component (two-peaks icon)
 - `src/components/Sidebar.tsx` — Navigation sidebar with logo in header (expanded + collapsed)
 - `src/components/Header.tsx` — Top header with logo on mobile
@@ -90,15 +90,17 @@ packages/
 
 ### Finance API (`packages/fin-api/`)
 
-- Fastify server with JWT auth (access + refresh tokens)
+- Fastify server with JWT auth (access + refresh tokens), multi-user with TOTP 2FA
 - `src/index.ts` — Server entry, CORS via `CORS_ORIGIN` env var
-- `src/routes/auth.ts` — Login, refresh, logout endpoints
+- `src/routes/auth.ts` — Login, register, refresh, logout, password reset/change endpoints
+- `src/routes/admin.ts` — Admin panel routes (user management, approved emails, AI toggle)
+- `src/routes/totp.ts` — TOTP 2FA setup, verify, disable endpoints
 - `GET /robots.txt` — Blocks all crawlers (blanket `Disallow: /`)
 - `src/plugins/auth.ts` — JWT verification, cookie handling
-- Passwords/PINs verified via bcrypt hashes from env vars
+- Database-backed users with bcrypt password hashing and per-user data isolation
 - Production domain: `fin-api.derekentringer.com`
 - **Database**: PostgreSQL via Prisma ORM (v7)
-  - `prisma/schema.prisma` — Database schema (RefreshToken, Account, Transaction, Balance)
+  - `prisma/schema.prisma` — Database schema (User, RefreshToken, Account, Transaction, Balance, Setting, PasswordResetToken)
   - `prisma.config.ts` — Prisma CLI config (datasource URL, migrations path)
   - `src/generated/prisma/` — Generated Prisma client (gitignored)
   - `src/lib/prisma.ts` — PrismaClient singleton with `@prisma/adapter-pg` (SSL without certificate verification in production — Railway Postgres does not support verified SSL)
@@ -111,7 +113,7 @@ packages/
   - `npm run db:studio` — Open Prisma Studio
 - **Local database**: `prisma migrate dev` does not work locally (access denied). Run migration SQL manually instead: `psql "postgresql://derekentringer@localhost:5432/finance" -c '<SQL>'`. Production migrations are applied automatically via the Railway start command.
 - `src/config.ts` — App config with secret enforcement (all secrets required outside `development`/`test` environments)
-- **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ENCRYPTION_KEY` (64-char hex, 32 bytes for AES-256-GCM), `PIN_TOKEN_SECRET` (dedicated secret for PIN tokens — must not share with `REFRESH_TOKEN_SECRET`)
+- **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `ENCRYPTION_KEY` (64-char hex, 32 bytes for AES-256-GCM), `RESEND_API_KEY` (password reset emails), `APP_URL` (frontend URL for email links, defaults to `http://localhost:3003`)
 - **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/fin-api && npm run start --workspace=@derekentringer/fin-api`
 
 ### NoteSync Web (`packages/ns-web/`)

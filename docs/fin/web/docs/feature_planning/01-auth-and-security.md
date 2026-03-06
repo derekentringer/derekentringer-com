@@ -6,39 +6,49 @@
 
 ## Summary
 
-Implement single-user gated access so only one authorized user can access the finance tool. All API routes are behind auth middleware — no public endpoints except login.
+Multi-user authentication with email-based registration, password reset, admin panel, and TOTP two-factor authentication. All API routes are behind auth middleware — no public endpoints except login, register, refresh, and password reset flows.
 
 ## Requirements
 
-- Single-user authentication (this is a personal tool, not multi-tenant)
-- Username/password login with bcrypt password hashing
+- Multi-user authentication with email/password registration
+- Registration gated by admin-managed approved email list
 - JWT access tokens with short expiry (~15 minutes)
-- Refresh tokens for seamless session renewal
-- All API routes behind auth middleware (except `POST /auth/login` and `GET /health`)
-- Rate limiting on login endpoint to prevent brute force
-- Optional secondary PIN/passphrase for viewing sensitive data (account numbers, balances) — similar to how banking apps gate sensitive screens
+- Refresh tokens with rotation for seamless session renewal
+- Password reset via email (Resend service)
+- Password change with strength validation
+- TOTP two-factor authentication via authenticator apps
+- Backup codes for TOTP recovery
+- Admin panel for user management (single admin: dentringer@gmail.com)
+- Admin-controlled settings: approved emails, global AI toggle
+- Per-user data isolation — all user-scoped data filtered by userId
+- All API routes behind auth middleware (except public auth endpoints and health)
+- Rate limiting on auth endpoints to prevent brute force
 - CORS configured to only allow the web frontend origin
-- TLS enforced (Railway provides this by default)
 
 ## Technical Considerations
 
-- Two auth approaches were considered:
-  1. **Auth.js (NextAuth) / Passport.js** with an allowlist of one email
-  2. **Simple bcrypt + JWT** with a hardcoded single user
-- Option 2 is simpler for a single-user tool and avoids OAuth provider dependencies
-- Store hashed password in the database or as an env var
-- JWT secret stored as a Railway environment variable
-- Refresh token stored in an httpOnly cookie
-- Consider `@fastify/rate-limit` for rate limiting
-- Consider `@fastify/cors` for CORS configuration
+- Database-backed users with Prisma User model
+- Password hashing via bcrypt (12 rounds)
+- Password strength validation shared between frontend and backend (`@derekentringer/shared`)
+- JWT payload includes `sub` (userId), `email`, and `role`
+- Refresh token stored in httpOnly cookie (with `isMobileClient` body fallback for mobile apps)
+- TOTP via `otpauth` library with QR code generation (`qrcode`)
+- Email service via Resend SDK (same account as NoteSync)
+- Admin guard middleware checks `request.user.role === "admin"`
+- Settings table for admin-controlled server-wide settings
+- PIN system removed — TOTP replaces it for 2FA
 
 ## Dependencies
 
 - [00 — Project Scaffolding](00-project-scaffolding.md) — needs API package set up
+- [02 — Database & Encryption](02-database-and-encryption.md) — needs PostgreSQL + Prisma
 
-## Open Questions (Resolved)
+## Resolved Design Decisions
 
-- **Auth approach**: Simple bcrypt + JWT (no Auth.js/Passport.js needed for single user)
-- **Password storage**: Environment variable (no database dependency yet)
-- **Refresh rotation**: Rotate on every use for maximum security
-- **PIN implementation**: Separate from login password, separate short-lived JWT
+- **Auth approach**: Database-backed multi-user with bcrypt + JWT (replaced single-user env var approach)
+- **Registration gating**: Admin-managed approved email list in Settings table
+- **2FA method**: TOTP via authenticator apps (replaced PIN system)
+- **Admin model**: Single admin only (dentringer@gmail.com), identified by `role: "admin"` in User table
+- **Password rules**: Shared validator from `@derekentringer/shared` (min 8, upper, lower, number, special)
+- **Email service**: Resend (same account as NoteSync)
+- **Data isolation**: userId column on all user-scoped tables, enforced at store layer

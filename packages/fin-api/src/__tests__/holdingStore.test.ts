@@ -8,6 +8,8 @@ import { createMockPrisma } from "./helpers/mockPrisma.js";
 import type { MockPrisma } from "./helpers/mockPrisma.js";
 import { encryptHoldingForCreate } from "../lib/mappers.js";
 
+const TEST_USER_ID = "test-user-1";
+
 let mockPrisma: MockPrisma;
 
 beforeAll(() => {
@@ -67,6 +69,7 @@ describe("holdingStore", () => {
 
   describe("createHolding", () => {
     it("encrypts data and returns decrypted holding", async () => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: "acc-1", userId: TEST_USER_ID });
       mockPrisma.holding.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
       mockPrisma.holding.create.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
@@ -78,7 +81,7 @@ describe("holdingStore", () => {
         }),
       );
 
-      const result = await createHolding({
+      const result = await createHolding(TEST_USER_ID, {
         accountId: "acc-1",
         name: "Apple Inc.",
         ticker: "AAPL",
@@ -102,6 +105,7 @@ describe("holdingStore", () => {
     });
 
     it("assigns sortOrder 0 when no holdings exist for account", async () => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: "acc-1", userId: TEST_USER_ID });
       mockPrisma.holding.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
       mockPrisma.holding.create.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
@@ -113,7 +117,7 @@ describe("holdingStore", () => {
         }),
       );
 
-      const result = await createHolding({
+      const result = await createHolding(TEST_USER_ID, {
         accountId: "acc-1",
         name: "First Holding",
         assetClass: "stocks",
@@ -123,6 +127,7 @@ describe("holdingStore", () => {
     });
 
     it("computes marketValue, gainLoss, gainLossPct", async () => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: "acc-1", userId: TEST_USER_ID });
       mockPrisma.holding.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
       mockPrisma.holding.create.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
@@ -134,7 +139,7 @@ describe("holdingStore", () => {
         }),
       );
 
-      const result = await createHolding({
+      const result = await createHolding(TEST_USER_ID, {
         accountId: "acc-1",
         name: "Test Stock",
         shares: 10,
@@ -151,9 +156,11 @@ describe("holdingStore", () => {
 
   describe("getHolding", () => {
     it("returns decrypted holding when found", async () => {
-      mockPrisma.holding.findUnique.mockResolvedValue(makeMockRow());
+      mockPrisma.holding.findUnique.mockResolvedValue(
+        makeMockRow({ account: { userId: TEST_USER_ID } }),
+      );
 
-      const result = await getHolding("hold-1");
+      const result = await getHolding(TEST_USER_ID, "hold-1");
 
       expect(result).not.toBeNull();
       expect(result!.name).toBe("Test Holding");
@@ -164,13 +171,15 @@ describe("holdingStore", () => {
     it("returns null when not found", async () => {
       mockPrisma.holding.findUnique.mockResolvedValue(null);
 
-      const result = await getHolding("nonexistent");
+      const result = await getHolding(TEST_USER_ID, "nonexistent");
       expect(result).toBeNull();
     });
   });
 
   describe("listHoldings", () => {
     it("returns holdings for an account ordered by sortOrder", async () => {
+      mockPrisma.account.findUnique.mockResolvedValue({ id: "acc-1", userId: TEST_USER_ID });
+
       const encA = encryptHoldingForCreate({
         accountId: "acc-1",
         name: "Holding A",
@@ -199,7 +208,7 @@ describe("holdingStore", () => {
         },
       ]);
 
-      const result = await listHoldings("acc-1");
+      const result = await listHoldings(TEST_USER_ID, "acc-1");
 
       expect(result).toHaveLength(2);
       expect(result[0].name).toBe("Holding A");
@@ -213,7 +222,8 @@ describe("holdingStore", () => {
 
   describe("updateHolding", () => {
     it("updates and returns decrypted holding", async () => {
-      const row = makeMockRow();
+      const row = makeMockRow({ account: { userId: TEST_USER_ID } });
+      mockPrisma.holding.findUnique.mockResolvedValue(row);
       mockPrisma.holding.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -222,47 +232,55 @@ describe("holdingStore", () => {
         }),
       );
 
-      const result = await updateHolding("hold-1", { name: "Updated Name" });
+      const result = await updateHolding(TEST_USER_ID, "hold-1", { name: "Updated Name" });
 
       expect(result).not.toBeNull();
       expect(result!.name).toBe("Updated Name");
     });
 
     it("returns null when holding not found (P2025)", async () => {
-      mockPrisma.holding.update.mockRejectedValue(makeP2025Error());
+      mockPrisma.holding.findUnique.mockResolvedValue(null);
 
-      const result = await updateHolding("nonexistent", { name: "Nope" });
+      const result = await updateHolding(TEST_USER_ID, "nonexistent", { name: "Nope" });
       expect(result).toBeNull();
     });
 
     it("re-throws non-P2025 errors", async () => {
+      const row = makeMockRow({ account: { userId: TEST_USER_ID } });
+      mockPrisma.holding.findUnique.mockResolvedValue(row);
       mockPrisma.holding.update.mockRejectedValue(new Error("DB connection failed"));
 
       await expect(
-        updateHolding("hold-1", { name: "Fail" }),
+        updateHolding(TEST_USER_ID, "hold-1", { name: "Fail" }),
       ).rejects.toThrow("DB connection failed");
     });
   });
 
   describe("deleteHolding", () => {
     it("returns true when deleted", async () => {
+      mockPrisma.holding.findUnique.mockResolvedValue(
+        makeMockRow({ account: { userId: TEST_USER_ID } }),
+      );
       mockPrisma.holding.delete.mockResolvedValue({});
 
-      const result = await deleteHolding("hold-1");
+      const result = await deleteHolding(TEST_USER_ID, "hold-1");
       expect(result).toBe(true);
     });
 
     it("returns false when not found (P2025)", async () => {
-      mockPrisma.holding.delete.mockRejectedValue(makeP2025Error());
+      mockPrisma.holding.findUnique.mockResolvedValue(null);
 
-      const result = await deleteHolding("nonexistent");
+      const result = await deleteHolding(TEST_USER_ID, "nonexistent");
       expect(result).toBe(false);
     });
 
     it("re-throws non-P2025 errors", async () => {
+      mockPrisma.holding.findUnique.mockResolvedValue(
+        makeMockRow({ account: { userId: TEST_USER_ID } }),
+      );
       mockPrisma.holding.delete.mockRejectedValue(new Error("DB connection failed"));
 
-      await expect(deleteHolding("hold-1")).rejects.toThrow("DB connection failed");
+      await expect(deleteHolding(TEST_USER_ID, "hold-1")).rejects.toThrow("DB connection failed");
     });
   });
 
@@ -271,7 +289,7 @@ describe("holdingStore", () => {
       mockPrisma.$transaction.mockResolvedValue([{}, {}]);
       mockPrisma.holding.update.mockResolvedValue({});
 
-      await reorderHoldings([
+      await reorderHoldings(TEST_USER_ID, [
         { id: "hold-a", sortOrder: 1 },
         { id: "hold-b", sortOrder: 0 },
       ]);

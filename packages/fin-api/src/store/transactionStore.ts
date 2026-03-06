@@ -16,7 +16,7 @@ function isNotFoundError(e: unknown): boolean {
   );
 }
 
-export async function listTransactions(filter?: {
+export async function listTransactions(userId: string, filter?: {
   accountId?: string;
   startDate?: Date;
   endDate?: Date;
@@ -26,7 +26,9 @@ export async function listTransactions(filter?: {
   offset?: number;
 }): Promise<{ transactions: Transaction[]; total: number }> {
   const prisma = getPrisma();
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = {
+    account: { userId },
+  };
 
   if (filter?.accountId) where.accountId = filter.accountId;
   if (filter?.category) where.category = filter.category;
@@ -96,11 +98,16 @@ export async function listTransactions(filter?: {
 }
 
 export async function getTransaction(
+  userId: string,
   id: string,
 ): Promise<Transaction | null> {
   const prisma = getPrisma();
-  const row = await prisma.transaction.findUnique({ where: { id } });
+  const row = await prisma.transaction.findUnique({
+    where: { id },
+    include: { account: { select: { userId: true } } },
+  });
   if (!row) return null;
+  if (row.account.userId !== userId) return null;
   return decryptTransaction(row);
 }
 
@@ -143,10 +150,20 @@ export async function bulkCreateTransactions(
 }
 
 export async function updateTransaction(
+  userId: string,
   id: string,
   data: { category?: string | null; notes?: string | null },
 ): Promise<Transaction | null> {
   const prisma = getPrisma();
+
+  // Verify ownership via account relation
+  const existing = await prisma.transaction.findUnique({
+    where: { id },
+    include: { account: { select: { userId: true } } },
+  });
+  if (!existing) return null;
+  if (existing.account.userId !== userId) return null;
+
   const encrypted = encryptTransactionForUpdate(data);
   try {
     const row = await prisma.transaction.update({
@@ -160,8 +177,17 @@ export async function updateTransaction(
   }
 }
 
-export async function deleteTransaction(id: string): Promise<boolean> {
+export async function deleteTransaction(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
+
+  // Verify ownership via account relation
+  const existing = await prisma.transaction.findUnique({
+    where: { id },
+    include: { account: { select: { userId: true } } },
+  });
+  if (!existing) return false;
+  if (existing.account.userId !== userId) return false;
+
   try {
     await prisma.transaction.delete({ where: { id } });
     return true;
@@ -172,18 +198,20 @@ export async function deleteTransaction(id: string): Promise<boolean> {
 }
 
 export async function bulkUpdateCategory(
+  userId: string,
   ids: string[],
   category: string | null,
 ): Promise<number> {
   const prisma = getPrisma();
   const result = await prisma.transaction.updateMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, account: { userId } },
     data: { category },
   });
   return result.count;
 }
 
 export async function applyRuleToTransactions(
+  userId: string,
   rule: CategoryRule,
 ): Promise<number> {
   const prisma = getPrisma();
@@ -197,6 +225,7 @@ export async function applyRuleToTransactions(
   for (;;) {
     const rows = await prisma.transaction.findMany({
       where: {
+        account: { userId },
         OR: [
           { category: null },
           { NOT: { category: rule.category } },

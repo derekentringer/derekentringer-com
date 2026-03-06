@@ -6,16 +6,12 @@ const VALID_CUID = "cm1a2b3c4d5e6f7g8h9i0j";
 const VALID_CUID_2 = "cm9z8y7x6w5v4u3t2s1r0q";
 const VALID_ACCOUNT_ID = "cm2b3c4d5e6f7g8h9i0j1k";
 
-process.env.ADMIN_USERNAME = "admin";
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-holding-tests-min32ch";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
-process.env.PIN_TOKEN_SECRET = "dev-pin-secret-do-not-use-in-prod";
 process.env.CORS_ORIGIN = "http://localhost:3003";
 process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
 import { describe, it, expect, afterAll, afterEach, vi, beforeAll } from "vitest";
-import { signPinToken } from "@derekentringer/shared/auth/pinVerify";
 import { createMockPrisma } from "./helpers/mockPrisma.js";
 import type { MockPrisma } from "./helpers/mockPrisma.js";
 import { encryptHoldingForCreate, encryptAccountForCreate } from "../lib/mappers.js";
@@ -40,6 +36,7 @@ function makeMockAccountRow(type: AccountType = AccountType.Investment) {
   });
   return {
     id: VALID_ACCOUNT_ID,
+    userId: "test-user-1",
     ...encrypted,
     sortOrder: 0,
     isActive: true,
@@ -68,8 +65,36 @@ function makeMockHoldingRow(overrides: Record<string, unknown> = {}) {
     sortOrder: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
+    account: { userId: "test-user-1" },
     ...overrides,
   };
+}
+
+const TEST_USER_ID = "test-user-1";
+const TEST_EMAIL = "admin@test.com";
+const TEST_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
+
+function setupUserMock() {
+  mockPrisma.user.findUnique.mockImplementation(
+    async (args: { where: { email?: string; id?: string } }) => {
+      if (args.where.email === TEST_EMAIL || args.where.id === TEST_USER_ID) {
+        return {
+          id: TEST_USER_ID,
+          email: TEST_EMAIL,
+          passwordHash: TEST_PASSWORD_HASH,
+          displayName: "Test Admin",
+          role: "admin",
+          totpEnabled: false,
+          totpSecret: null,
+          backupCodes: "[]",
+          mustChangePassword: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      }
+      return null;
+    },
+  );
 }
 
 describe("Holding routes", () => {
@@ -87,18 +112,15 @@ describe("Holding routes", () => {
   });
 
   async function getAccessToken(): Promise<string> {
+    setupUserMock();
     mockPrisma.refreshToken.create.mockResolvedValue({});
 
     const res = await app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { email: "admin", password: TEST_PASSWORD },
+      payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
     });
     return res.json().accessToken;
-  }
-
-  function getPinToken(): string {
-    return signPinToken({ sub: "admin-001", type: "pin" }, "dev-pin-secret-do-not-use-in-prod");
   }
 
   // --- POST /holdings ---
@@ -248,6 +270,7 @@ describe("Holding routes", () => {
   describe("GET /holdings", () => {
     it("returns list of holdings for an account (200)", async () => {
       const token = await getAccessToken();
+      mockPrisma.account.findUnique.mockResolvedValue(makeMockAccountRow());
       mockPrisma.holding.findMany.mockResolvedValue([
         makeMockHoldingRow({ id: VALID_CUID }),
         makeMockHoldingRow({ id: VALID_CUID_2 }),
@@ -343,6 +366,7 @@ describe("Holding routes", () => {
     it("updates holding fields (200)", async () => {
       const token = await getAccessToken();
       const row = makeMockHoldingRow();
+      mockPrisma.holding.findUnique.mockResolvedValue(row);
       mockPrisma.holding.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -365,9 +389,7 @@ describe("Holding routes", () => {
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const notFoundError = new Error("Not found") as P2025Error;
-      notFoundError.code = "P2025";
-      mockPrisma.holding.update.mockRejectedValue(notFoundError);
+      mockPrisma.holding.findUnique.mockResolvedValue(null);
 
       const res = await app.inject({
         method: "PATCH",
@@ -423,6 +445,7 @@ describe("Holding routes", () => {
     it("allows null for nullable fields", async () => {
       const token = await getAccessToken();
       const row = makeMockHoldingRow();
+      mockPrisma.holding.findUnique.mockResolvedValue(row);
       mockPrisma.holding.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -465,19 +488,8 @@ describe("Holding routes", () => {
   describe("DELETE /holdings/:id", () => {
     it("deletes holding (204)", async () => {
       const token = await getAccessToken();
+      mockPrisma.holding.findUnique.mockResolvedValue(makeMockHoldingRow());
       mockPrisma.holding.delete.mockResolvedValue({});
-
-      const res = await app.inject({
-        method: "DELETE",
-        url: `/holdings/${VALID_CUID}`,
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
-      });
-
-      expect(res.statusCode).toBe(204);
-    });
-
-    it("returns 403 without PIN token", async () => {
-      const token = await getAccessToken();
 
       const res = await app.inject({
         method: "DELETE",
@@ -485,20 +497,17 @@ describe("Holding routes", () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      expect(res.statusCode).toBe(403);
-      expect(res.json().message).toBe("PIN verification required");
+      expect(res.statusCode).toBe(204);
     });
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const notFoundError = new Error("Not found") as P2025Error;
-      notFoundError.code = "P2025";
-      mockPrisma.holding.delete.mockRejectedValue(notFoundError);
+      mockPrisma.holding.findUnique.mockResolvedValue(null);
 
       const res = await app.inject({
         method: "DELETE",
         url: `/holdings/${VALID_CUID_2}`,
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
+        headers: { authorization: `Bearer ${token}` },
       });
 
       expect(res.statusCode).toBe(404);
@@ -510,7 +519,7 @@ describe("Holding routes", () => {
       const res = await app.inject({
         method: "DELETE",
         url: "/holdings/invalid-id",
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": getPinToken() },
+        headers: { authorization: `Bearer ${token}` },
       });
 
       expect(res.statusCode).toBe(400);
