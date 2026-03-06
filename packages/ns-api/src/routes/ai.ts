@@ -158,6 +158,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: { question: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { question } = request.body;
 
       const abortController = new AbortController();
@@ -169,7 +170,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
 
       (async () => {
         try {
-          const relevantNotes = await findRelevantNotes(question, 5);
+          const relevantNotes = await findRelevantNotes(userId, question, 5);
 
           const sources = relevantNotes.map((n) => ({
             id: n.id,
@@ -220,6 +221,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: { noteId: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { noteId } = request.body;
 
       if (!UUID_REGEX.test(noteId)) {
@@ -230,7 +232,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const note = await getNote(noteId);
+      const note = await getNote(userId, noteId);
       if (!note) {
         return reply.status(404).send({
           statusCode: 404,
@@ -241,7 +243,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
 
       const summary = await generateSummary(note.title, note.content);
 
-      await updateNote(noteId, { summary });
+      await updateNote(userId, noteId, { summary });
 
       return reply.send({ summary });
     },
@@ -255,6 +257,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: { noteId: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { noteId } = request.body;
 
       if (!UUID_REGEX.test(noteId)) {
@@ -265,7 +268,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const note = await getNote(noteId);
+      const note = await getNote(userId, noteId);
       if (!note) {
         return reply.status(404).send({
           statusCode: 404,
@@ -274,7 +277,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const existingTags = await listTags();
+      const existingTags = await listTags(userId);
       const tagNames = existingTags.map((t) => t.name);
 
       const suggestedTags = await suggestTags(
@@ -316,6 +319,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/transcribe",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
       let file;
       let mode: AudioMode = "memo";
 
@@ -371,7 +375,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
 
       const structured = await structureTranscript(transcript, mode);
 
-      const noteRow = await createNote({
+      const noteRow = await createNote(userId, {
         title: structured.title,
         content: structured.content,
         tags: structured.tags,

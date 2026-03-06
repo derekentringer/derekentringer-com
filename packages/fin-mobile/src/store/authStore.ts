@@ -12,7 +12,7 @@ interface AuthState {
 
 interface AuthActions {
   initialize: () => Promise<void>;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   verifyPin: (pin: string) => Promise<void>;
   isPinValid: () => boolean;
@@ -53,7 +53,9 @@ const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
         isLoading: false,
         user: {
           id: "admin-001",
-          username: "admin",
+          email: "admin",
+          role: "admin",
+          totpEnabled: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
@@ -64,8 +66,8 @@ const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
     }
   },
 
-  login: async (username: string, password: string) => {
-    const data = await authApi.login({ username, password });
+  login: async (email: string, password: string) => {
+    const data = await authApi.login({ email, password });
     set({
       isAuthenticated: true,
       user: data.user,

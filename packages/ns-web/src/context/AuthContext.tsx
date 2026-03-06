@@ -11,6 +11,7 @@ import {
   login as apiLogin,
   refreshSession,
   logout as apiLogout,
+  getMe,
 } from "../api/auth.ts";
 import { setOnAuthFailure } from "../api/client.ts";
 
@@ -18,7 +19,7 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -37,14 +38,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOnAuthFailure(clearAuth);
 
     refreshSession()
-      .then((result) => {
+      .then(async (result) => {
         if (result) {
-          setUser({
-            id: "admin",
-            username: "admin",
-            createdAt: "",
-            updatedAt: "",
-          });
+          // Fetch real user data from the server
+          try {
+            const userData = await getMe();
+            setUser(userData);
+          } catch {
+            // Fallback if /auth/me fails
+            setUser(null);
+          }
         }
       })
       .finally(() => {
@@ -52,8 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, [clearAuth]);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const response = await apiLogin({ username, password });
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await apiLogin({ email, password });
     setUser(response.user);
   }, []);
 

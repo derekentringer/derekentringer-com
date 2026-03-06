@@ -68,7 +68,7 @@ describe("Auth routes", () => {
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(200);
@@ -77,14 +77,14 @@ describe("Auth routes", () => {
       expect(body.expiresIn).toBe(900);
       expect(body.user).toBeDefined();
       expect(body.user.id).toBeDefined();
-      expect(body.user.username).toBe("admin");
+      expect(body.user.email).toBe("admin");
     });
 
     it("returns 401 with wrong password", async () => {
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: "wrongpassword" },
+        payload: { email: "admin", password: "wrongpassword" },
       });
 
       expect(res.statusCode).toBe(401);
@@ -92,11 +92,11 @@ describe("Auth routes", () => {
       expect(body.message).toBe("Invalid credentials");
     });
 
-    it("returns 401 with wrong username", async () => {
+    it("returns 401 with wrong email", async () => {
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "wronguser", password: TEST_PASSWORD },
+        payload: { email: "wronguser", password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(401);
@@ -123,7 +123,7 @@ describe("Auth routes", () => {
         method: "POST",
         url: "/auth/login",
         headers: { "x-client-type": "mobile" },
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(200);
@@ -140,7 +140,7 @@ describe("Auth routes", () => {
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(200);
@@ -158,7 +158,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       const cookies = loginRes.cookies;
@@ -216,7 +216,7 @@ describe("Auth routes", () => {
         method: "POST",
         url: "/auth/login",
         headers: { "x-client-type": "mobile" },
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       const { refreshToken } = loginRes.json();
@@ -251,7 +251,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -288,7 +288,7 @@ describe("Auth routes", () => {
         method: "POST",
         url: "/auth/login",
         headers: { "x-client-type": "mobile" },
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       const { accessToken, refreshToken } = loginRes.json();
@@ -319,7 +319,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -352,7 +352,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -378,7 +378,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -402,7 +402,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: "admin", password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();

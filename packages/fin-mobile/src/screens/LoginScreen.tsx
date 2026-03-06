@@ -16,14 +16,14 @@ import useAuthStore from "@/store/authStore";
 import { colors, spacing, borderRadius } from "@/theme";
 
 export function LoginScreen() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const login = useAuthStore((state) => state.login);
 
   const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
+    if (!email.trim() || !password.trim()) {
       setError("Please enter username and password");
       return;
     }
@@ -32,7 +32,7 @@ export function LoginScreen() {
     setLoading(true);
 
     try {
-      await login(username.trim(), password);
+      await login(email.trim(), password);
     } catch {
       setError("Invalid credentials");
     } finally {
@@ -53,8 +53,8 @@ export function LoginScreen() {
         style={styles.input}
         placeholder="Username"
         placeholderTextColor={colors.mutedForeground}
-        value={username}
-        onChangeText={setUsername}
+        value={email}
+        onChangeText={setEmail}
         autoCapitalize="none"
         autoCorrect={false}
       />

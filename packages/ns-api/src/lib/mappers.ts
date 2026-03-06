@@ -1,5 +1,6 @@
 import type { Note as PrismaNote, NoteVersion as PrismaNoteVersion } from "../generated/prisma/client.js";
 import type { Note, NoteSearchResult, NoteVersion } from "@derekentringer/shared/ns";
+import type { User } from "@derekentringer/shared";
 
 export function toNote(row: PrismaNote): Note {
   let tags: string[] = [];
@@ -40,5 +41,25 @@ export function toNoteVersion(row: PrismaNoteVersion): NoteVersion {
     title: row.title,
     content: row.content,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toUserResponse(row: {
+  id: string;
+  email: string;
+  displayName?: string | null;
+  role: string;
+  totpEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): User {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.displayName ?? null,
+    role: row.role as "admin" | "user",
+    totpEnabled: row.totpEnabled,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }

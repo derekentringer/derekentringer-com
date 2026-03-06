@@ -18,7 +18,6 @@ describe("loadConfig", () => {
 
     const config = loadConfig();
 
-    expect(config.adminUsername).toBe("admin");
     expect(config.jwtSecret).toBe("dev-jwt-secret-do-not-use-in-prod");
     expect(config.refreshTokenSecret).toBe("dev-refresh-secret-do-not-use-in-prod");
     expect(config.corsOrigin).toBe("http://localhost:3005");
@@ -26,18 +25,20 @@ describe("loadConfig", () => {
     expect(config.nodeEnv).toBe("development");
     expect(config.isProduction).toBe(false);
     expect(config.openaiApiKey).toBe("");
+    expect(config.resendApiKey).toBe("");
+    expect(config.appUrl).toBe("http://localhost:3005");
+    expect(config.rpId).toBe("localhost");
+    expect(config.rpName).toBe("NoteSync");
   });
 
   it("returns custom values from env vars", () => {
     process.env.NODE_ENV = "development";
-    process.env.ADMIN_USERNAME = "custom-admin";
     process.env.JWT_SECRET = "custom-jwt-secret";
     process.env.CORS_ORIGIN = "https://example.com";
     process.env.PORT = "9999";
 
     const config = loadConfig();
 
-    expect(config.adminUsername).toBe("custom-admin");
     expect(config.jwtSecret).toBe("custom-jwt-secret");
     expect(config.corsOrigin).toBe("https://example.com");
     expect(config.port).toBe(9999);
@@ -45,8 +46,6 @@ describe("loadConfig", () => {
 
   it("identifies production environment", () => {
     process.env.NODE_ENV = "production";
-    process.env.ADMIN_USERNAME = "admin";
-    process.env.ADMIN_PASSWORD_HASH = "hash";
     process.env.JWT_SECRET = "secret";
     process.env.REFRESH_TOKEN_SECRET = "refresh-secret";
     process.env.CORS_ORIGIN = "https://app.example.com";
@@ -63,16 +62,16 @@ describe("loadConfig", () => {
 
   it("throws in production when required env vars are missing", () => {
     process.env.NODE_ENV = "production";
-    delete process.env.ADMIN_USERNAME;
     delete process.env.JWT_SECRET;
+    delete process.env.REFRESH_TOKEN_SECRET;
 
     expect(() => loadConfig()).toThrow("Missing required environment variable");
   });
 
   it("does not throw in test mode for missing env vars", () => {
     process.env.NODE_ENV = "test";
-    delete process.env.ADMIN_USERNAME;
     delete process.env.JWT_SECRET;
+    delete process.env.REFRESH_TOKEN_SECRET;
 
     expect(() => loadConfig()).not.toThrow();
   });
@@ -81,24 +80,24 @@ describe("loadConfig", () => {
     process.env.NODE_ENV = "development";
 
     const config1 = loadConfig();
-    process.env.ADMIN_USERNAME = "changed";
+    process.env.CORS_ORIGIN = "https://changed.example.com";
     const config2 = loadConfig();
 
     expect(config1).toBe(config2);
-    expect(config2.adminUsername).toBe(config1.adminUsername);
+    expect(config2.corsOrigin).toBe(config1.corsOrigin);
   });
 
   it("resets cache with resetConfig", () => {
     process.env.NODE_ENV = "development";
-    process.env.ADMIN_USERNAME = "first";
+    process.env.CORS_ORIGIN = "https://first.example.com";
 
     const config1 = loadConfig();
-    expect(config1.adminUsername).toBe("first");
+    expect(config1.corsOrigin).toBe("https://first.example.com");
 
     resetConfig();
-    process.env.ADMIN_USERNAME = "second";
+    process.env.CORS_ORIGIN = "https://second.example.com";
 
     const config2 = loadConfig();
-    expect(config2.adminUsername).toBe("second");
+    expect(config2.corsOrigin).toBe("https://second.example.com");
   });
 });

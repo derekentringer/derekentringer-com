@@ -22,28 +22,30 @@ function isNotFoundError(error: unknown): boolean {
 }
 
 export async function createNote(
+  userId: string,
   data: CreateNoteRequest,
 ): Promise<PrismaNote> {
   const prisma = getPrisma();
 
   const maxResult = await prisma.note.aggregate({
     _max: { sortOrder: true },
-    where: { deletedAt: null },
+    where: { userId, deletedAt: null },
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
   // Ensure folder exists in folders table (legacy name-based path)
   if (data.folder && !data.folderId) {
     const existing = await prisma.folder.findFirst({
-      where: { parentId: null, name: data.folder },
+      where: { userId, parentId: null, name: data.folder },
     });
     if (!existing) {
-      await prisma.folder.create({ data: { name: data.folder } });
+      await prisma.folder.create({ data: { userId, name: data.folder } });
     }
   }
 
   const created = await prisma.note.create({
     data: {
+      userId,
       title: data.title,
       content: data.content ?? "",
       folder: data.folder ?? null,
@@ -54,7 +56,7 @@ export async function createNote(
   });
 
   if (created.content) {
-    syncNoteLinks(created.id, created.content).catch(() => {});
+    syncNoteLinks(userId, created.id, created.content).catch(() => {});
   }
 
   captureVersion(created.id, created.title, created.content).catch(() => {});
@@ -62,10 +64,10 @@ export async function createNote(
   return created;
 }
 
-export async function getNote(id: string): Promise<PrismaNote | null> {
+export async function getNote(userId: string, id: string): Promise<PrismaNote | null> {
   const prisma = getPrisma();
   const note = await prisma.note.findUnique({ where: { id } });
-  if (!note || note.deletedAt) return null;
+  if (!note || note.deletedAt || note.userId !== userId) return null;
   return note;
 }
 
@@ -88,6 +90,7 @@ interface FtsRow extends PrismaNote {
 }
 
 export async function listNotes(
+  userId: string,
   filter?: ListNotesFilter,
 ): Promise<{ notes: FtsRow[]; total: number }> {
   const prisma = getPrisma();
@@ -102,18 +105,18 @@ export async function listNotes(
     const mode = filter.searchMode ?? "keyword";
 
     if (mode === "semantic") {
-      return semanticSearch(filter.search, filter, pageSize, skip);
+      return semanticSearch(userId, filter.search, filter, pageSize, skip);
     }
     if (mode === "hybrid") {
-      return hybridSearch(filter.search, filter, pageSize, skip);
+      return hybridSearch(userId, filter.search, filter, pageSize, skip);
     }
 
     // Keyword search (default)
-    return keywordSearch(filter.search, filter, pageSize, skip, sortBy, sortOrder);
+    return keywordSearch(userId, filter.search, filter, pageSize, skip, sortBy, sortOrder);
   }
 
   // Standard Prisma query (no search)
-  const where: Record<string, unknown> = { deletedAt: null };
+  const where: Record<string, unknown> = { userId, deletedAt: null };
 
   if (filter?.folderId) {
     where.folderId = filter.folderId;
@@ -166,6 +169,7 @@ function buildFilterClause(
 }
 
 async function keywordSearch(
+  userId: string,
   search: string,
   filter: ListNotesFilter,
   pageSize: number,
@@ -174,10 +178,10 @@ async function keywordSearch(
   sortOrder: string,
 ): Promise<{ notes: FtsRow[]; total: number }> {
   const prisma = getPrisma();
-  const params: unknown[] = [search];
-  let paramIdx = 2;
+  const params: unknown[] = [search, userId];
+  let paramIdx = 3;
 
-  let whereClause = `"deletedAt" IS NULL AND "search_vector" @@ plainto_tsquery('english', $1)`;
+  let whereClause = `"deletedAt" IS NULL AND "userId" = $2 AND "search_vector" @@ plainto_tsquery('english', $1)`;
 
   const extra = buildFilterClause(filter, paramIdx);
   whereClause += extra.clause;
@@ -218,6 +222,7 @@ async function keywordSearch(
 }
 
 async function semanticSearch(
+  userId: string,
   search: string,
   filter: ListNotesFilter,
   pageSize: number,
@@ -234,27 +239,27 @@ async function semanticSearch(
   // unreliable embeddings that spuriously match many queries
   const MIN_CONTENT_LEN = 20;
 
-  // Count query — no vector param needed, filter indices start at 1
-  const baseWhere = `"deletedAt" IS NULL AND "embedding" IS NOT NULL AND LENGTH("content") >= ${MIN_CONTENT_LEN}`;
-  const countFilter = buildFilterClause(filter, 1);
+  // Count query — $1 = userId, filter indices start at 2
+  const baseWhere = `"deletedAt" IS NULL AND "userId" = $1 AND "embedding" IS NOT NULL AND LENGTH("content") >= ${MIN_CONTENT_LEN}`;
+  const countFilter = buildFilterClause(filter, 2);
   const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${baseWhere}${countFilter.clause}`;
 
-  // Data query — $1 = vector, filter indices start at 2
-  const dataFilter = buildFilterClause(filter, 2);
+  // Data query — $1 = userId, $2 = vector, filter indices start at 3
+  const dataFilter = buildFilterClause(filter, 3);
   let dataParamIdx = dataFilter.nextIdx;
   const dataQuery = `
     SELECT "id", "title", "content", "folder", "tags", "summary", "favorite", "sortOrder",
       "createdAt", "updatedAt", "deletedAt"
     FROM "notes"
-    WHERE ${baseWhere}${dataFilter.clause}
-      AND (1 - ("embedding" <=> $1::vector)) > ${SIM_THRESHOLD}
-    ORDER BY "embedding" <=> $1::vector ASC
-    LIMIT $${dataParamIdx} OFFSET $${dataParamIdx + 1}
+    WHERE ${baseWhere.replace("$1", "$1")}${dataFilter.clause.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + 1}`)}
+      AND (1 - ("embedding" <=> $2::vector)) > ${SIM_THRESHOLD}
+    ORDER BY "embedding" <=> $2::vector ASC
+    LIMIT $${dataParamIdx + 1} OFFSET $${dataParamIdx + 2}
   `;
 
   const [countResult, notes] = await Promise.all([
-    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, ...countFilter.params),
-    prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, vectorStr, ...dataFilter.params, pageSize, skip),
+    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, userId, ...countFilter.params),
+    prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, userId, vectorStr, ...dataFilter.params, pageSize, skip),
   ]);
 
   return {
@@ -264,6 +269,7 @@ async function semanticSearch(
 }
 
 async function hybridSearch(
+  userId: string,
   search: string,
   filter: ListNotesFilter,
   pageSize: number,
@@ -273,29 +279,16 @@ async function hybridSearch(
   const queryEmbedding = await generateQueryEmbedding(search);
   const vectorStr = `[${queryEmbedding.join(",")}]`;
 
-  // Semantic similarity threshold — filters out notes with weak/irrelevant
-  // embeddings. Higher than pure semantic (0.3) because hybrid includes the
-  // keyword path as a fallback so we can be stricter on the semantic side.
   const HYBRID_SIM_THRESHOLD = 0.4;
-
-  // Minimum content length for semantic signal — notes with empty/near-empty
-  // content produce unreliable embeddings that spuriously match many queries.
-  // Keyword matching still works for sparse notes via the first OR branch.
   const MIN_CONTENT_LEN = 20;
 
-  // Require keyword match OR meaningful semantic similarity from substantial content
-  const baseWhere = `"deletedAt" IS NULL AND ("search_vector" @@ plainto_tsquery('english', $1) OR ("embedding" IS NOT NULL AND LENGTH("content") >= ${MIN_CONTENT_LEN} AND (1 - ("embedding" <=> $2::vector)) > ${HYBRID_SIM_THRESHOLD}))`;
+  // $1 = search text, $2 = vector, $3 = userId, filter indices start at 4
+  const baseWhere = `"deletedAt" IS NULL AND "userId" = $3 AND ("search_vector" @@ plainto_tsquery('english', $1) OR ("embedding" IS NOT NULL AND LENGTH("content") >= ${MIN_CONTENT_LEN} AND (1 - ("embedding" <=> $2::vector)) > ${HYBRID_SIM_THRESHOLD}))`;
 
-  // Count query — $1 = search text, $2 = vector, filter indices start at 3
-  const countFilter = buildFilterClause(filter, 3);
+  const countFilter = buildFilterClause(filter, 4);
   const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${baseWhere}${countFilter.clause}`;
 
-  // Data query — $1 = search text, $2 = vector, filter indices start at 3
-  // Scoring: ts_rank values are tiny (0.01–0.1) so raw keyword weight is
-  // negligible vs semantic similarity (0–1). A flat 0.3 bonus for keyword
-  // matches ensures notes containing the search term always outrank
-  // semantic-only matches of similar quality.
-  const dataFilter = buildFilterClause(filter, 3);
+  const dataFilter = buildFilterClause(filter, 4);
   let dataParamIdx = dataFilter.nextIdx;
   const dataQuery = `
     SELECT "id", "title", "content", "folder", "tags", "summary", "favorite", "sortOrder",
@@ -314,8 +307,8 @@ async function hybridSearch(
   `;
 
   const [countResult, notes] = await Promise.all([
-    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, search, vectorStr, ...countFilter.params),
-    prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, search, vectorStr, ...dataFilter.params, pageSize, skip),
+    prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, search, vectorStr, userId, ...countFilter.params),
+    prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, search, vectorStr, userId, ...dataFilter.params, pageSize, skip),
   ]);
 
   return {
@@ -330,6 +323,7 @@ export interface ListTrashedFilter {
 }
 
 export async function listTrashedNotes(
+  userId: string,
   filter?: ListTrashedFilter,
 ): Promise<{ notes: PrismaNote[]; total: number }> {
   const prisma = getPrisma();
@@ -337,7 +331,7 @@ export async function listTrashedNotes(
   const pageSize = filter?.pageSize ?? 50;
   const skip = (page - 1) * pageSize;
 
-  const where = { deletedAt: { not: null } };
+  const where = { userId, deletedAt: { not: null } };
 
   const [notes, total] = await Promise.all([
     prisma.note.findMany({
@@ -353,6 +347,7 @@ export async function listTrashedNotes(
 }
 
 export async function updateNote(
+  userId: string,
   id: string,
   data: UpdateNoteRequest,
 ): Promise<PrismaNote | null> {
@@ -368,12 +363,12 @@ export async function updateNote(
     if (data.favorite !== undefined) updateData.favorite = data.favorite;
 
     const updated = await prisma.note.update({
-      where: { id, deletedAt: null },
+      where: { id, userId, deletedAt: null },
       data: updateData,
     });
 
     if (data.content !== undefined) {
-      syncNoteLinks(updated.id, updated.content).catch(() => {});
+      syncNoteLinks(userId, updated.id, updated.content).catch(() => {});
     }
 
     if (data.title !== undefined || data.content !== undefined) {
@@ -387,11 +382,11 @@ export async function updateNote(
   }
 }
 
-export async function softDeleteNote(id: string): Promise<boolean> {
+export async function softDeleteNote(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
     await prisma.note.update({
-      where: { id, deletedAt: null },
+      where: { id, userId, deletedAt: null },
       data: { deletedAt: new Date() },
     });
     return true;
@@ -401,11 +396,11 @@ export async function softDeleteNote(id: string): Promise<boolean> {
   }
 }
 
-export async function restoreNote(id: string): Promise<PrismaNote | null> {
+export async function restoreNote(userId: string, id: string): Promise<PrismaNote | null> {
   const prisma = getPrisma();
   try {
     return await prisma.note.update({
-      where: { id },
+      where: { id, userId },
       data: { deletedAt: null },
     });
   } catch (error) {
@@ -414,11 +409,11 @@ export async function restoreNote(id: string): Promise<PrismaNote | null> {
   }
 }
 
-export async function permanentDeleteNote(id: string): Promise<boolean> {
+export async function permanentDeleteNote(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
     await prisma.note.delete({
-      where: { id },
+      where: { id, userId },
     });
     return true;
   } catch (error) {
@@ -427,9 +422,9 @@ export async function permanentDeleteNote(id: string): Promise<boolean> {
   }
 }
 
-export async function permanentDeleteTrash(ids?: string[]): Promise<number> {
+export async function permanentDeleteTrash(userId: string, ids?: string[]): Promise<number> {
   const prisma = getPrisma();
-  const where: Record<string, unknown> = { deletedAt: { not: null } };
+  const where: Record<string, unknown> = { userId, deletedAt: { not: null } };
   if (ids && ids.length > 0) {
     where.id = { in: ids };
   }
@@ -452,6 +447,7 @@ export async function purgeOldTrash(days = 30): Promise<number> {
 }
 
 export async function createFolder(
+  userId: string,
   name: string,
   parentId?: string | null,
 ): Promise<PrismaFolder> {
@@ -460,12 +456,13 @@ export async function createFolder(
   // Auto-increment sortOrder among siblings
   const maxResult = await prisma.folder.aggregate({
     _max: { sortOrder: true },
-    where: { parentId: parentId ?? null },
+    where: { userId, parentId: parentId ?? null },
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
   return prisma.folder.create({
     data: {
+      userId,
       name,
       parentId: parentId ?? null,
       sortOrder: nextSortOrder,
@@ -564,18 +561,19 @@ function buildFolderTree(
   return roots;
 }
 
-export async function listFolders(): Promise<FolderInfo[]> {
+export async function listFolders(userId: string): Promise<FolderInfo[]> {
   const prisma = getPrisma();
 
-  // Get all folders
+  // Get all folders for user
   const allFolders = await prisma.folder.findMany({
+    where: { userId },
     orderBy: { sortOrder: "asc" },
   });
 
   // Get note counts grouped by folderId
   const groups = await prisma.note.groupBy({
     by: ["folderId"],
-    where: { deletedAt: null, folderId: { not: null } },
+    where: { userId, deletedAt: null, folderId: { not: null } },
     _count: { id: true },
   });
 
@@ -591,33 +589,35 @@ export async function listFolders(): Promise<FolderInfo[]> {
   return buildFolderTree(foldersWithCount);
 }
 
-export async function listFavoriteNotes(): Promise<PrismaNote[]> {
+export async function listFavoriteNotes(userId: string): Promise<PrismaNote[]> {
   const prisma = getPrisma();
   return prisma.note.findMany({
-    where: { favorite: true, deletedAt: null },
+    where: { userId, favorite: true, deletedAt: null },
     orderBy: { title: "asc" },
   });
 }
 
 export async function toggleFolderFavorite(
+  userId: string,
   folderId: string,
   favorite: boolean,
 ): Promise<PrismaFolder> {
   const prisma = getPrisma();
   return prisma.folder.update({
-    where: { id: folderId },
+    where: { id: folderId, userId },
     data: { favorite },
   });
 }
 
 export async function reorderNotes(
+  userId: string,
   order: { id: string; sortOrder: number }[],
 ): Promise<void> {
   const prisma = getPrisma();
   await prisma.$transaction(
     order.map((item) =>
       prisma.note.update({
-        where: { id: item.id },
+        where: { id: item.id, userId },
         data: { sortOrder: item.sortOrder },
       }),
     ),
@@ -625,17 +625,19 @@ export async function reorderNotes(
 }
 
 export async function renameFolderById(
+  userId: string,
   folderId: string,
   newName: string,
 ): Promise<PrismaFolder> {
   const prisma = getPrisma();
   return prisma.folder.update({
-    where: { id: folderId },
+    where: { id: folderId, userId },
     data: { name: newName },
   });
 }
 
 export async function moveFolder(
+  userId: string,
   folderId: string,
   newParentId: string | null,
   sortOrder?: number,
@@ -657,25 +659,26 @@ export async function moveFolder(
     // Auto-increment sortOrder among new siblings
     const maxResult = await prisma.folder.aggregate({
       _max: { sortOrder: true },
-      where: { parentId: newParentId },
+      where: { userId, parentId: newParentId },
     });
     data.sortOrder = (maxResult._max.sortOrder ?? -1) + 1;
   }
 
   return prisma.folder.update({
-    where: { id: folderId },
+    where: { id: folderId, userId },
     data,
   });
 }
 
 export async function reorderFolders(
+  userId: string,
   order: { id: string; sortOrder: number }[],
 ): Promise<void> {
   const prisma = getPrisma();
   await prisma.$transaction(
     order.map((item) =>
       prisma.folder.update({
-        where: { id: item.id },
+        where: { id: item.id, userId },
         data: { sortOrder: item.sortOrder },
       }),
     ),
@@ -685,13 +688,14 @@ export async function reorderFolders(
 export type FolderDeleteMode = "move-up" | "recursive";
 
 export async function deleteFolderById(
+  userId: string,
   folderId: string,
   mode: FolderDeleteMode = "move-up",
 ): Promise<number> {
   const prisma = getPrisma();
 
   const folder = await prisma.folder.findUnique({ where: { id: folderId } });
-  if (!folder) return 0;
+  if (!folder || folder.userId !== userId) return 0;
 
   if (mode === "recursive") {
     // Get all descendant folder IDs
@@ -700,7 +704,7 @@ export async function deleteFolderById(
 
     // Unfile all notes in this folder and descendants
     const result = await prisma.note.updateMany({
-      where: { folderId: { in: allIds }, deletedAt: null },
+      where: { userId, folderId: { in: allIds }, deletedAt: null },
       data: { folderId: null, folder: null },
     });
 
@@ -724,7 +728,7 @@ export async function deleteFolderById(
 
   // Move notes to parent folder
   const result = await prisma.note.updateMany({
-    where: { folderId, deletedAt: null },
+    where: { userId, folderId, deletedAt: null },
     data: { folderId: parentId, folder: null },
   });
 
@@ -736,16 +740,17 @@ export async function deleteFolderById(
 
 // Legacy name-based rename (kept for backward compat during transition)
 export async function renameFolder(
+  userId: string,
   oldName: string,
   newName: string,
 ): Promise<number> {
   const prisma = getPrisma();
   const result = await prisma.note.updateMany({
-    where: { folder: oldName, deletedAt: null },
+    where: { userId, folder: oldName, deletedAt: null },
     data: { folder: newName },
   });
   // Find the folder by name and rename it
-  const folder = await prisma.folder.findFirst({ where: { name: oldName, parentId: null } });
+  const folder = await prisma.folder.findFirst({ where: { userId, name: oldName, parentId: null } });
   if (folder) {
     await prisma.folder.update({
       where: { id: folder.id },
@@ -756,37 +761,38 @@ export async function renameFolder(
 }
 
 // Legacy name-based delete (kept for backward compat during transition)
-export async function deleteFolder(name: string): Promise<number> {
+export async function deleteFolder(userId: string, name: string): Promise<number> {
   const prisma = getPrisma();
   const result = await prisma.note.updateMany({
-    where: { folder: name, deletedAt: null },
+    where: { userId, folder: name, deletedAt: null },
     data: { folder: null },
   });
   // Remove from folders table
-  await prisma.folder.deleteMany({ where: { name } });
+  await prisma.folder.deleteMany({ where: { userId, name } });
   return result.count;
 }
 
-export async function listTags(): Promise<TagInfo[]> {
+export async function listTags(userId: string): Promise<TagInfo[]> {
   const prisma = getPrisma();
   const result = await prisma.$queryRawUnsafe<TagInfo[]>(`
     SELECT tag AS name, COUNT(*)::int AS count
     FROM "notes", jsonb_array_elements_text("tags") AS tag
-    WHERE "deletedAt" IS NULL
+    WHERE "deletedAt" IS NULL AND "userId" = $1
     GROUP BY tag
     ORDER BY tag ASC
-  `);
+  `, userId);
   return result;
 }
 
 export async function renameTag(
+  userId: string,
   oldName: string,
   newName: string,
 ): Promise<number> {
   const prisma = getPrisma();
   // Find notes that contain the old tag
   const notes = await prisma.note.findMany({
-    where: { deletedAt: null },
+    where: { userId, deletedAt: null },
     select: { id: true, tags: true },
   });
 
@@ -815,6 +821,7 @@ export async function renameTag(
 }
 
 export async function findRelevantNotes(
+  userId: string,
   query: string,
   limit: number = 5,
 ): Promise<{ id: string; title: string; content: string }[]> {
@@ -831,11 +838,13 @@ export async function findRelevantNotes(
     `SELECT "id", "title", "content"
      FROM "notes"
      WHERE "deletedAt" IS NULL
+       AND "userId" = $1
        AND "embedding" IS NOT NULL
        AND LENGTH("content") >= ${MIN_CONTENT_LEN}
-       AND (1 - ("embedding" <=> $1::vector)) > ${SIM_THRESHOLD}
-     ORDER BY "embedding" <=> $1::vector ASC
-     LIMIT $2`,
+       AND (1 - ("embedding" <=> $2::vector)) > ${SIM_THRESHOLD}
+     ORDER BY "embedding" <=> $2::vector ASC
+     LIMIT $3`,
+    userId,
     vectorStr,
     limit,
   );
@@ -843,10 +852,10 @@ export async function findRelevantNotes(
   return notes;
 }
 
-export async function removeTag(name: string): Promise<number> {
+export async function removeTag(userId: string, name: string): Promise<number> {
   const prisma = getPrisma();
   const notes = await prisma.note.findMany({
-    where: { deletedAt: null },
+    where: { userId, deletedAt: null },
     select: { id: true, tags: true },
   });
 

@@ -2,6 +2,7 @@ import type {
   LoginRequest,
   LoginResponse,
   RefreshResponse,
+  User,
 } from "@derekentringer/shared";
 import { apiFetch, setAccessToken } from "./client.ts";
 
@@ -42,6 +43,17 @@ export async function refreshSession(): Promise<RefreshResponse | null> {
   } catch {
     return null;
   }
+}
+
+export async function getMe(): Promise<User> {
+  const response = await apiFetch("/auth/me");
+
+  if (!response.ok) {
+    throw new Error("Failed to get user profile");
+  }
+
+  const data: { user: User } = await response.json();
+  return data.user;
 }
 
 export async function logout(): Promise<void> {

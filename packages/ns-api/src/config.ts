@@ -10,8 +10,6 @@ export function loadConfig(): Config {
 
   if (enforceSecrets) {
     const required = [
-      "ADMIN_USERNAME",
-      "ADMIN_PASSWORD_HASH",
       "JWT_SECRET",
       "REFRESH_TOKEN_SECRET",
       "CORS_ORIGIN",
@@ -28,8 +26,6 @@ export function loadConfig(): Config {
   }
 
   cachedConfig = {
-    adminUsername: process.env.ADMIN_USERNAME || "admin",
-    adminPasswordHash: process.env.ADMIN_PASSWORD_HASH || "",
     jwtSecret:
       process.env.JWT_SECRET || "dev-jwt-secret-do-not-use-in-prod",
     refreshTokenSecret:
@@ -43,14 +39,16 @@ export function loadConfig(): Config {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
     voyageApiKey: process.env.VOYAGE_API_KEY || "",
     openaiApiKey: process.env.OPENAI_API_KEY || "",
+    resendApiKey: process.env.RESEND_API_KEY || "",
+    appUrl: process.env.APP_URL || "http://localhost:3005",
+    rpId: process.env.RP_ID || "localhost",
+    rpName: process.env.RP_NAME || "NoteSync",
   };
 
   return cachedConfig;
 }
 
 export interface Config {
-  adminUsername: string;
-  adminPasswordHash: string;
   jwtSecret: string;
   refreshTokenSecret: string;
   corsOrigin: string;
@@ -61,6 +59,10 @@ export interface Config {
   anthropicApiKey: string;
   voyageApiKey: string;
   openaiApiKey: string;
+  resendApiKey: string;
+  appUrl: string;
+  rpId: string;
+  rpName: string;
 }
 
 /** Reset cached config (for testing only) */

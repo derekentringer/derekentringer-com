@@ -6,7 +6,7 @@ import { NsLogo } from "../components/NsLogo.tsx";
 
 export function LoginPage() {
   const { isAuthenticated, isLoading, login } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -20,7 +20,7 @@ export function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await login(username, password);
+      await login(email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -39,11 +39,11 @@ export function LoginPage() {
           <h1 className="font-normal text-3xl text-foreground">NoteSync</h1>
         </div>
         <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          autoComplete="username"
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
           autoFocus
           className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
@@ -60,7 +60,7 @@ export function LoginPage() {
         )}
         <button
           type="submit"
-          disabled={isSubmitting || !username || !password}
+          disabled={isSubmitting || !email || !password}
           className="w-full px-4 py-2 rounded-md bg-primary text-primary-contrast font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isSubmitting ? "Signing in..." : "Sign in"}
