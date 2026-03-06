@@ -10,7 +10,7 @@ import type {
   ReorderFoldersRequest,
   TagListResponse,
 } from "@derekentringer/shared/ns";
-import { toNote, toNoteSearchResult } from "../lib/mappers.js";
+import { toNote, toNoteSearchResult, toNoteVersion } from "../lib/mappers.js";
 import {
   createNote,
   getNote,
@@ -39,7 +39,13 @@ import { getBacklinks, listNoteTitles } from "../store/linkStore.js";
 import {
   getTrashRetentionDays,
   setTrashRetentionDays,
+  getVersionIntervalMinutes,
+  setVersionIntervalMinutes,
 } from "../store/settingStore.js";
+import {
+  listVersions,
+  getVersion,
+} from "../store/versionStore.js";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -323,6 +329,40 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // GET /notes/versions/interval — MUST be before /:id
+  fastify.get(
+    "/versions/interval",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const minutes = await getVersionIntervalMinutes();
+      return reply.send({ minutes });
+    },
+  );
+
+  // PUT /notes/versions/interval
+  fastify.put<{ Body: { minutes: number } }>(
+    "/versions/interval",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["minutes"],
+          additionalProperties: false,
+          properties: {
+            minutes: { type: "integer", minimum: 0, maximum: 60 },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { minutes: number } }>,
+      reply: FastifyReply,
+    ) => {
+      const { minutes } = request.body;
+      await setVersionIntervalMinutes(minutes);
+      return reply.send({ minutes });
+    },
+  );
+
   // GET /notes/trash — MUST be before /:id
   fastify.get(
     "/trash",
@@ -463,6 +503,112 @@ export default async function noteRoutes(fastify: FastifyInstance) {
 
       const backlinks = await getBacklinks(id);
       return reply.send({ backlinks });
+    },
+  );
+
+  // GET /notes/:id/versions — MUST be before generic /:id
+  fastify.get(
+    "/:id/versions",
+    async (
+      request: FastifyRequest<{
+        Params: { id: string };
+        Querystring: { page?: string; pageSize?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { id } = request.params;
+      if (!UUID_REGEX.test(id)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid note ID format",
+        });
+      }
+
+      const { page, pageSize } = request.query;
+      const result = await listVersions(id, {
+        page: page ? Number(page) : undefined,
+        pageSize: pageSize ? Number(pageSize) : undefined,
+      });
+
+      return reply.send({
+        versions: result.versions.map(toNoteVersion),
+        total: result.total,
+      });
+    },
+  );
+
+  // GET /notes/:id/versions/:versionId — MUST be before generic /:id
+  fastify.get(
+    "/:id/versions/:versionId",
+    async (
+      request: FastifyRequest<{
+        Params: { id: string; versionId: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { id, versionId } = request.params;
+      if (!UUID_REGEX.test(id) || !UUID_REGEX.test(versionId)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid ID format",
+        });
+      }
+
+      const version = await getVersion(versionId);
+      if (!version || version.noteId !== id) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: "Not Found",
+          message: "Version not found",
+        });
+      }
+
+      return reply.send({ version: toNoteVersion(version) });
+    },
+  );
+
+  // POST /notes/:id/versions/:versionId/restore — MUST be before generic /:id
+  fastify.post(
+    "/:id/versions/:versionId/restore",
+    async (
+      request: FastifyRequest<{
+        Params: { id: string; versionId: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { id, versionId } = request.params;
+      if (!UUID_REGEX.test(id) || !UUID_REGEX.test(versionId)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid ID format",
+        });
+      }
+
+      const version = await getVersion(versionId);
+      if (!version || version.noteId !== id) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: "Not Found",
+          message: "Version not found",
+        });
+      }
+
+      const updated = await updateNote(id, {
+        title: version.title,
+        content: version.content,
+      });
+      if (!updated) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: "Not Found",
+          message: "Note not found",
+        });
+      }
+
+      return reply.send({ note: toNote(updated) });
     },
   );
 

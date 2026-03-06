@@ -1,5 +1,7 @@
 import type {
   Note,
+  NoteVersion,
+  NoteVersionListResponse,
   CreateNoteRequest,
   UpdateNoteRequest,
   NoteListResponse,
@@ -327,6 +329,29 @@ export async function deleteTagApi(
   return response.json();
 }
 
+export async function getVersionInterval(): Promise<{ minutes: number }> {
+  const response = await apiFetch("/notes/versions/interval");
+
+  if (!response.ok) {
+    throw new Error(`Failed to get version interval: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function setVersionInterval(minutes: number): Promise<{ minutes: number }> {
+  const response = await apiFetch("/notes/versions/interval", {
+    method: "PUT",
+    body: JSON.stringify({ minutes }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to set version interval: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function fetchBacklinks(noteId: string): Promise<BacklinksResponse> {
   const response = await apiFetch(`/notes/${noteId}/backlinks`);
 
@@ -345,4 +370,56 @@ export async function fetchNoteTitles(): Promise<NoteTitlesResponse> {
   }
 
   return response.json();
+}
+
+export async function fetchVersions(
+  noteId: string,
+  params?: { page?: number; pageSize?: number },
+): Promise<NoteVersionListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+
+  const query = qs.toString();
+  const path = query
+    ? `/notes/${noteId}/versions?${query}`
+    : `/notes/${noteId}/versions`;
+  const response = await apiFetch(path);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch versions: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchVersion(
+  noteId: string,
+  versionId: string,
+): Promise<NoteVersion> {
+  const response = await apiFetch(`/notes/${noteId}/versions/${versionId}`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch version: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.version;
+}
+
+export async function restoreVersion(
+  noteId: string,
+  versionId: string,
+): Promise<Note> {
+  const response = await apiFetch(
+    `/notes/${noteId}/versions/${versionId}/restore`,
+    { method: "POST" },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to restore version: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.note;
 }

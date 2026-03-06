@@ -160,3 +160,16 @@ export interface NoteTitleEntry {
 export interface NoteTitlesResponse {
   notes: NoteTitleEntry[];
 }
+
+export interface NoteVersion {
+  id: string;
+  noteId: string;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface NoteVersionListResponse {
+  versions: NoteVersion[];
+  total: number;
+}

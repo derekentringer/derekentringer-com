@@ -31,10 +31,9 @@ interface Message {
 interface QAPanelProps {
   onSelectNote: (noteId: string) => void;
   isOpen: boolean;
-  onToggle: () => void;
 }
 
-export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
+export function QAPanel({ onSelectNote, isOpen }: QAPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -198,32 +197,7 @@ export function QAPanel({ onSelectNote, isOpen, onToggle }: QAPanelProps) {
       </div>
 
       {/* Input */}
-      <div className="border-t border-border p-3 shrink-0 relative">
-        {/* Tab button that sticks out to the left */}
-        <button
-          onClick={onToggle}
-          className={`absolute right-full top-0 flex items-center justify-center w-8 h-full rounded-l-md shadow-md transition-colors ${
-            isOpen
-              ? "bg-primary text-primary-contrast"
-              : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-accent"
-          }`}
-          title="AI Assistant Chat"
-          data-testid="qa-tab"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-        </button>
+      <div className="border-t border-border p-3 shrink-0">
         <div className="flex gap-2">
           <input
             ref={inputRef}

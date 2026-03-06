@@ -1225,6 +1225,121 @@ describe("Note routes", () => {
     });
   });
 
+  // --- GET /notes/versions/interval ---
+
+  describe("GET /notes/versions/interval", () => {
+    it("returns default interval of 15 minutes", async () => {
+      const token = await getAccessToken();
+      mockPrisma.setting.findUnique.mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/versions/interval",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ minutes: 15 });
+    });
+
+    it("returns stored interval value", async () => {
+      const token = await getAccessToken();
+      mockPrisma.setting.findUnique.mockResolvedValue({
+        id: "versionIntervalMinutes",
+        value: "5",
+        updatedAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/versions/interval",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ minutes: 5 });
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/versions/interval",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- PUT /notes/versions/interval ---
+
+  describe("PUT /notes/versions/interval", () => {
+    it("sets interval and returns updated value", async () => {
+      const token = await getAccessToken();
+      mockPrisma.setting.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/versions/interval",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { minutes: 5 },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ minutes: 5 });
+    });
+
+    it("accepts 0 for every-save", async () => {
+      const token = await getAccessToken();
+      mockPrisma.setting.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/versions/interval",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { minutes: 0 },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ minutes: 0 });
+    });
+
+    it("returns 400 for out-of-range value (negative)", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/versions/interval",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { minutes: -1 },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 400 for out-of-range value (over 60)", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/versions/interval",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { minutes: 61 },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PUT",
+        url: "/notes/versions/interval",
+        payload: { minutes: 5 },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
   // --- GET /notes/titles ---
 
   describe("GET /notes/titles", () => {
@@ -1321,6 +1436,148 @@ describe("Note routes", () => {
       });
 
       expect(res.statusCode).toBe(200);
+    });
+  });
+
+  // --- Version History Routes ---
+
+  describe("GET /notes/:id/versions", () => {
+    it("returns version list (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.noteVersion.findMany.mockResolvedValue([
+        { id: "v1", noteId: VALID_UUID, title: "T1", content: "C1", createdAt: new Date() },
+      ]);
+      mockPrisma.noteVersion.count.mockResolvedValue(1);
+
+      const res = await app.inject({
+        method: "GET",
+        url: `/notes/${VALID_UUID}/versions`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.versions).toHaveLength(1);
+      expect(body.total).toBe(1);
+    });
+
+    it("returns 400 for invalid UUID", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/invalid-id/versions",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: `/notes/${VALID_UUID}/versions`,
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe("GET /notes/:id/versions/:versionId", () => {
+    it("returns a single version (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.noteVersion.findUnique.mockResolvedValue({
+        id: VALID_UUID_2,
+        noteId: VALID_UUID,
+        title: "Version Title",
+        content: "Version Content",
+        createdAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "GET",
+        url: `/notes/${VALID_UUID}/versions/${VALID_UUID_2}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.version.title).toBe("Version Title");
+    });
+
+    it("returns 404 for nonexistent version", async () => {
+      const token = await getAccessToken();
+      mockPrisma.noteVersion.findUnique.mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: "GET",
+        url: `/notes/${VALID_UUID}/versions/${VALID_UUID_2}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it("returns 404 when version belongs to different note", async () => {
+      const token = await getAccessToken();
+      mockPrisma.noteVersion.findUnique.mockResolvedValue({
+        id: VALID_UUID_2,
+        noteId: "00000000-0000-0000-0000-000000000099",
+        title: "T",
+        content: "C",
+        createdAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "GET",
+        url: `/notes/${VALID_UUID}/versions/${VALID_UUID_2}`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe("POST /notes/:id/versions/:versionId/restore", () => {
+    it("restores a version (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.noteVersion.findUnique.mockResolvedValue({
+        id: VALID_UUID_2,
+        noteId: VALID_UUID,
+        title: "Old Title",
+        content: "Old Content",
+        createdAt: new Date(),
+      });
+      mockPrisma.note.update.mockResolvedValue(
+        makeMockNoteRow({ title: "Old Title", content: "Old Content" }),
+      );
+      // captureVersion calls (fire-and-forget)
+      mockPrisma.noteVersion.findFirst.mockResolvedValue(null);
+      mockPrisma.noteVersion.create.mockResolvedValue({});
+      mockPrisma.noteVersion.count.mockResolvedValue(1);
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/notes/${VALID_UUID}/versions/${VALID_UUID_2}/restore`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.note.title).toBe("Old Title");
+    });
+
+    it("returns 404 for nonexistent version", async () => {
+      const token = await getAccessToken();
+      mockPrisma.noteVersion.findUnique.mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/notes/${VALID_UUID}/versions/${VALID_UUID_2}/restore`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(404);
     });
   });
 });

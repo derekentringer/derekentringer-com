@@ -24,12 +24,25 @@ model Note {
   deletedAt          DateTime?
   outgoingLinks      NoteLink[]                   @relation("OutgoingLinks")
   incomingLinks      NoteLink[]                   @relation("IncomingLinks")
+  versions           NoteVersion[]
 
   @@index([folder])
   @@index([folderId])
   @@index([deletedAt])
   @@index([sortOrder])
   @@map("notes")
+}
+
+model NoteVersion {
+  id        String   @id @default(uuid())
+  noteId    String
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId, createdAt(sort: Desc)])
+  @@map("note_versions")
 }
 
 model NoteLink {

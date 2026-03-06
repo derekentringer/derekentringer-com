@@ -21,6 +21,7 @@ export interface MockModel {
 
 export interface MockPrisma {
   note: MockModel;
+  noteVersion: MockModel;
   noteLink: MockModel;
   folder: MockModel;
   setting: MockModel;
@@ -52,6 +53,7 @@ function createMockModel(): MockModel {
 export function createMockPrisma(): MockPrisma {
   const mock: MockPrisma = {
     note: createMockModel(),
+    noteVersion: createMockModel(),
     noteLink: createMockModel(),
     folder: createMockModel(),
     setting: createMockModel(),

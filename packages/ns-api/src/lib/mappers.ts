@@ -1,5 +1,5 @@
-import type { Note as PrismaNote } from "../generated/prisma/client.js";
-import type { Note, NoteSearchResult } from "@derekentringer/shared/ns";
+import type { Note as PrismaNote, NoteVersion as PrismaNoteVersion } from "../generated/prisma/client.js";
+import type { Note, NoteSearchResult, NoteVersion } from "@derekentringer/shared/ns";
 
 export function toNote(row: PrismaNote): Note {
   let tags: string[] = [];
@@ -29,5 +29,15 @@ export function toNoteSearchResult(
   return {
     ...toNote(row),
     headline: row.headline ?? undefined,
+  };
+}
+
+export function toNoteVersion(row: PrismaNoteVersion): NoteVersion {
+  return {
+    id: row.id,
+    noteId: row.noteId,
+    title: row.title,
+    content: row.content,
+    createdAt: row.createdAt.toISOString(),
   };
 }

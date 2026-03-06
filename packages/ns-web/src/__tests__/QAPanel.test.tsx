@@ -23,7 +23,7 @@ describe("QAPanel", () => {
       yield { text: "Hello" };
     });
 
-    render(<QAPanel onSelectNote={vi.fn()} isOpen={true} onToggle={vi.fn()} />);
+    render(<QAPanel onSelectNote={vi.fn()} isOpen={true} />);
 
     const input = screen.getByPlaceholderText("Ask anything about your notes...");
     await userEvent.type(input, "test");
@@ -35,14 +35,14 @@ describe("QAPanel", () => {
   });
 
   it("Ask button disabled when input is empty", () => {
-    render(<QAPanel onSelectNote={vi.fn()} isOpen={true} onToggle={vi.fn()} />);
+    render(<QAPanel onSelectNote={vi.fn()} isOpen={true} />);
 
     const askButton = screen.getByText("Ask");
     expect(askButton).toBeDisabled();
   });
 
   it("Ask button enabled when input has text", async () => {
-    render(<QAPanel onSelectNote={vi.fn()} isOpen={true} onToggle={vi.fn()} />);
+    render(<QAPanel onSelectNote={vi.fn()} isOpen={true} />);
 
     const input = screen.getByPlaceholderText("Ask anything about your notes...");
     await userEvent.type(input, "What is React?");
@@ -60,7 +60,7 @@ describe("QAPanel", () => {
       yield { text: "React is a library. [React Basics]" };
     });
 
-    render(<QAPanel onSelectNote={onSelectNote} isOpen={true} onToggle={vi.fn()} />);
+    render(<QAPanel onSelectNote={onSelectNote} isOpen={true} />);
 
     const input = screen.getByPlaceholderText("Ask anything about your notes...");
     await userEvent.type(input, "What is React?");
