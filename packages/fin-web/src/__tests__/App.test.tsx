@@ -8,7 +8,8 @@ vi.mock("../api/auth.ts", () => ({
   login: vi.fn(),
   refreshSession: vi.fn().mockResolvedValue(null),
   logout: vi.fn(),
-  verifyPin: vi.fn(),
+  getMe: vi.fn().mockResolvedValue(null),
+  register: vi.fn(),
 }));
 
 vi.mock("../api/client.ts", () => ({
@@ -28,7 +29,7 @@ describe("App", () => {
 
     // Wait for auth check to complete
     await screen.findByText("fin");
-    expect(screen.getByPlaceholderText("Username")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Email")).toBeInTheDocument();
   });
 
   it("renders the login page at /login", async () => {

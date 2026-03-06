@@ -4,8 +4,6 @@ import { CSV_PARSER_LABELS } from "@derekentringer/shared/finance";
 import { fetchAccounts } from "../api/accounts.ts";
 import { fetchCategories } from "../api/categories.ts";
 import { uploadCsvPreview, confirmImport } from "../api/transactions.ts";
-import { usePin } from "../context/PinContext.tsx";
-import { PinGate } from "./PinGate.tsx";
 import {
   Dialog,
   DialogContent,
@@ -55,7 +53,6 @@ function formatDate(iso: string): string {
 }
 
 export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
-  const { isPinVerified, pinToken } = usePin();
   const [step, setStep] = useState<Step>("upload");
 
   // Upload state
@@ -100,7 +97,7 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
   }, [loadData]);
 
   async function handleUpload() {
-    if (files.length === 0 || !accountId || !pinToken) return;
+    if (files.length === 0 || !accountId) return;
     setError("");
     setIsLoading(true);
 
@@ -115,7 +112,6 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
         const preview = await uploadCsvPreview(
           accountId,
           f,
-          pinToken,
           parserId,
         );
         allRows = allRows.concat(
@@ -141,7 +137,6 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
   }
 
   async function handleConfirm() {
-    if (!pinToken) return;
     setError("");
     setIsLoading(true);
 
@@ -158,7 +153,6 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
 
       const res = await confirmImport(
         { accountId, transactions: selected },
-        pinToken,
       );
       setResult(res);
       setStep("result");
@@ -187,18 +181,6 @@ export function CsvImportDialog({ onClose, onImported }: CsvImportDialogProps) {
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
   const includedCount = previewRows.filter((r) => r.included).length;
-
-  if (!isPinVerified) {
-    return (
-      <Dialog open onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-w-md">
-          <PinGate>
-            <div />
-          </PinGate>
-        </DialogContent>
-      </Dialog>
-    );
-  }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>

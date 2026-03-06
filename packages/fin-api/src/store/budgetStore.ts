@@ -6,63 +6,59 @@ import {
   encryptBudgetForUpdate,
 } from "../lib/mappers.js";
 
-function isNotFoundError(e: unknown): boolean {
-  return (
-    e !== null &&
-    typeof e === "object" &&
-    "code" in e &&
-    (e as { code: string }).code === "P2025"
-  );
-}
-
-export async function createBudget(data: {
-  category: string;
-  amount: number;
-  effectiveFrom: string;
-  notes?: string | null;
-}): Promise<Budget> {
+export async function createBudget(
+  userId: string,
+  data: {
+    category: string;
+    amount: number;
+    effectiveFrom: string;
+    notes?: string | null;
+  },
+): Promise<Budget> {
   const prisma = getPrisma();
   const encrypted = encryptBudgetForCreate(data);
-  const row = await prisma.budget.create({ data: encrypted });
+  const row = await prisma.budget.create({ data: { ...encrypted, userId } });
   return decryptBudget(row);
 }
 
-export async function listBudgets(): Promise<Budget[]> {
+export async function listBudgets(userId: string): Promise<Budget[]> {
   const prisma = getPrisma();
   const rows = await prisma.budget.findMany({
+    where: { userId },
     orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }],
   });
   return rows.map(decryptBudget);
 }
 
 export async function updateBudget(
+  userId: string,
   id: string,
   data: { amount?: number; notes?: string | null },
 ): Promise<Budget | null> {
   const prisma = getPrisma();
-  const encrypted = encryptBudgetForUpdate(data);
 
-  try {
-    const row = await prisma.budget.update({
-      where: { id },
-      data: encrypted,
-    });
-    return decryptBudget(row);
-  } catch (e: unknown) {
-    if (isNotFoundError(e)) return null;
-    throw e;
-  }
+  const existing = await prisma.budget.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return null;
+
+  const encrypted = encryptBudgetForUpdate(data);
+  const row = await prisma.budget.update({
+    where: { id },
+    data: encrypted,
+  });
+  return decryptBudget(row);
 }
 
-export async function deleteBudget(id: string): Promise<boolean> {
+export async function deleteBudget(
+  userId: string,
+  id: string,
+): Promise<boolean> {
   const prisma = getPrisma();
-  try {
-    await prisma.budget.delete({ where: { id } });
-    return true;
-  } catch (e: unknown) {
-    if (isNotFoundError(e)) return false;
-    throw e;
-  }
+
+  const existing = await prisma.budget.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return false;
+
+  await prisma.budget.delete({ where: { id } });
+  return true;
 }
 
 /**
@@ -71,6 +67,7 @@ export async function deleteBudget(id: string): Promise<boolean> {
  * For each category, we pick the one with the latest effectiveFrom.
  */
 export async function getActiveBudgetsForMonth(
+  userId: string,
   targetMonth: string,
 ): Promise<Budget[]> {
   const prisma = getPrisma();
@@ -78,6 +75,7 @@ export async function getActiveBudgetsForMonth(
   // Get all budget rows where effectiveFrom <= targetMonth
   const rows = await prisma.budget.findMany({
     where: {
+      userId,
       effectiveFrom: { lte: targetMonth },
     },
     orderBy: { effectiveFrom: "desc" },

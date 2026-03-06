@@ -42,6 +42,11 @@ import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { PdfImportDialog } from "../components/PdfImportDialog.tsx";
 import { NotificationSettings } from "../components/NotificationSettings.tsx";
 import { AiInsightSettings } from "../components/AiInsightSettings.tsx";
+import type { TotpSetupResponse } from "@derekentringer/shared";
+import { changePassword, setupTotp, verifyTotpSetup, disableTotp, getMe, revokeAllSessions } from "../api/auth.ts";
+import { useAuth } from "../context/AuthContext.tsx";
+import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator.tsx";
+import { validatePasswordStrength } from "@derekentringer/shared";
 import { useAccountTypes } from "../context/AccountTypesContext.tsx";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -85,7 +90,7 @@ import {
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 
-type SettingsSlug = "accounts" | "categories" | "category-rules" | "income-sources" | "notifications" | "ai-insights";
+type SettingsSlug = "accounts" | "categories" | "category-rules" | "income-sources" | "notifications" | "ai-insights" | "security";
 
 const SLUG_TO_VALUE: Record<SettingsSlug, string> = {
   "accounts": "accounts",
@@ -94,9 +99,10 @@ const SLUG_TO_VALUE: Record<SettingsSlug, string> = {
   "income-sources": "income",
   "notifications": "notifications",
   "ai-insights": "ai-insights",
+  "security": "security",
 };
 
-const VALID_SLUGS: SettingsSlug[] = ["accounts", "categories", "category-rules", "income-sources", "notifications", "ai-insights"];
+const VALID_SLUGS: SettingsSlug[] = ["accounts", "categories", "category-rules", "income-sources", "notifications", "ai-insights", "security"];
 
 const TABS: { value: SettingsSlug; label: string }[] = [
   { value: "accounts", label: "Accounts" },
@@ -105,6 +111,7 @@ const TABS: { value: SettingsSlug; label: string }[] = [
   { value: "income-sources", label: "Income Sources" },
   { value: "notifications", label: "Notifications" },
   { value: "ai-insights", label: "AI Insights" },
+  { value: "security", label: "Security" },
 ];
 
 export function SettingsPage() {
@@ -135,8 +142,10 @@ export function SettingsPage() {
         <IncomeSourcesSection />
       ) : activeValue === "notifications" ? (
         <NotificationSettings />
-      ) : (
+      ) : activeValue === "ai-insights" ? (
         <AiInsightSettings />
+      ) : (
+        <SecuritySection />
       )}
     </div>
   );
@@ -1222,5 +1231,311 @@ function SortableTableHead<T extends string>({
         <Icon className={`h-3.5 w-3.5 ${isActive ? "" : "opacity-40"}`} />
       </button>
     </TableHead>
+  );
+}
+
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Card>
+      <CardHeader>
+        <h2 className="text-lg text-foreground">{title}</h2>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+function SecuritySection() {
+  const { user, setUserFromLogin, logout } = useAuth();
+
+  // Change password state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
+
+  // TOTP state
+  const [totpSetup, setTotpSetup] = useState<TotpSetupResponse | null>(null);
+  const [totpSetupCode, setTotpSetupCode] = useState("");
+  const [totpSetupError, setTotpSetupError] = useState("");
+  const [totpBackupCodes, setTotpBackupCodes] = useState<string[] | null>(null);
+  const [totpDisableCode, setTotpDisableCode] = useState("");
+  const [totpDisableError, setTotpDisableError] = useState("");
+  const [totpShowDisable, setTotpShowDisable] = useState(false);
+  const [totpLoading, setTotpLoading] = useState(false);
+
+  // Sessions state
+  const [revokeLoading, setRevokeLoading] = useState(false);
+  const [revokeResult, setRevokeResult] = useState("");
+
+  async function handleChangePassword(e: FormEvent) {
+    e.preventDefault();
+    setPwError("");
+    setPwSuccess("");
+
+    if (newPassword !== confirmPassword) {
+      setPwError("Passwords do not match");
+      return;
+    }
+
+    const validation = validatePasswordStrength(newPassword);
+    if (!validation.valid) {
+      setPwError(validation.errors.join("; "));
+      return;
+    }
+
+    setPwLoading(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setPwSuccess("Password changed successfully. You will be logged out.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(() => logout(), 2000);
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : "Failed to change password");
+    } finally {
+      setPwLoading(false);
+    }
+  }
+
+  async function handleRevokeAll() {
+    setRevokeLoading(true);
+    setRevokeResult("");
+    try {
+      const result = await revokeAllSessions();
+      setRevokeResult(`Revoked ${result.revokedCount} session(s). You will be logged out.`);
+      setTimeout(() => logout(), 2000);
+    } catch (err) {
+      setRevokeResult(err instanceof Error ? err.message : "Failed to revoke sessions");
+    } finally {
+      setRevokeLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Change Password */}
+      <SectionCard title="Change Password">
+        <form onSubmit={handleChangePassword} className="flex flex-col gap-3 max-w-md">
+          <Input
+            type="password"
+            placeholder="Current password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+          <Input
+            type="password"
+            placeholder="New password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+          {newPassword && <PasswordStrengthIndicator password={newPassword} />}
+          <Input
+            type="password"
+            placeholder="Confirm new password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+          {pwError && <p className="text-sm text-error">{pwError}</p>}
+          {pwSuccess && <p className="text-sm text-green-500">{pwSuccess}</p>}
+          <Button
+            type="submit"
+            disabled={pwLoading || !currentPassword || !newPassword || !confirmPassword}
+            className="w-fit"
+          >
+            {pwLoading ? "Changing..." : "Change Password"}
+          </Button>
+        </form>
+      </SectionCard>
+
+      {/* Two-Factor Authentication */}
+      <SectionCard title="Two-Factor Authentication">
+        {totpBackupCodes ? (
+          <div className="space-y-3">
+            <p className="text-sm text-green-500 font-medium">2FA enabled successfully!</p>
+            <p className="text-sm text-muted-foreground">
+              Save these backup codes in a safe place. Each code can only be used once.
+            </p>
+            <div className="bg-background border border-border rounded-md p-3 font-mono text-sm space-y-1">
+              {totpBackupCodes.map((code) => (
+                <div key={code} className="text-foreground">{code}</div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(totpBackupCodes.join("\n"));
+                }}
+                className="px-3 py-1.5 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-colors"
+              >
+                Copy
+              </button>
+              <button
+                onClick={() => setTotpBackupCodes(null)}
+                className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : totpSetup ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)
+            </p>
+            <div className="flex justify-center">
+              <img src={totpSetup.qrCodeDataUrl} alt="TOTP QR Code" className="w-48 h-48 rounded" />
+            </div>
+            <p className="text-xs text-muted-foreground text-center break-all">
+              Manual entry: {totpSetup.secret}
+            </p>
+            <input
+              type="text"
+              placeholder="Enter 6-digit code"
+              value={totpSetupCode}
+              onChange={(e) => setTotpSetupCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-center tracking-widest"
+            />
+            {totpSetupError && <p className="text-sm text-error text-center">{totpSetupError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  setTotpSetupError("");
+                  setTotpLoading(true);
+                  try {
+                    const result = await verifyTotpSetup(totpSetupCode);
+                    setTotpBackupCodes(result.backupCodes);
+                    setTotpSetup(null);
+                    setTotpSetupCode("");
+                    const updated = await getMe();
+                    setUserFromLogin(updated);
+                  } catch (err) {
+                    setTotpSetupError(err instanceof Error ? err.message : "Verification failed");
+                  } finally {
+                    setTotpLoading(false);
+                  }
+                }}
+                disabled={totpSetupCode.length !== 6 || totpLoading}
+                className="px-3 py-1.5 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover disabled:opacity-50 transition-colors"
+              >
+                {totpLoading ? "Verifying..." : "Verify & Enable"}
+              </button>
+              <button
+                onClick={() => { setTotpSetup(null); setTotpSetupCode(""); setTotpSetupError(""); }}
+                className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : user?.totpEnabled ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 py-2">
+              <span className="text-sm text-foreground">Status:</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-500">Enabled</span>
+            </div>
+            {totpShowDisable ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  placeholder="Enter current TOTP code"
+                  value={totpDisableCode}
+                  onChange={(e) => setTotpDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-center tracking-widest"
+                />
+                {totpDisableError && <p className="text-sm text-error text-center">{totpDisableError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      setTotpDisableError("");
+                      setTotpLoading(true);
+                      try {
+                        await disableTotp(totpDisableCode);
+                        setTotpShowDisable(false);
+                        setTotpDisableCode("");
+                        const updated = await getMe();
+                        setUserFromLogin(updated);
+                      } catch (err) {
+                        setTotpDisableError(err instanceof Error ? err.message : "Failed to disable");
+                      } finally {
+                        setTotpLoading(false);
+                      }
+                    }}
+                    disabled={totpDisableCode.length !== 6 || totpLoading}
+                    className="px-3 py-1.5 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+                  >
+                    {totpLoading ? "Disabling..." : "Confirm Disable"}
+                  </button>
+                  <button
+                    onClick={() => { setTotpShowDisable(false); setTotpDisableCode(""); setTotpDisableError(""); }}
+                    className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setTotpShowDisable(true)}
+                className="px-3 py-1.5 rounded-md text-sm text-error/70 hover:text-error transition-colors"
+              >
+                Disable 2FA
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Add an extra layer of security to your account with a TOTP authenticator app.
+            </p>
+            <button
+              onClick={async () => {
+                setTotpLoading(true);
+                try {
+                  const result = await setupTotp();
+                  setTotpSetup(result);
+                } catch (err) {
+                  setTotpSetupError(err instanceof Error ? err.message : "Setup failed");
+                } finally {
+                  setTotpLoading(false);
+                }
+              }}
+              disabled={totpLoading}
+              className="px-3 py-1.5 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover disabled:opacity-50 transition-colors"
+            >
+              {totpLoading ? "Loading..." : "Enable 2FA"}
+            </button>
+            {totpSetupError && <p className="text-sm text-error">{totpSetupError}</p>}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Sessions */}
+      <SectionCard title="Sessions">
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Revoke all active sessions. You will be logged out of all devices.
+          </p>
+          <button
+            onClick={handleRevokeAll}
+            disabled={revokeLoading}
+            className="px-3 py-1.5 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            {revokeLoading ? "Revoking..." : "Revoke All Sessions"}
+          </button>
+          {revokeResult && (
+            <p className={`text-sm ${revokeResult.includes("Revoked") ? "text-green-500" : "text-error"}`}>
+              {revokeResult}
+            </p>
+          )}
+        </div>
+      </SectionCard>
+    </div>
   );
 }

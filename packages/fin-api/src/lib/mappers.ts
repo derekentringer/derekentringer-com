@@ -1324,3 +1324,36 @@ export function decryptInsightStatus(row: PrismaAiInsightStatus): AiInsightStatu
     dismissedAt: row.dismissedAt?.toISOString() ?? null,
   };
 }
+
+// --- User ---
+
+export function toUserResponse(row: {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+  totpEnabled: boolean;
+  mustChangePassword: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): {
+  id: string;
+  email: string;
+  displayName?: string;
+  role: "admin" | "user";
+  totpEnabled: boolean;
+  mustChangePassword: boolean;
+  createdAt: string;
+  updatedAt: string;
+} {
+  return {
+    id: row.id,
+    email: row.email,
+    ...(row.displayName && { displayName: row.displayName }),
+    role: row.role as "admin" | "user",
+    totpEnabled: row.totpEnabled,
+    mustChangePassword: row.mustChangePassword,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}

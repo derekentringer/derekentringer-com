@@ -9,7 +9,7 @@ import { loadConfig } from "./config.js";
 import { initEncryptionKey } from "./lib/encryption.js";
 import { getPrisma } from "./lib/prisma.js";
 import { cleanupExpiredTokens } from "./store/refreshTokenStore.js";
-import { seedDefaultCategories } from "./store/categoryStore.js";
+import { cleanupExpiredPasswordResetTokens } from "./store/passwordResetStore.js";
 import authRoutes from "./routes/auth.js";
 import accountRoutes from "./routes/accounts.js";
 import categoryRoutes from "./routes/categories.js";
@@ -30,6 +30,8 @@ import { startPriceFetchScheduler, stopPriceFetchScheduler } from "./lib/priceFe
 import { cleanupOldNotificationLogs } from "./store/notificationStore.js";
 import { cleanupExpiredCache } from "./store/aiInsightStore.js";
 import aiRoutes from "./routes/ai.js";
+import adminRoutes from "./routes/admin.js";
+import totpRoutes from "./routes/totp.js";
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -117,6 +119,8 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(holdingRoutes, { prefix: "/holdings" });
   app.register(portfolioRoutes, { prefix: "/portfolio" });
   app.register(aiRoutes, { prefix: "/ai" });
+  app.register(adminRoutes, { prefix: "/admin" });
+  app.register(totpRoutes, { prefix: "/auth/totp" });
 
   app.get("/health", async () => {
     return { status: "ok" };
@@ -131,9 +135,9 @@ export function buildApp(opts?: BuildAppOptions) {
 
   app.addHook("onReady", async () => {
     cleanupExpiredTokens().catch(() => {});
-    seedDefaultCategories().catch(() => {});
     cleanupTimer = setInterval(() => {
       cleanupExpiredTokens().catch(() => {});
+      cleanupExpiredPasswordResetTokens().catch(() => {});
       cleanupOldNotificationLogs().catch(() => {});
       cleanupExpiredCache().catch(() => {});
     }, TOKEN_CLEANUP_INTERVAL_MS);

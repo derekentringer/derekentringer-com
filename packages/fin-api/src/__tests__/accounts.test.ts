@@ -4,17 +4,16 @@ import crypto from "crypto";
 const TEST_PASSWORD = "testpassword123";
 const VALID_CUID = "cm1a2b3c4d5e6f7g8h9i0j";
 const VALID_CUID_2 = "cm9z8y7x6w5v4u3t2s1r0q";
+const TEST_USER_ID = "test-user-1";
+const TEST_EMAIL = "admin@test.com";
+const TEST_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 
-process.env.ADMIN_USERNAME = "admin";
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-account-tests-min32c";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
-process.env.PIN_TOKEN_SECRET = "dev-pin-secret-do-not-use-in-prod";
 process.env.CORS_ORIGIN = "http://localhost:3003";
 process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
 import { describe, it, expect, afterAll, afterEach, vi, beforeAll } from "vitest";
-import { signPinToken } from "@derekentringer/shared/auth/pinVerify";
 import { createMockPrisma } from "./helpers/mockPrisma.js";
 import type { MockPrisma } from "./helpers/mockPrisma.js";
 import { encryptAccountForCreate } from "../lib/mappers.js";
@@ -47,19 +46,39 @@ describe("Account routes", () => {
     );
   });
 
+  function setupUserMock() {
+    mockPrisma.user.findUnique.mockImplementation(
+      async (args: { where: { email?: string; id?: string } }) => {
+        if (args.where.email === TEST_EMAIL || args.where.id === TEST_USER_ID) {
+          return {
+            id: TEST_USER_ID,
+            email: TEST_EMAIL,
+            passwordHash: TEST_PASSWORD_HASH,
+            displayName: "Test Admin",
+            role: "admin",
+            totpEnabled: false,
+            totpSecret: null,
+            backupCodes: "[]",
+            mustChangePassword: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        }
+        return null;
+      },
+    );
+  }
+
   async function getAccessToken(): Promise<string> {
+    setupUserMock();
     mockPrisma.refreshToken.create.mockResolvedValue({});
 
     const res = await app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { email: "admin", password: TEST_PASSWORD },
+      payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
     });
     return res.json().accessToken;
-  }
-
-  function getPinToken(): string {
-    return signPinToken({ sub: "admin-001", type: "pin" }, "dev-pin-secret-do-not-use-in-prod");
   }
 
   function makeMockAccountRow(overrides: Record<string, unknown> = {}) {
@@ -260,7 +279,7 @@ describe("Account routes", () => {
 
       expect(mockPrisma.account.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { isActive: true },
+          where: { userId: TEST_USER_ID, isActive: true },
         }),
       );
     });
@@ -271,7 +290,9 @@ describe("Account routes", () => {
   describe("GET /accounts/:id", () => {
     it("returns account if found (200)", async () => {
       const token = await getAccessToken();
-      mockPrisma.account.findUnique.mockResolvedValue(makeMockAccountRow());
+      mockPrisma.account.findUnique.mockResolvedValue(
+        makeMockAccountRow({ userId: TEST_USER_ID }),
+      );
 
       const res = await app.inject({
         method: "GET",
@@ -305,7 +326,8 @@ describe("Account routes", () => {
   describe("PATCH /accounts/:id", () => {
     it("updates account fields (200)", async () => {
       const token = await getAccessToken();
-      const row = makeMockAccountRow();
+      const row = makeMockAccountRow({ userId: TEST_USER_ID });
+      mockPrisma.account.findUnique.mockResolvedValue(row);
       mockPrisma.account.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -344,8 +366,8 @@ describe("Account routes", () => {
 
     it("creates Balance snapshot when currentBalance changes", async () => {
       const token = await getAccessToken();
-      const row = makeMockAccountRow(); // currentBalance encrypted from 1000
-      mockPrisma.account.findUnique.mockResolvedValue({ currentBalance: row.currentBalance });
+      const row = makeMockAccountRow({ userId: TEST_USER_ID }); // currentBalance encrypted from 1000
+      mockPrisma.account.findUnique.mockResolvedValue(row);
       mockPrisma.account.update.mockImplementation(
         async (args: { data: Record<string, unknown> }) => ({
           ...row,
@@ -428,20 +450,10 @@ describe("Account routes", () => {
   describe("DELETE /accounts/:id", () => {
     it("deletes account (204)", async () => {
       const token = await getAccessToken();
-      const pinToken = getPinToken();
+      mockPrisma.account.findUnique.mockResolvedValue(
+        makeMockAccountRow({ userId: TEST_USER_ID }),
+      );
       mockPrisma.account.delete.mockResolvedValue({});
-
-      const res = await app.inject({
-        method: "DELETE",
-        url: `/accounts/${VALID_CUID}`,
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": pinToken },
-      });
-
-      expect(res.statusCode).toBe(204);
-    });
-
-    it("returns 403 without PIN token", async () => {
-      const token = await getAccessToken();
 
       const res = await app.inject({
         method: "DELETE",
@@ -449,21 +461,17 @@ describe("Account routes", () => {
         headers: { authorization: `Bearer ${token}` },
       });
 
-      expect(res.statusCode).toBe(403);
-      expect(res.json().message).toBe("PIN verification required");
+      expect(res.statusCode).toBe(204);
     });
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const pinToken = getPinToken();
-      const notFoundError = new Error("Not found") as P2025Error;
-      notFoundError.code = "P2025";
-      mockPrisma.account.delete.mockRejectedValue(notFoundError);
+      mockPrisma.account.findUnique.mockResolvedValue(null);
 
       const res = await app.inject({
         method: "DELETE",
         url: `/accounts/${VALID_CUID_2}`,
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": pinToken },
+        headers: { authorization: `Bearer ${token}` },
       });
 
       expect(res.statusCode).toBe(404);
@@ -500,26 +508,13 @@ describe("Account routes", () => {
       expect(res.json().message).toBe("Invalid account ID format");
     });
 
-    it("DELETE /:id returns 403 without PIN token", async () => {
+    it("DELETE /:id returns 400 for invalid ID format", async () => {
       const token = await getAccessToken();
 
       const res = await app.inject({
         method: "DELETE",
         url: "/accounts/invalid-id",
         headers: { authorization: `Bearer ${token}` },
-      });
-
-      expect(res.statusCode).toBe(403);
-    });
-
-    it("DELETE /:id returns 400 for invalid ID format with PIN", async () => {
-      const token = await getAccessToken();
-      const pinToken = getPinToken();
-
-      const res = await app.inject({
-        method: "DELETE",
-        url: "/accounts/invalid-id",
-        headers: { authorization: `Bearer ${token}`, "x-pin-token": pinToken },
       });
 
       expect(res.statusCode).toBe(400);

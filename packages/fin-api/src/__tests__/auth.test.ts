@@ -2,13 +2,9 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
 const TEST_PASSWORD = "testpassword123";
-const TEST_PIN = "1234";
 
-process.env.ADMIN_USERNAME = "admin";
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-auth-tests-min32chars";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
-process.env.PIN_HASH = bcrypt.hashSync(TEST_PIN, 10);
 process.env.CORS_ORIGIN = "http://localhost:3003";
 process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
 
@@ -36,8 +32,36 @@ describe("Auth routes", () => {
     vi.clearAllMocks();
   });
 
+  const TEST_USER_ID = "test-user-1";
+  const TEST_EMAIL = "admin@test.com";
+  const TEST_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
+
+  function setupUserMock() {
+    mockPrisma.user.findUnique.mockImplementation(
+      async (args: { where: { email?: string; id?: string } }) => {
+        if (args.where.email === TEST_EMAIL || args.where.id === TEST_USER_ID) {
+          return {
+            id: TEST_USER_ID,
+            email: TEST_EMAIL,
+            passwordHash: TEST_PASSWORD_HASH,
+            displayName: "Test Admin",
+            role: "admin",
+            totpEnabled: false,
+            totpSecret: null,
+            backupCodes: "[]",
+            mustChangePassword: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        }
+        return null;
+      },
+    );
+  }
+
   // Helper: set up mock to accept token store operations
   function setupTokenMocks() {
+    setupUserMock();
     mockPrisma.refreshToken.create.mockResolvedValue({});
     mockPrisma.refreshToken.delete.mockResolvedValue({});
     mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
@@ -68,7 +92,7 @@ describe("Auth routes", () => {
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(200);
@@ -77,14 +101,16 @@ describe("Auth routes", () => {
       expect(body.expiresIn).toBe(900);
       expect(body.user).toBeDefined();
       expect(body.user.id).toBeDefined();
-      expect(body.user.email).toBe("admin");
+      expect(body.user.email).toBe(TEST_EMAIL);
     });
 
     it("returns 401 with wrong password", async () => {
+      setupUserMock();
+
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { email: "admin", password: "wrongpassword" },
+        payload: { email: TEST_EMAIL, password: "wrongpassword" },
       });
 
       expect(res.statusCode).toBe(401);
@@ -93,6 +119,8 @@ describe("Auth routes", () => {
     });
 
     it("returns 401 with wrong email", async () => {
+      setupUserMock();
+
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
@@ -123,7 +151,7 @@ describe("Auth routes", () => {
         method: "POST",
         url: "/auth/login",
         headers: { "x-client-type": "mobile" },
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(200);
@@ -140,7 +168,7 @@ describe("Auth routes", () => {
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(200);
@@ -158,7 +186,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const cookies = loginRes.cookies;
@@ -169,7 +197,7 @@ describe("Auth routes", () => {
 
       // Set up lookup for the stored token
       const storedToken = mockPrisma.refreshToken.create.mock.calls[0][0].data.token;
-      setupTokenLookup(storedToken, "admin-001");
+      setupTokenLookup(storedToken, TEST_USER_ID);
 
       const refreshRes = await app.inject({
         method: "POST",
@@ -216,7 +244,7 @@ describe("Auth routes", () => {
         method: "POST",
         url: "/auth/login",
         headers: { "x-client-type": "mobile" },
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const { refreshToken } = loginRes.json();
@@ -225,7 +253,7 @@ describe("Auth routes", () => {
       // Set up lookup using the hashed token stored in the mock
       // (storeRefreshToken hashes tokens before persisting)
       const storedHash = mockPrisma.refreshToken.create.mock.calls[0][0].data.token;
-      setupTokenLookup(storedHash, "admin-001");
+      setupTokenLookup(storedHash, TEST_USER_ID);
 
       const refreshRes = await app.inject({
         method: "POST",
@@ -251,7 +279,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -288,7 +316,7 @@ describe("Auth routes", () => {
         method: "POST",
         url: "/auth/login",
         headers: { "x-client-type": "mobile" },
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const { accessToken, refreshToken } = loginRes.json();
@@ -319,7 +347,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -352,7 +380,7 @@ describe("Auth routes", () => {
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { email: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -369,64 +397,4 @@ describe("Auth routes", () => {
     });
   });
 
-  // --- PIN Verify ---
-
-  describe("POST /auth/pin/verify", () => {
-    it("returns pinToken with valid PIN", async () => {
-      setupTokenMocks();
-
-      const loginRes = await app.inject({
-        method: "POST",
-        url: "/auth/login",
-        payload: { email: "admin", password: TEST_PASSWORD },
-      });
-
-      const { accessToken } = loginRes.json();
-
-      const pinRes = await app.inject({
-        method: "POST",
-        url: "/auth/pin/verify",
-        headers: { authorization: `Bearer ${accessToken}` },
-        payload: { pin: TEST_PIN },
-      });
-
-      expect(pinRes.statusCode).toBe(200);
-      const body = pinRes.json();
-      expect(body.pinToken).toBeDefined();
-      expect(body.expiresIn).toBe(900);
-    });
-
-    it("returns 401 with wrong PIN", async () => {
-      setupTokenMocks();
-
-      const loginRes = await app.inject({
-        method: "POST",
-        url: "/auth/login",
-        payload: { email: "admin", password: TEST_PASSWORD },
-      });
-
-      const { accessToken } = loginRes.json();
-
-      const pinRes = await app.inject({
-        method: "POST",
-        url: "/auth/pin/verify",
-        headers: { authorization: `Bearer ${accessToken}` },
-        payload: { pin: "0000" },
-      });
-
-      expect(pinRes.statusCode).toBe(401);
-      const body = pinRes.json();
-      expect(body.message).toBe("Invalid PIN");
-    });
-
-    it("returns 401 without auth token", async () => {
-      const res = await app.inject({
-        method: "POST",
-        url: "/auth/pin/verify",
-        payload: { pin: TEST_PIN },
-      });
-
-      expect(res.statusCode).toBe(401);
-    });
-  });
 });

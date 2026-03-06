@@ -36,35 +36,43 @@ function isUniqueConstraintError(e: unknown): boolean {
 
 // --- Device Tokens ---
 
-export async function registerDeviceToken(input: {
-  token: string;
-  platform: string;
-  name?: string;
-}): Promise<DeviceToken> {
+export async function registerDeviceToken(
+  userId: string,
+  input: {
+    token: string;
+    platform: string;
+    name?: string;
+  },
+): Promise<DeviceToken> {
   const prisma = getPrisma();
   const encrypted = encryptDeviceTokenForCreate(input);
   const row = await prisma.deviceToken.upsert({
     where: { token: encrypted.token },
-    create: encrypted,
+    create: { ...encrypted, userId },
     update: {
       platform: encrypted.platform,
       name: encrypted.name,
+      userId,
     },
   });
   return decryptDeviceToken(row);
 }
 
-export async function listDeviceTokens(): Promise<DeviceToken[]> {
+export async function listDeviceTokens(userId: string): Promise<DeviceToken[]> {
   const prisma = getPrisma();
   const rows = await prisma.deviceToken.findMany({
+    where: { userId },
     orderBy: { createdAt: "desc" },
   });
   return rows.map(decryptDeviceToken);
 }
 
-export async function deleteDeviceToken(id: string): Promise<boolean> {
+export async function deleteDeviceToken(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
+    // Verify ownership before deleting
+    const token = await prisma.deviceToken.findUnique({ where: { id } });
+    if (!token || token.userId !== userId) return false;
     await prisma.deviceToken.delete({ where: { id } });
     return true;
   } catch (e: unknown) {
@@ -73,9 +81,15 @@ export async function deleteDeviceToken(id: string): Promise<boolean> {
   }
 }
 
-export async function removeDeviceTokenByEncryptedToken(encryptedToken: string): Promise<void> {
+export async function removeDeviceTokenByEncryptedToken(
+  userId: string,
+  encryptedToken: string,
+): Promise<void> {
   const prisma = getPrisma();
   try {
+    // Scope deletion to this user's token
+    const token = await prisma.deviceToken.findUnique({ where: { token: encryptedToken } });
+    if (!token || token.userId !== userId) return;
     await prisma.deviceToken.delete({ where: { token: encryptedToken } });
   } catch (e: unknown) {
     if (isNotFoundError(e)) return;
@@ -83,10 +97,13 @@ export async function removeDeviceTokenByEncryptedToken(encryptedToken: string):
   }
 }
 
-/** Get all raw encrypted tokens for FCM sending */
-export async function getAllEncryptedTokens(): Promise<Array<{ id: string; token: string }>> {
+/** Get all raw encrypted tokens for FCM sending (scoped to a specific user) */
+export async function getAllEncryptedTokens(
+  userId: string,
+): Promise<Array<{ id: string; token: string }>> {
   const prisma = getPrisma();
   const rows = await prisma.deviceToken.findMany({
+    where: { userId },
     select: { id: true, token: true },
   });
   return rows;
@@ -95,12 +112,14 @@ export async function getAllEncryptedTokens(): Promise<Array<{ id: string; token
 // --- Notification Preferences ---
 
 /**
- * Seeds default preferences for all notification types if none exist.
+ * Seeds default preferences for all notification types if none exist for the user.
  * Called on first GET to ensure the user always sees all types.
  */
-export async function seedDefaultPreferences(): Promise<void> {
+export async function seedDefaultPreferences(userId: string): Promise<void> {
   const prisma = getPrisma();
-  const existing = await prisma.notificationPreference.count();
+  const existing = await prisma.notificationPreference.count({
+    where: { userId },
+  });
   if (existing > 0) return;
 
   const allTypes = Object.values(NotificationType);
@@ -111,7 +130,9 @@ export async function seedDefaultPreferences(): Promise<void> {
       config: null,
     });
     try {
-      await prisma.notificationPreference.create({ data: encrypted });
+      await prisma.notificationPreference.create({
+        data: { ...encrypted, userId },
+      });
     } catch (e: unknown) {
       if (isUniqueConstraintError(e)) continue;
       throw e;
@@ -119,25 +140,31 @@ export async function seedDefaultPreferences(): Promise<void> {
   }
 }
 
-export async function listNotificationPreferences(): Promise<NotificationPreference[]> {
-  await seedDefaultPreferences();
+export async function listNotificationPreferences(
+  userId: string,
+): Promise<NotificationPreference[]> {
+  await seedDefaultPreferences(userId);
   const prisma = getPrisma();
-  const rows = await prisma.notificationPreference.findMany();
+  const rows = await prisma.notificationPreference.findMany({
+    where: { userId },
+  });
   return rows.map(decryptNotificationPreference);
 }
 
 export async function getNotificationPreference(
+  userId: string,
   type: string,
 ): Promise<NotificationPreference | null> {
   const prisma = getPrisma();
   const row = await prisma.notificationPreference.findUnique({
-    where: { type },
+    where: { userId_type: { userId, type } },
   });
   if (!row) return null;
   return decryptNotificationPreference(row);
 }
 
 export async function updateNotificationPreference(
+  userId: string,
   type: string,
   input: { enabled?: boolean; config?: NotificationConfig | null },
 ): Promise<NotificationPreference | null> {
@@ -145,7 +172,7 @@ export async function updateNotificationPreference(
   const encrypted = encryptNotificationPreferenceForUpdate(input);
   try {
     const row = await prisma.notificationPreference.update({
-      where: { type },
+      where: { userId_type: { userId, type } },
       data: encrypted,
     });
     return decryptNotificationPreference(row);
@@ -157,17 +184,22 @@ export async function updateNotificationPreference(
 
 // --- Notification Log ---
 
-export async function createNotificationLog(input: {
-  type: string;
-  title: string;
-  body: string;
-  dedupeKey: string;
-  metadata?: Record<string, unknown> | null;
-}): Promise<NotificationLogEntry | null> {
+export async function createNotificationLog(
+  userId: string,
+  input: {
+    type: string;
+    title: string;
+    body: string;
+    dedupeKey: string;
+    metadata?: Record<string, unknown> | null;
+  },
+): Promise<NotificationLogEntry | null> {
   const prisma = getPrisma();
   const encrypted = encryptNotificationLogForCreate(input);
   try {
-    const row = await prisma.notificationLog.create({ data: encrypted });
+    const row = await prisma.notificationLog.create({
+      data: { ...encrypted, userId },
+    });
     return decryptNotificationLog(row);
   } catch (e: unknown) {
     // Duplicate dedupe key — already sent, benign during rolling deploys
@@ -192,11 +224,12 @@ export async function updateNotificationLogFcmId(
 }
 
 export async function listNotificationLogs(
+  userId: string,
   limit = 20,
   offset = 0,
 ): Promise<{ notifications: NotificationLogEntry[]; total: number }> {
   const prisma = getPrisma();
-  const where = { isCleared: false };
+  const where = { userId, isCleared: false };
   const [rows, total] = await Promise.all([
     prisma.notificationLog.findMany({
       where,
@@ -212,24 +245,24 @@ export async function listNotificationLogs(
   };
 }
 
-export async function getUnreadCount(): Promise<number> {
+export async function getUnreadCount(userId: string): Promise<number> {
   const prisma = getPrisma();
-  return prisma.notificationLog.count({ where: { isRead: false, isCleared: false } });
+  return prisma.notificationLog.count({ where: { userId, isRead: false, isCleared: false } });
 }
 
-export async function markAllNotificationsRead(): Promise<number> {
+export async function markAllNotificationsRead(userId: string): Promise<number> {
   const prisma = getPrisma();
   const result = await prisma.notificationLog.updateMany({
-    where: { isRead: false, isCleared: false },
+    where: { userId, isRead: false, isCleared: false },
     data: { isRead: true },
   });
   return result.count;
 }
 
-export async function clearNotificationHistory(): Promise<number> {
+export async function clearNotificationHistory(userId: string): Promise<number> {
   const prisma = getPrisma();
   const result = await prisma.notificationLog.updateMany({
-    where: { isCleared: false },
+    where: { userId, isCleared: false },
     data: { isCleared: true },
   });
   return result.count;

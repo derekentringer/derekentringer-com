@@ -20,6 +20,7 @@ import {
 } from "../store/aiInsightStatusStore.js";
 import { buildContextForScope } from "../store/aiContextStore.js";
 import { generateInsights } from "../lib/anthropicService.js";
+import { getSetting } from "../store/settingStore.js";
 
 const DAILY_LIMIT = 10;
 
@@ -74,12 +75,25 @@ const insightsSchema = {
 export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
+  // Check if AI is globally disabled by admin
+  fastify.addHook("onRequest", async (_request, reply) => {
+    const aiEnabled = await getSetting("aiEnabled");
+    if (aiEnabled === "false") {
+      return reply.status(503).send({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "AI features are currently disabled",
+      });
+    }
+  });
+
   // GET /preferences
   fastify.get(
     "/preferences",
     async (_request: FastifyRequest, reply: FastifyReply) => {
-      const preferences = await getAiPreferences();
-      const dailyRequestsUsed = await getDailyUsage();
+      const userId = _request.user.sub;
+      const preferences = await getAiPreferences(userId);
+      const dailyRequestsUsed = await getDailyUsage(userId);
       return reply.send({ preferences, dailyRequestsUsed, dailyRequestsLimit: DAILY_LIMIT });
     },
   );
@@ -92,8 +106,9 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: UpdateAiInsightPreferencesRequest }>,
       reply: FastifyReply,
     ) => {
-      const preferences = await updateAiPreferences(request.body);
-      const dailyRequestsUsed = await getDailyUsage();
+      const userId = request.user.sub;
+      const preferences = await updateAiPreferences(userId, request.body);
+      const dailyRequestsUsed = await getDailyUsage(userId);
       return reply.send({ preferences, dailyRequestsUsed, dailyRequestsLimit: DAILY_LIMIT });
     },
   );
@@ -102,8 +117,9 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.delete(
     "/cache",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
       const scope = (request.query as Record<string, string>).scope;
-      const cleared = await clearInsightCache(scope || undefined);
+      const cleared = await clearInsightCache(userId, scope || undefined);
       return reply.send({ cleared });
     },
   );
@@ -121,6 +137,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: AiInsightsRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { scope, month, quarter } = request.body;
 
       // 1. Validate scope
@@ -160,7 +177,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       }
 
       // 3. Check master enabled
-      const prefs = await getAiPreferences();
+      const prefs = await getAiPreferences(userId);
       if (!prefs.masterEnabled) {
         return reply.status(403).send({
           error: "AI insights are disabled",
@@ -178,15 +195,15 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       }
 
       // 5. Build context
-      const context = await buildContextForScope(scope, { month, quarter });
+      const context = await buildContextForScope(userId, scope, { month, quarter });
 
       // 6. Check cache
-      const cached = await getCachedInsights(scope, context.contentHash);
+      const cached = await getCachedInsights(userId, scope, context.contentHash);
       if (cached) {
-        await ensureInsightStatuses(cached);
+        await ensureInsightStatuses(userId, cached);
         const [dailyRequestsUsed, statuses] = await Promise.all([
-          getDailyUsage(),
-          getInsightStatuses(cached.map((i) => i.id)),
+          getDailyUsage(userId),
+          getInsightStatuses(userId, cached.map((i) => i.id)),
         ]);
         return reply.send({
           insights: cached,
@@ -198,7 +215,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       }
 
       // 7. Check daily usage
-      const usage = await getDailyUsage();
+      const usage = await getDailyUsage(userId);
       if (usage >= DAILY_LIMIT) {
         return reply.status(429).send({
           error: "Daily AI request limit reached",
@@ -212,16 +229,16 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       const { insights, expiresAt } = await generateInsights(scope, context.data);
 
       // 9. Cache the result
-      await setCachedInsights(scope, context.contentHash, insights, expiresAt);
+      await setCachedInsights(userId, scope, context.contentHash, insights, expiresAt);
 
       // 10. Increment usage & create status rows
       const [dailyRequestsUsed] = await Promise.all([
-        incrementDailyUsage(),
-        ensureInsightStatuses(insights),
+        incrementDailyUsage(userId),
+        ensureInsightStatuses(userId, insights),
       ]);
 
       // 11. Get statuses for response
-      const statuses = await getInsightStatuses(insights.map((i) => i.id));
+      const statuses = await getInsightStatuses(userId, insights.map((i) => i.id));
 
       return reply.send({
         insights,
@@ -251,7 +268,8 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: { insightIds: string[] } }>,
       reply: FastifyReply,
     ) => {
-      await markInsightsRead(request.body.insightIds);
+      const userId = request.user.sub;
+      await markInsightsRead(userId, request.body.insightIds);
       return reply.send({ ok: true });
     },
   );
@@ -274,7 +292,8 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: { insightIds: string[] } }>,
       reply: FastifyReply,
     ) => {
-      await markInsightsDismissed(request.body.insightIds);
+      const userId = request.user.sub;
+      await markInsightsDismissed(userId, request.body.insightIds);
       return reply.send({ ok: true });
     },
   );
@@ -283,7 +302,8 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/insights/unseen-count",
     async (_request: FastifyRequest, reply: FastifyReply) => {
-      const counts = await getUnseenCounts();
+      const userId = _request.user.sub;
+      const counts = await getUnseenCounts(userId);
       return reply.send(counts);
     },
   );
@@ -292,10 +312,11 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/insights/archive",
     async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
       const query = request.query as Record<string, string>;
       const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
       const offset = Math.max(parseInt(query.offset, 10) || 0, 0);
-      const result = await getArchive(limit, offset);
+      const result = await getArchive(userId, limit, offset);
       return reply.send(result);
     },
   );

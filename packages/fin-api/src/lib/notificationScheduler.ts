@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { evaluateAllNotifications } from "./notificationEvaluator.js";
 import { createNotificationLog } from "../store/notificationStore.js";
 import { sendToAllDevices } from "./fcm.js";
+import { listUsers } from "../store/userStore.js";
 
 const SCHEDULER_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -25,47 +26,51 @@ async function runEvaluationCycle(): Promise<void> {
     return;
   }
 
-  try {
-    const pending = await evaluateAllNotifications();
+  const users = await listUsers();
+  for (const user of users) {
+    try {
+      const pending = await evaluateAllNotifications(user.id);
 
-    if (pending.length === 0) {
-      logger?.debug("Notification scheduler: no pending notifications");
-      return;
-    }
+      if (pending.length === 0) {
+        logger?.debug(`Notification scheduler: no pending notifications for user ${user.id}`);
+        continue;
+      }
 
-    logger?.info(
-      `Notification scheduler: ${pending.length} pending notification(s) to send`,
-    );
+      logger?.info(
+        `Notification scheduler: ${pending.length} pending notification(s) to send for user ${user.id}`,
+      );
 
-    for (const notification of pending) {
-      // Write log entry BEFORE sending (dedupe-first strategy)
-      const logEntry = await createNotificationLog({
-        type: notification.type,
-        title: notification.title,
-        body: notification.body,
-        dedupeKey: notification.dedupeKey,
-        metadata: notification.metadata,
-      });
-
-      // If logEntry is null, dedupe key already exists (benign during rolling deploys)
-      if (!logEntry) continue;
-
-      // Send via FCM
-      await sendToAllDevices(
-        {
+      for (const notification of pending) {
+        // Write log entry BEFORE sending (dedupe-first strategy)
+        const logEntry = await createNotificationLog(user.id, {
+          type: notification.type,
           title: notification.title,
           body: notification.body,
-          data: {
-            route: notification.route ?? "/",
-            notificationId: logEntry.id,
-            type: notification.type,
+          dedupeKey: notification.dedupeKey,
+          metadata: notification.metadata,
+        });
+
+        // If logEntry is null, dedupe key already exists (benign during rolling deploys)
+        if (!logEntry) continue;
+
+        // Send via FCM
+        await sendToAllDevices(
+          user.id,
+          {
+            title: notification.title,
+            body: notification.body,
+            data: {
+              route: notification.route ?? "/",
+              notificationId: logEntry.id,
+              type: notification.type,
+            },
           },
-        },
-        logEntry.id,
-      );
+          logEntry.id,
+        );
+      }
+    } catch (err) {
+      logger?.error(err, `Notification cycle failed for user ${user.id}`);
     }
-  } catch (e) {
-    logger?.error(e, "Notification scheduler: evaluation cycle failed");
   }
 }
 

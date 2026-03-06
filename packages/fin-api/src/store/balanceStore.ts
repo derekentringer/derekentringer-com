@@ -20,7 +20,7 @@ const PROFILE_INCLUDE = {
   creditProfile: true,
 } as const;
 
-export async function createBalance(input: {
+export async function createBalance(userId: string, input: {
   accountId: string;
   balance: number;
   date: Date;
@@ -29,6 +29,14 @@ export async function createBalance(input: {
   savingsProfile?: SavingsProfileData;
 }): Promise<Balance> {
   const prisma = getPrisma();
+
+  // Verify account ownership before creating
+  const acct = await prisma.account.findUnique({
+    where: { id: input.accountId },
+    select: { userId: true },
+  });
+  if (!acct || acct.userId !== userId) throw new Error("Account not found");
+
   const encrypted = encryptBalanceForCreate(input);
 
   // Wrap in transaction so Balance + profile creation is atomic
@@ -64,6 +72,7 @@ export async function createBalance(input: {
 // Transactional version used by the confirm endpoint
 export async function createBalanceInTx(
   tx: Parameters<Parameters<ReturnType<typeof getPrisma>["$transaction"]>[0]>[0],
+  userId: string,
   input: {
     accountId: string;
     balance: number;
@@ -73,6 +82,13 @@ export async function createBalanceInTx(
     savingsProfile?: SavingsProfileData;
   },
 ): Promise<string> {
+  // Verify account ownership using the transaction client
+  const acct = await tx.account.findUnique({
+    where: { id: input.accountId },
+    select: { userId: true },
+  });
+  if (!acct || acct.userId !== userId) throw new Error("Account not found");
+
   const encrypted = encryptBalanceForCreate(input);
   const row = await tx.balance.create({ data: encrypted });
 

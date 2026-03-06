@@ -26,16 +26,16 @@ function getPreviousMonth(month: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export async function buildDashboardContext(): Promise<ScopedContext> {
+export async function buildDashboardContext(userId: string): Promise<ScopedContext> {
   const currentMonth = getCurrentMonth();
   const prevMonth = getPreviousMonth(currentMonth);
 
   const [netWorth, spending, prevSpending, dti, goalProgress] = await Promise.all([
-    computeNetWorthSummary(),
-    computeSpendingSummary(currentMonth),
-    computeSpendingSummary(prevMonth),
-    computeDTI(),
-    computeGoalProgress({ months: 12 }),
+    computeNetWorthSummary(userId),
+    computeSpendingSummary(userId, currentMonth),
+    computeSpendingSummary(userId, prevMonth),
+    computeDTI(userId),
+    computeGoalProgress(userId, { months: 12 }),
   ]);
 
   const data: Record<string, unknown> = {
@@ -74,16 +74,16 @@ export async function buildDashboardContext(): Promise<ScopedContext> {
   return { scope: "dashboard", data, contentHash: hashData(data) };
 }
 
-export async function buildBudgetContext(): Promise<ScopedContext> {
+export async function buildBudgetContext(userId: string): Promise<ScopedContext> {
   const currentMonth = getCurrentMonth();
   const prevMonth = getPreviousMonth(currentMonth);
   const twoMonthsAgo = getPreviousMonth(prevMonth);
 
   const [budgets, spending, prevSpending, olderSpending] = await Promise.all([
-    getActiveBudgetsForMonth(currentMonth),
-    computeSpendingSummary(currentMonth),
-    computeSpendingSummary(prevMonth),
-    computeSpendingSummary(twoMonthsAgo),
+    getActiveBudgetsForMonth(userId, currentMonth),
+    computeSpendingSummary(userId, currentMonth),
+    computeSpendingSummary(userId, prevMonth),
+    computeSpendingSummary(userId, twoMonthsAgo),
   ]);
 
   const data: Record<string, unknown> = {
@@ -109,8 +109,8 @@ export async function buildBudgetContext(): Promise<ScopedContext> {
   return { scope: "budget", data, contentHash: hashData(data) };
 }
 
-export async function buildGoalsContext(): Promise<ScopedContext> {
-  const goalProgress = await computeGoalProgress({ months: 60 });
+export async function buildGoalsContext(userId: string): Promise<ScopedContext> {
+  const goalProgress = await computeGoalProgress(userId, { months: 60 });
 
   const data: Record<string, unknown> = {
     goals: goalProgress.goals.map((g) => ({
@@ -132,8 +132,8 @@ export async function buildGoalsContext(): Promise<ScopedContext> {
   return { scope: "goals", data, contentHash: hashData(data) };
 }
 
-export async function buildAccountsContext(): Promise<ScopedContext> {
-  const accounts = await listAccounts({ isActive: true });
+export async function buildAccountsContext(userId: string): Promise<ScopedContext> {
+  const accounts = await listAccounts(userId, { isActive: true });
 
   const data: Record<string, unknown> = {
     accounts: accounts.map((a) => ({
@@ -147,15 +147,15 @@ export async function buildAccountsContext(): Promise<ScopedContext> {
   return { scope: "accounts", data, contentHash: hashData(data) };
 }
 
-export async function buildMonthlyDigestContext(month: string): Promise<ScopedContext> {
+export async function buildMonthlyDigestContext(userId: string, month: string): Promise<ScopedContext> {
   const prevMonth = getPreviousMonth(month);
 
   const [spending, prevSpending, netWorth, budgets, goalProgress] = await Promise.all([
-    computeSpendingSummary(month),
-    computeSpendingSummary(prevMonth),
-    computeNetWorthSummary(),
-    getActiveBudgetsForMonth(month),
-    computeGoalProgress({ months: 12 }),
+    computeSpendingSummary(userId, month),
+    computeSpendingSummary(userId, prevMonth),
+    computeNetWorthSummary(userId),
+    getActiveBudgetsForMonth(userId, month),
+    computeGoalProgress(userId, { months: 12 }),
   ]);
 
   const spendingByCategory = new Map(spending.categories.map((c) => [c.category, c.amount]));
@@ -190,7 +190,7 @@ export async function buildMonthlyDigestContext(month: string): Promise<ScopedCo
   return { scope: "monthly-digest", data, contentHash: hashData(data) };
 }
 
-export async function buildQuarterlyDigestContext(quarter: string): Promise<ScopedContext> {
+export async function buildQuarterlyDigestContext(userId: string, quarter: string): Promise<ScopedContext> {
   // quarter format: "YYYY-Q#" e.g. "2026-Q1"
   const [yearStr, qStr] = quarter.split("-Q");
   const year = parseInt(yearStr, 10);
@@ -204,11 +204,11 @@ export async function buildQuarterlyDigestContext(quarter: string): Promise<Scop
   ];
 
   const [s1, s2, s3, netWorth, goalProgress] = await Promise.all([
-    computeSpendingSummary(months[0]),
-    computeSpendingSummary(months[1]),
-    computeSpendingSummary(months[2]),
-    computeNetWorthSummary(),
-    computeGoalProgress({ months: 12 }),
+    computeSpendingSummary(userId, months[0]),
+    computeSpendingSummary(userId, months[1]),
+    computeSpendingSummary(userId, months[2]),
+    computeNetWorthSummary(userId),
+    computeGoalProgress(userId, { months: 12 }),
   ]);
 
   const data: Record<string, unknown> = {
@@ -229,14 +229,14 @@ export async function buildQuarterlyDigestContext(quarter: string): Promise<Scop
   return { scope: "quarterly-digest", data, contentHash: hashData(data) };
 }
 
-export async function buildAlertsContext(): Promise<ScopedContext> {
+export async function buildAlertsContext(userId: string): Promise<ScopedContext> {
   const currentMonth = getCurrentMonth();
 
   const [netWorth, spending, accounts, goalProgress] = await Promise.all([
-    computeNetWorthSummary(),
-    computeSpendingSummary(currentMonth),
-    listAccounts({ isActive: true }),
-    computeGoalProgress({ months: 12 }),
+    computeNetWorthSummary(userId),
+    computeSpendingSummary(userId, currentMonth),
+    listAccounts(userId, { isActive: true }),
+    computeGoalProgress(userId, { months: 12 }),
   ]);
 
   const data: Record<string, unknown> = {
@@ -261,34 +261,35 @@ export async function buildAlertsContext(): Promise<ScopedContext> {
 }
 
 export async function buildContextForScope(
+  userId: string,
   scope: AiInsightScope,
   options?: { month?: string; quarter?: string },
 ): Promise<ScopedContext> {
   switch (scope) {
     case "dashboard":
-      return buildDashboardContext();
+      return buildDashboardContext(userId);
     case "budget":
-      return buildBudgetContext();
+      return buildBudgetContext(userId);
     case "goals":
-      return buildGoalsContext();
+      return buildGoalsContext(userId);
     case "accounts":
-      return buildAccountsContext();
+      return buildAccountsContext(userId);
     case "spending":
-      return buildDashboardContext(); // reuse dashboard context for spending page
+      return buildDashboardContext(userId); // reuse dashboard context for spending page
     case "projections":
-      return buildDashboardContext();
+      return buildDashboardContext(userId);
     case "decision-tools":
-      return buildDashboardContext();
+      return buildDashboardContext(userId);
     case "monthly-digest":
-      return buildMonthlyDigestContext(options?.month ?? getCurrentMonth());
+      return buildMonthlyDigestContext(userId, options?.month ?? getCurrentMonth());
     case "quarterly-digest": {
       const now = new Date();
       const defaultQuarter = `${now.getFullYear()}-Q${Math.ceil((now.getMonth() + 1) / 3)}`;
-      return buildQuarterlyDigestContext(options?.quarter ?? defaultQuarter);
+      return buildQuarterlyDigestContext(userId, options?.quarter ?? defaultQuarter);
     }
     case "alerts":
-      return buildAlertsContext();
+      return buildAlertsContext(userId);
     default:
-      return buildDashboardContext();
+      return buildDashboardContext(userId);
   }
 }

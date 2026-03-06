@@ -66,6 +66,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const range = VALID_RANGES.includes(request.query.range || "") ? request.query.range! : "all";
         const granularity = VALID_GRANULARITIES.includes(request.query.granularity || "")
           ? (request.query.granularity as "daily" | "weekly" | "monthly")
@@ -73,8 +74,8 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
         const startDate = computeStartDate(range);
 
         const [summary, { history, accountHistory }] = await Promise.all([
-          computeNetWorthSummary(),
-          computeNetWorthHistory(granularity, startDate),
+          computeNetWorthSummary(userId),
+          computeNetWorthHistory(userId, granularity, startDate),
         ]);
         return reply.send({ summary, history, accountHistory });
       } catch (e) {
@@ -96,6 +97,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const now = new Date();
         const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         const month = request.query.month || defaultMonth;
@@ -108,7 +110,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           });
         }
 
-        const summary = await computeSpendingSummary(month);
+        const summary = await computeSpendingSummary(userId, month);
         return reply.send(summary);
       } catch (e) {
         request.log.error(e, "Failed to compute spending summary");
@@ -129,6 +131,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const { accountId } = request.query;
 
         if (!accountId || !CUID_PATTERN.test(accountId)) {
@@ -145,7 +148,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           : "weekly";
         const startDate = computeStartDate(range);
 
-        const result = await computeAccountBalanceHistory(accountId, granularity, startDate);
+        const result = await computeAccountBalanceHistory(userId, accountId, granularity, startDate);
         if (!result) {
           return reply.status(404).send({
             statusCode: 404,
@@ -176,6 +179,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const { startDate: startStr, endDate: endStr } = request.query;
 
         if (!startStr || !endStr || !DATE_PATTERN.test(startStr) || !DATE_PATTERN.test(endStr)) {
@@ -197,7 +201,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           });
         }
 
-        const points = await computeDailySpending(startDate, endDate);
+        const points = await computeDailySpending(userId, startDate, endDate);
         return reply.send({ points });
       } catch (e) {
         request.log.error(e, "Failed to compute daily spending");
@@ -218,6 +222,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const range = VALID_RANGES.includes(request.query.range || "") ? request.query.range! : "12m";
         const rawGran = request.query.granularity;
         const granularity = rawGran === "weekly" || rawGran === "monthly" ? rawGran : "monthly";
@@ -225,11 +230,11 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
 
         let excludedAccountIds: Set<string> | undefined;
         if (request.query.incomeFilter === "sources") {
-          const excluded = await listExcludedAccountIds();
+          const excluded = await listExcludedAccountIds(userId);
           if (excluded.length > 0) excludedAccountIds = new Set(excluded);
         }
 
-        const points = await computeIncomeSpending(granularity, startDate, excludedAccountIds);
+        const points = await computeIncomeSpending(userId, granularity, startDate, excludedAccountIds);
         return reply.send({ points });
       } catch (e) {
         request.log.error(e, "Failed to compute income vs spending");
@@ -250,6 +255,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const days = Math.max(1, Math.min(parseInt(request.query.days || "30", 10) || 30, 365));
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -259,8 +265,8 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
         endDate.setDate(endDate.getDate() + days);
 
         const [bills, payments] = await Promise.all([
-          listBills({ isActive: true }),
-          getPaymentsInRange(startDate, endDate),
+          listBills(userId, { isActive: true }),
+          getPaymentsInRange(userId, startDate, endDate),
         ]);
 
         const instances = computeUpcomingInstances(
@@ -295,7 +301,8 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
   // GET /dti — debt-to-income ratio
   fastify.get("/dti", async (request, reply) => {
     try {
-      const result = await computeDTI();
+      const userId = request.user.sub;
+      const result = await computeDTI(userId);
       return reply.send(result);
     } catch (e) {
       request.log.error(e, "Failed to compute DTI");

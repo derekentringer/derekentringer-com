@@ -1,7 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { CreateBudgetRequest, UpdateBudgetRequest } from "@derekentringer/shared";
-import { requirePin } from "@derekentringer/shared/auth/pinVerify";
-import { loadConfig } from "../config.js";
 import {
   createBudget,
   listBudgets,
@@ -47,13 +45,11 @@ const updateBudgetSchema = {
 export default async function budgetRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  const config = loadConfig();
-  const pinGuard = requirePin(config.pinTokenSecret);
-
   // GET / — list all budget records
   fastify.get("/", async (_request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const budgets = await listBudgets();
+      const userId = _request.user.sub;
+      const budgets = await listBudgets(userId);
       return reply.send({ budgets });
     } catch (e) {
       _request.log.error(e, "Failed to list budgets");
@@ -73,6 +69,7 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const now = new Date();
         const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
         const month = request.query.month || defaultMonth;
@@ -86,8 +83,8 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
         }
 
         const [activeBudgets, spending] = await Promise.all([
-          getActiveBudgetsForMonth(month),
-          computeSpendingSummary(month),
+          getActiveBudgetsForMonth(userId, month),
+          computeSpendingSummary(userId, month),
         ]);
 
         // Build a map of actual spending by category
@@ -137,6 +134,7 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateBudgetRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { category, amount, effectiveFrom, notes } = request.body;
 
       if (!isValidNumber(amount) || amount < 0) {
@@ -156,7 +154,7 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const budget = await createBudget({ category, amount, effectiveFrom, notes });
+        const budget = await createBudget(userId, { category, amount, effectiveFrom, notes });
         return reply.status(201).send({ budget });
       } catch (e: unknown) {
         // Handle unique constraint violation (duplicate category+effectiveFrom)
@@ -193,6 +191,8 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -212,7 +212,7 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const budget = await updateBudget(request.params.id, { amount, notes });
+        const budget = await updateBudget(userId, request.params.id, { amount, notes });
         if (!budget) {
           return reply.status(404).send({
             statusCode: 404,
@@ -232,14 +232,15 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete budget (PIN required)
+  // DELETE /:id — delete budget
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
-    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -249,7 +250,7 @@ export default async function budgetRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteBudget(request.params.id);
+        const deleted = await deleteBudget(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,

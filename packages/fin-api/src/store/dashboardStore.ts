@@ -79,10 +79,10 @@ function generatePeriodKeys(
 /**
  * Compute current net worth summary from active account balances.
  */
-export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
+export async function computeNetWorthSummary(userId: string): Promise<NetWorthSummary> {
   const prisma = getPrisma();
   const rows = await prisma.account.findMany({
-    where: { isActive: true },
+    where: { userId, isActive: true },
     orderBy: { sortOrder: "asc" },
   });
 
@@ -95,6 +95,7 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
   const prevBalanceRows = await prisma.balance.findMany({
     where: {
       accountId: { in: activeAccountIds },
+      account: { userId },
       date: { lte: prevMonthEnd },
     },
     orderBy: { date: "desc" },
@@ -160,6 +161,7 @@ export async function computeNetWorthSummary(): Promise<NetWorthSummary> {
  * Strategy: latest balance per account per period, carry forward for gaps.
  */
 export async function computeNetWorthHistory(
+  userId: string,
   granularity: "daily" | "weekly" | "monthly" = "monthly",
   startDate?: Date,
 ): Promise<{ history: NetWorthHistoryPoint[]; accountHistory: Array<{ date: string; balances: Record<string, number> }> }> {
@@ -169,12 +171,15 @@ export async function computeNetWorthHistory(
   // Fetch balance records and active accounts in parallel
   const [balanceRows, accountRows] = await Promise.all([
     prisma.balance.findMany({
-      where: startDate ? { date: { gte: startDate } } : undefined,
+      where: {
+        account: { userId },
+        ...(startDate ? { date: { gte: startDate } } : {}),
+      },
       orderBy: { date: "desc" },
       select: { accountId: true, balance: true, date: true },
     }),
     prisma.account.findMany({
-      where: { isActive: true },
+      where: { userId, isActive: true },
       select: { id: true, type: true, estimatedValue: true },
     }),
   ]);
@@ -199,6 +204,7 @@ export async function computeNetWorthHistory(
     const preRows = await prisma.balance.findMany({
       where: {
         accountId: { in: activeAccountIds },
+        account: { userId },
         date: { lt: startDate },
       },
       orderBy: { date: "desc" },
@@ -293,6 +299,7 @@ export async function computeNetWorthHistory(
  * Fetches transactions, decrypts amounts, groups negative amounts by category.
  */
 export async function computeSpendingSummary(
+  userId: string,
   month: string,
 ): Promise<SpendingSummary> {
   const prisma = getPrisma();
@@ -308,6 +315,7 @@ export async function computeSpendingSummary(
   const rows = await prisma.transaction.findMany({
     where: {
       date: { gte: startDate, lte: endDate },
+      account: { userId },
     },
     select: {
       amount: true,
@@ -356,6 +364,7 @@ export async function computeSpendingSummary(
  * Returns absolute values of negative transactions grouped by day.
  */
 export async function computeDailySpending(
+  userId: string,
   startDate: Date,
   endDate: Date,
 ): Promise<DailySpendingPoint[]> {
@@ -364,6 +373,7 @@ export async function computeDailySpending(
   const rows = await prisma.transaction.findMany({
     where: {
       date: { gte: startDate, lte: endDate },
+      account: { userId },
     },
     select: { amount: true, date: true, category: true },
   });
@@ -397,6 +407,7 @@ export async function computeDailySpending(
  * are excluded from both income and spending totals.
  */
 export async function computeIncomeSpending(
+  userId: string,
   granularity: "weekly" | "monthly",
   startDate?: Date,
   excludedAccountIds?: Set<string>,
@@ -406,7 +417,10 @@ export async function computeIncomeSpending(
 
   const needAccountId = !!excludedAccountIds && excludedAccountIds.size > 0;
   const rows = await prisma.transaction.findMany({
-    where: startDate ? { date: { gte: startDate } } : undefined,
+    where: {
+      account: { userId },
+      ...(startDate ? { date: { gte: startDate } } : {}),
+    },
     select: {
       amount: true,
       date: true,
@@ -458,17 +472,18 @@ export async function computeIncomeSpending(
  *   are driven by market movements rather than individual transactions.
  */
 export async function computeAccountBalanceHistory(
+  userId: string,
   accountId: string,
   granularity: "daily" | "weekly" | "monthly" = "weekly",
   startDate?: Date,
 ): Promise<AccountBalanceHistoryResponse | null> {
   const prisma = getPrisma();
 
-  // Fetch and decrypt the account
+  // Fetch and decrypt the account, verifying ownership
   const accountRow = await prisma.account.findUnique({
     where: { id: accountId },
   });
-  if (!accountRow) return null;
+  if (!accountRow || accountRow.userId !== userId) return null;
 
   const account = decryptAccount(accountRow);
 
@@ -518,6 +533,7 @@ export async function computeAccountBalanceHistory(
   const txRows = await prisma.transaction.findMany({
     where: {
       accountId,
+      account: { userId },
       ...(startDate ? { date: { gte: startDate } } : {}),
     },
     select: { amount: true, date: true },
@@ -573,14 +589,14 @@ export async function computeAccountBalanceHistory(
 
 // ─── DTI (Debt-to-Income) Ratio ─────────────────────────────────────────────
 
-export async function computeDTI(): Promise<DTIResponse> {
+export async function computeDTI(userId: string): Promise<DTIResponse> {
   const prisma = getPrisma();
   const debtComponents: DTIComponent[] = [];
   const incomeComponents: DTIComponent[] = [];
 
   // 1. Monthly debt payments from accounts with loan profiles (Loan + RealEstate,
   //    since mortgages are tracked on RealEstate accounts for correct equity display).
-  const allAccounts = await listAccounts({ isActive: true });
+  const allAccounts = await listAccounts(userId, { isActive: true });
   const debtBearingAccounts = allAccounts.filter(
     (a) => a.type === AccountType.Loan || a.type === AccountType.RealEstate,
   );
@@ -600,7 +616,7 @@ export async function computeDTI(): Promise<DTIResponse> {
 
   const allRelevantBalances = debtAndCreditIds.length > 0
     ? await prisma.balance.findMany({
-        where: { accountId: { in: debtAndCreditIds } },
+        where: { accountId: { in: debtAndCreditIds }, account: { userId } },
         orderBy: { date: "desc" },
         include: { loanProfile: true, creditProfile: true },
       })
@@ -647,7 +663,7 @@ export async function computeDTI(): Promise<DTIResponse> {
   //    Include bills linked to a debt-bearing account (Credit/Loan/RealEstate).
   //    Skip bills whose accountId matches an account that already
   //    contributed a monthlyPayment above (avoid double-counting).
-  const allBills = await listBills({ isActive: true });
+  const allBills = await listBills(userId, { isActive: true });
 
   const debtAccountIds = new Set(
     allAccounts
@@ -687,8 +703,8 @@ export async function computeDTI(): Promise<DTIResponse> {
 
   // 3. Gross monthly income (same logic as projections: manual sources preferred)
   const [manualIncome, detectedIncome] = await Promise.all([
-    listIncomeSources({ isActive: true }),
-    detectIncomePatterns(),
+    listIncomeSources(userId, { isActive: true }),
+    detectIncomePatterns(userId),
   ]);
 
   if (manualIncome.length > 0) {

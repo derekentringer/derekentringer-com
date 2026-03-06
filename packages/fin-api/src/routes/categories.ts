@@ -38,7 +38,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
     "/",
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const categories = await listCategories();
+        const userId = _request.user.sub;
+        const categories = await listCategories(userId);
         return reply.send({ categories });
       } catch (e) {
         _request.log.error(e, "Failed to list categories");
@@ -59,7 +60,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        const category = await createCategory(request.body);
+        const userId = request.user.sub;
+        const category = await createCategory(userId, request.body);
         return reply.status(201).send({ category });
       } catch (e) {
         if (e instanceof Error && e.message.includes("Unique constraint")) {
@@ -92,6 +94,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -102,6 +106,7 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
 
       try {
         const category = await updateCategory(
+          userId,
           request.params.id,
           request.body,
         );
@@ -130,6 +135,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -139,7 +146,7 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteCategory(request.params.id);
+        const deleted = await deleteCategory(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,

@@ -17,6 +17,7 @@ export interface MockModel {
 }
 
 export interface MockPrisma {
+  user: MockModel;
   refreshToken: MockModel;
   account: MockModel;
   transaction: MockModel;
@@ -49,6 +50,7 @@ function createMockModel(): MockModel {
 
 export function createMockPrisma(): MockPrisma {
   const mock: MockPrisma = {
+    user: createMockModel(),
     refreshToken: createMockModel(),
     account: createMockModel(),
     transaction: createMockModel(),

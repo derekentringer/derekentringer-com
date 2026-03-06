@@ -8,45 +8,45 @@ import {
   encryptBillPaymentForCreate,
 } from "../lib/mappers.js";
 
-function isNotFoundError(e: unknown): boolean {
-  return (
-    e !== null &&
-    typeof e === "object" &&
-    "code" in e &&
-    (e as { code: string }).code === "P2025"
-  );
-}
-
-export async function createBill(data: {
-  name: string;
-  amount: number;
-  frequency: string;
-  dueDay: number;
-  dueMonth?: number | null;
-  dueWeekday?: number | null;
-  category?: string | null;
-  accountId?: string | null;
-  notes?: string | null;
-  isActive?: boolean;
-}): Promise<Bill> {
+export async function createBill(
+  userId: string,
+  data: {
+    name: string;
+    amount: number;
+    frequency: string;
+    dueDay: number;
+    dueMonth?: number | null;
+    dueWeekday?: number | null;
+    category?: string | null;
+    accountId?: string | null;
+    notes?: string | null;
+    isActive?: boolean;
+  },
+): Promise<Bill> {
   const prisma = getPrisma();
   const encrypted = encryptBillForCreate(data);
-  const row = await prisma.bill.create({ data: encrypted });
+  const row = await prisma.bill.create({ data: { ...encrypted, userId } });
   return decryptBill(row);
 }
 
-export async function getBill(id: string): Promise<Bill | null> {
+export async function getBill(
+  userId: string,
+  id: string,
+): Promise<Bill | null> {
   const prisma = getPrisma();
   const row = await prisma.bill.findUnique({ where: { id } });
-  if (!row) return null;
+  if (!row || row.userId !== userId) return null;
   return decryptBill(row);
 }
 
-export async function listBills(filter?: {
-  isActive?: boolean;
-}): Promise<Bill[]> {
+export async function listBills(
+  userId: string,
+  filter?: {
+    isActive?: boolean;
+  },
+): Promise<Bill[]> {
   const prisma = getPrisma();
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { userId };
   if (filter?.isActive !== undefined) {
     where.isActive = filter.isActive;
   }
@@ -55,6 +55,7 @@ export async function listBills(filter?: {
 }
 
 export async function updateBill(
+  userId: string,
   id: string,
   data: {
     name?: string;
@@ -70,41 +71,47 @@ export async function updateBill(
   },
 ): Promise<Bill | null> {
   const prisma = getPrisma();
-  const encrypted = encryptBillForUpdate(data);
 
-  try {
-    const row = await prisma.bill.update({
-      where: { id },
-      data: encrypted,
-    });
-    return decryptBill(row);
-  } catch (e: unknown) {
-    if (isNotFoundError(e)) return null;
-    throw e;
-  }
+  const existing = await prisma.bill.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return null;
+
+  const encrypted = encryptBillForUpdate(data);
+  const row = await prisma.bill.update({
+    where: { id },
+    data: encrypted,
+  });
+  return decryptBill(row);
 }
 
-export async function deleteBill(id: string): Promise<boolean> {
+export async function deleteBill(
+  userId: string,
+  id: string,
+): Promise<boolean> {
   const prisma = getPrisma();
-  try {
-    await prisma.bill.delete({ where: { id } });
-    return true;
-  } catch (e: unknown) {
-    if (isNotFoundError(e)) return false;
-    throw e;
-  }
+
+  const existing = await prisma.bill.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return false;
+
+  await prisma.bill.delete({ where: { id } });
+  return true;
 }
 
 /**
  * Mark a bill instance as paid using upsert on the compound key (billId, dueDate).
- * This handles the toggle scenario: paid→unpaid→paid without duplicate constraint errors.
+ * This handles the toggle scenario: paid->unpaid->paid without duplicate constraint errors.
  */
 export async function markBillPaid(
+  userId: string,
   billId: string,
   dueDate: Date,
   amount: number,
-): Promise<BillPayment> {
+): Promise<BillPayment | null> {
   const prisma = getPrisma();
+
+  // Verify bill ownership
+  const bill = await prisma.bill.findUnique({ where: { id: billId } });
+  if (!bill || bill.userId !== userId) return null;
+
   const encrypted = encryptBillPaymentForCreate({ billId, dueDate, amount });
 
   const row = await prisma.billPayment.upsert({
@@ -125,10 +132,16 @@ export async function markBillPaid(
  * Remove the payment record for a bill instance (unmark as paid).
  */
 export async function unmarkBillPaid(
+  userId: string,
   billId: string,
   dueDate: Date,
 ): Promise<boolean> {
   const prisma = getPrisma();
+
+  // Verify bill ownership
+  const bill = await prisma.bill.findUnique({ where: { id: billId } });
+  if (!bill || bill.userId !== userId) return false;
+
   try {
     await prisma.billPayment.delete({
       where: {
@@ -137,12 +150,19 @@ export async function unmarkBillPaid(
     });
     return true;
   } catch (e: unknown) {
-    if (isNotFoundError(e)) return false;
+    if (
+      e !== null &&
+      typeof e === "object" &&
+      "code" in e &&
+      (e as { code: string }).code === "P2025"
+    )
+      return false;
     throw e;
   }
 }
 
 export async function getPaymentsInRange(
+  userId: string,
   startDate: Date,
   endDate: Date,
 ): Promise<BillPayment[]> {
@@ -150,6 +170,7 @@ export async function getPaymentsInRange(
   const rows = await prisma.billPayment.findMany({
     where: {
       dueDate: { gte: startDate, lte: endDate },
+      bill: { userId },
     },
   });
   return rows.map(decryptBillPayment);
@@ -157,7 +178,7 @@ export async function getPaymentsInRange(
 
 // --- Due date generation ---
 
-/** Clamp day to the last day of the given month (e.g., Feb 30 → Feb 28) */
+/** Clamp day to the last day of the given month (e.g., Feb 30 -> Feb 28) */
 function clampDay(year: number, month: number, day: number): number {
   const lastDay = new Date(year, month + 1, 0).getDate();
   return Math.min(day, lastDay);

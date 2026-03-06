@@ -15,17 +15,24 @@ function isNotFoundError(e: unknown): boolean {
   );
 }
 
-export async function createHolding(data: {
-  accountId: string;
-  name: string;
-  ticker?: string | null;
-  shares?: number | null;
-  costBasis?: number | null;
-  currentPrice?: number | null;
-  assetClass: string;
-  notes?: string | null;
-}): Promise<Holding> {
+export async function createHolding(
+  userId: string,
+  data: {
+    accountId: string;
+    name: string;
+    ticker?: string | null;
+    shares?: number | null;
+    costBasis?: number | null;
+    currentPrice?: number | null;
+    assetClass: string;
+    notes?: string | null;
+  },
+): Promise<Holding> {
   const prisma = getPrisma();
+
+  // Verify the account belongs to the user
+  const acct = await prisma.account.findUnique({ where: { id: data.accountId } });
+  if (!acct || acct.userId !== userId) throw new Error("Account not found");
 
   // Auto-assign sortOrder per account (max + 1)
   const maxResult = await prisma.holding.aggregate({
@@ -41,15 +48,24 @@ export async function createHolding(data: {
   return decryptHolding(row);
 }
 
-export async function getHolding(id: string): Promise<Holding | null> {
+export async function getHolding(userId: string, id: string): Promise<Holding | null> {
   const prisma = getPrisma();
-  const row = await prisma.holding.findUnique({ where: { id } });
+  const row = await prisma.holding.findUnique({
+    where: { id },
+    include: { account: { select: { userId: true } } },
+  });
   if (!row) return null;
+  if (row.account.userId !== userId) return null;
   return decryptHolding(row);
 }
 
-export async function listHoldings(accountId: string): Promise<Holding[]> {
+export async function listHoldings(userId: string, accountId: string): Promise<Holding[]> {
   const prisma = getPrisma();
+
+  // Verify account ownership
+  const acct = await prisma.account.findUnique({ where: { id: accountId } });
+  if (!acct || acct.userId !== userId) throw new Error("Account not found");
+
   const rows = await prisma.holding.findMany({
     where: { accountId },
     orderBy: { sortOrder: "asc" },
@@ -58,6 +74,7 @@ export async function listHoldings(accountId: string): Promise<Holding[]> {
 }
 
 export async function updateHolding(
+  userId: string,
   id: string,
   data: {
     name?: string;
@@ -70,6 +87,15 @@ export async function updateHolding(
   },
 ): Promise<Holding | null> {
   const prisma = getPrisma();
+
+  // Verify holding ownership via account
+  const existing = await prisma.holding.findUnique({
+    where: { id },
+    include: { account: { select: { userId: true } } },
+  });
+  if (!existing) return null;
+  if (existing.account.userId !== userId) return null;
+
   const encrypted = encryptHoldingForUpdate(data);
 
   try {
@@ -84,8 +110,17 @@ export async function updateHolding(
   }
 }
 
-export async function deleteHolding(id: string): Promise<boolean> {
+export async function deleteHolding(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
+
+  // Verify holding ownership via account
+  const existing = await prisma.holding.findUnique({
+    where: { id },
+    include: { account: { select: { userId: true } } },
+  });
+  if (!existing) return false;
+  if (existing.account.userId !== userId) return false;
+
   try {
     await prisma.holding.delete({ where: { id } });
     return true;
@@ -96,6 +131,7 @@ export async function deleteHolding(id: string): Promise<boolean> {
 }
 
 export async function reorderHoldings(
+  userId: string,
   order: Array<{ id: string; sortOrder: number }>,
 ): Promise<void> {
   const prisma = getPrisma();
@@ -113,7 +149,19 @@ export async function updateHoldingPrice(
   id: string,
   price: number,
 ): Promise<Holding | null> {
-  return updateHolding(id, { currentPrice: price });
+  const prisma = getPrisma();
+  const encrypted = encryptHoldingForUpdate({ currentPrice: price });
+
+  try {
+    const row = await prisma.holding.update({
+      where: { id },
+      data: encrypted,
+    });
+    return decryptHolding(row);
+  } catch (e: unknown) {
+    if (isNotFoundError(e)) return null;
+    throw e;
+  }
 }
 
 export async function listAllHoldingsWithTickers(): Promise<Holding[]> {

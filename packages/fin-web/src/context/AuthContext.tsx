@@ -6,20 +6,30 @@ import {
   useCallback,
 } from "react";
 import type { ReactNode } from "react";
-import type { User } from "@derekentringer/shared";
+import type { User, LoginResponse } from "@derekentringer/shared";
 import {
   login as apiLogin,
+  register as apiRegister,
   refreshSession,
   logout as apiLogout,
+  getMe,
 } from "../api/auth.ts";
 import { setOnAuthFailure } from "../api/client.ts";
+
+interface LoginResult {
+  requiresTotp?: boolean;
+  totpToken?: string;
+  mustChangePassword?: boolean;
+}
 
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
+  setUserFromLogin: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -37,16 +47,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOnAuthFailure(clearAuth);
 
     refreshSession()
-      .then((result) => {
+      .then(async (result) => {
         if (result) {
-          setUser({
-            id: "admin",
-            email: "admin",
-            role: "admin",
-            totpEnabled: false,
-            createdAt: "",
-            updatedAt: "",
-          });
+          // Fetch real user data from the server
+          try {
+            const userData = await getMe();
+            setUser(userData);
+          } catch {
+            // Fallback if /auth/me fails
+            setUser(null);
+          }
         }
       })
       .finally(() => {
@@ -54,8 +64,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, [clearAuth]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await apiLogin({ email, password });
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    const response: LoginResponse = await apiLogin({ email, password });
+
+    // If TOTP is required, don't set user yet
+    if (response.requiresTotp) {
+      return {
+        requiresTotp: true,
+        totpToken: response.totpToken,
+      };
+    }
+
+    // If password change is required, set user but signal the caller
+    if (response.mustChangePassword) {
+      setUser(response.user);
+      return { mustChangePassword: true };
+    }
+
+    setUser(response.user);
+    return {};
+  }, []);
+
+  const register = useCallback(async (email: string, password: string, displayName?: string) => {
+    const response = await apiRegister({ email, password, displayName });
     setUser(response.user);
   }, []);
 
@@ -65,6 +96,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event("auth:logout"));
   }, []);
 
+  const setUserFromLogin = useCallback((userData: User) => {
+    setUser(userData);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -72,7 +107,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: user !== null,
         isLoading,
         login,
+        register,
         logout,
+        setUserFromLogin,
       }}
     >
       {children}

@@ -1,8 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { CreateHoldingRequest, UpdateHoldingRequest, ReorderHoldingsRequest } from "@derekentringer/shared";
 import { ASSET_CLASSES } from "@derekentringer/shared";
-import { requirePin } from "@derekentringer/shared/auth/pinVerify";
-import { loadConfig } from "../config.js";
 import {
   createHolding,
   getHolding,
@@ -91,9 +89,6 @@ async function validateInvestmentAccount(accountId: string): Promise<{ valid: bo
 export default async function holdingRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  const config = loadConfig();
-  const pinGuard = requirePin(config.pinTokenSecret);
-
   // GET / — list holdings for an account
   fastify.get<{ Querystring: { accountId?: string } }>(
     "/",
@@ -101,6 +96,7 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { accountId?: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId } = request.query;
       if (!accountId || !CUID_PATTERN.test(accountId)) {
         return reply.status(400).send({
@@ -111,7 +107,7 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const holdings = await listHoldings(accountId);
+        const holdings = await listHoldings(userId, accountId);
         return reply.send({ holdings });
       } catch (e) {
         request.log.error(e, "Failed to list holdings");
@@ -131,6 +127,8 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -140,7 +138,7 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const holding = await getHolding(request.params.id);
+        const holding = await getHolding(userId, request.params.id);
         if (!holding) {
           return reply.status(404).send({
             statusCode: 404,
@@ -168,6 +166,7 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateHoldingRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId, assetClass, shares, costBasis, currentPrice } = request.body;
 
       if (!CUID_PATTERN.test(accountId)) {
@@ -220,7 +219,7 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
           });
         }
 
-        const holding = await createHolding(request.body);
+        const holding = await createHolding(userId, request.body);
         return reply.status(201).send({ holding });
       } catch (e) {
         request.log.error(e, "Failed to create holding");
@@ -244,6 +243,8 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -287,7 +288,7 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const holding = await updateHolding(request.params.id, request.body);
+        const holding = await updateHolding(userId, request.params.id, request.body);
         if (!holding) {
           return reply.status(404).send({
             statusCode: 404,
@@ -307,14 +308,15 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete holding (PIN-protected)
+  // DELETE /:id — delete holding
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
-    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -324,7 +326,7 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteHolding(request.params.id);
+        const deleted = await deleteHolding(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,
@@ -353,7 +355,8 @@ export default async function holdingRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        await reorderHoldings(request.body.order);
+        const userId = request.user.sub;
+        await reorderHoldings(userId, request.body.order);
         return reply.status(204).send();
       } catch (e) {
         request.log.error(e, "Failed to reorder holdings");

@@ -19,7 +19,7 @@ function isNotFoundError(e: unknown): boolean {
   );
 }
 
-export async function createAccount(data: {
+export async function createAccount(userId: string, data: {
   name: string;
   type: AccountType;
   institution?: string;
@@ -36,31 +36,32 @@ export async function createAccount(data: {
   const prisma = getPrisma();
   const encrypted = encryptAccountForCreate(data);
 
-  // Auto-assign sortOrder = max(sortOrder) + 1
+  // Auto-assign sortOrder = max(sortOrder) + 1, scoped to user
   const maxResult = await prisma.account.aggregate({
     _max: { sortOrder: true },
+    where: { userId },
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
   const row = await prisma.account.create({
-    data: { ...encrypted, sortOrder: nextSortOrder },
+    data: { ...encrypted, userId, sortOrder: nextSortOrder },
   });
   return decryptAccount(row);
 }
 
-export async function getAccount(id: string): Promise<Account | null> {
+export async function getAccount(userId: string, id: string): Promise<Account | null> {
   const prisma = getPrisma();
   const row = await prisma.account.findUnique({ where: { id } });
-  if (!row) return null;
+  if (!row || row.userId !== userId) return null;
   return decryptAccount(row);
 }
 
-export async function listAccounts(filter?: {
+export async function listAccounts(userId: string, filter?: {
   isActive?: boolean;
   type?: string;
 }): Promise<Account[]> {
   const prisma = getPrisma();
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { userId };
   if (filter?.isActive !== undefined) {
     where.isActive = filter.isActive;
   }
@@ -75,6 +76,7 @@ export async function listAccounts(filter?: {
 }
 
 export async function updateAccount(
+  userId: string,
   id: string,
   data: {
     name?: string;
@@ -92,6 +94,11 @@ export async function updateAccount(
   },
 ): Promise<Account | null> {
   const prisma = getPrisma();
+
+  // Verify ownership before proceeding
+  const existing = await prisma.account.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return null;
+
   const encrypted = encryptAccountForUpdate(data);
 
   try {
@@ -99,13 +106,7 @@ export async function updateAccount(
       // Read current balance before update to detect actual change
       let oldBalance: number | undefined;
       if (data.currentBalance !== undefined) {
-        const existing = await tx.account.findUnique({
-          where: { id },
-          select: { currentBalance: true },
-        });
-        if (existing) {
-          oldBalance = decryptNumber(existing.currentBalance);
-        }
+        oldBalance = decryptNumber(existing.currentBalance);
       }
 
       const row = await tx.account.update({
@@ -135,15 +136,16 @@ export async function updateAccount(
 // #3: Update only currentBalance without creating a Balance record.
 // Used by PDF import confirm to avoid the auto-Balance side effect in updateAccount.
 export async function updateAccountBalanceOnly(
+  userId: string,
   id: string,
   balance: number,
 ): Promise<boolean> {
   const prisma = getPrisma();
   const existing = await prisma.account.findUnique({
     where: { id },
-    select: { currentBalance: true },
+    select: { currentBalance: true, userId: true },
   });
-  if (!existing) return false;
+  if (!existing || existing.userId !== userId) return false;
 
   const oldBalance = decryptNumber(existing.currentBalance);
   if (oldBalance === balance) return false;
@@ -157,15 +159,16 @@ export async function updateAccountBalanceOnly(
 
 // Update only interest rate without creating a Balance record.
 export async function updateAccountInterestRateOnly(
+  userId: string,
   id: string,
   rate: number,
 ): Promise<boolean> {
   const prisma = getPrisma();
   const existing = await prisma.account.findUnique({
     where: { id },
-    select: { interestRate: true },
+    select: { interestRate: true, userId: true },
   });
-  if (!existing) return false;
+  if (!existing || existing.userId !== userId) return false;
 
   await prisma.account.update({
     where: { id },
@@ -176,15 +179,16 @@ export async function updateAccountInterestRateOnly(
 
 // Update static loan fields on an Account
 export async function updateAccountLoanStatic(
+  userId: string,
   id: string,
   data: LoanStaticData,
 ): Promise<boolean> {
   const prisma = getPrisma();
   const existing = await prisma.account.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, userId: true },
   });
-  if (!existing) return false;
+  if (!existing || existing.userId !== userId) return false;
 
   const encrypted = encryptLoanStaticForUpdate(data);
   if (Object.keys(encrypted).length === 0) return false;
@@ -198,15 +202,16 @@ export async function updateAccountLoanStatic(
 
 // Update employer name for 401k/investment accounts
 export async function updateAccountEmployerName(
+  userId: string,
   id: string,
   name: string,
 ): Promise<boolean> {
   const prisma = getPrisma();
   const existing = await prisma.account.findUnique({
     where: { id },
-    select: { id: true },
+    select: { id: true, userId: true },
   });
-  if (!existing) return false;
+  if (!existing || existing.userId !== userId) return false;
 
   await prisma.account.update({
     where: { id },
@@ -219,10 +224,11 @@ export async function updateAccountEmployerName(
  * Return total balance of active savings/HYS accounts.
  * Avoids decrypting all account fields when only cash balance is needed.
  */
-export async function getCashBalance(): Promise<number> {
+export async function getCashBalance(userId: string): Promise<number> {
   const prisma = getPrisma();
   const rows = await prisma.account.findMany({
     where: {
+      userId,
       isActive: true,
       type: { in: [AccountTypeEnum.Savings, AccountTypeEnum.HighYieldSavings] },
     },
@@ -239,17 +245,22 @@ export async function getCashBalance(): Promise<number> {
  * Return IDs of accounts with excludeFromIncomeSources=true.
  * Avoids decrypting all account fields when only IDs are needed.
  */
-export async function listExcludedAccountIds(): Promise<string[]> {
+export async function listExcludedAccountIds(userId: string): Promise<string[]> {
   const prisma = getPrisma();
   const rows = await prisma.account.findMany({
-    where: { excludeFromIncomeSources: true },
+    where: { userId, excludeFromIncomeSources: true },
     select: { id: true },
   });
   return rows.map((r) => r.id);
 }
 
-export async function deleteAccount(id: string): Promise<boolean> {
+export async function deleteAccount(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
+
+  // Verify ownership before deleting
+  const existing = await prisma.account.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return false;
+
   try {
     await prisma.account.delete({ where: { id } });
     return true;
@@ -260,6 +271,7 @@ export async function deleteAccount(id: string): Promise<boolean> {
 }
 
 export async function reorderAccounts(
+  userId: string,
   order: Array<{ id: string; sortOrder: number }>,
 ): Promise<void> {
   const prisma = getPrisma();

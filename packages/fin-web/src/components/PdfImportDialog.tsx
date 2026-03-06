@@ -11,8 +11,6 @@ import type {
 import { AccountType } from "@derekentringer/shared/finance";
 import { fetchAccounts } from "../api/accounts.ts";
 import { uploadPdfPreview, confirmPdfImport } from "../api/balances.ts";
-import { usePin } from "../context/PinContext.tsx";
-import { PinGate } from "./PinGate.tsx";
 import { PdfPreviewBase } from "./pdf-import/PdfPreviewBase.tsx";
 import { LoanProfilePreview } from "./pdf-import/LoanProfilePreview.tsx";
 import { InvestmentProfilePreview } from "./pdf-import/InvestmentProfilePreview.tsx";
@@ -52,7 +50,6 @@ function formatCurrency(value: number): string {
 }
 
 export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
-  const { isPinVerified, pinToken } = usePin();
   const [step, setStep] = useState<Step>("upload");
 
   // Upload state
@@ -156,14 +153,14 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
 
   async function uploadCurrentFile() {
     const file = files[currentFileIndex];
-    if (!file || !accountId || !pinToken) return;
+    if (!file || !accountId) return;
     setError("");
     setIsLoading(true);
 
     let succeeded = false;
     while (!succeeded) {
       try {
-        const data = await uploadPdfPreview(accountId, file, pinToken);
+        const data = await uploadPdfPreview(accountId, file);
         setPreview(data);
         setEditedBalance(String(data.balance));
         setEditedDate(data.date);
@@ -217,7 +214,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
     let succeeded = false;
     while (!succeeded) {
       try {
-        const data = await uploadPdfPreview(accountId, nextFile, pinToken!);
+        const data = await uploadPdfPreview(accountId, nextFile);
         setPreview(data);
         setEditedBalance(String(data.balance));
         setEditedDate(data.date);
@@ -258,7 +255,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
   }
 
   async function handleConfirm() {
-    if (!pinToken || !preview) return;
+    if (!preview) return;
 
     const balance = parseFloat(editedBalance);
     if (isNaN(balance)) {
@@ -312,7 +309,6 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
               ? creditProfile
               : undefined,
         },
-        pinToken,
       );
 
       setCompletedResults((prev) => [...prev, { ...res, fileName: files[currentFileIndex].name }]);
@@ -332,10 +328,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
   }
 
   async function runAutoImport() {
-    // Capture pin token at start so the async function keeps working
-    // even if the PinContext timer clears the reactive state mid-import
-    const token = pinToken;
-    if (!accountId || !token) return;
+    if (!accountId) return;
     cancelledRef.current = false;
     autoImportActiveRef.current = true;
     setCompletedResults([]);
@@ -356,7 +349,7 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
       let succeeded = false;
       while (!succeeded && !cancelledRef.current) {
         try {
-          const data = await uploadPdfPreview(accountId, file, token);
+          const data = await uploadPdfPreview(accountId, file);
           extracted.push({ file, data });
           succeeded = true;
         } catch (err: unknown) {
@@ -427,7 +420,6 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
             creditProfile:
               accountType === AccountType.Credit ? data.creditProfile : undefined,
           },
-          token,
         );
 
         setCompletedResults((prev) => [
@@ -447,18 +439,6 @@ export function PdfImportDialog({ onClose, onImported }: PdfImportDialogProps) {
     }
 
     setStep("result");
-  }
-
-  if (!isPinVerified && !autoImportActiveRef.current) {
-    return (
-      <Dialog open onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-w-md">
-          <PinGate>
-            <div />
-          </PinGate>
-        </DialogContent>
-      </Dialog>
-    );
   }
 
   return (
