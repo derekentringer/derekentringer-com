@@ -3,11 +3,15 @@ import type { FormEvent } from "react";
 import { Navigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.tsx";
 import { NsLogo } from "../components/NsLogo.tsx";
+import { PasswordStrengthIndicator } from "../components/PasswordStrengthIndicator.tsx";
+import { validatePasswordStrength } from "@derekentringer/shared";
 
-export function LoginPage() {
-  const { isAuthenticated, isLoading, login } = useAuth();
+export function RegisterPage() {
+  const { isAuthenticated, isLoading, register } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -17,12 +21,23 @@ export function LoginPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    setIsSubmitting(true);
 
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    const validation = validatePasswordStrength(password);
+    if (!validation.valid) {
+      setError(validation.errors[0]);
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      await login(email, password);
+      await register(email, password, displayName || undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -48,11 +63,28 @@ export function LoginPage() {
           className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
         <input
+          type="text"
+          placeholder="Display name (optional)"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          autoComplete="name"
+          className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <input
           type="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
+          autoComplete="new-password"
+          className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <PasswordStrengthIndicator password={password} />
+        <input
+          type="password"
+          placeholder="Confirm password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          autoComplete="new-password"
           className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
         {error && (
@@ -60,19 +92,17 @@ export function LoginPage() {
         )}
         <button
           type="submit"
-          disabled={isSubmitting || !email || !password}
+          disabled={isSubmitting || !email || !password || !confirmPassword}
           className="w-full px-4 py-2 rounded-md bg-primary text-primary-contrast font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {isSubmitting ? "Signing in..." : "Sign in"}
+          {isSubmitting ? "Creating account..." : "Create account"}
         </button>
-        <div className="flex justify-between text-sm">
-          <Link to="/forgot-password" className="text-muted-foreground hover:text-foreground">
-            Forgot password?
+        <p className="text-sm text-muted-foreground text-center">
+          Already have an account?{" "}
+          <Link to="/login" className="text-primary hover:underline">
+            Sign in
           </Link>
-          <Link to="/register" className="text-primary hover:underline">
-            Create account
-          </Link>
-        </div>
+        </p>
       </form>
     </div>
   );

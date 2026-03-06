@@ -16,7 +16,18 @@ export type {
   LogoutResponse,
   RevokeAllSessionsResponse,
   AuthPluginOptions,
+  RegisterRequest,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  ChangePasswordRequest,
 } from "./types/auth.js";
+
+export {
+  validatePasswordStrength,
+} from "./validation/password.js";
+export type {
+  PasswordValidationResult,
+} from "./validation/password.js";
 
 export { encrypt, decrypt } from "./crypto/index.js";
 

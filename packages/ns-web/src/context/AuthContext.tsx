@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import type { User } from "@derekentringer/shared";
 import {
   login as apiLogin,
+  register as apiRegister,
   refreshSession,
   logout as apiLogout,
   getMe,
@@ -20,6 +21,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -60,6 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(response.user);
   }, []);
 
+  const register = useCallback(async (email: string, password: string, displayName?: string) => {
+    const response = await apiRegister({ email, password, displayName });
+    setUser(response.user);
+  }, []);
+
   const logout = useCallback(async () => {
     await apiLogout();
     setUser(null);
@@ -73,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: user !== null,
         isLoading,
         login,
+        register,
         logout,
       }}
     >
