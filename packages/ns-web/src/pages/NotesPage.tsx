@@ -10,7 +10,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import type { Note, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
+import type { Note, NoteVersion, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import {
   fetchNotes,
@@ -31,6 +31,7 @@ import {
   renameTagApi,
   deleteTagApi,
   fetchNoteTitles,
+  restoreVersion,
 } from "../api/offlineNotes.ts";
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
 import { OnlineStatusIndicator } from "../components/OnlineStatusIndicator.tsx";
@@ -57,6 +58,8 @@ import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
+import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
+import { DiffView } from "../components/DiffView.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import { ImportButton } from "../components/ImportButton.tsx";
@@ -179,14 +182,18 @@ export function NotesPage() {
     storageKey: "ns-split-width",
   });
 
-  // Q&A panel state
+  // Drawer state (shared by AI Assistant and Version History)
+  type DrawerTab = "assistant" | "history";
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("assistant");
   const [qaOpen, setQaOpen] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const qaResize = useResizable({
     direction: "vertical",
     initialSize: 350,
     minSize: 250,
     maxSize: 600,
     storageKey: "ns-qa-panel-width",
+    invert: true,
   });
 
   const dndSensors = useSensors(
@@ -377,6 +384,10 @@ export function NotesPage() {
     setConfirmDelete(false);
     setConfirmPermanentDelete(false);
     setLinkCopied(false);
+    setSelectedVersion(null);
+    if (qaOpen && drawerTab === "history") {
+      setQaOpen(false);
+    }
     navigate(`/notes/${note.id}`, { replace: true });
   }
 
@@ -1037,6 +1048,35 @@ export function NotesPage() {
     }
   }, [settings.qaAssistant]);
 
+  function handleDrawerTabClick(tab: DrawerTab) {
+    if (qaOpen && drawerTab === tab) {
+      setQaOpen(false);
+    } else {
+      setDrawerTab(tab);
+      setQaOpen(true);
+    }
+  }
+
+  async function handleVersionRestore(noteId: string, versionId: string) {
+    try {
+      const updated = await restoreVersion(noteId, versionId);
+      setTitle(updated.title);
+      setContent(updated.content);
+      setIsDirty(false);
+      setSelectedVersion(null);
+
+      // Update the note in the list
+      setNotes((prev) =>
+        prev.map((n) => (n.id === updated.id ? { ...n, ...updated } : n)),
+      );
+
+      setSuccessToast("Version restored");
+      setTimeout(() => setSuccessToast(null), 3000);
+    } catch {
+      setError("Failed to restore version");
+    }
+  }
+
   function handleQaSelectNote(noteId: string) {
     // Switch to notes view if in trash
     if (sidebarView === "trash") {
@@ -1576,6 +1616,16 @@ export function NotesPage() {
               </div>
             )}
 
+            {selectedVersion ? (
+              <DiffView
+                version={selectedVersion}
+                currentTitle={title}
+                currentContent={content}
+                onRestore={() => handleVersionRestore(selectedId!, selectedVersion.id)}
+                onClose={() => setSelectedVersion(null)}
+              />
+            ) : (
+            <>
             {/* Editor toolbar */}
             <EditorToolbar
               viewMode={viewMode}
@@ -1631,6 +1681,8 @@ export function NotesPage() {
                 noteId={selectedId}
                 onNavigate={handleWikiLinkClick}
               />
+            )}
+            </>
             )}
           </>
         ) : selectedNote && sidebarView === "trash" ? (
@@ -1704,20 +1756,71 @@ export function NotesPage() {
 
       </main>
 
-      {/* Q&A sliding panel */}
-      {settings.masterAiEnabled && settings.qaAssistant && (
-        <div
-          className="fixed top-0 right-0 h-full z-10 overflow-visible transition-transform duration-300 ease-in-out"
-          style={{
-            width: qaResize.size,
-            transform: qaOpen ? "translateX(0)" : `translateX(${qaResize.size}px)`,
-          }}
-        >
-          <div className="h-full border-l border-border shadow-lg">
-            <QAPanel onSelectNote={handleQaSelectNote} isOpen={qaOpen} onToggle={() => setQaOpen((v) => !v)} />
+      {/* Sliding drawer with tabbed content */}
+      <div
+        className="fixed top-0 right-0 h-full z-10 overflow-visible transition-transform duration-300 ease-in-out"
+        style={{
+          width: qaResize.size,
+          transform: qaOpen ? "translateX(0)" : `translateX(${qaResize.size}px)`,
+        }}
+      >
+        {/* Tab buttons on left edge, above backlinks panel */}
+        <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
+          {/* AI Assistant tab */}
+          {settings.masterAiEnabled && settings.qaAssistant && (
+            <button
+              onClick={() => handleDrawerTabClick("assistant")}
+              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors ${
+                qaOpen && drawerTab === "assistant"
+                  ? "bg-primary text-primary-contrast"
+                  : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-muted"
+              }`}
+              title="AI Assistant"
+              data-testid="drawer-tab-assistant"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+          )}
+          {/* Version History tab */}
+          {selectedId && sidebarView === "notes" && (
+            <button
+              onClick={() => handleDrawerTabClick("history")}
+              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors ${
+                qaOpen && drawerTab === "history"
+                  ? "bg-primary text-primary-contrast"
+                  : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-muted"
+              }`}
+              title="Version History"
+              data-testid="drawer-tab-history"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </button>
+          )}
+        </div>
+        <div className="h-full flex bg-card shadow-lg">
+          <ResizeDivider
+            direction="vertical"
+            isDragging={qaResize.isDragging}
+            onPointerDown={qaResize.onPointerDown}
+          />
+          <div className="flex-1 min-w-0 h-full">
+            {drawerTab === "assistant" && settings.masterAiEnabled && settings.qaAssistant ? (
+              <QAPanel onSelectNote={handleQaSelectNote} isOpen={qaOpen} />
+            ) : drawerTab === "history" && selectedId ? (
+              <VersionHistoryPanel
+                noteId={selectedId}
+                onSelectVersion={setSelectedVersion}
+                selectedVersionId={selectedVersion?.id}
+              />
+            ) : null}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Import progress overlay */}
       {importProgress && (

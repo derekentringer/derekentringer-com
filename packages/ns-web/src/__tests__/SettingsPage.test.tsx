@@ -17,10 +17,14 @@ vi.mock("../api/ai.ts", () => ({
 
 const mockGetTrashRetention = vi.fn().mockResolvedValue({ days: 30 });
 const mockSetTrashRetention = vi.fn().mockResolvedValue({ days: 30 });
+const mockGetVersionInterval = vi.fn().mockResolvedValue({ minutes: 15 });
+const mockSetVersionInterval = vi.fn().mockResolvedValue({ minutes: 15 });
 
 vi.mock("../api/offlineNotes.ts", () => ({
   getTrashRetention: (...args: unknown[]) => mockGetTrashRetention(...args),
   setTrashRetention: (...args: unknown[]) => mockSetTrashRetention(...args),
+  getVersionInterval: (...args: unknown[]) => mockGetVersionInterval(...args),
+  setVersionInterval: (...args: unknown[]) => mockSetVersionInterval(...args),
 }));
 
 vi.mock("../hooks/useOfflineCache.ts", () => ({
@@ -62,6 +66,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Editor Preferences")).toBeInTheDocument();
     expect(screen.getByText("Appearance")).toBeInTheDocument();
     expect(screen.getByText("Trash")).toBeInTheDocument();
+    expect(screen.getByText("Version History")).toBeInTheDocument();
     expect(screen.getByText("AI Features")).toBeInTheDocument();
     expect(screen.getByText("Offline Cache")).toBeInTheDocument();
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
@@ -344,5 +349,29 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Continue writing / suggest structure")).toBeInTheDocument();
     expect(screen.getByText("Accept AI completion")).toBeInTheDocument();
     expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
+  });
+
+  // --- Version History ---
+
+  it("renders version interval dropdown with default value", async () => {
+    renderSettingsPage();
+    const select = await screen.findByLabelText("Version capture interval");
+    expect(select).toBeInTheDocument();
+    expect((select as HTMLSelectElement).value).toBe("15");
+  });
+
+  it("renders version interval dropdown with value from API", async () => {
+    mockGetVersionInterval.mockResolvedValue({ minutes: 5 });
+    renderSettingsPage();
+    const select = await screen.findByLabelText("Version capture interval");
+    expect((select as HTMLSelectElement).value).toBe("5");
+  });
+
+  it("changing version interval calls setVersionInterval", async () => {
+    mockSetVersionInterval.mockResolvedValue({ minutes: 30 });
+    renderSettingsPage();
+    const select = await screen.findByLabelText("Version capture interval");
+    await userEvent.selectOptions(select, "30");
+    expect(mockSetVersionInterval).toHaveBeenCalledWith(30);
   });
 });

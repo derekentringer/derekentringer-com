@@ -58,6 +58,9 @@ const mockEmptyTrash = vi.fn();
 const mockFetchNoteTitles = vi.fn();
 const mockFetchBacklinks = vi.fn();
 const mockFetchNote = vi.fn();
+const mockFetchVersions = vi.fn();
+const mockFetchVersion = vi.fn();
+const mockRestoreVersion = vi.fn();
 const mockLogout = vi.fn();
 
 vi.mock("../api/offlineNotes.ts", () => ({
@@ -82,6 +85,9 @@ vi.mock("../api/offlineNotes.ts", () => ({
   deleteTagApi: (...args: unknown[]) => mockDeleteTagApi(...args),
   fetchNoteTitles: (...args: unknown[]) => mockFetchNoteTitles(...args),
   fetchBacklinks: (...args: unknown[]) => mockFetchBacklinks(...args),
+  fetchVersions: (...args: unknown[]) => mockFetchVersions(...args),
+  fetchVersion: (...args: unknown[]) => mockFetchVersion(...args),
+  restoreVersion: (...args: unknown[]) => mockRestoreVersion(...args),
 }));
 
 vi.mock("../hooks/useOfflineCache.ts", () => ({
@@ -168,6 +174,7 @@ beforeEach(() => {
   mockFetchTags.mockResolvedValue({ tags: [] });
   mockFetchNoteTitles.mockResolvedValue({ notes: [] });
   mockFetchBacklinks.mockResolvedValue({ backlinks: [] });
+  mockFetchVersions.mockResolvedValue({ versions: [], total: 0 });
 });
 
 describe("NotesPage", () => {

@@ -5,7 +5,7 @@ import { useEditorSettings, ACCENT_PRESETS, type ThemeMode, type ViewModeDefault
 
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
 import { enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
-import { getTrashRetention, setTrashRetention } from "../api/offlineNotes.ts";
+import { getTrashRetention, setTrashRetention, getVersionInterval, setVersionInterval } from "../api/offlineNotes.ts";
 import { clearAllCaches, getDB } from "../lib/db.ts";
 import type { EmbeddingStatus } from "@derekentringer/shared/ns";
 
@@ -165,6 +165,14 @@ const MAX_CACHE_OPTIONS: { value: number; label: string }[] = [
   { value: 500, label: "500" },
 ];
 
+const VERSION_INTERVAL_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "Every save" },
+  { value: 5, label: "5 minutes" },
+  { value: 15, label: "15 minutes (default)" },
+  { value: 30, label: "30 minutes" },
+  { value: 60, label: "60 minutes" },
+];
+
 const TRASH_RETENTION_OPTIONS: { value: number; label: string }[] = [
   { value: 7, label: "7 days" },
   { value: 14, label: "14 days" },
@@ -184,6 +192,7 @@ export function SettingsPage() {
   const [clearingCache, setClearingCache] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [trashRetentionDays, setTrashRetentionDays] = useState<number>(30);
+  const [versionInterval, setVersionIntervalState] = useState<number>(15);
 
   const loadEmbeddingStatus = useCallback(async () => {
     try {
@@ -206,6 +215,9 @@ export function SettingsPage() {
   useEffect(() => {
     getTrashRetention()
       .then((res) => setTrashRetentionDays(res.days))
+      .catch(() => {});
+    getVersionInterval()
+      .then((res) => setVersionIntervalState(res.minutes))
       .catch(() => {});
   }, []);
 
@@ -249,6 +261,15 @@ export function SettingsPage() {
     } catch {
       // Revert on failure
       setTrashRetentionDays(trashRetentionDays);
+    }
+  }
+
+  async function handleVersionIntervalChange(minutes: number) {
+    setVersionIntervalState(minutes);
+    try {
+      await setVersionInterval(minutes);
+    } catch {
+      setVersionIntervalState(versionInterval);
     }
   }
 
@@ -619,6 +640,26 @@ export function SettingsPage() {
                 aria-label="Trash retention period"
               >
                 {TRASH_RETENTION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+          </SectionCard>
+
+          {/* Version History */}
+          <SectionCard title="Version History">
+            <div>
+              <label className="text-sm text-foreground mb-1 block flex items-center">
+                Capture interval
+                <InfoIcon tooltip="How often a version snapshot is saved when you edit a note. Set to 'Every save' to capture a version on every save." />
+              </label>
+              <select
+                value={versionInterval}
+                onChange={(e) => handleVersionIntervalChange(Number(e.target.value))}
+                className="bg-input border border-border rounded-md px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label="Version capture interval"
+              >
+                {VERSION_INTERVAL_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>

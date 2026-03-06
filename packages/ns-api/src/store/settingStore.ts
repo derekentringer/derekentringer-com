@@ -36,3 +36,16 @@ export async function getTrashRetentionDays(): Promise<number> {
 export async function setTrashRetentionDays(days: number): Promise<void> {
   await setSetting("trashRetentionDays", String(days));
 }
+
+const DEFAULT_VERSION_INTERVAL_MINUTES = 15;
+
+export async function getVersionIntervalMinutes(): Promise<number> {
+  const value = await getSetting("versionIntervalMinutes");
+  if (value === null) return DEFAULT_VERSION_INTERVAL_MINUTES;
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? DEFAULT_VERSION_INTERVAL_MINUTES : parsed;
+}
+
+export async function setVersionIntervalMinutes(minutes: number): Promise<void> {
+  await setSetting("versionIntervalMinutes", String(minutes));
+}

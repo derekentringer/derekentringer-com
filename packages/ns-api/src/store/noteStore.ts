@@ -10,6 +10,7 @@ import type {
 import type { Note as PrismaNote, Folder as PrismaFolder } from "../generated/prisma/client.js";
 import { generateQueryEmbedding } from "../services/embeddingService.js";
 import { syncNoteLinks } from "./linkStore.js";
+import { captureVersion } from "./versionStore.js";
 
 function isNotFoundError(error: unknown): boolean {
   return (
@@ -55,6 +56,8 @@ export async function createNote(
   if (created.content) {
     syncNoteLinks(created.id, created.content).catch(() => {});
   }
+
+  captureVersion(created.id, created.title, created.content).catch(() => {});
 
   return created;
 }
@@ -370,6 +373,10 @@ export async function updateNote(
 
     if (data.content !== undefined) {
       syncNoteLinks(updated.id, updated.content).catch(() => {});
+    }
+
+    if (data.title !== undefined || data.content !== undefined) {
+      captureVersion(updated.id, updated.title, updated.content).catch(() => {});
     }
 
     return updated;

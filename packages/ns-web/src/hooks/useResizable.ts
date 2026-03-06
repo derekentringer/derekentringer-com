@@ -6,6 +6,7 @@ export interface UseResizableOptions {
   minSize: number;
   maxSize: number;
   storageKey: string;
+  invert?: boolean;
 }
 
 export interface UseResizableReturn {
@@ -35,6 +36,7 @@ export function useResizable({
   minSize,
   maxSize,
   storageKey,
+  invert,
 }: UseResizableOptions): UseResizableReturn {
   const [size, setSize] = useState(() => readStorage(storageKey, initialSize, minSize, maxSize));
   const [isDragging, setIsDragging] = useState(false);
@@ -53,7 +55,7 @@ export function useResizable({
 
       function onPointerMove(ev: PointerEvent) {
         const current = direction === "horizontal" ? ev.clientY : ev.clientX;
-        const delta = current - dragRef.current.startPos;
+        const delta = (current - dragRef.current.startPos) * (invert ? -1 : 1);
         const next = Math.min(maxSize, Math.max(minSize, dragRef.current.startSize + delta));
         setSize(next);
       }
