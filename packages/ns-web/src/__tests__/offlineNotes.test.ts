@@ -44,6 +44,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     folderPath: null,
     tags: [],
     summary: null,
+    favorite: false,
     sortOrder: 0,
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
@@ -189,7 +190,7 @@ describe("offlineNotes", () => {
     });
 
     it("falls back to cache when offline", async () => {
-      await cacheFolders([{ id: "f1", name: "Work", parentId: null, sortOrder: 0, count: 0, totalCount: 0, createdAt: "", children: [] }]);
+      await cacheFolders([{ id: "f1", name: "Work", parentId: null, sortOrder: 0, favorite: false, count: 0, totalCount: 0, createdAt: "", children: [] }]);
       Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
       mockApi.fetchFolders.mockRejectedValue(new Error("network error"));
 

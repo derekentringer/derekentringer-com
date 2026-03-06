@@ -7,6 +7,7 @@ export interface Note {
   folderPath: string | null;
   tags: string[];
   summary: string | null;
+  favorite: boolean;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -28,6 +29,7 @@ export interface UpdateNoteRequest {
   folderId?: string | null;
   tags?: string[];
   summary?: string | null;
+  favorite?: boolean;
 }
 
 export interface NoteListResponse {
@@ -44,6 +46,7 @@ export interface FolderInfo {
   name: string;
   parentId: string | null;
   sortOrder: number;
+  favorite: boolean;
   count: number;
   totalCount: number;
   createdAt: string;

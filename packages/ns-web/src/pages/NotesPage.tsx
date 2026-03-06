@@ -32,6 +32,8 @@ import {
   deleteTagApi,
   fetchNoteTitles,
   restoreVersion,
+  fetchFavoriteNotes,
+  toggleFolderFavoriteApi,
 } from "../api/offlineNotes.ts";
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
 import { OnlineStatusIndicator } from "../components/OnlineStatusIndicator.tsx";
@@ -46,6 +48,7 @@ import {
 } from "../components/EditorToolbar.tsx";
 import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
 import { NoteList } from "../components/NoteList.tsx";
+import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { TagBrowser } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
@@ -112,6 +115,9 @@ export function NotesPage() {
   // Tag state
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [activeTags, setActiveTags] = useState<string[]>([]);
+
+  // Favorites state
+  const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
 
   // Trash state
   const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
@@ -283,6 +289,27 @@ export function NotesPage() {
     }
   }, []);
 
+  const loadFavoriteNotes = useCallback(async () => {
+    try {
+      const result = await fetchFavoriteNotes();
+      setFavoriteNotes(result.notes);
+    } catch {
+      // Silent fail
+    }
+  }, []);
+
+  const favoriteFolders = useMemo(() => {
+    const result: FolderInfo[] = [];
+    function collect(items: FolderInfo[]) {
+      for (const f of items) {
+        if (f.favorite) result.push(f);
+        collect(f.children);
+      }
+    }
+    collect(folders);
+    return result;
+  }, [folders]);
+
   // Load notes on mount and when search/sort/folder/mode changes
   useEffect(() => {
     loadNotes(debouncedSearch || undefined);
@@ -297,6 +324,11 @@ export function NotesPage() {
   useEffect(() => {
     loadNoteTitles();
   }, [loadNoteTitles]);
+
+  // Load favorite notes on mount
+  useEffect(() => {
+    loadFavoriteNotes();
+  }, [loadFavoriteNotes]);
 
   // Load trash count on mount (for badge)
   useEffect(() => {
@@ -415,6 +447,9 @@ export function NotesPage() {
       const updated = await updateNote(selectedId, { title, content });
       setNotes((prev) =>
         prev.map((n) => (n.id === updated.id ? updated : n)),
+      );
+      setFavoriteNotes((prev) =>
+        prev.map((n) => (n.id === updated.id ? { ...n, title: updated.title, content: updated.content } : n)),
       );
       setIsDirty(false);
       loadNoteTitles();
@@ -927,6 +962,46 @@ export function NotesPage() {
     [],
   );
 
+  async function handleToggleNoteFavorite(noteId: string, favorite: boolean) {
+    try {
+      const updated = await updateNote(noteId, { favorite });
+      setNotes((prev) =>
+        prev.map((n) => (n.id === updated.id ? { ...n, favorite: updated.favorite } : n)),
+      );
+      loadFavoriteNotes();
+    } catch {
+      showError("Failed to update favorite");
+    }
+  }
+
+  async function handleToggleFolderFavorite(folderId: string, favorite: boolean) {
+    try {
+      await toggleFolderFavoriteApi(folderId, favorite);
+      loadFolders();
+    } catch {
+      showError("Failed to update favorite");
+    }
+  }
+
+  function handleFavoriteNoteClick(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      selectNote(note);
+    } else {
+      import("../api/offlineNotes.ts").then(({ fetchNote }) => {
+        fetchNote(noteId)
+          .then((fetched) => {
+            setNotes((prev) => {
+              if (prev.some((n) => n.id === fetched.id)) return prev;
+              return [fetched, ...prev];
+            });
+            selectNote(fetched);
+          })
+          .catch(() => showError("Favorited note not found"));
+      });
+    }
+  }
+
   function handleWikiLinkClick(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
@@ -1180,6 +1255,18 @@ export function NotesPage() {
             </div>
 
             <div className="shrink-0 overflow-y-auto" style={{ height: folderResize.size }}>
+              {(favoriteFolders.length > 0 || favoriteNotes.length > 0) && (
+                <FavoritesPanel
+                  favoriteFolders={favoriteFolders}
+                  favoriteNotes={favoriteNotes}
+                  activeFolder={activeFolder}
+                  selectedNoteId={selectedId}
+                  onSelectFolder={setActiveFolder}
+                  onSelectNote={handleFavoriteNoteClick}
+                  onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
+                  onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
+                />
+              )}
               <FolderTree
                 folders={folders}
                 activeFolder={activeFolder}
@@ -1190,6 +1277,7 @@ export function NotesPage() {
                 onDeleteFolder={handleDeleteFolder}
                 onMoveFolder={handleMoveFolder}
                 onExportFolder={handleExportFolder}
+                onToggleFavorite={handleToggleFolderFavorite}
               />
             </div>
 
@@ -1201,7 +1289,7 @@ export function NotesPage() {
 
             <div className="px-2 py-1">
               <div className="flex items-center justify-between px-1 mb-1">
-                <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                <span className="text-sm text-muted-foreground uppercase tracking-wider">
                   {debouncedSearch ? "Search Results" : "Notes"}
                 </span>
                 {!debouncedSearch && (
@@ -1253,6 +1341,7 @@ export function NotesPage() {
                   onSelect={selectNote}
                   onDeleteNote={handleDeleteNoteById}
                   onExportNote={handleExportNote}
+                  onToggleFavorite={handleToggleNoteFavorite}
                   sortByManual={sortBy === "sortOrder"}
                 />
               )}

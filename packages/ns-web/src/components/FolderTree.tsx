@@ -13,6 +13,7 @@ interface FolderTreeProps {
   onDeleteFolder: (folderId: string, mode: "move-up" | "recursive") => void;
   onMoveFolder: (folderId: string, parentId: string | null) => void;
   onExportFolder?: (folderId: string) => void;
+  onToggleFavorite?: (folderId: string, favorite: boolean) => void;
 }
 
 interface FolderTreeNodeProps {
@@ -138,6 +139,7 @@ function FolderTreeNode({
                 <span className="w-4 mr-0.5 shrink-0" />
               )}
               <span className="truncate">{folder.name}</span>
+              {folder.favorite && <span className="text-[10px] text-primary shrink-0 ml-0.5">★</span>}
               <span className="ml-1 text-xs opacity-60 shrink-0">
                 {folder.totalCount}
               </span>
@@ -225,6 +227,7 @@ export function FolderTree({
   onDeleteFolder,
   onMoveFolder,
   onExportFolder,
+  onToggleFavorite,
 }: FolderTreeProps) {
   const [expandedMap, setExpandedMap] = useState<Map<string, boolean>>(() => {
     const stored = loadExpandedState();
@@ -246,6 +249,13 @@ export function FolderTree({
     y: number;
   } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<FolderInfo | null>(null);
+  const [isSectionCollapsed, setIsSectionCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("ns-folders-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Ensure new root folders default to expanded
@@ -368,97 +378,122 @@ export function FolderTree({
   return (
     <div className="px-2 py-1">
       <div className="flex items-center justify-between px-1 mb-1">
-        <span className="text-xs text-muted-foreground uppercase tracking-wider">
-          Folders
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setIsCreating(true)}
-            className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors"
-            title="New folder"
+        <button
+          onClick={() =>
+            setIsSectionCollapsed((v) => {
+              const next = !v;
+              try {
+                localStorage.setItem("ns-folders-collapsed", String(next));
+              } catch {}
+              return next;
+            })
+          }
+          className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+        >
+          <span
+            className="inline-block transition-transform"
+            style={{
+              transform: isSectionCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+            }}
           >
-            +
-          </button>
-        </div>
+            ▾
+          </span>
+          Folders
+        </button>
+        {!isSectionCollapsed && (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsCreating(true)}
+              className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title="New folder"
+            >
+              +
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* All Notes */}
-      <button
-        onClick={() => onSelectFolder(null)}
-        className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
-          activeFolder === null
-            ? "text-foreground bg-accent"
-            : "text-muted-foreground hover:text-foreground hover:bg-accent"
-        }`}
-      >
-        All Notes
-        <span className="ml-1 text-xs opacity-60">{totalNotes}</span>
-      </button>
-
-      {/* Unfiled */}
-      {unfiledCount > 0 && (
-        <DroppableZone droppableId="folder:__unfiled__">
+      {!isSectionCollapsed && (
+        <>
+          {/* All Notes */}
           <button
-            onClick={() => onSelectFolder("__unfiled__")}
+            onClick={() => onSelectFolder(null)}
             className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
-              activeFolder === "__unfiled__"
+              activeFolder === null
                 ? "text-foreground bg-accent"
                 : "text-muted-foreground hover:text-foreground hover:bg-accent"
             }`}
           >
-            Unfiled
-            <span className="ml-1 text-xs opacity-60">{unfiledCount}</span>
+            All Notes
+            <span className="ml-1 text-xs opacity-60">{totalNotes}</span>
           </button>
-        </DroppableZone>
-      )}
 
-      {/* Folder tree */}
-      {folders.map((folder) => (
-        <FolderTreeNode
-          key={folder.id}
-          folder={folder}
-          depth={0}
-          activeFolder={activeFolder}
-          expandedMap={expandedMap}
-          onToggleExpand={handleToggleExpand}
-          onSelectFolder={onSelectFolder}
-          renamingFolder={renamingFolder}
-          renameValue={renameValue}
-          setRenamingFolder={setRenamingFolder}
-          setRenameValue={setRenameValue}
-          onRenameSubmit={handleRenameSubmit}
-          onContextMenu={handleContextMenu}
-          creatingIn={creatingIn}
-          newFolderName={newFolderName}
-          setCreatingIn={setCreatingIn}
-          setNewFolderName={setNewFolderName}
-          onCreateSubmit={handleCreateInSubmit}
-        />
-      ))}
+          {/* Unfiled */}
+          {unfiledCount > 0 && (
+            <DroppableZone droppableId="folder:__unfiled__">
+              <button
+                onClick={() => onSelectFolder("__unfiled__")}
+                className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
+                  activeFolder === "__unfiled__"
+                    ? "text-foreground bg-accent"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+              >
+                Unfiled
+                <span className="ml-1 text-xs opacity-60">{unfiledCount}</span>
+              </button>
+            </DroppableZone>
+          )}
 
-      {/* Root drop zone */}
-      <DroppableZone droppableId="folder:__root__">
-        <div className="h-4 w-full" />
-      </DroppableZone>
+          {/* Folder tree */}
+          {folders.map((folder) => (
+            <FolderTreeNode
+              key={folder.id}
+              folder={folder}
+              depth={0}
+              activeFolder={activeFolder}
+              expandedMap={expandedMap}
+              onToggleExpand={handleToggleExpand}
+              onSelectFolder={onSelectFolder}
+              renamingFolder={renamingFolder}
+              renameValue={renameValue}
+              setRenamingFolder={setRenamingFolder}
+              setRenameValue={setRenameValue}
+              onRenameSubmit={handleRenameSubmit}
+              onContextMenu={handleContextMenu}
+              creatingIn={creatingIn}
+              newFolderName={newFolderName}
+              setCreatingIn={setCreatingIn}
+              setNewFolderName={setNewFolderName}
+              onCreateSubmit={handleCreateInSubmit}
+            />
+          ))}
 
-      {/* Inline create at root */}
-      {isCreating && (
-        <input
-          type="text"
-          value={newFolderName}
-          onChange={(e) => setNewFolderName(e.target.value)}
-          onBlur={handleCreateSubmit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleCreateSubmit();
-            if (e.key === "Escape") {
-              setIsCreating(false);
-              setNewFolderName("");
-            }
-          }}
-          autoFocus
-          placeholder="Folder name"
-          className="w-full px-2 py-1 rounded text-sm bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-        />
+          {/* Root drop zone */}
+          <DroppableZone droppableId="folder:__root__">
+            <div className="h-4 w-full" />
+          </DroppableZone>
+
+          {/* Inline create at root */}
+          {isCreating && (
+            <input
+              type="text"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onBlur={handleCreateSubmit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleCreateSubmit();
+                if (e.key === "Escape") {
+                  setIsCreating(false);
+                  setNewFolderName("");
+                }
+              }}
+              autoFocus
+              placeholder="Folder name"
+              className="w-full px-2 py-1 rounded text-sm bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          )}
+        </>
       )}
 
       {/* Context menu */}
@@ -497,6 +532,17 @@ export function FolderTree({
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
             >
               Export as .zip
+            </button>
+          )}
+          {onToggleFavorite && (
+            <button
+              onClick={() => {
+                onToggleFavorite(contextMenu.folder.id, !contextMenu.folder.favorite);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+            >
+              {contextMenu.folder.favorite ? "Unfavorite" : "Favorite"}
             </button>
           )}
           <button

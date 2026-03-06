@@ -16,6 +16,7 @@ interface NoteListProps {
   onSelect: (note: NoteSearchResult) => void;
   onDeleteNote?: (noteId: string) => void;
   onExportNote?: (noteId: string, format: ExportFormat) => void;
+  onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   sortByManual: boolean;
 }
 
@@ -31,6 +32,7 @@ interface SortableNoteItemProps {
   onSelect: (note: NoteSearchResult) => void;
   onDeleteNote?: (noteId: string) => void;
   onExportNote?: (noteId: string, format: ExportFormat) => void;
+  onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   sortByManual: boolean;
   contextMenu: ContextMenuState | null;
   onContextMenuOpen: (noteId: string, x: number, y: number) => void;
@@ -45,6 +47,7 @@ function SortableNoteItem({
   onSelect,
   onDeleteNote,
   onExportNote,
+  onToggleFavorite,
   sortByManual,
   contextMenu,
   onContextMenuOpen,
@@ -82,7 +85,7 @@ function SortableNoteItem({
       <button
         onClick={() => onSelect(note)}
         onContextMenu={(e) => {
-          if (!onDeleteNote && !onExportNote) return;
+          if (!onDeleteNote && !onExportNote && !onToggleFavorite) return;
           e.preventDefault();
           onContextMenuOpen(note.id, e.clientX, e.clientY);
         }}
@@ -92,10 +95,13 @@ function SortableNoteItem({
             : "text-muted hover:bg-accent hover:text-foreground"
         }`}
       >
-        <span className="block truncate">{note.title || "Untitled"}</span>
+        <span className="block truncate">
+          {note.favorite && <span className="text-[10px] text-primary mr-1">★</span>}
+          {note.title || "Untitled"}
+        </span>
         {note.headline && <SearchSnippet headline={note.headline} />}
       </button>
-      {contextMenu?.noteId === note.id && (onDeleteNote || onExportNote) && (
+      {contextMenu?.noteId === note.id && (onDeleteNote || onExportNote || onToggleFavorite) && (
         <div
           ref={contextMenuRef}
           className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
@@ -132,6 +138,17 @@ function SortableNoteItem({
               </button>
             </>
           )}
+          {onToggleFavorite && (
+            <button
+              onClick={() => {
+                onToggleFavorite(note.id, !note.favorite);
+                onContextMenuClose();
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+            >
+              {note.favorite ? "Unfavorite" : "Favorite"}
+            </button>
+          )}
           {onDeleteNote && (
             <button
               onClick={() => onDeleteClick(note.id)}
@@ -152,6 +169,7 @@ export function NoteList({
   onSelect,
   onDeleteNote,
   onExportNote,
+  onToggleFavorite,
   sortByManual,
 }: NoteListProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -190,6 +208,7 @@ export function NoteList({
             onSelect={onSelect}
             onDeleteNote={onDeleteNote}
             onExportNote={onExportNote}
+            onToggleFavorite={onToggleFavorite}
             sortByManual={sortByManual}
             contextMenu={contextMenu}
             onContextMenuOpen={(noteId, x, y) => setContextMenu({ noteId, x, y })}

@@ -61,6 +61,8 @@ const mockFetchNote = vi.fn();
 const mockFetchVersions = vi.fn();
 const mockFetchVersion = vi.fn();
 const mockRestoreVersion = vi.fn();
+const mockFetchFavoriteNotes = vi.fn();
+const mockToggleFolderFavoriteApi = vi.fn();
 const mockLogout = vi.fn();
 
 vi.mock("../api/offlineNotes.ts", () => ({
@@ -88,6 +90,8 @@ vi.mock("../api/offlineNotes.ts", () => ({
   fetchVersions: (...args: unknown[]) => mockFetchVersions(...args),
   fetchVersion: (...args: unknown[]) => mockFetchVersion(...args),
   restoreVersion: (...args: unknown[]) => mockRestoreVersion(...args),
+  fetchFavoriteNotes: (...args: unknown[]) => mockFetchFavoriteNotes(...args),
+  toggleFolderFavoriteApi: (...args: unknown[]) => mockToggleFolderFavoriteApi(...args),
 }));
 
 vi.mock("../hooks/useOfflineCache.ts", () => ({
@@ -144,6 +148,7 @@ const mockNote = {
   folderPath: null,
   tags: [],
   summary: null,
+  favorite: false,
   sortOrder: 0,
   createdAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-01T00:00:00.000Z",
@@ -175,6 +180,7 @@ beforeEach(() => {
   mockFetchNoteTitles.mockResolvedValue({ notes: [] });
   mockFetchBacklinks.mockResolvedValue({ backlinks: [] });
   mockFetchVersions.mockResolvedValue({ versions: [], total: 0 });
+  mockFetchFavoriteNotes.mockResolvedValue({ notes: [] });
 });
 
 describe("NotesPage", () => {
