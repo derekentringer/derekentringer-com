@@ -4,6 +4,8 @@ import type {
   RegisterRequest,
   RefreshResponse,
   User,
+  TotpSetupResponse,
+  TotpVerifySetupResponse,
 } from "@derekentringer/shared";
 import { apiFetch, setAccessToken } from "./client.ts";
 
@@ -122,5 +124,54 @@ export async function changePassword(
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.message || "Failed to change password");
+  }
+}
+
+export async function setupTotp(): Promise<TotpSetupResponse> {
+  const response = await apiFetch("/auth/totp/setup", { method: "POST" });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || "Failed to start 2FA setup");
+  }
+  return response.json();
+}
+
+export async function verifyTotpSetup(code: string): Promise<TotpVerifySetupResponse> {
+  const response = await apiFetch("/auth/totp/verify-setup", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || "Invalid verification code");
+  }
+  return response.json();
+}
+
+export async function verifyTotp(
+  totpToken: string,
+  code: string,
+): Promise<LoginResponse> {
+  const response = await apiFetch("/auth/totp/verify", {
+    method: "POST",
+    body: JSON.stringify({ totpToken, code }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || "Invalid verification code");
+  }
+  const data: LoginResponse = await response.json();
+  setAccessToken(data.accessToken);
+  return data;
+}
+
+export async function disableTotp(code: string): Promise<void> {
+  const response = await apiFetch("/auth/totp", {
+    method: "DELETE",
+    body: JSON.stringify({ code }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || "Failed to disable 2FA");
   }
 }

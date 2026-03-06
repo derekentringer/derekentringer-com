@@ -20,6 +20,9 @@ export type {
   ForgotPasswordRequest,
   ResetPasswordRequest,
   ChangePasswordRequest,
+  TotpSetupResponse,
+  TotpVerifySetupResponse,
+  TotpVerifyRequest,
 } from "./types/auth.js";
 
 export {

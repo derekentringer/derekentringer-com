@@ -23,6 +23,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
+  setUserFromLogin: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -73,6 +74,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event("auth:logout"));
   }, []);
 
+  const setUserFromLogin = useCallback((userData: User) => {
+    setUser(userData);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -82,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         logout,
+        setUserFromLogin,
       }}
     >
       {children}

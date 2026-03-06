@@ -86,3 +86,18 @@ export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
 }
+
+export interface TotpSetupResponse {
+  secret: string;
+  qrCodeDataUrl: string;
+  otpauthUrl: string;
+}
+
+export interface TotpVerifySetupResponse {
+  backupCodes: string[];
+}
+
+export interface TotpVerifyRequest {
+  totpToken: string;
+  code: string;
+}
