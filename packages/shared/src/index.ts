@@ -23,6 +23,7 @@ export type {
   TotpSetupResponse,
   TotpVerifySetupResponse,
   TotpVerifyRequest,
+  PasskeyInfo,
 } from "./types/auth.js";
 
 export {
