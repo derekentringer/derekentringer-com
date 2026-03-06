@@ -17,7 +17,7 @@ import noteRoutes from "./routes/notes.js";
 import aiRoutes from "./routes/ai.js";
 import adminRoutes from "./routes/admin.js";
 import totpRoutes from "./routes/totp.js";
-import passkeyRoutes from "./routes/passkey.js";
+
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -84,7 +84,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(aiRoutes, { prefix: "/ai" });
   app.register(adminRoutes, { prefix: "/admin" });
   app.register(totpRoutes, { prefix: "/auth/totp" });
-  app.register(passkeyRoutes, { prefix: "/auth/passkeys" });
+
 
   app.get("/robots.txt", async (_request, reply) => {
     reply.type("text/plain").send("User-agent: *\nDisallow: /\n");

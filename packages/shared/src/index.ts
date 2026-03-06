@@ -23,7 +23,7 @@ export type {
   TotpSetupResponse,
   TotpVerifySetupResponse,
   TotpVerifyRequest,
-  PasskeyInfo,
+
 } from "./types/auth.js";
 
 export {
@@ -33,7 +33,9 @@ export type {
   PasswordValidationResult,
 } from "./validation/password.js";
 
-export { encrypt, decrypt } from "./crypto/index.js";
+// Note: encrypt/decrypt are NOT re-exported here because they use Node's
+// crypto module, which breaks browser bundles. Import directly from
+// "@derekentringer/shared/crypto" in server-side code instead.
 
 export {
   AccountType,

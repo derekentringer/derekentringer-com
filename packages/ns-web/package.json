@@ -23,7 +23,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@lezer/highlight": "^1.2.3",
-    "@simplewebauthn/browser": "^13.2.2",
     "@tailwindcss/vite": "^4.2.0",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",

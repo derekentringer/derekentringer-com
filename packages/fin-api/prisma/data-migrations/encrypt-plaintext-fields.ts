@@ -14,7 +14,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../src/generated/prisma/client.js";
 import { initEncryptionKey, encryptField } from "../../src/lib/encryption.js";
-import { decrypt } from "@derekentringer/shared";
+import { decrypt } from "@derekentringer/shared/crypto";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;

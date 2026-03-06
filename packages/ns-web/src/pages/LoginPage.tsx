@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext.tsx";
 import { NsLogo } from "../components/NsLogo.tsx";
 import { TotpVerifyForm } from "../components/TotpVerifyForm.tsx";
 import { login as apiLogin, verifyTotp } from "../api/auth.ts";
-import { PasskeyButton } from "../components/PasskeyButton.tsx";
+
 
 export function LoginPage() {
   const { isAuthenticated, isLoading, setUserFromLogin } = useAuth();
@@ -130,15 +130,6 @@ export function LoginPage() {
             Create account
           </Link>
         </div>
-        <div className="relative flex items-center my-1">
-          <div className="flex-1 border-t border-border" />
-          <span className="px-3 text-xs text-muted-foreground">or</span>
-          <div className="flex-1 border-t border-border" />
-        </div>
-        <PasskeyButton
-          onSuccess={setUserFromLogin}
-          onError={(msg) => setError(msg)}
-        />
       </form>
     </div>
   );

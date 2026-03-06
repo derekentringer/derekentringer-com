@@ -41,8 +41,6 @@ export function loadConfig(): Config {
     openaiApiKey: process.env.OPENAI_API_KEY || "",
     resendApiKey: process.env.RESEND_API_KEY || "",
     appUrl: process.env.APP_URL || "http://localhost:3005",
-    rpId: process.env.RP_ID || "localhost",
-    rpName: process.env.RP_NAME || "NoteSync",
   };
 
   return cachedConfig;
@@ -61,8 +59,6 @@ export interface Config {
   openaiApiKey: string;
   resendApiKey: string;
   appUrl: string;
-  rpId: string;
-  rpName: string;
 }
 
 /** Reset cached config (for testing only) */

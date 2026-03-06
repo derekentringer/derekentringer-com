@@ -27,8 +27,7 @@ describe("loadConfig", () => {
     expect(config.openaiApiKey).toBe("");
     expect(config.resendApiKey).toBe("");
     expect(config.appUrl).toBe("http://localhost:3005");
-    expect(config.rpId).toBe("localhost");
-    expect(config.rpName).toBe("NoteSync");
+
   });
 
   it("returns custom values from env vars", () => {

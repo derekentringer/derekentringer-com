@@ -101,12 +101,3 @@ export interface TotpVerifyRequest {
   totpToken: string;
   code: string;
 }
-
-export interface PasskeyInfo {
-  id: string;
-  friendlyName: string | null;
-  deviceType: string | null;
-  createdAt: string;
-  lastUsedAt: string | null;
-  backedUp: boolean;
-}

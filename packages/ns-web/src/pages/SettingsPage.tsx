@@ -7,10 +7,7 @@ import { useEditorSettings, ACCENT_PRESETS, type ThemeMode, type ViewModeDefault
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
 import { enableEmbeddings, disableEmbeddings, getEmbeddingStatus } from "../api/ai.ts";
 import { setupTotp, verifyTotpSetup, disableTotp, getMe } from "../api/auth.ts";
-import { listPasskeys, deletePasskey, getRegisterOptions, verifyRegistration } from "../api/passkeys.ts";
-import { startRegistration, browserSupportsWebAuthn } from "@simplewebauthn/browser";
-import type { PublicKeyCredentialCreationOptionsJSON } from "@simplewebauthn/browser";
-import type { PasskeyInfo } from "@derekentringer/shared";
+
 import { getTrashRetention, setTrashRetention, getVersionInterval, setVersionInterval } from "../api/offlineNotes.ts";
 import { clearAllCaches, getDB } from "../lib/db.ts";
 import type { EmbeddingStatus } from "@derekentringer/shared/ns";
@@ -212,13 +209,6 @@ export function SettingsPage() {
   const [totpShowDisable, setTotpShowDisable] = useState(false);
   const [totpLoading, setTotpLoading] = useState(false);
 
-  // Passkey state
-  const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
-  const [passkeyLoading, setPasskeyLoading] = useState(false);
-  const [passkeyError, setPasskeyError] = useState("");
-  const [passkeyNameInput, setPasskeyNameInput] = useState("");
-  const [showPasskeyRegister, setShowPasskeyRegister] = useState(false);
-  const [passkeyDeleteConfirm, setPasskeyDeleteConfirm] = useState<string | null>(null);
 
   const loadEmbeddingStatus = useCallback(async () => {
     try {
@@ -237,12 +227,6 @@ export function SettingsPage() {
     }
   }, [aiSettings.masterAiEnabled, aiSettings.semanticSearch, loadEmbeddingStatus]);
 
-  // Load passkeys
-  useEffect(() => {
-    if (browserSupportsWebAuthn()) {
-      listPasskeys().then(setPasskeys).catch(() => {});
-    }
-  }, []);
 
   // Load trash retention setting
   useEffect(() => {
@@ -861,138 +845,6 @@ export function SettingsPage() {
               </div>
             )}
           </SectionCard>
-
-          {/* Passkeys */}
-          {browserSupportsWebAuthn() && (
-            <SectionCard title="Passkeys">
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Use biometric authentication (fingerprint, Face ID) for passwordless sign-in.
-                </p>
-
-                {passkeys.length > 0 && (
-                  <div className="space-y-2">
-                    {passkeys.map((pk) => (
-                      <div key={pk.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-foreground truncate">
-                            {pk.friendlyName || "Unnamed passkey"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            Added {new Date(pk.createdAt).toLocaleDateString()}
-                            {pk.lastUsedAt && ` · Last used ${new Date(pk.lastUsedAt).toLocaleDateString()}`}
-                          </div>
-                        </div>
-                        {passkeyDeleteConfirm === pk.id ? (
-                          <div className="flex gap-1 ml-2">
-                            <button
-                              onClick={async () => {
-                                setPasskeyLoading(true);
-                                try {
-                                  await deletePasskey(pk.id);
-                                  setPasskeys((prev) => prev.filter((p) => p.id !== pk.id));
-                                  setPasskeyDeleteConfirm(null);
-                                } catch (err) {
-                                  setPasskeyError(err instanceof Error ? err.message : "Failed to delete");
-                                } finally {
-                                  setPasskeyLoading(false);
-                                }
-                              }}
-                              disabled={passkeyLoading}
-                              className="px-2 py-1 rounded text-xs bg-destructive text-foreground hover:bg-destructive-hover transition-colors disabled:opacity-50"
-                            >
-                              Delete
-                            </button>
-                            <button
-                              onClick={() => setPasskeyDeleteConfirm(null)}
-                              className="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setPasskeyDeleteConfirm(pk.id)}
-                            className="ml-2 text-muted-foreground hover:text-error transition-colors"
-                            title="Delete passkey"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {showPasskeyRegister ? (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      placeholder="Passkey name (e.g., MacBook Pro)"
-                      value={passkeyNameInput}
-                      onChange={(e) => setPasskeyNameInput(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
-                      autoFocus
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        onClick={async () => {
-                          setPasskeyError("");
-                          setPasskeyLoading(true);
-                          try {
-                            const options = await getRegisterOptions();
-                            const credential = await startRegistration({
-                              optionsJSON: options as unknown as PublicKeyCredentialCreationOptionsJSON,
-                            });
-                            const result = await verifyRegistration(credential, passkeyNameInput || undefined);
-                            setPasskeys((prev) => [{
-                              id: result.id,
-                              friendlyName: result.friendlyName,
-                              deviceType: null,
-                              createdAt: new Date().toISOString(),
-                              lastUsedAt: null,
-                              backedUp: false,
-                            }, ...prev]);
-                            setShowPasskeyRegister(false);
-                            setPasskeyNameInput("");
-                          } catch (err) {
-                            const message = err instanceof Error ? err.message : "Registration failed";
-                            if (!message.includes("The operation either timed out or was not allowed")) {
-                              setPasskeyError(message);
-                            }
-                          } finally {
-                            setPasskeyLoading(false);
-                          }
-                        }}
-                        disabled={passkeyLoading}
-                        className="px-3 py-1.5 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover disabled:opacity-50 transition-colors"
-                      >
-                        {passkeyLoading ? "Registering..." : "Register Passkey"}
-                      </button>
-                      <button
-                        onClick={() => { setShowPasskeyRegister(false); setPasskeyNameInput(""); setPasskeyError(""); }}
-                        className="px-3 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setShowPasskeyRegister(true)}
-                    className="px-3 py-1.5 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors"
-                  >
-                    Register new passkey
-                  </button>
-                )}
-
-                {passkeyError && <p className="text-sm text-error">{passkeyError}</p>}
-              </div>
-            </SectionCard>
-          )}
 
           {/* Keyboard Shortcuts */}
           <SectionCard title="Keyboard Shortcuts">
