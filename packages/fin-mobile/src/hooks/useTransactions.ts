@@ -71,8 +71,7 @@ export function useUpdateTransaction() {
 export function useDeleteTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, pinToken }: { id: string; pinToken: string }) =>
-      deleteTransaction(id, pinToken),
+    mutationFn: ({ id }: { id: string }) => deleteTransaction(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });

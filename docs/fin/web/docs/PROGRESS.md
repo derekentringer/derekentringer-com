@@ -79,7 +79,7 @@
 ### Phase 7: Mobile & PWA — Low Priority
 
 - [ ] [16 — PWA Support](feature_planning/16-pwa-support.md)
-- [ ] [17 — React Native Mobile App](feature_planning/17-react-native-mobile-app.md)
+- [x] [17 — React Native Mobile App](feature_planning/17-react-native-mobile-app.md)
 
 ## Status Key
 

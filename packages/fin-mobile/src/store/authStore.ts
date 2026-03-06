@@ -6,24 +6,26 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   user: User | null;
-  pinToken: string | null;
-  pinTokenExpiry: number | null;
+}
+
+interface LoginResult {
+  requiresTotp?: boolean;
+  totpToken?: string;
+  mustChangePassword?: boolean;
 }
 
 interface AuthActions {
   initialize: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
-  verifyPin: (pin: string) => Promise<void>;
-  isPinValid: () => boolean;
+  verifyTotp: (totpToken: string, code: string) => Promise<void>;
+  setUser: (user: User) => void;
 }
 
-const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
+const useAuthStore = create<AuthState & AuthActions>()((set) => ({
   isAuthenticated: false,
   isLoading: true,
   user: null,
-  pinToken: null,
-  pinTokenExpiry: null,
 
   initialize: async () => {
     try {
@@ -44,34 +46,36 @@ const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
         }
       }
 
-      // Restore PIN token if available
-      const pinToken = await tokenStorage.getPinToken();
+      // Fetch real user data from the API
+      const user = await authApi.getMe();
 
-      // Single-user app — set placeholder admin user (no /me endpoint)
       set({
         isAuthenticated: true,
         isLoading: false,
-        user: {
-          id: "admin-001",
-          email: "admin",
-          role: "admin",
-          totpEnabled: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        pinToken,
+        user,
       });
     } catch {
+      await tokenStorage.clearAll();
       set({ isLoading: false, isAuthenticated: false });
     }
   },
 
-  login: async (email: string, password: string) => {
+  login: async (email: string, password: string): Promise<LoginResult> => {
     const data = await authApi.login({ email, password });
+
+    if (data.requiresTotp) {
+      return {
+        requiresTotp: true,
+        totpToken: data.totpToken,
+      };
+    }
+
     set({
       isAuthenticated: true,
       user: data.user,
     });
+
+    return { mustChangePassword: data.mustChangePassword };
   },
 
   logout: async () => {
@@ -81,24 +85,20 @@ const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
       set({
         isAuthenticated: false,
         user: null,
-        pinToken: null,
-        pinTokenExpiry: null,
       });
     }
   },
 
-  verifyPin: async (pin: string) => {
-    const data = await authApi.pinVerify(pin);
+  verifyTotp: async (totpToken: string, code: string) => {
+    const data = await authApi.verifyTotp(totpToken, code);
     set({
-      pinToken: data.pinToken,
-      pinTokenExpiry: Date.now() + data.expiresIn * 1000,
+      isAuthenticated: true,
+      user: data.user,
     });
   },
 
-  isPinValid: () => {
-    const { pinToken, pinTokenExpiry } = get();
-    if (!pinToken || !pinTokenExpiry) return false;
-    return Date.now() < pinTokenExpiry;
+  setUser: (user: User) => {
+    set({ user });
   },
 }));
 

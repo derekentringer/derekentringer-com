@@ -49,13 +49,8 @@ export async function updateBill(
   return data;
 }
 
-export async function deleteBill(
-  id: string,
-  pinToken: string,
-): Promise<void> {
-  await api.delete(`/bills/${id}`, {
-    headers: { "x-pin-token": pinToken },
-  });
+export async function deleteBill(id: string): Promise<void> {
+  await api.delete(`/bills/${id}`);
 }
 
 export async function markBillPaid(

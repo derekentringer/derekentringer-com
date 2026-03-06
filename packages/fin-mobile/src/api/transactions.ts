@@ -47,13 +47,8 @@ export async function updateTransaction(
   return data;
 }
 
-export async function deleteTransaction(
-  id: string,
-  pinToken: string,
-): Promise<void> {
-  await api.delete(`/transactions/${id}`, {
-    headers: { "x-pin-token": pinToken },
-  });
+export async function deleteTransaction(id: string): Promise<void> {
+  await api.delete(`/transactions/${id}`);
 }
 
 export async function bulkUpdateCategory(

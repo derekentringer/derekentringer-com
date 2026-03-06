@@ -4,16 +4,17 @@ import type {
   LoginRequest,
   LoginResponse,
   RefreshResponse,
-  PinVerifyRequest,
-  PinVerifyResponse,
   LogoutResponse,
+  User,
+  TotpSetupResponse,
+  TotpVerifySetupResponse,
+  RegisterRequest,
 } from "@derekentringer/shared";
 
 export const STORAGE_KEYS = {
   ACCESS_TOKEN: "fin_access_token",
   REFRESH_TOKEN: "fin_refresh_token",
   TOKEN_EXPIRY: "fin_token_expiry",
-  PIN_TOKEN: "fin_pin_token",
 } as const;
 
 const API_BASE_URL = __DEV__
@@ -40,18 +41,11 @@ export const tokenStorage = {
   async setTokenExpiry(expiry: number): Promise<void> {
     await SecureStore.setItemAsync(STORAGE_KEYS.TOKEN_EXPIRY, String(expiry));
   },
-  async getPinToken(): Promise<string | null> {
-    return SecureStore.getItemAsync(STORAGE_KEYS.PIN_TOKEN);
-  },
-  async setPinToken(token: string): Promise<void> {
-    await SecureStore.setItemAsync(STORAGE_KEYS.PIN_TOKEN, token);
-  },
   async clearAll(): Promise<void> {
     await Promise.all([
       SecureStore.deleteItemAsync(STORAGE_KEYS.ACCESS_TOKEN),
       SecureStore.deleteItemAsync(STORAGE_KEYS.REFRESH_TOKEN),
       SecureStore.deleteItemAsync(STORAGE_KEYS.TOKEN_EXPIRY),
-      SecureStore.deleteItemAsync(STORAGE_KEYS.PIN_TOKEN),
     ]);
   },
 };
@@ -161,15 +155,18 @@ export const authApi = {
       credentials,
     );
     const data = response.data;
-    const expiry = Date.now() + data.expiresIn * 1000;
 
-    await Promise.all([
-      tokenStorage.setAccessToken(data.accessToken),
-      tokenStorage.setTokenExpiry(expiry),
-      ...(data.refreshToken
-        ? [tokenStorage.setRefreshToken(data.refreshToken)]
-        : []),
-    ]);
+    // Only store tokens if login is complete (no TOTP required)
+    if (!data.requiresTotp) {
+      const expiry = Date.now() + data.expiresIn * 1000;
+      await Promise.all([
+        tokenStorage.setAccessToken(data.accessToken),
+        tokenStorage.setTokenExpiry(expiry),
+        ...(data.refreshToken
+          ? [tokenStorage.setRefreshToken(data.refreshToken)]
+          : []),
+      ]);
+    }
 
     return data;
   },
@@ -187,15 +184,92 @@ export const authApi = {
     }
   },
 
-  async pinVerify(pin: string): Promise<PinVerifyResponse> {
-    const response = await api.post<PinVerifyResponse>("/auth/pin/verify", {
-      pin,
-    } satisfies PinVerifyRequest);
-    const data = response.data;
+  async getMe(): Promise<User> {
+    const response = await api.get<{ user: User }>("/auth/me");
+    return response.data.user;
+  },
 
-    await tokenStorage.setPinToken(data.pinToken);
+  async verifyTotp(
+    totpToken: string,
+    code: string,
+  ): Promise<LoginResponse> {
+    const response = await api.post<LoginResponse>("/auth/totp/verify", {
+      totpToken,
+      code,
+    });
+    const data = response.data;
+    const expiry = Date.now() + data.expiresIn * 1000;
+
+    await Promise.all([
+      tokenStorage.setAccessToken(data.accessToken),
+      tokenStorage.setTokenExpiry(expiry),
+      ...(data.refreshToken
+        ? [tokenStorage.setRefreshToken(data.refreshToken)]
+        : []),
+    ]);
 
     return data;
+  },
+
+  async setupTotp(): Promise<TotpSetupResponse> {
+    const response = await api.post<TotpSetupResponse>("/auth/totp/setup");
+    return response.data;
+  },
+
+  async verifyTotpSetup(code: string): Promise<TotpVerifySetupResponse> {
+    const response = await api.post<TotpVerifySetupResponse>(
+      "/auth/totp/verify-setup",
+      { code },
+    );
+    return response.data;
+  },
+
+  async disableTotp(code: string): Promise<void> {
+    await api.delete("/auth/totp", { data: { code } });
+  },
+
+  async changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    await api.post("/auth/change-password", {
+      currentPassword,
+      newPassword,
+    });
+  },
+
+  async revokeAllSessions(): Promise<void> {
+    await api.post("/auth/sessions/revoke-all");
+  },
+
+  async register(
+    email: string,
+    password: string,
+    displayName?: string,
+  ): Promise<LoginResponse> {
+    const body: RegisterRequest = { email, password };
+    if (displayName) body.displayName = displayName;
+    const response = await api.post<LoginResponse>("/auth/register", body);
+    const data = response.data;
+    const expiry = Date.now() + data.expiresIn * 1000;
+
+    await Promise.all([
+      tokenStorage.setAccessToken(data.accessToken),
+      tokenStorage.setTokenExpiry(expiry),
+      ...(data.refreshToken
+        ? [tokenStorage.setRefreshToken(data.refreshToken)]
+        : []),
+    ]);
+
+    return data;
+  },
+
+  async forgotPassword(email: string): Promise<void> {
+    await api.post("/auth/forgot-password", { email });
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    await api.post("/auth/reset-password", { token, newPassword });
   },
 };
 

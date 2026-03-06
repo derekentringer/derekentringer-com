@@ -32,7 +32,6 @@ import {
 import { BillInstanceRow } from "@/components/bills/BillInstanceRow";
 import { BillDefinitionRow } from "@/components/bills/BillDefinitionRow";
 import { BillFormSheet } from "@/components/bills/BillFormSheet";
-import { PinGateModal } from "@/components/common/PinGateModal";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonChartCard } from "@/components/common/SkeletonLoader";
 import { ErrorCard } from "@/components/common/ErrorCard";
@@ -224,9 +223,6 @@ function AllBillsContent({ navigation }: { navigation: Nav }) {
   const [refreshing, setRefreshing] = useState(false);
   const [formBill, setFormBill] = useState<Bill | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [showPin, setShowPin] = useState(false);
-
   const { data, isLoading, error, refetch } = useBills();
   const createBill = useCreateBill();
   const updateBill = useUpdateBill();
@@ -274,23 +270,11 @@ function AllBillsContent({ navigation }: { navigation: Nav }) {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          setDeletingId(bill.id);
-          setShowPin(true);
+          deleteBill.mutate({ id: bill.id });
         },
       },
     ]);
-  }, []);
-
-  const handlePinVerified = useCallback(
-    (pinToken: string) => {
-      setShowPin(false);
-      if (deletingId) {
-        deleteBill.mutate({ id: deletingId, pinToken });
-        setDeletingId(null);
-      }
-    },
-    [deletingId, deleteBill],
-  );
+  }, [deleteBill]);
 
   if (isLoading) return <SkeletonChartCard height={200} />;
   if (error)
@@ -366,16 +350,6 @@ function AllBillsContent({ navigation }: { navigation: Nav }) {
         />
       )}
 
-      <PinGateModal
-        visible={showPin}
-        onClose={() => {
-          setShowPin(false);
-          setDeletingId(null);
-        }}
-        onVerified={handlePinVerified}
-        title="Delete Bill"
-        description="Enter PIN to confirm deletion"
-      />
     </View>
   );
 }

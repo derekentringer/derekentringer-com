@@ -54,6 +54,13 @@ export function MoreScreen() {
         />
         <MenuSeparator />
         <MenuRow
+          icon="shield-lock-outline"
+          label="Security"
+          subtitle="Password, 2FA, sessions"
+          onPress={() => navigation.navigate("Security")}
+        />
+        <MenuSeparator />
+        <MenuRow
           icon="bell-outline"
           label="Notifications"
           subtitle="Alerts and reminders"
