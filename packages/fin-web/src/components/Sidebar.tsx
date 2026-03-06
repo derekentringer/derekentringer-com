@@ -21,6 +21,7 @@ import {
   LineChart,
   Target,
   Calculator,
+  Shield,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAccountTypes } from "../context/AccountTypesContext.tsx";
 import { FinLogo } from "./FinLogo.tsx";
+import { useAuth } from "../context/AuthContext.tsx";
 
 const SLUG_ICONS: Record<string, LucideIcon> = {
   checking: Banknote,
@@ -86,6 +88,7 @@ function NavItems({
 }) {
   const location = useLocation();
   const { activeGroups, groupCounts } = useAccountTypes();
+  const { user } = useAuth();
   const [accountsOpen, setAccountsOpen] = useState(true);
   const isAccountsActive = location.pathname.startsWith("/accounts/");
 
@@ -223,6 +226,48 @@ function NavItems({
 
         return link;
       })}
+      {user?.role === "admin" && (
+        <>
+          <Separator className="my-2" />
+          {isCollapsed ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <NavLink
+                  to="/admin"
+                  onClick={onNavClick}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors no-underline hover:no-underline justify-center px-2",
+                      isActive
+                        ? "bg-accent text-foreground font-bold"
+                        : "text-muted hover:bg-accent hover:text-foreground",
+                    )
+                  }
+                >
+                  <Shield className="h-5 w-5 shrink-0" />
+                </NavLink>
+              </TooltipTrigger>
+              <TooltipContent side="right">Admin</TooltipContent>
+            </Tooltip>
+          ) : (
+            <NavLink
+              to="/admin"
+              onClick={onNavClick}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors no-underline hover:no-underline",
+                  isActive
+                    ? "bg-accent text-foreground font-bold"
+                    : "text-muted hover:bg-accent hover:text-foreground",
+                )
+              }
+            >
+              <Shield className="h-5 w-5 shrink-0" />
+              <span>Admin</span>
+            </NavLink>
+          )}
+        </>
+      )}
     </nav>
   );
 }

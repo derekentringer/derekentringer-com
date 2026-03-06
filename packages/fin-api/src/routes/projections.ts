@@ -33,6 +33,7 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const monthsRaw = parseInt(request.query.months || "12", 10);
         const months = VALID_NET_INCOME_MONTHS.includes(monthsRaw)
           ? monthsRaw
@@ -48,7 +49,7 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
           Math.min(50, expenseAdjRaw),
         );
 
-        const result = await computeNetIncomeProjection({
+        const result = await computeNetIncomeProjection(userId, {
           months,
           incomeAdjustmentPct,
           expenseAdjustmentPct,
@@ -82,6 +83,7 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const monthsRaw = parseInt(request.query.months || "12", 10);
         const months = VALID_ACCOUNT_BALANCE_MONTHS.includes(monthsRaw)
           ? monthsRaw
@@ -97,7 +99,7 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
           Math.min(50, expenseAdjRaw),
         );
 
-        const result = await computeAccountProjections({
+        const result = await computeAccountProjections(userId, {
           months,
           incomeAdjustmentPct,
           expenseAdjustmentPct,
@@ -123,7 +125,8 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        const accounts = await listSavingsAccounts();
+        const userId = request.user.sub;
+        const accounts = await listSavingsAccounts(userId);
         return reply.send({ accounts });
       } catch (e) {
         request.log.error(e, "Failed to list savings accounts");
@@ -157,6 +160,8 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.accountId)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -187,7 +192,7 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
           }
         }
 
-        const result = await computeSavingsProjection({
+        const result = await computeSavingsProjection(userId, {
           accountId: request.params.accountId,
           months,
           contributionOverride,
@@ -226,8 +231,9 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const includeMortgages = request.query.includeMortgages === "true";
-        const accounts = await listDebtAccounts(includeMortgages);
+        const accounts = await listDebtAccounts(userId, includeMortgages);
         return reply.send({ accounts });
       } catch (e) {
         request.log.error(e, "Failed to list debt accounts");
@@ -265,6 +271,7 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const extraRaw = parseFloat(request.query.extraPayment || "0") || 0;
         const extraPayment = Math.max(0, Math.min(50000, extraRaw));
 
@@ -291,7 +298,7 @@ export default async function projectionRoutes(fastify: FastifyInstance) {
           ? maxMonthsRaw
           : 360;
 
-        const result = await computeDebtPayoff({
+        const result = await computeDebtPayoff(userId, {
           extraPayment,
           includeMortgages,
           accountIds,

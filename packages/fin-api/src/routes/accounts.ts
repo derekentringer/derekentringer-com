@@ -4,8 +4,6 @@ import {
   type CreateAccountRequest,
   type UpdateAccountRequest,
 } from "@derekentringer/shared";
-import { requirePin } from "@derekentringer/shared/auth/pinVerify";
-import { loadConfig } from "../config.js";
 import {
   createAccount,
   getAccount,
@@ -75,9 +73,6 @@ export default async function accountRoutes(fastify: FastifyInstance) {
   // All routes require auth
   fastify.addHook("onRequest", fastify.authenticate);
 
-  const config = loadConfig();
-  const pinGuard = requirePin(config.pinTokenSecret);
-
   // GET / — list accounts
   fastify.get<{ Querystring: { active?: string; type?: string } }>(
     "/",
@@ -86,13 +81,14 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const { active, type } = request.query;
         const filter: { isActive?: boolean; type?: string } = {};
         if (active === "true") filter.isActive = true;
         if (active === "false") filter.isActive = false;
         if (type) filter.type = type;
 
-        const accounts = await listAccounts(filter);
+        const accounts = await listAccounts(userId, filter);
         return reply.send({ accounts });
       } catch (e) {
         request.log.error(e, "Failed to list accounts");
@@ -114,6 +110,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { order } = request.body;
 
       if (!Array.isArray(order) || order.length === 0) {
@@ -142,7 +139,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        await reorderAccounts(order);
+        await reorderAccounts(userId, order);
         return reply.status(204).send();
       } catch (e) {
         request.log.error(e, "Failed to reorder accounts");
@@ -162,6 +159,8 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -171,7 +170,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const account = await getAccount(request.params.id);
+        const account = await getAccount(userId, request.params.id);
         if (!account) {
           return reply.status(404).send({
             statusCode: 404,
@@ -199,6 +198,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateAccountRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { name, type, institution, currentBalance, estimatedValue, interestRate } =
         request.body;
 
@@ -248,7 +248,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const account = await createAccount(request.body);
+        const account = await createAccount(userId, request.body);
         return reply.status(201).send({ account });
       } catch (e) {
         request.log.error(e, "Failed to create account");
@@ -272,6 +272,8 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -329,7 +331,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const account = await updateAccount(request.params.id, body);
+        const account = await updateAccount(userId, request.params.id, body);
         if (!account) {
           return reply.status(404).send({
             statusCode: 404,
@@ -349,14 +351,15 @@ export default async function accountRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete account (PIN-protected: cascades to transactions, balances, bills)
+  // DELETE /:id — delete account (cascades to transactions, balances, bills)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
-    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -366,7 +369,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteAccount(request.params.id);
+        const deleted = await deleteAccount(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,

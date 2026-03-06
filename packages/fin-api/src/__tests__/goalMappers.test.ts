@@ -80,6 +80,7 @@ describe("Goal mappers", () => {
 
     const row = {
       id: "goal-123",
+      userId: "test-user-1",
       ...encrypted,
       priority: encrypted.priority ?? 0,
       isActive: true,
@@ -122,6 +123,7 @@ describe("Goal mappers", () => {
 
     const row = {
       id: "goal-456",
+      userId: "test-user-1",
       ...encrypted,
       priority: encrypted.priority ?? 0,
       isActive: true,
@@ -154,6 +156,7 @@ describe("Goal mappers", () => {
 
     const row = {
       id: "goal-789",
+      userId: "test-user-1",
       ...encrypted,
       priority: encrypted.priority ?? 0,
       isActive: false,
@@ -265,6 +268,7 @@ describe("Goal mappers", () => {
 
     const row = {
       id: "goal-mc",
+      userId: "test-user-1",
       ...encrypted,
       priority: encrypted.priority ?? 0,
       isActive: true,

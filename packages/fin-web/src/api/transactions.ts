@@ -74,7 +74,6 @@ export async function bulkUpdateCategory(
 export async function uploadCsvPreview(
   accountId: string,
   file: File,
-  pinToken: string,
   csvParserId?: string,
 ): Promise<CsvImportPreviewResponse> {
   const searchParams = new URLSearchParams({ accountId });
@@ -88,7 +87,6 @@ export async function uploadCsvPreview(
     {
       method: "POST",
       body: formData,
-      headers: { "x-pin-token": pinToken },
     },
   );
 
@@ -101,12 +99,10 @@ export async function uploadCsvPreview(
 
 export async function confirmImport(
   data: CsvImportConfirmRequest,
-  pinToken: string,
 ): Promise<CsvImportConfirmResponse> {
   const res = await apiFetch("/transactions/import/confirm", {
     method: "POST",
     body: JSON.stringify(data),
-    headers: { "x-pin-token": pinToken },
   });
 
   if (!res.ok) {
@@ -118,11 +114,9 @@ export async function confirmImport(
 
 export async function deleteTransaction(
   id: string,
-  pinToken: string,
 ): Promise<void> {
   const res = await apiFetch(`/transactions/${id}`, {
     method: "DELETE",
-    headers: { "x-pin-token": pinToken },
   });
   if (!res.ok) throw new Error("Failed to delete transaction");
 }

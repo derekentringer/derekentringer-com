@@ -15,7 +15,6 @@ export async function fetchBalances(accountId: string): Promise<{ balances: Bala
 export async function uploadPdfPreview(
   accountId: string,
   file: File,
-  pinToken: string,
 ): Promise<PdfImportPreviewResponse> {
   const searchParams = new URLSearchParams({ accountId });
 
@@ -27,7 +26,6 @@ export async function uploadPdfPreview(
     {
       method: "POST",
       body: formData,
-      headers: { "x-pin-token": pinToken },
     },
   );
 
@@ -49,12 +47,10 @@ export async function uploadPdfPreview(
 
 export async function confirmPdfImport(
   data: PdfImportConfirmRequest,
-  pinToken: string,
 ): Promise<PdfImportConfirmResponse> {
   const res = await apiFetch("/balances/import/confirm", {
     method: "POST",
     body: JSON.stringify(data),
-    headers: { "x-pin-token": pinToken },
   });
 
   if (!res.ok) {

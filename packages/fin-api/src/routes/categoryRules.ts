@@ -49,7 +49,8 @@ export default async function categoryRuleRoutes(fastify: FastifyInstance) {
     "/",
     async (_request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const categoryRules = await listCategoryRules();
+        const userId = _request.user.sub;
+        const categoryRules = await listCategoryRules(userId);
         return reply.send({ categoryRules });
       } catch (e) {
         _request.log.error(e, "Failed to list category rules");
@@ -75,6 +76,8 @@ export default async function categoryRuleRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!VALID_MATCH_TYPES.includes(request.body.matchType)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -84,11 +87,11 @@ export default async function categoryRuleRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const categoryRule = await createCategoryRule(request.body);
+        const categoryRule = await createCategoryRule(userId, request.body);
         let appliedCount: number | undefined;
 
         if (request.query.apply === "true") {
-          appliedCount = await applyRuleToTransactions(categoryRule);
+          appliedCount = await applyRuleToTransactions(userId, categoryRule);
         }
 
         return reply.status(201).send({ categoryRule, appliedCount });
@@ -118,6 +121,8 @@ export default async function categoryRuleRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -139,6 +144,7 @@ export default async function categoryRuleRoutes(fastify: FastifyInstance) {
 
       try {
         const categoryRule = await updateCategoryRule(
+          userId,
           request.params.id,
           request.body,
         );
@@ -152,7 +158,7 @@ export default async function categoryRuleRoutes(fastify: FastifyInstance) {
 
         let appliedCount: number | undefined;
         if (request.query.apply === "true") {
-          appliedCount = await applyRuleToTransactions(categoryRule);
+          appliedCount = await applyRuleToTransactions(userId, categoryRule);
         }
 
         return reply.send({ categoryRule, appliedCount });
@@ -173,6 +179,8 @@ export default async function categoryRuleRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -182,7 +190,7 @@ export default async function categoryRuleRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteCategoryRule(request.params.id);
+        const deleted = await deleteCategoryRule(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,

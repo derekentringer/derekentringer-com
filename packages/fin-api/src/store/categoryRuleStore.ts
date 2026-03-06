@@ -21,25 +21,32 @@ function toRule(row: {
   };
 }
 
-export async function listCategoryRules(): Promise<CategoryRule[]> {
+export async function listCategoryRules(
+  userId: string,
+): Promise<CategoryRule[]> {
   const prisma = getPrisma();
   const rows = await prisma.categoryRule.findMany({
+    where: { userId },
     orderBy: { priority: "asc" },
   });
   return rows.map(toRule);
 }
 
-export async function createCategoryRule(data: {
-  pattern: string;
-  matchType: RuleMatchType;
-  category: string;
-  priority?: number;
-}): Promise<CategoryRule> {
+export async function createCategoryRule(
+  userId: string,
+  data: {
+    pattern: string;
+    matchType: RuleMatchType;
+    category: string;
+    priority?: number;
+  },
+): Promise<CategoryRule> {
   const prisma = getPrisma();
   const priority =
     data.priority ?? (data.matchType === "exact" ? 0 : 100);
   const row = await prisma.categoryRule.create({
     data: {
+      userId,
       pattern: data.pattern,
       matchType: data.matchType,
       category: data.category,
@@ -50,6 +57,7 @@ export async function createCategoryRule(data: {
 }
 
 export async function updateCategoryRule(
+  userId: string,
   id: string,
   data: {
     pattern?: string;
@@ -59,39 +67,22 @@ export async function updateCategoryRule(
   },
 ): Promise<CategoryRule | null> {
   const prisma = getPrisma();
-  try {
-    const row = await prisma.categoryRule.update({
-      where: { id },
-      data,
-    });
-    return toRule(row);
-  } catch (e: unknown) {
-    if (
-      e !== null &&
-      typeof e === "object" &&
-      "code" in e &&
-      (e as { code: string }).code === "P2025"
-    ) {
-      return null;
-    }
-    throw e;
-  }
+  const existing = await prisma.categoryRule.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return null;
+  const row = await prisma.categoryRule.update({
+    where: { id },
+    data,
+  });
+  return toRule(row);
 }
 
-export async function deleteCategoryRule(id: string): Promise<boolean> {
+export async function deleteCategoryRule(
+  userId: string,
+  id: string,
+): Promise<boolean> {
   const prisma = getPrisma();
-  try {
-    await prisma.categoryRule.delete({ where: { id } });
-    return true;
-  } catch (e: unknown) {
-    if (
-      e !== null &&
-      typeof e === "object" &&
-      "code" in e &&
-      (e as { code: string }).code === "P2025"
-    ) {
-      return false;
-    }
-    throw e;
-  }
+  const existing = await prisma.categoryRule.findUnique({ where: { id } });
+  if (!existing || existing.userId !== userId) return false;
+  await prisma.categoryRule.delete({ where: { id } });
+  return true;
 }

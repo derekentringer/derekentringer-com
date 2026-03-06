@@ -1,26 +1,38 @@
 import crypto from "crypto";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import bcrypt from "bcryptjs";
-import { signPinToken } from "@derekentringer/shared/auth/pinVerify";
 import { loadConfig } from "../config.js";
+import { getUserByEmail, getUserById, createUser, updateUser } from "../store/userStore.js";
 import {
   storeRefreshToken,
   lookupRefreshToken,
   revokeRefreshToken,
   revokeAllRefreshTokens,
 } from "../store/refreshTokenStore.js";
+import {
+  createPasswordResetToken,
+  lookupPasswordResetToken,
+  deletePasswordResetTokens,
+} from "../store/passwordResetStore.js";
+import { sendPasswordResetEmail } from "../services/emailService.js";
+import { getSetting } from "../store/settingStore.js";
+import { seedDefaultCategories } from "../store/categoryStore.js";
+import { seedDefaultPreferences } from "../store/notificationStore.js";
+import { toUserResponse } from "../lib/mappers.js";
+import { validatePasswordStrength } from "@derekentringer/shared";
 import type {
   LoginRequest,
   LoginResponse,
   RefreshResponse,
-  PinVerifyRequest,
-  PinVerifyResponse,
   LogoutResponse,
   RevokeAllSessionsResponse,
+  RegisterRequest,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  ChangePasswordRequest,
 } from "@derekentringer/shared";
 
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
-const ADMIN_USER_ID = "admin-001";
 
 function isMobileClient(request: FastifyRequest): boolean {
   return request.headers["x-client-type"] === "mobile";
@@ -48,17 +60,6 @@ const loginSchema = {
   },
 };
 
-const pinVerifySchema = {
-  body: {
-    type: "object" as const,
-    required: ["pin"],
-    additionalProperties: false,
-    properties: {
-      pin: { type: "string" },
-    },
-  },
-};
-
 export default async function authRoutes(fastify: FastifyInstance) {
   const config = loadConfig();
 
@@ -78,13 +79,13 @@ export default async function authRoutes(fastify: FastifyInstance) {
       const { email, password } = request.body;
 
       // Always run bcrypt.compare to prevent timing-based enumeration.
-      // Use a dummy hash when credentials don't match so both paths take equal time.
+      // Use a dummy hash when user doesn't exist so both paths take equal time.
       const DUMMY_HASH = "$2b$10$0000000000000000000000000000000000000000000000000000";
-      const isEmailValid = email === config.adminUsername;
-      const hashToCompare = isEmailValid ? config.adminPasswordHash : DUMMY_HASH;
+      const user = await getUserByEmail(email);
+      const hashToCompare = user ? user.passwordHash : DUMMY_HASH;
       const isPasswordValid = await bcrypt.compare(password, hashToCompare);
 
-      if (!isEmailValid || !isPasswordValid) {
+      if (!user || !isPasswordValid) {
         return reply.status(401).send({
           statusCode: 401,
           error: "Unauthorized",
@@ -92,30 +93,53 @@ export default async function authRoutes(fastify: FastifyInstance) {
         });
       }
 
+      // Check if TOTP is enabled — require second step
+      if (user.totpEnabled) {
+        // Issue a short-lived totpToken for the second step
+        const totpToken = fastify.jwt.sign({
+          sub: user.id,
+          email: user.email,
+          role: user.role,
+          type: "totp-pending",
+        });
+        return reply.send({
+          requiresTotp: true,
+          totpToken,
+        });
+      }
+
       try {
-        const now = new Date().toISOString();
+        // Check if password change is required
+        if (user.mustChangePassword) {
+          const limitedToken = fastify.jwt.sign(
+            { sub: user.id, email: user.email, role: user.role },
+            { expiresIn: "15m" },
+          );
+          return reply.send({
+            accessToken: limitedToken,
+            expiresIn: 900,
+            mustChangePassword: true,
+            user: toUserResponse(user),
+            ...(isMobileClient(request) && { refreshToken: undefined }),
+          });
+        }
+
+        // Full login
         const accessToken = fastify.jwt.sign({
-          sub: ADMIN_USER_ID,
-          email: config.adminUsername,
-          role: "admin",
+          sub: user.id,
+          email: user.email,
+          role: user.role,
         });
 
         const refreshToken = crypto.randomBytes(32).toString("hex");
-        await storeRefreshToken(refreshToken, ADMIN_USER_ID);
+        await storeRefreshToken(refreshToken, user.id);
 
         reply.setCookie("refreshToken", refreshToken, refreshCookieOptions(config.nodeEnv));
 
         const response: LoginResponse = {
           accessToken,
           expiresIn: 900,
-          user: {
-            id: ADMIN_USER_ID,
-            email: config.adminUsername,
-            role: "admin",
-            totpEnabled: false,
-            createdAt: now,
-            updatedAt: now,
-          },
+          user: toUserResponse(user),
           ...(isMobileClient(request) && { refreshToken }),
         };
 
@@ -165,6 +189,17 @@ export default async function authRoutes(fastify: FastifyInstance) {
           });
         }
 
+        // Look up the user to get current email/role
+        const user = await getUserById(stored.userId);
+        if (!user) {
+          await revokeRefreshToken(token);
+          return reply.status(401).send({
+            statusCode: 401,
+            error: "Unauthorized",
+            message: "User not found",
+          });
+        }
+
         // Rotate: revoke old, create new
         await revokeRefreshToken(token);
 
@@ -172,9 +207,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
         await storeRefreshToken(newRefreshToken, stored.userId);
 
         const accessToken = fastify.jwt.sign({
-          sub: stored.userId,
-          email: stored.userId === ADMIN_USER_ID ? config.adminUsername : stored.userId,
-          role: "admin",
+          sub: user.id,
+          email: user.email,
+          role: user.role,
         });
 
         reply.setCookie("refreshToken", newRefreshToken, refreshCookieOptions(config.nodeEnv));
@@ -182,6 +217,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         const response: RefreshResponse = {
           accessToken,
           expiresIn: 900,
+          user: toUserResponse(user),
           ...(isMobileClient(request) && { refreshToken: newRefreshToken }),
         };
 
@@ -230,6 +266,33 @@ export default async function authRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // GET /me — return current user profile
+  fastify.get(
+    "/me",
+    { onRequest: [fastify.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = await getUserById(request.user.sub);
+        if (!user) {
+          return reply.status(404).send({
+            statusCode: 404,
+            error: "Not Found",
+            message: "User not found",
+          });
+        }
+
+        return reply.send({ user: toUserResponse(user) });
+      } catch (e) {
+        request.log.error(e, "Failed to get user profile");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to get user profile",
+        });
+      }
+    },
+  );
+
   // POST /sessions/revoke-all — revoke all refresh tokens for current user
   fastify.post(
     "/sessions/revoke-all",
@@ -259,48 +322,280 @@ export default async function authRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // POST /pin/verify — only if PIN_HASH is configured
-  if (config.pinHash) {
-    fastify.post<{ Body: PinVerifyRequest }>(
-      "/pin/verify",
-      {
-        schema: pinVerifySchema,
-        onRequest: [fastify.authenticate],
-        config: {
-          rateLimit: {
-            max: 5,
-            timeWindow: "15 minutes",
+  // POST /register — registration gated by approved email list
+  fastify.post<{ Body: RegisterRequest }>(
+    "/register",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["email", "password"],
+          additionalProperties: false,
+          properties: {
+            email: { type: "string", format: "email" },
+            password: { type: "string" },
+            displayName: { type: "string" },
           },
         },
       },
-      async (
-        request: FastifyRequest<{ Body: PinVerifyRequest }>,
-        reply: FastifyReply,
-      ) => {
-        const { pin } = request.body;
+      config: {
+        rateLimit: {
+          max: 3,
+          timeWindow: "1 hour",
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Body: RegisterRequest }>, reply: FastifyReply) => {
+      const { email, password, displayName } = request.body;
 
-        const valid = await bcrypt.compare(pin, config.pinHash!);
-        if (!valid) {
-          return reply.status(401).send({
-            statusCode: 401,
-            error: "Unauthorized",
-            message: "Invalid PIN",
-          });
-        }
+      // Check approved emails list
+      const approvedRaw = await getSetting("approvedEmails");
+      if (!approvedRaw) {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: "Forbidden",
+          message: "Registration is not currently open",
+        });
+      }
 
-        const user = request.user;
-        const pinToken = signPinToken(
-          { sub: user.sub, type: "pin" },
-          config.pinTokenSecret,
-        );
+      const approvedEmails = approvedRaw
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean);
 
-        const response: PinVerifyResponse = {
-          pinToken,
+      if (!approvedEmails.includes(email.toLowerCase())) {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: "Forbidden",
+          message: "Email not approved for registration",
+        });
+      }
+
+      // Validate password strength
+      const validation = validatePasswordStrength(password);
+      if (!validation.valid) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: validation.errors.join("; "),
+        });
+      }
+
+      // Check for existing user
+      const existing = await getUserByEmail(email);
+      if (existing) {
+        return reply.status(409).send({
+          statusCode: 409,
+          error: "Conflict",
+          message: "An account with this email already exists",
+        });
+      }
+
+      try {
+        const user = await createUser({ email, password, displayName });
+
+        // Seed defaults for the new user
+        await seedDefaultCategories(user.id);
+        await seedDefaultPreferences(user.id);
+
+        // Auto-login
+        const accessToken = fastify.jwt.sign({
+          sub: user.id,
+          email: user.email,
+          role: user.role,
+        });
+
+        const refreshToken = crypto.randomBytes(32).toString("hex");
+        await storeRefreshToken(refreshToken, user.id);
+
+        reply.setCookie("refreshToken", refreshToken, refreshCookieOptions(config.nodeEnv));
+
+        const response: LoginResponse = {
+          accessToken,
           expiresIn: 900,
+          user: toUserResponse(user),
+          ...(isMobileClient(request) && { refreshToken }),
         };
 
-        return reply.send(response);
+        return reply.status(201).send(response);
+      } catch (e) {
+        request.log.error(e, "Failed to register user");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to register",
+        });
+      }
+    },
+  );
+
+  // POST /forgot-password — send password reset email (always returns 200)
+  fastify.post<{ Body: ForgotPasswordRequest }>(
+    "/forgot-password",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["email"],
+          additionalProperties: false,
+          properties: {
+            email: { type: "string", format: "email" },
+          },
+        },
       },
-    );
-  }
+      config: {
+        rateLimit: {
+          max: 3,
+          timeWindow: "15 minutes",
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Body: ForgotPasswordRequest }>, reply: FastifyReply) => {
+      const { email } = request.body;
+
+      // Always return 200 to prevent email enumeration
+      const user = await getUserByEmail(email);
+
+      if (user) {
+        try {
+          const rawToken = await createPasswordResetToken(user.id);
+          await sendPasswordResetEmail(user.email, rawToken, config.appUrl);
+        } catch (e) {
+          request.log.error(e, "Failed to send password reset email");
+        }
+      }
+
+      return reply.send({
+        message: "If an account exists with that email, a reset link has been sent",
+      });
+    },
+  );
+
+  // POST /reset-password — validate token and update password
+  fastify.post<{ Body: ResetPasswordRequest }>(
+    "/reset-password",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["token", "newPassword"],
+          additionalProperties: false,
+          properties: {
+            token: { type: "string" },
+            newPassword: { type: "string" },
+          },
+        },
+      },
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: "15 minutes",
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Body: ResetPasswordRequest }>, reply: FastifyReply) => {
+      const { token, newPassword } = request.body;
+
+      const result = await lookupPasswordResetToken(token);
+      if (!result) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid or expired reset token",
+        });
+      }
+
+      const validation = validatePasswordStrength(newPassword);
+      if (!validation.valid) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: validation.errors.join("; "),
+        });
+      }
+
+      try {
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+        await updateUser(result.userId, { passwordHash, mustChangePassword: false });
+        await deletePasswordResetTokens(result.userId);
+        await revokeAllRefreshTokens(result.userId);
+
+        return reply.send({ message: "Password has been reset successfully" });
+      } catch (e) {
+        request.log.error(e, "Failed to reset password");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to reset password",
+        });
+      }
+    },
+  );
+
+  // POST /change-password — authenticated password change
+  fastify.post<{ Body: ChangePasswordRequest }>(
+    "/change-password",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["currentPassword", "newPassword"],
+          additionalProperties: false,
+          properties: {
+            currentPassword: { type: "string" },
+            newPassword: { type: "string" },
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest<{ Body: ChangePasswordRequest }>, reply: FastifyReply) => {
+      const { currentPassword, newPassword } = request.body;
+      const userId = request.user.sub;
+
+      const user = await getUserById(userId);
+      if (!user) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: "Not Found",
+          message: "User not found",
+        });
+      }
+
+      const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isValid) {
+        return reply.status(401).send({
+          statusCode: 401,
+          error: "Unauthorized",
+          message: "Current password is incorrect",
+        });
+      }
+
+      const validation = validatePasswordStrength(newPassword);
+      if (!validation.valid) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: validation.errors.join("; "),
+        });
+      }
+
+      try {
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+        await updateUser(userId, { passwordHash, mustChangePassword: false });
+
+        // Revoke all sessions
+        await revokeAllRefreshTokens(userId);
+
+        return reply.send({ message: "Password changed successfully" });
+      } catch (e) {
+        request.log.error(e, "Failed to change password");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "Failed to change password",
+        });
+      }
+    },
+  );
 }

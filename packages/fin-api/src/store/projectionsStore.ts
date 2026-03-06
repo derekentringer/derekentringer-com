@@ -45,7 +45,7 @@ const TRANSFER_PATTERN =
 
 // ─── Income Pattern Cache ────────────────────────────────────────────────────
 
-let incomePatternCache: { data: DetectedIncomePattern[]; fetchedAt: number } | null = null;
+let incomePatternCache: { userId: string; data: DetectedIncomePattern[]; fetchedAt: number } | null = null;
 const INCOME_CACHE_TTL_MS = 60_000; // 60 seconds
 
 /** Reset the income pattern cache (for tests). */
@@ -101,11 +101,13 @@ function countDistinctMonths(dates: Date[]): number {
 // ─── Income Detection ───────────────────────────────────────────────────────
 
 export async function detectIncomePatterns(
+  userId: string,
   lookbackMonths = INCOME_DETECTION_LOOKBACK_MONTHS,
 ): Promise<DetectedIncomePattern[]> {
   if (
     lookbackMonths === INCOME_DETECTION_LOOKBACK_MONTHS &&
     incomePatternCache &&
+    incomePatternCache.userId === userId &&
     Date.now() - incomePatternCache.fetchedAt < INCOME_CACHE_TTL_MS
   ) {
     return incomePatternCache.data;
@@ -118,6 +120,7 @@ export async function detectIncomePatterns(
   const rows = await prisma.transaction.findMany({
     where: {
       date: { gte: cutoff },
+      account: { userId },
     },
     orderBy: { date: "asc" },
   });
@@ -196,7 +199,7 @@ export async function detectIncomePatterns(
   patterns.sort((a, b) => b.monthlyEquivalent - a.monthlyEquivalent);
 
   if (lookbackMonths === INCOME_DETECTION_LOOKBACK_MONTHS) {
-    incomePatternCache = { data: patterns, fetchedAt: Date.now() };
+    incomePatternCache = { userId, data: patterns, fetchedAt: Date.now() };
   }
 
   return patterns;
@@ -204,7 +207,7 @@ export async function detectIncomePatterns(
 
 // ─── Net Income Projection ──────────────────────────────────────────────────
 
-export async function computeNetIncomeProjection(params: {
+export async function computeNetIncomeProjection(userId: string, params: {
   months: number;
   incomeAdjustmentPct: number;
   expenseAdjustmentPct: number;
@@ -215,10 +218,10 @@ export async function computeNetIncomeProjection(params: {
   const currentMonth = formatMonth(now);
 
   const [detectedIncome, manualIncome, activeBills, activeBudgets] = await Promise.all([
-    detectIncomePatterns(),
-    listIncomeSources({ isActive: true }),
-    listBills({ isActive: true }),
-    getActiveBudgetsForMonth(currentMonth),
+    detectIncomePatterns(userId),
+    listIncomeSources(userId, { isActive: true }),
+    listBills(userId, { isActive: true }),
+    getActiveBudgetsForMonth(userId, currentMonth),
   ]);
 
   // Monthly income from detected patterns
@@ -291,7 +294,7 @@ export async function computeNetIncomeProjection(params: {
 
 // ─── Account Balance Projections ─────────────────────────────────────────────
 
-export async function computeAccountProjections(params: {
+export async function computeAccountProjections(userId: string, params: {
   months: number;
   incomeAdjustmentPct: number;
   expenseAdjustmentPct: number;
@@ -301,7 +304,7 @@ export async function computeAccountProjections(params: {
   const now = new Date();
 
   // Fetch all active accounts (already decrypted)
-  const allAccounts = await listAccounts({ isActive: true });
+  const allAccounts = await listAccounts(userId, { isActive: true });
   const EXCLUDED_NAMES = new Set(["Robinhood"]);
   const accounts = allAccounts.filter(
     (a) =>
@@ -313,10 +316,10 @@ export async function computeAccountProjections(params: {
   // Compute checking net cash flow (reuse income/expense logic)
   const currentMonth = formatMonth(now);
   const [detectedIncome, manualIncome, activeBills, activeBudgets] = await Promise.all([
-    detectIncomePatterns(),
-    listIncomeSources({ isActive: true }),
-    listBills({ isActive: true }),
-    getActiveBudgetsForMonth(currentMonth),
+    detectIncomePatterns(userId),
+    listIncomeSources(userId, { isActive: true }),
+    listBills(userId, { isActive: true }),
+    getActiveBudgetsForMonth(userId, currentMonth),
   ]);
 
   const detectedMonthly = detectedIncome.reduce(
@@ -358,7 +361,7 @@ export async function computeAccountProjections(params: {
   // Batch-fetch latest balances and recent transactions for all accounts
   const accountIds = accounts.map((a) => a.id);
   const balanceQuery = prisma.balance.findMany({
-    where: { accountId: { in: accountIds } },
+    where: { accountId: { in: accountIds }, account: { userId } },
     orderBy: { date: "desc" },
     include: {
       savingsProfile: true,
@@ -370,6 +373,7 @@ export async function computeAccountProjections(params: {
   const txnQuery = prisma.transaction.findMany({
     where: {
       accountId: { in: accountIds },
+      account: { userId },
       date: { gte: contribCutoff },
     },
   });
@@ -598,7 +602,7 @@ export async function computeAccountProjections(params: {
 
 // ─── Savings Projection ─────────────────────────────────────────────────────
 
-export async function computeSavingsProjection(params: {
+export async function computeSavingsProjection(userId: string, params: {
   accountId: string;
   months: number;
   contributionOverride?: number;
@@ -607,11 +611,11 @@ export async function computeSavingsProjection(params: {
   const { accountId, months, contributionOverride, apyOverride } = params;
   const prisma = getPrisma();
 
-  // Fetch the account
+  // Fetch the account, verifying ownership
   const accountRow = await prisma.account.findUnique({
     where: { id: accountId },
   });
-  if (!accountRow) return null;
+  if (!accountRow || accountRow.userId !== userId) return null;
 
   const account = decryptAccount(accountRow);
   if (
@@ -655,6 +659,7 @@ export async function computeSavingsProjection(params: {
     const txns = await prisma.transaction.findMany({
       where: {
         accountId,
+        account: { userId },
         date: { gte: contribCutoff },
       },
     });
@@ -742,11 +747,12 @@ export async function computeSavingsProjection(params: {
 
 // ─── Savings Account List ───────────────────────────────────────────────────
 
-export async function listSavingsAccounts(): Promise<SavingsAccountSummary[]> {
+export async function listSavingsAccounts(userId: string): Promise<SavingsAccountSummary[]> {
   const prisma = getPrisma();
 
   const accountRows = await prisma.account.findMany({
     where: {
+      userId,
       isActive: true,
       type: { in: ["savings", "high_yield_savings"] },
     },
@@ -773,6 +779,7 @@ export async function listSavingsAccounts(): Promise<SavingsAccountSummary[]> {
         prisma.transaction.findMany({
           where: {
             accountId: account.id,
+            account: { userId },
             date: { gte: contribCutoff },
           },
         }),
@@ -823,6 +830,7 @@ export async function listSavingsAccounts(): Promise<SavingsAccountSummary[]> {
 // ─── Debt Payoff Planning ────────────────────────────────────────────────────
 
 export async function listDebtAccounts(
+  userId: string,
   includeMortgages: boolean,
 ): Promise<DebtAccountSummary[]> {
   const prisma = getPrisma();
@@ -830,6 +838,7 @@ export async function listDebtAccounts(
   // Fetch active liability accounts
   const accountRows = await prisma.account.findMany({
     where: {
+      userId,
       isActive: true,
       type: { in: ["credit", "loan"] },
     },
@@ -842,7 +851,7 @@ export async function listDebtAccounts(
 
   // Batch-fetch latest balances with loan/credit profiles
   const allBalances = await prisma.balance.findMany({
-    where: { accountId: { in: accountIds } },
+    where: { accountId: { in: accountIds }, account: { userId } },
     orderBy: { date: "desc" },
     include: {
       loanProfile: true,
@@ -1087,6 +1096,7 @@ export function computeDebtPayoffStrategy(
 }
 
 export async function computeActualVsPlanned(
+  userId: string,
   debts: DebtAccountSummary[],
   extraPayment: number,
 ): Promise<DebtActualVsPlanned[]> {
@@ -1097,7 +1107,7 @@ export async function computeActualVsPlanned(
 
   // Fetch all balance records for debt accounts
   const allBalances = await prisma.balance.findMany({
-    where: { accountId: { in: accountIds } },
+    where: { accountId: { in: accountIds }, account: { userId } },
     orderBy: { date: "asc" },
   });
 
@@ -1203,7 +1213,7 @@ export async function computeActualVsPlanned(
   return results;
 }
 
-export async function computeDebtPayoff(params: {
+export async function computeDebtPayoff(userId: string, params: {
   extraPayment: number;
   includeMortgages: boolean;
   accountIds?: string[];
@@ -1212,7 +1222,7 @@ export async function computeDebtPayoff(params: {
 }): Promise<DebtPayoffResponse> {
   const { extraPayment, includeMortgages, accountIds, customOrder, maxMonths } = params;
 
-  let debtAccounts = await listDebtAccounts(includeMortgages);
+  let debtAccounts = await listDebtAccounts(userId, includeMortgages);
 
   // Filter to specific accounts if provided
   if (accountIds && accountIds.length > 0) {
@@ -1272,6 +1282,7 @@ export async function computeDebtPayoff(params: {
       : null;
 
   const actualVsPlanned = await computeActualVsPlanned(
+    userId,
     debtAccounts,
     extraPayment,
   );

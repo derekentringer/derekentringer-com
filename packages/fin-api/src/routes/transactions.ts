@@ -4,8 +4,6 @@ import type {
   UpdateTransactionRequest,
   BulkUpdateCategoryRequest,
 } from "@derekentringer/shared";
-import { requirePin } from "@derekentringer/shared/auth/pinVerify";
-import { loadConfig } from "../config.js";
 import {
   listTransactions,
   getTransaction,
@@ -52,9 +50,6 @@ const confirmSchema = {
 export default async function transactionRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  const config = loadConfig();
-  const pinGuard = requirePin(config.pinTokenSecret);
-
   // GET / — list transactions
   fastify.get<{
     Querystring: {
@@ -83,6 +78,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const { accountId, startDate, endDate, category, search, limit, offset } =
           request.query;
 
@@ -113,7 +109,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
         if (limit) filter.limit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 500);
         if (offset) filter.offset = Math.max(parseInt(offset, 10) || 0, 0);
 
-        const result = await listTransactions(filter);
+        const result = await listTransactions(userId, filter);
         return reply.send(result);
       } catch (e) {
         request.log.error(e, "Failed to list transactions");
@@ -133,6 +129,8 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -142,7 +140,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const transaction = await getTransaction(request.params.id);
+        const transaction = await getTransaction(userId, request.params.id);
         if (!transaction) {
           return reply.status(404).send({
             statusCode: 404,
@@ -188,8 +186,9 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const { ids, category } = request.body;
-        const updated = await bulkUpdateCategory(ids, category);
+        const updated = await bulkUpdateCategory(userId, ids, category);
         return reply.send({ updated });
       } catch (e) {
         request.log.error(e, "Failed to bulk update category");
@@ -228,6 +227,8 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -238,6 +239,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
 
       try {
         const transaction = await updateTransaction(
+          userId,
           request.params.id,
           request.body,
         );
@@ -260,14 +262,15 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete transaction (PIN required)
+  // DELETE /:id — delete transaction
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
-    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -277,7 +280,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteTransaction(request.params.id);
+        const deleted = await deleteTransaction(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,
@@ -303,7 +306,6 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
   }>(
     "/import/preview",
     {
-      preHandler: pinGuard,
       config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
     },
     async (
@@ -312,6 +314,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId, csvParserId: overrideParserId } = request.query;
 
       if (!accountId || !CUID_PATTERN.test(accountId)) {
@@ -324,7 +327,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
 
       try {
         // Look up account to find its parser
-        const account = await getAccount(accountId);
+        const account = await getAccount(userId, accountId);
         if (!account) {
           return reply.status(404).send({
             statusCode: 404,
@@ -392,7 +395,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
         const existingHashes = await findExistingHashes(accountId, hashes);
 
         // Load category rules for auto-categorization
-        const rules = await listCategoryRules();
+        const rules = await listCategoryRules(userId);
 
         let duplicateCount = 0;
         let categorizedCount = 0;
@@ -438,11 +441,12 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
   // POST /import/confirm — save confirmed transactions
   fastify.post<{ Body: CsvImportConfirmRequest }>(
     "/import/confirm",
-    { schema: confirmSchema, preHandler: pinGuard },
+    { schema: confirmSchema },
     async (
       request: FastifyRequest<{ Body: CsvImportConfirmRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId, transactions } = request.body;
 
       if (!CUID_PATTERN.test(accountId)) {
@@ -458,7 +462,7 @@ export default async function transactionRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const account = await getAccount(accountId);
+        const account = await getAccount(userId, accountId);
         if (!account) {
           return reply.status(404).send({
             statusCode: 404,

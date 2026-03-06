@@ -55,6 +55,7 @@ function initializeFirebase(): boolean {
  * Web notifications are handled by polling, not push.
  */
 export async function sendToAllDevices(
+  userId: string,
   payload: FcmPayload,
   notificationLogId?: string,
 ): Promise<FcmSendResult> {
@@ -62,7 +63,7 @@ export async function sendToAllDevices(
     return { sent: false, messageId: null, error: "FCM not configured" };
   }
 
-  const tokens = await getAllEncryptedTokens();
+  const tokens = await getAllEncryptedTokens(userId);
   if (tokens.length === 0) {
     return { sent: false, messageId: null, error: "No registered device tokens" };
   }
@@ -73,7 +74,7 @@ export async function sendToAllDevices(
     try {
       fcmTokens.push(decryptField(encryptedToken));
     } catch {
-      await removeDeviceTokenByEncryptedToken(encryptedToken);
+      await removeDeviceTokenByEncryptedToken(userId, encryptedToken);
     }
   }
 
@@ -129,7 +130,7 @@ export async function sendToAllDevices(
             try { return decryptField(t.token) === fcmTokens[idx]; } catch { return false; }
           });
           if (encToken) {
-            removeDeviceTokenByEncryptedToken(encToken.token);
+            removeDeviceTokenByEncryptedToken(userId, encToken.token);
           }
         }
       }

@@ -59,7 +59,8 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        const device = await registerDeviceToken(request.body);
+        const userId = request.user.sub;
+        const device = await registerDeviceToken(userId, request.body);
         return reply.status(201).send({ device });
       } catch (e) {
         request.log.error(e, "Failed to register device token");
@@ -77,7 +78,8 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     "/devices",
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const devices = await listDeviceTokens();
+        const userId = request.user.sub;
+        const devices = await listDeviceTokens(userId);
         return reply.send({ devices });
       } catch (e) {
         request.log.error(e, "Failed to list devices");
@@ -97,6 +99,8 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -106,7 +110,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteDeviceToken(request.params.id);
+        const deleted = await deleteDeviceToken(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,
@@ -131,7 +135,8 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     "/preferences",
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const preferences = await listNotificationPreferences();
+        const userId = request.user.sub;
+        const preferences = await listNotificationPreferences(userId);
         return reply.send({ preferences });
       } catch (e) {
         request.log.error(e, "Failed to list notification preferences");
@@ -158,6 +163,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { type } = request.params;
       if (!VALID_NOTIFICATION_TYPES.has(type as NotificationType)) {
         return reply.status(400).send({
@@ -168,7 +174,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const preference = await updateNotificationPreference(type, request.body);
+        const preference = await updateNotificationPreference(userId, type, request.body);
         if (!preference) {
           return reply.status(404).send({
             statusCode: 404,
@@ -196,9 +202,10 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const limit = Math.min(parseInt(request.query.limit || "20", 10) || 20, 100);
         const offset = parseInt(request.query.offset || "0", 10) || 0;
-        const result = await listNotificationLogs(limit, offset);
+        const result = await listNotificationLogs(userId, limit, offset);
         return reply.send(result);
       } catch (e) {
         request.log.error(e, "Failed to list notification history");
@@ -216,7 +223,8 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     "/unread-count",
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const count = await getUnreadCount();
+        const userId = request.user.sub;
+        const count = await getUnreadCount(userId);
         return reply.send({ count });
       } catch (e) {
         request.log.error(e, "Failed to get unread count");
@@ -234,7 +242,8 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     "/mark-all-read",
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const count = await markAllNotificationsRead();
+        const userId = request.user.sub;
+        const count = await markAllNotificationsRead(userId);
         return reply.send({ updated: count });
       } catch (e) {
         request.log.error(e, "Failed to mark notifications as read");
@@ -252,7 +261,8 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     "/history",
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const count = await clearNotificationHistory();
+        const userId = request.user.sub;
+        const count = await clearNotificationHistory(userId);
         return reply.send({ cleared: count });
       } catch (e) {
         request.log.error(e, "Failed to clear notification history");
@@ -275,7 +285,8 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const logEntry = await createNotificationLog({
+        const userId = request.user.sub;
+        const logEntry = await createNotificationLog(userId, {
           type: NotificationType.BillDue,
           title: "Test Notification",
           body: "This is a test notification from your finance app.",
@@ -286,6 +297,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
         let fcmResult = null;
         if (logEntry) {
           fcmResult = await sendToAllDevices(
+            userId,
             {
               title: "Test Notification",
               body: "This is a test notification from your finance app.",

@@ -4,8 +4,6 @@ import type {
   UpdateIncomeSourceRequest,
 } from "@derekentringer/shared";
 import { INCOME_SOURCE_FREQUENCIES } from "@derekentringer/shared";
-import { requirePin } from "@derekentringer/shared/auth/pinVerify";
-import { loadConfig } from "../config.js";
 import {
   createIncomeSource,
   getIncomeSource,
@@ -54,9 +52,6 @@ const updateSchema = {
 export default async function incomeSourceRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  const config = loadConfig();
-  const pinGuard = requirePin(config.pinTokenSecret);
-
   // GET / — list income sources
   fastify.get<{ Querystring: { active?: string } }>(
     "/",
@@ -65,12 +60,13 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const { active } = request.query;
         const filter: { isActive?: boolean } = {};
         if (active === "true") filter.isActive = true;
         if (active === "false") filter.isActive = false;
 
-        const incomeSources = await listIncomeSources(filter);
+        const incomeSources = await listIncomeSources(userId, filter);
         return reply.send({ incomeSources });
       } catch (e) {
         request.log.error(e, "Failed to list income sources");
@@ -88,7 +84,8 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
     "/detected",
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
-        const patterns = await detectIncomePatterns();
+        const userId = request.user.sub;
+        const patterns = await detectIncomePatterns(userId);
         return reply.send({ patterns });
       } catch (e) {
         request.log.error(e, "Failed to detect income patterns");
@@ -108,6 +105,8 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -117,7 +116,7 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const incomeSource = await getIncomeSource(request.params.id);
+        const incomeSource = await getIncomeSource(userId, request.params.id);
         if (!incomeSource) {
           return reply.status(404).send({
             statusCode: 404,
@@ -145,6 +144,7 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateIncomeSourceRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { amount, frequency } = request.body;
 
       if (!isValidNumber(amount) || amount <= 0) {
@@ -168,7 +168,7 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const incomeSource = await createIncomeSource(request.body);
+        const incomeSource = await createIncomeSource(userId, request.body);
         return reply.status(201).send({ incomeSource });
       } catch (e) {
         request.log.error(e, "Failed to create income source");
@@ -192,6 +192,8 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -225,6 +227,7 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
 
       try {
         const incomeSource = await updateIncomeSource(
+          userId,
           request.params.id,
           request.body,
         );
@@ -247,14 +250,15 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete income source (PIN required)
+  // DELETE /:id — delete income source
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
-    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -264,7 +268,7 @@ export default async function incomeSourceRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteIncomeSource(request.params.id);
+        const deleted = await deleteIncomeSource(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,

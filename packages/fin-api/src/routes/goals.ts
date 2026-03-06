@@ -1,7 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { CreateGoalRequest, UpdateGoalRequest, ReorderGoalsRequest } from "@derekentringer/shared";
-import { requirePin } from "@derekentringer/shared/auth/pinVerify";
-import { loadConfig } from "../config.js";
 import {
   createGoal,
   getGoal,
@@ -91,9 +89,6 @@ const reorderSchema = {
 export default async function goalRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
-  const config = loadConfig();
-  const pinGuard = requirePin(config.pinTokenSecret);
-
   // GET / — list goals
   fastify.get<{ Querystring: { active?: string; type?: string } }>(
     "/",
@@ -102,13 +97,14 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
+        const userId = request.user.sub;
         const { active, type } = request.query;
         const filter: { isActive?: boolean; type?: string } = {};
         if (active === "true") filter.isActive = true;
         if (active === "false") filter.isActive = false;
         if (type && VALID_GOAL_TYPES.includes(type)) filter.type = type;
 
-        const goals = await listGoals(filter);
+        const goals = await listGoals(userId, filter);
         return reply.send({ goals });
       } catch (e) {
         request.log.error(e, "Failed to list goals");
@@ -132,7 +128,8 @@ export default async function goalRoutes(fastify: FastifyInstance) {
         const rawMonths = parseInt(request.query.months || "60", 10) || 60;
         const months = VALID_MONTHS.includes(rawMonths) ? rawMonths : 60;
 
-        const progress = await computeGoalProgress({ months });
+        const userId = request.user.sub;
+        const progress = await computeGoalProgress(userId, { months });
         return reply.send(progress);
       } catch (e) {
         request.log.error(e, "Failed to compute goal progress");
@@ -152,6 +149,8 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -161,7 +160,7 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const goal = await getGoal(request.params.id);
+        const goal = await getGoal(userId, request.params.id);
         if (!goal) {
           return reply.status(404).send({
             statusCode: 404,
@@ -189,6 +188,7 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateGoalRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { targetAmount, type } = request.body;
 
       if (!VALID_GOAL_TYPES.includes(type)) {
@@ -209,7 +209,7 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const goal = await createGoal(request.body);
+        const goal = await createGoal(userId, request.body);
         return reply.status(201).send({ goal });
       } catch (e) {
         request.log.error(e, "Failed to create goal");
@@ -233,6 +233,8 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -260,7 +262,7 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const goal = await updateGoal(request.params.id, request.body);
+        const goal = await updateGoal(userId, request.params.id, request.body);
         if (!goal) {
           return reply.status(404).send({
             statusCode: 404,
@@ -280,14 +282,15 @@ export default async function goalRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // DELETE /:id — delete goal (PIN-protected)
+  // DELETE /:id — delete goal
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
-    { preHandler: pinGuard },
     async (
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
+
       if (!CUID_PATTERN.test(request.params.id)) {
         return reply.status(400).send({
           statusCode: 400,
@@ -297,7 +300,7 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const deleted = await deleteGoal(request.params.id);
+        const deleted = await deleteGoal(userId, request.params.id);
         if (!deleted) {
           return reply.status(404).send({
             statusCode: 404,
@@ -326,7 +329,8 @@ export default async function goalRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       try {
-        await reorderGoals(request.body.order);
+        const userId = request.user.sub;
+        await reorderGoals(userId, request.body.order);
         return reply.status(204).send();
       } catch (e) {
         request.log.error(e, "Failed to reorder goals");

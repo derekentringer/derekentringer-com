@@ -21,6 +21,8 @@ import {
   computeRebalanceSuggestions,
 } from "../store/portfolioStore.js";
 
+const TEST_USER_ID = "test-user-1";
+
 function makeHoldingRow(overrides: Record<string, unknown> = {}) {
   const encrypted = encryptHoldingForCreate({
     accountId: "acc-inv",
@@ -88,7 +90,7 @@ describe("portfolioStore", () => {
         makeSavingsAccountRow(3000),
       ]);
 
-      const result = await computeAssetAllocation();
+      const result = await computeAssetAllocation(TEST_USER_ID);
 
       expect(result.totalMarketValue).toBe(1200 + 8000);
       const cashSlice = result.slices.find((s) => s.assetClass === "cash");
@@ -100,7 +102,7 @@ describe("portfolioStore", () => {
       const holding = makeHoldingRow();
       mockPrisma.holding.findMany.mockResolvedValue([holding]);
 
-      const result = await computeAssetAllocation("acc-inv");
+      const result = await computeAssetAllocation(TEST_USER_ID, "acc-inv");
 
       expect(result.totalMarketValue).toBe(1200);
       const cashSlice = result.slices.find((s) => s.assetClass === "cash");
@@ -114,7 +116,7 @@ describe("portfolioStore", () => {
       mockPrisma.holding.findMany.mockResolvedValue([holding]);
       mockPrisma.account.findMany.mockResolvedValue([]);
 
-      const result = await computeAssetAllocation();
+      const result = await computeAssetAllocation(TEST_USER_ID);
 
       expect(result.totalMarketValue).toBe(1200);
       const cashSlice = result.slices.find((s) => s.assetClass === "cash");
@@ -128,7 +130,7 @@ describe("portfolioStore", () => {
         makeSavingsAccountRow(0),
       ]);
 
-      const result = await computeAssetAllocation();
+      const result = await computeAssetAllocation(TEST_USER_ID);
 
       expect(result.totalMarketValue).toBe(1200);
       const cashSlice = result.slices.find((s) => s.assetClass === "cash");
@@ -144,7 +146,7 @@ describe("portfolioStore", () => {
         makeSavingsAccountRow(5000),
       ]);
 
-      const result = await computePerformance("12m");
+      const result = await computePerformance(TEST_USER_ID, "12m");
 
       expect(result.summary.totalValue).toBe(1200 + 5000);
       expect(result.summary.totalCost).toBe(1000 + 5000);
@@ -167,7 +169,7 @@ describe("portfolioStore", () => {
       ]);
       mockPrisma.benchmarkHistory.findMany.mockResolvedValue([]);
 
-      const result = await computePerformance("12m");
+      const result = await computePerformance(TEST_USER_ID, "12m");
 
       // Series values should NOT include the 5000 savings balance
       for (const point of result.series) {
@@ -180,7 +182,7 @@ describe("portfolioStore", () => {
       const holding = makeHoldingRow();
       mockPrisma.holding.findMany.mockResolvedValue([holding]);
 
-      const result = await computePerformance("12m", "acc-inv");
+      const result = await computePerformance(TEST_USER_ID, "12m", "acc-inv");
 
       expect(result.summary.totalValue).toBe(1200);
       expect(result.summary.totalCost).toBe(1000);
@@ -199,7 +201,7 @@ describe("portfolioStore", () => {
         makeTargetAllocationRow("bonds", 40),
       ]);
 
-      const result = await computeRebalanceSuggestions();
+      const result = await computeRebalanceSuggestions(TEST_USER_ID);
 
       expect(result.suggestions.length).toBeGreaterThan(0);
       expect(result.totalMarketValue).toBe(1200);

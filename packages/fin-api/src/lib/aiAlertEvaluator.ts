@@ -14,35 +14,35 @@ import { generateInsights } from "./anthropicService.js";
 
 const DAILY_LIMIT = 10;
 
-export async function evaluateAiAlerts(): Promise<PendingNotification[]> {
+export async function evaluateAiAlerts(userId: string): Promise<PendingNotification[]> {
   // Guard: API key configured?
   const config = loadConfig();
   if (!config.anthropicApiKey) return [];
 
   // Guard: master + smartAlerts enabled?
-  const prefs = await getAiPreferences();
+  const prefs = await getAiPreferences(userId);
   if (!prefs.masterEnabled || !prefs.smartAlerts) return [];
 
   // Guard: notification pref enabled?
-  const notifPrefs = await listNotificationPreferences();
+  const notifPrefs = await listNotificationPreferences(userId);
   const aiAlertPref = notifPrefs.find((p) => p.type === NotificationType.AiAlert);
   if (aiAlertPref && !aiAlertPref.enabled) return [];
 
   // Guard: daily usage under limit?
-  const usage = await getDailyUsage();
+  const usage = await getDailyUsage(userId);
   if (usage >= DAILY_LIMIT) return [];
 
   // Build context and check cache
-  const context = await buildContextForScope("alerts");
-  const cached = await getCachedInsights("alerts", context.contentHash);
+  const context = await buildContextForScope(userId, "alerts");
+  const cached = await getCachedInsights(userId, "alerts", context.contentHash);
 
   let insights;
   if (cached) {
     insights = cached;
   } else {
     const result = await generateInsights("alerts", context.data);
-    await setCachedInsights("alerts", context.contentHash, result.insights, result.expiresAt);
-    await incrementDailyUsage();
+    await setCachedInsights(userId, "alerts", context.contentHash, result.insights, result.expiresAt);
+    await incrementDailyUsage(userId);
     insights = result.insights;
   }
 

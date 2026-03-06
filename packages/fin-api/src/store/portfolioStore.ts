@@ -17,12 +17,14 @@ import { getPriceHistory, getBenchmarkHistory } from "./priceHistoryStore.js";
 import { getCashBalance } from "./accountStore.js";
 
 export async function computeAssetAllocation(
+  userId: string,
   accountId?: string | null,
 ): Promise<AssetAllocationResponse> {
   const prisma = getPrisma();
 
-  // Fetch holdings, optionally filtered by account
-  const where = accountId ? { accountId } : {};
+  // Fetch holdings, optionally filtered by account, scoped to user
+  const where: Record<string, unknown> = { account: { userId } };
+  if (accountId) where.accountId = accountId;
   const rows = await prisma.holding.findMany({ where });
   const holdings = rows.map(decryptHolding);
 
@@ -38,7 +40,7 @@ export async function computeAssetAllocation(
 
   // For portfolio-wide queries, include savings/HYS balances as cash
   if (!accountId) {
-    const cashBalance = await getCashBalance();
+    const cashBalance = await getCashBalance(userId);
     if (cashBalance > 0) {
       classMap.set("cash", (classMap.get("cash") ?? 0) + cashBalance);
       totalMarketValue += cashBalance;
@@ -46,7 +48,7 @@ export async function computeAssetAllocation(
   }
 
   // Get target allocations for comparison
-  const targets = await listTargetAllocations(accountId ?? null);
+  const targets = await listTargetAllocations(userId, accountId ?? null);
   const targetMap = new Map<string, number>();
   for (const t of targets) {
     targetMap.set(t.assetClass, t.targetPct);
@@ -98,6 +100,7 @@ function getPeriodStartDate(period: PerformancePeriod): Date {
 }
 
 export async function computePerformance(
+  userId: string,
   period: PerformancePeriod,
   accountId?: string | null,
 ): Promise<PerformanceResponse> {
@@ -105,15 +108,16 @@ export async function computePerformance(
   const startDate = getPeriodStartDate(period);
   const endDate = new Date();
 
-  // Get current holdings
-  const where = accountId ? { accountId } : {};
+  // Get current holdings, scoped to user
+  const where: Record<string, unknown> = { account: { userId } };
+  if (accountId) where.accountId = accountId;
   const rows = await prisma.holding.findMany({ where });
   const holdings = rows.map(decryptHolding);
 
   // Include savings/HYS balances for portfolio-wide queries
   let savingsBalance = 0;
   if (!accountId) {
-    savingsBalance = await getCashBalance();
+    savingsBalance = await getCashBalance(userId);
   }
 
   // Current portfolio value
@@ -227,9 +231,10 @@ export async function computePerformance(
 }
 
 export async function computeRebalanceSuggestions(
+  userId: string,
   accountId?: string | null,
 ): Promise<RebalanceResponse> {
-  const allocation = await computeAssetAllocation(accountId);
+  const allocation = await computeAssetAllocation(userId, accountId);
 
   const suggestions: RebalanceSuggestion[] = [];
 

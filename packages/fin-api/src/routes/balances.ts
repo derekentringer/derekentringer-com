@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { PdfImportConfirmRequest } from "@derekentringer/shared";
 import { AccountType } from "@derekentringer/shared";
-import { requirePin } from "@derekentringer/shared/auth/pinVerify";
 import { loadConfig } from "../config.js";
 import { getAccount } from "../store/accountStore.js";
 import { listBalances, findBalanceByDate } from "../store/balanceStore.js";
@@ -126,7 +125,6 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
   const config = loadConfig();
-  const pinGuard = requirePin(config.pinTokenSecret);
 
   // #9: Log warning at startup if ANTHROPIC_API_KEY is missing
   if (!config.anthropicApiKey) {
@@ -142,6 +140,7 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Querystring: { accountId?: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId } = request.query;
 
       if (!accountId || !CUID_PATTERN.test(accountId)) {
@@ -170,13 +169,13 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
   fastify.post<{ Querystring: { accountId: string } }>(
     "/import/preview",
     {
-      preHandler: pinGuard,
       config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
     },
     async (
       request: FastifyRequest<{ Querystring: { accountId: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { accountId } = request.query;
 
       if (!accountId || !CUID_PATTERN.test(accountId)) {
@@ -196,7 +195,7 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const account = await getAccount(accountId);
+        const account = await getAccount(userId, accountId);
         if (!account) {
           return reply.status(404).send({
             statusCode: 404,
@@ -310,11 +309,12 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
   // POST /import/confirm — save balance record + profile data atomically
   fastify.post<{ Body: PdfImportConfirmRequest }>(
     "/import/confirm",
-    { schema: confirmSchema, preHandler: pinGuard },
+    { schema: confirmSchema },
     async (
       request: FastifyRequest<{ Body: PdfImportConfirmRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const {
         accountId,
         balance,
@@ -337,7 +337,7 @@ export default async function balanceRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const account = await getAccount(accountId);
+        const account = await getAccount(userId, accountId);
         if (!account) {
           return reply.status(404).send({
             statusCode: 404,
