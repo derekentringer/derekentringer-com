@@ -6,6 +6,9 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import useAuthStore from "@/store/authStore";
 import { LoginScreen } from "@/screens/LoginScreen";
+import { RegisterScreen } from "@/screens/RegisterScreen";
+import { ForgotPasswordScreen } from "@/screens/ForgotPasswordScreen";
+import { ResetPasswordScreen } from "@/screens/ResetPasswordScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { AccountsScreen } from "@/screens/AccountsScreen";
 import { AccountTypeScreen } from "@/screens/AccountTypeScreen";
@@ -23,6 +26,8 @@ import { PortfolioScreen } from "@/screens/PortfolioScreen";
 import { DecisionToolsScreen } from "@/screens/DecisionToolsScreen";
 import { MoreScreen } from "@/screens/MoreScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
+import { SecurityScreen } from "@/screens/SecurityScreen";
+import { TotpSetupScreen } from "@/screens/TotpSetupScreen";
 import { CategoriesScreen } from "@/screens/CategoriesScreen";
 import { CategoryRulesScreen } from "@/screens/CategoryRulesScreen";
 import { IncomeSourcesScreen } from "@/screens/IncomeSourcesScreen";
@@ -64,6 +69,9 @@ function AuthNavigator() {
   return (
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Register" component={RegisterScreen} />
+      <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <AuthStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     </AuthStack.Navigator>
   );
 }
@@ -171,6 +179,16 @@ function MoreStackNavigator() {
         name="Settings"
         component={SettingsScreen}
         options={{ title: "Settings" }}
+      />
+      <MoreStack.Screen
+        name="Security"
+        component={SecurityScreen}
+        options={{ title: "Security" }}
+      />
+      <MoreStack.Screen
+        name="TotpSetup"
+        component={TotpSetupScreen}
+        options={{ title: "Set Up 2FA" }}
       />
       <MoreStack.Screen
         name="Categories"

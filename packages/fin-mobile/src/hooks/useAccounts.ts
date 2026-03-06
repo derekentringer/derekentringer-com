@@ -54,8 +54,7 @@ export function useUpdateAccount() {
 export function useDeleteAccount() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, pinToken }: { id: string; pinToken: string }) =>
-      deleteAccount(id, pinToken),
+    mutationFn: ({ id }: { id: string }) => deleteAccount(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });

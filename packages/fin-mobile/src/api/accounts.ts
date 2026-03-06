@@ -39,13 +39,8 @@ export async function updateAccount(
   return data;
 }
 
-export async function deleteAccount(
-  id: string,
-  pinToken: string,
-): Promise<void> {
-  await api.delete(`/accounts/${id}`, {
-    headers: { "x-pin-token": pinToken },
-  });
+export async function deleteAccount(id: string): Promise<void> {
+  await api.delete(`/accounts/${id}`);
 }
 
 export async function reorderAccounts(

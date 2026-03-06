@@ -21,7 +21,6 @@ import {
 } from "@derekentringer/shared/finance";
 import { useBill, useUpcomingBills, useDeleteBill } from "@/hooks/useBills";
 import { BillFormSheet } from "@/components/bills/BillFormSheet";
-import { PinGateModal } from "@/components/common/PinGateModal";
 import { Card } from "@/components/common/Card";
 import { SkeletonChartCard } from "@/components/common/SkeletonLoader";
 import { ErrorCard } from "@/components/common/ErrorCard";
@@ -107,7 +106,6 @@ export function BillDetailScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [showPin, setShowPin] = useState(false);
 
   const billQuery = useBill(billId);
   const upcomingQuery = useUpcomingBills(60);
@@ -162,26 +160,20 @@ export function BillDetailScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => setShowPin(true),
+        onPress: () => {
+          deleteBillMutation.mutate(
+            { id: billId },
+            {
+              onSuccess: () => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                navigation.goBack();
+              },
+            },
+          );
+        },
       },
     ]);
-  }, [billName]);
-
-  const handlePinVerified = useCallback(
-    (pinToken: string) => {
-      setShowPin(false);
-      deleteBillMutation.mutate(
-        { id: billId, pinToken },
-        {
-          onSuccess: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            navigation.goBack();
-          },
-        },
-      );
-    },
-    [billId, deleteBillMutation, navigation],
-  );
+  }, [billId, billName, deleteBillMutation, navigation]);
 
   // Header right buttons
   React.useLayoutEffect(() => {
@@ -341,13 +333,6 @@ export function BillDetailScreen() {
         />
       )}
 
-      <PinGateModal
-        visible={showPin}
-        onClose={() => setShowPin(false)}
-        onVerified={handlePinVerified}
-        title="Delete Bill"
-        description="Enter PIN to confirm deletion"
-      />
     </View>
   );
 }

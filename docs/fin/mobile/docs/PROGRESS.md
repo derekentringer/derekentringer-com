@@ -66,6 +66,10 @@
 
 - [x] [07 — Polish & Distribution](features/07-polish-and-distribution.md)
 
+### Phase 8: Multi-User Auth
+
+- [x] [08 — Multi-User Auth, TOTP 2FA & PIN Removal](features/08-multi-user-auth.md)
+
 ## Status Key
 
 - `[ ]` Not Started

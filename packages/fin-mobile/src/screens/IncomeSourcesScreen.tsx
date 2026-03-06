@@ -10,7 +10,6 @@ import type {
 import { INCOME_SOURCE_FREQUENCY_LABELS } from "@derekentringer/shared/finance";
 import { SwipeableRow } from "@/components/transactions/SwipeableRow";
 import { IncomeSourceFormSheet } from "@/components/settings/IncomeSourceFormSheet";
-import { PinGateModal } from "@/components/common/PinGateModal";
 import { EmptyState } from "@/components/common/EmptyState";
 import {
   useIncomeSources,
@@ -31,8 +30,6 @@ export function IncomeSourcesScreen() {
 
   const [showForm, setShowForm] = useState(false);
   const [editingSource, setEditingSource] = useState<IncomeSource | null>(null);
-  const [showPin, setShowPin] = useState(false);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -53,17 +50,8 @@ export function IncomeSourcesScreen() {
   }, []);
 
   const handleDelete = useCallback((source: IncomeSource) => {
-    setPendingDeleteId(source.id);
-    setShowPin(true);
-  }, []);
-
-  const handlePinVerified = useCallback(() => {
-    setShowPin(false);
-    if (pendingDeleteId) {
-      deleteMutation.mutate({ id: pendingDeleteId });
-      setPendingDeleteId(null);
-    }
-  }, [pendingDeleteId, deleteMutation]);
+    deleteMutation.mutate({ id: source.id });
+  }, [deleteMutation]);
 
   const handleSubmit = useCallback(
     async (formData: {
@@ -160,16 +148,6 @@ export function IncomeSourcesScreen() {
         />
       )}
 
-      <PinGateModal
-        visible={showPin}
-        onClose={() => {
-          setShowPin(false);
-          setPendingDeleteId(null);
-        }}
-        onVerified={handlePinVerified}
-        title="Confirm Delete"
-        description="Enter PIN to delete this income source"
-      />
     </View>
   );
 }

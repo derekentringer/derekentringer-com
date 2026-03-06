@@ -19,7 +19,6 @@ import {
 import { useAccounts } from "@/hooks/useAccounts";
 import { PickerField } from "@/components/common/PickerField";
 import { FormField } from "@/components/common/FormField";
-import { PinGateModal } from "@/components/common/PinGateModal";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { ErrorCard } from "@/components/common/ErrorCard";
 import { formatCurrencyFull } from "@/lib/chartTheme";
@@ -42,7 +41,6 @@ export function TransactionDetailScreen() {
 
   const [editedCategory, setEditedCategory] = useState("");
   const [editedNotes, setEditedNotes] = useState("");
-  const [pinModalVisible, setPinModalVisible] = useState(false);
 
   const transaction = transactionQuery.data?.transaction;
 
@@ -120,24 +118,15 @@ export function TransactionDetailScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => setPinModalVisible(true),
+          onPress: async () => {
+            if (!transaction) return;
+            await deleteMutation.mutateAsync({ id: transaction.id });
+            navigation.goBack();
+          },
         },
       ],
     );
-  }, []);
-
-  const handlePinVerified = useCallback(
-    async (pinToken: string) => {
-      setPinModalVisible(false);
-      if (!transaction) return;
-      await deleteMutation.mutateAsync({
-        id: transaction.id,
-        pinToken,
-      });
-      navigation.goBack();
-    },
-    [transaction, deleteMutation, navigation],
-  );
+  }, [transaction, deleteMutation, navigation]);
 
   if (transactionQuery.isLoading) {
     return (
@@ -232,13 +221,6 @@ export function TransactionDetailScreen() {
         </Pressable>
       </ScrollView>
 
-      <PinGateModal
-        visible={pinModalVisible}
-        onClose={() => setPinModalVisible(false)}
-        onVerified={handlePinVerified}
-        title="Confirm Delete"
-        description="Enter your PIN to delete this transaction."
-      />
     </View>
   );
 }
