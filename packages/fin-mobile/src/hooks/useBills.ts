@@ -63,8 +63,7 @@ export function useUpdateBill() {
 export function useDeleteBill() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, pinToken }: { id: string; pinToken: string }) =>
-      deleteBill(id, pinToken),
+    mutationFn: ({ id }: { id: string }) => deleteBill(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["bills"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });

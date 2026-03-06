@@ -39,11 +39,6 @@ export async function updateBudget(
   return data;
 }
 
-export async function deleteBudget(
-  id: string,
-  pinToken: string,
-): Promise<void> {
-  await api.delete(`/budgets/${id}`, {
-    headers: { "x-pin-token": pinToken },
-  });
+export async function deleteBudget(id: string): Promise<void> {
+  await api.delete(`/budgets/${id}`);
 }

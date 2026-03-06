@@ -27,7 +27,6 @@ import {
 import { MonthSelector } from "@/components/budgets/MonthSelector";
 import { BudgetCategoryRow } from "@/components/budgets/BudgetCategoryRow";
 import { BudgetFormSheet } from "@/components/budgets/BudgetFormSheet";
-import { PinGateModal } from "@/components/common/PinGateModal";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonChartCard } from "@/components/common/SkeletonLoader";
 import { ErrorCard } from "@/components/common/ErrorCard";
@@ -45,8 +44,6 @@ export function BudgetsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [formBudget, setFormBudget] = useState<Budget | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [showPin, setShowPin] = useState(false);
 
   const summaryQuery = useBudgetSummary(month);
   const budgetsQuery = useBudgets();
@@ -122,25 +119,13 @@ export function BudgetsScreen() {
             text: "Delete",
             style: "destructive",
             onPress: () => {
-              setDeletingId(budget.id);
-              setShowPin(true);
+              deleteBudget.mutate({ id: budget.id });
             },
           },
         ],
       );
     },
-    [findBudgetForCategory],
-  );
-
-  const handlePinVerified = useCallback(
-    (pinToken: string) => {
-      setShowPin(false);
-      if (deletingId) {
-        deleteBudget.mutate({ id: deletingId, pinToken });
-        setDeletingId(null);
-      }
-    },
-    [deletingId, deleteBudget],
+    [findBudgetForCategory, deleteBudget],
   );
 
   return (
@@ -242,16 +227,6 @@ export function BudgetsScreen() {
         />
       )}
 
-      <PinGateModal
-        visible={showPin}
-        onClose={() => {
-          setShowPin(false);
-          setDeletingId(null);
-        }}
-        onVerified={handlePinVerified}
-        title="Delete Budget"
-        description="Enter PIN to confirm deletion"
-      />
     </View>
   );
 }

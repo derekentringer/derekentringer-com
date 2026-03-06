@@ -52,8 +52,7 @@ export function useUpdateBudget() {
 export function useDeleteBudget() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, pinToken }: { id: string; pinToken: string }) =>
-      deleteBudget(id, pinToken),
+    mutationFn: ({ id }: { id: string }) => deleteBudget(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["budgets"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });

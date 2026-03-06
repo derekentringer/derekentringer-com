@@ -27,7 +27,6 @@ import {
 import { useTransactions } from "@/hooks/useTransactions";
 import { BalanceHistoryChart } from "@/components/accounts/BalanceHistoryChart";
 import { AccountFormSheet } from "@/components/accounts/AccountFormSheet";
-import { PinGateModal } from "@/components/common/PinGateModal";
 import { TimeRangeSelector } from "@/components/dashboard/TimeRangeSelector";
 import { Card } from "@/components/common/Card";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
@@ -66,8 +65,6 @@ export function AccountDetailScreen() {
   const [granularity, setGranularity] = useState<ChartGranularity>("weekly");
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [showPinGate, setShowPinGate] = useState(false);
-
   const account = data?.account;
 
   useEffect(() => {
@@ -118,18 +115,16 @@ export function AccountDetailScreen() {
   const handleDeletePrompt = useCallback(() => {
     Alert.alert("Delete Account", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => setShowPinGate(true) },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          await deleteMutation.mutateAsync({ id: accountId });
+          navigation.goBack();
+        },
+      },
     ]);
-  }, []);
-
-  const handleDeleteConfirmed = useCallback(
-    async (pinToken: string) => {
-      setShowPinGate(false);
-      await deleteMutation.mutateAsync({ id: accountId, pinToken });
-      navigation.goBack();
-    },
-    [accountId, deleteMutation, navigation],
-  );
+  }, [accountId, deleteMutation, navigation]);
 
   const handleUpdate = useCallback(
     async (formData: Parameters<typeof updateMutation.mutateAsync>[0]["data"]) => {
@@ -280,13 +275,6 @@ export function AccountDetailScreen() {
         />
       )}
 
-      <PinGateModal
-        visible={showPinGate}
-        onClose={() => setShowPinGate(false)}
-        onVerified={handleDeleteConfirmed}
-        title="Confirm Delete"
-        description="Enter your PIN to delete this account"
-      />
     </View>
   );
 }

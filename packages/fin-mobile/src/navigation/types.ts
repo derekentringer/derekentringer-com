@@ -24,6 +24,8 @@ export type PlanningStackParamList = {
 export type MoreStackParamList = {
   MoreHome: undefined;
   Settings: undefined;
+  Security: undefined;
+  TotpSetup: undefined;
   Categories: undefined;
   CategoryRules: undefined;
   IncomeSources: undefined;

@@ -33,5 +33,5 @@ Bootstrapped the Expo React Native project in `packages/fin-mobile/`, integrated
 - **App naming:** Used "Fin" (not "FinDash") with bundle ID `com.derekentringer.fin` for consistency with the web app branding
 - **Physical device development:** Android requires `adb reverse tcp:8081 tcp:8081 && adb reverse tcp:3002 tcp:3002` to tunnel Metro and API ports from device to dev machine
 - **Typography system:** Deferred — using default system fonts; Roboto integration planned for Phase 7 (Polish)
-- **PIN verification UI:** API integration implemented in auth store; screen UI deferred to Phase 2 (Accounts & Transactions) where PIN-gated operations are needed
+- **PIN verification:** Originally implemented in auth store; PIN system was removed in Phase 8 (Multi-User Auth) when the backend dropped PIN verification in favor of TOTP 2FA
 - **Notification system:** Deferred to Phase 6 (Reports, Settings & Notifications); expo-notifications not yet added as dependency
