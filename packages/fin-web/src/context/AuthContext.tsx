@@ -18,7 +18,7 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -41,7 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (result) {
           setUser({
             id: "admin",
-            username: "admin",
+            email: "admin",
+            role: "admin",
+            totpEnabled: false,
             createdAt: "",
             updatedAt: "",
           });
@@ -52,8 +54,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, [clearAuth]);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const response = await apiLogin({ username, password });
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await apiLogin({ email, password });
     setUser(response.user);
   }, []);
 

@@ -24,6 +24,10 @@
     "./ns": {
       "types": "./src/ns/index.ts",
       "default": "./dist/ns/index.js"
+    },
+    "./crypto": {
+      "types": "./src/crypto/index.ts",
+      "default": "./dist/crypto/index.js"
     }
   },
   "scripts": {

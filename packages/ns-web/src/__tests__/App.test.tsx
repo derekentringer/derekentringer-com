@@ -26,7 +26,7 @@ describe("App", () => {
     );
 
     await screen.findByText("NoteSync");
-    expect(screen.getByPlaceholderText("Username")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Email")).toBeInTheDocument();
   });
 
   it("renders the login page at /login", async () => {
@@ -48,6 +48,6 @@ describe("App", () => {
     );
 
     await screen.findByText("NoteSync");
-    expect(screen.getByPlaceholderText("Username")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Email")).toBeInTheDocument();
   });
 });

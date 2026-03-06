@@ -1,10 +1,10 @@
 import bcrypt from "bcryptjs";
 
 const TEST_PASSWORD = "testpassword123";
+const TEST_EMAIL = "admin@test.com";
+const TEST_USER_ID = "user-1";
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
 
-process.env.ADMIN_USERNAME = "admin";
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-ai-routes-min32ch";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-ai-min32ch";
 process.env.CORS_ORIGIN = "http://localhost:3005";
@@ -82,12 +82,25 @@ describe("AI routes", () => {
   });
 
   async function getAccessToken(): Promise<string> {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: TEST_USER_ID,
+      email: TEST_EMAIL,
+      displayName: null,
+      role: "admin",
+      passwordHash: bcrypt.hashSync(TEST_PASSWORD, 10),
+      totpEnabled: false,
+      totpSecret: null,
+      backupCodes: [],
+      mustChangePassword: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     mockPrisma.refreshToken.create.mockResolvedValue({});
 
     const res = await app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { username: "admin", password: TEST_PASSWORD },
+      payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
     });
     return res.json().accessToken;
   }
@@ -95,6 +108,7 @@ describe("AI routes", () => {
   function makeMockNoteRow(overrides: Record<string, unknown> = {}) {
     return {
       id: VALID_UUID,
+      userId: TEST_USER_ID,
       title: "Test Note",
       content: "Some content here",
       folder: null,
@@ -725,7 +739,7 @@ describe("AI routes", () => {
       expect(res.body).toContain("Second Note");
       expect(res.body).toContain("Based on");
       expect(res.body).toContain("[DONE]");
-      expect(mockFindRelevantNotes).toHaveBeenCalledWith("What is in my notes?", 5);
+      expect(mockFindRelevantNotes).toHaveBeenCalledWith(TEST_USER_ID, "What is in my notes?", 5);
       expect(mockAnswerQuestion).toHaveBeenCalledWith(
         "What is in my notes?",
         expect.arrayContaining([

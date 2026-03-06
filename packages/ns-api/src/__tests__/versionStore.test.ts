@@ -8,6 +8,8 @@ beforeAll(() => {
   mockPrisma = createMockPrisma();
 });
 
+const TEST_USER_ID = "user-1";
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -119,6 +121,8 @@ describe("captureVersion", () => {
 
 describe("listVersions", () => {
   it("returns versions newest-first with total", async () => {
+    // listVersions now verifies note ownership first
+    mockPrisma.note.findUnique.mockResolvedValue({ userId: TEST_USER_ID });
     const versions = [
       { id: "v2", noteId: "n1", title: "T2", content: "C2", createdAt: new Date() },
       { id: "v1", noteId: "n1", title: "T1", content: "C1", createdAt: new Date(Date.now() - 60000) },
@@ -126,7 +130,7 @@ describe("listVersions", () => {
     mockPrisma.noteVersion.findMany.mockResolvedValue(versions);
     mockPrisma.noteVersion.count.mockResolvedValue(2);
 
-    const result = await listVersions("n1");
+    const result = await listVersions(TEST_USER_ID, "n1");
 
     expect(result.versions).toHaveLength(2);
     expect(result.total).toBe(2);
@@ -139,10 +143,20 @@ describe("listVersions", () => {
   });
 
   it("returns empty when no versions", async () => {
+    mockPrisma.note.findUnique.mockResolvedValue({ userId: TEST_USER_ID });
     mockPrisma.noteVersion.findMany.mockResolvedValue([]);
     mockPrisma.noteVersion.count.mockResolvedValue(0);
 
-    const result = await listVersions("n1");
+    const result = await listVersions(TEST_USER_ID, "n1");
+
+    expect(result.versions).toHaveLength(0);
+    expect(result.total).toBe(0);
+  });
+
+  it("returns empty when note belongs to different user", async () => {
+    mockPrisma.note.findUnique.mockResolvedValue({ userId: "other-user" });
+
+    const result = await listVersions(TEST_USER_ID, "n1");
 
     expect(result.versions).toHaveLength(0);
     expect(result.total).toBe(0);
@@ -151,24 +165,46 @@ describe("listVersions", () => {
 
 describe("getVersion", () => {
   it("returns a version by ID", async () => {
-    const version = {
+    const createdAt = new Date();
+    mockPrisma.noteVersion.findUnique.mockResolvedValue({
       id: "v1",
       noteId: "n1",
       title: "Title",
       content: "Content",
-      createdAt: new Date(),
-    };
-    mockPrisma.noteVersion.findUnique.mockResolvedValue(version);
+      createdAt,
+      note: { userId: TEST_USER_ID },
+    });
 
-    const result = await getVersion("v1");
+    const result = await getVersion(TEST_USER_ID, "v1");
 
-    expect(result).toEqual(version);
+    expect(result).toEqual({
+      id: "v1",
+      noteId: "n1",
+      title: "Title",
+      content: "Content",
+      createdAt,
+    });
   });
 
   it("returns null for nonexistent version", async () => {
     mockPrisma.noteVersion.findUnique.mockResolvedValue(null);
 
-    const result = await getVersion("nonexistent");
+    const result = await getVersion(TEST_USER_ID, "nonexistent");
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when version belongs to different user", async () => {
+    mockPrisma.noteVersion.findUnique.mockResolvedValue({
+      id: "v1",
+      noteId: "n1",
+      title: "Title",
+      content: "Content",
+      createdAt: new Date(),
+      note: { userId: "other-user" },
+    });
+
+    const result = await getVersion(TEST_USER_ID, "v1");
 
     expect(result).toBeNull();
   });

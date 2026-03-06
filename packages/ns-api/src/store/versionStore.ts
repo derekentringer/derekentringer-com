@@ -47,10 +47,21 @@ export async function captureVersion(
 }
 
 export async function listVersions(
+  userId: string,
   noteId: string,
   opts?: { page?: number; pageSize?: number },
 ): Promise<{ versions: { id: string; noteId: string; title: string; content: string; createdAt: Date }[]; total: number }> {
   const prisma = getPrisma();
+
+  // Verify note belongs to user
+  const note = await prisma.note.findUnique({
+    where: { id: noteId },
+    select: { userId: true },
+  });
+  if (!note || note.userId !== userId) {
+    return { versions: [], total: 0 };
+  }
+
   const page = opts?.page ?? 1;
   const pageSize = opts?.pageSize ?? 50;
   const skip = (page - 1) * pageSize;
@@ -69,8 +80,22 @@ export async function listVersions(
 }
 
 export async function getVersion(
+  userId: string,
   versionId: string,
 ): Promise<{ id: string; noteId: string; title: string; content: string; createdAt: Date } | null> {
   const prisma = getPrisma();
-  return prisma.noteVersion.findUnique({ where: { id: versionId } });
+  const version = await prisma.noteVersion.findUnique({
+    where: { id: versionId },
+    include: { note: { select: { userId: true } } },
+  });
+
+  if (!version || version.note.userId !== userId) return null;
+
+  return {
+    id: version.id,
+    noteId: version.noteId,
+    title: version.title,
+    content: version.content,
+    createdAt: version.createdAt,
+  };
 }

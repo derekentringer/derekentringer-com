@@ -1,4 +1,4 @@
-import { encrypt, decrypt } from "@derekentringer/shared";
+import { encrypt, decrypt } from "@derekentringer/shared/crypto";
 
 let encryptionKey: Buffer | null = null;
 

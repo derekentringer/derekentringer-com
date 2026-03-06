@@ -46,7 +46,7 @@ describe("auth plugin", () => {
   });
 
   it("returns 200 with a valid token", async () => {
-    const token = app.jwt.sign({ sub: "admin", username: "admin" });
+    const token = app.jwt.sign({ sub: "admin", email: "admin@test.com", role: "admin" });
 
     const response = await app.inject({
       method: "GET",
@@ -56,7 +56,7 @@ describe("auth plugin", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.user).toMatchObject({ sub: "admin", username: "admin" });
+    expect(body.user).toMatchObject({ sub: "admin", email: "admin@test.com", role: "admin" });
   });
 
   it("rejects a tampered token", async () => {
@@ -71,7 +71,7 @@ describe("auth plugin", () => {
 
   it("rejects an expired token", async () => {
     const token = app.jwt.sign(
-      { sub: "admin", username: "admin" },
+      { sub: "admin", email: "admin@test.com", role: "admin" },
       { expiresIn: "1s" },
     );
 

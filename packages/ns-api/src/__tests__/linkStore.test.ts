@@ -1,5 +1,3 @@
-process.env.ADMIN_USERNAME = "admin";
-process.env.ADMIN_PASSWORD_HASH = "unused";
 process.env.JWT_SECRET = "test-jwt-secret-for-link-store-min32c";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-link-min32ch";
 process.env.CORS_ORIGIN = "http://localhost:3005";
@@ -19,6 +17,8 @@ let mockPrisma: MockPrisma;
 beforeAll(() => {
   mockPrisma = createMockPrisma();
 });
+
+const TEST_USER_ID = "user-1";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -70,7 +70,7 @@ describe("syncNoteLinks", () => {
     ]);
     mockPrisma.noteLink.createMany.mockResolvedValue({ count: 1 });
 
-    await syncNoteLinks("source-1", "See [[Target Note]] for info");
+    await syncNoteLinks(TEST_USER_ID, "source-1", "See [[Target Note]] for info");
 
     expect(mockPrisma.noteLink.deleteMany).toHaveBeenCalledWith({
       where: { sourceNoteId: "source-1" },
@@ -93,7 +93,7 @@ describe("syncNoteLinks", () => {
     ]);
     mockPrisma.noteLink.createMany.mockResolvedValue({ count: 0 });
 
-    await syncNoteLinks("source-1", "See [[Self Note]] here");
+    await syncNoteLinks(TEST_USER_ID, "source-1", "See [[Self Note]] here");
 
     // createMany should not be called since the only link is a self-link
     expect(mockPrisma.noteLink.createMany).not.toHaveBeenCalled();
@@ -102,7 +102,7 @@ describe("syncNoteLinks", () => {
   it("does nothing when no links found", async () => {
     mockPrisma.noteLink.deleteMany.mockResolvedValue({ count: 0 });
 
-    await syncNoteLinks("source-1", "No links here");
+    await syncNoteLinks(TEST_USER_ID, "source-1", "No links here");
 
     expect(mockPrisma.noteLink.deleteMany).toHaveBeenCalled();
     expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
@@ -118,11 +118,11 @@ describe("getBacklinks", () => {
         sourceNoteId: "src-1",
         targetNoteId: "target-1",
         linkText: "My Note",
-        sourceNote: { id: "src-1", title: "Source Note", deletedAt: null },
+        sourceNote: { id: "src-1", title: "Source Note", userId: TEST_USER_ID, deletedAt: null },
       },
     ]);
 
-    const result = await getBacklinks("target-1");
+    const result = await getBacklinks(TEST_USER_ID, "target-1");
 
     expect(result).toEqual([
       { noteId: "src-1", noteTitle: "Source Note", linkText: "My Note" },
@@ -136,11 +136,11 @@ describe("getBacklinks", () => {
         sourceNoteId: "src-1",
         targetNoteId: "target-1",
         linkText: "My Note",
-        sourceNote: { id: "src-1", title: "Deleted Note", deletedAt: new Date() },
+        sourceNote: { id: "src-1", title: "Deleted Note", userId: TEST_USER_ID, deletedAt: new Date() },
       },
     ]);
 
-    const result = await getBacklinks("target-1");
+    const result = await getBacklinks(TEST_USER_ID, "target-1");
 
     expect(result).toEqual([]);
   });
@@ -148,7 +148,7 @@ describe("getBacklinks", () => {
   it("returns empty array when no backlinks", async () => {
     mockPrisma.noteLink.findMany.mockResolvedValue([]);
 
-    const result = await getBacklinks("target-1");
+    const result = await getBacklinks(TEST_USER_ID, "target-1");
 
     expect(result).toEqual([]);
   });
@@ -161,7 +161,7 @@ describe("listNoteTitles", () => {
       { id: "2", title: "Beta" },
     ]);
 
-    const result = await listNoteTitles();
+    const result = await listNoteTitles(TEST_USER_ID);
 
     expect(result).toEqual([
       { id: "1", title: "Alpha" },

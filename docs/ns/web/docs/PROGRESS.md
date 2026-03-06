@@ -15,7 +15,7 @@
 | Vector Search | pgvector | Server-side semantic search via embeddings |
 | AI | Anthropic Claude API | Tagging, summarization, semantic search, AI assistant chat, inline markdown completions |
 | Offline Cache | IndexedDB | Light cache for recently viewed notes; brief offline tolerance |
-| Auth | Reuse @derekentringer/shared auth plugin | Single-user JWT + bcrypt, same pattern as fin-web |
+| Auth | Multi-user with JWT + bcrypt + TOTP 2FA | User model, registration, password reset via Resend, admin panel |
 | Styling | Tailwind CSS | Consistent with desktop app |
 | Hosting | Railway | API as Node.js service, web as static service, PostgreSQL via Railway plugin |
 | Domain | notesync.derekentringer.com | Subdomain of existing domain |
@@ -76,6 +76,10 @@
 - [x] [08 — Version History](features/08-version-history.md) — NoteVersion snapshots on save (configurable interval: every save / 5 / 15 / 30 / 60 min, 50-cap per note), version list panel in tabbed right-side drawer (shared with AI Assistant), unified and split diff views with green/red highlighting, two-step restore with auto-dismissing success toast, stacked tab buttons (chat + clock icons) positioned above backlinks panel, resizable right drawer panel with persisted width, draggable backlinks panel with persisted height and collapsed state, version interval setting in Settings page, cascade delete on note removal
 
 - [x] [09 — Favorites](features/09-favorites.md) — Favorite notes and folders via right-click context menus, collapsible Favorites panel above Folders in sidebar with localStorage persistence, star indicators (★) in FolderTree and NoteList, dedicated API endpoints (GET /notes/favorites, PATCH /notes/folders/:id/favorite), offline support with IndexedDB merge, real-time title sync in favorites panel, collapsible Folders section header, 14px section headers (Favorites/Folders/Notes), comprehensive test coverage across 23 files
+
+### Phase 5: Multi-User — High Priority
+
+- [x] [10 — Multi-User Auth](features/10-multi-user-auth.md) — User model with per-user data isolation (userId on all notes/folders/sync cursors), email-based registration gated by admin-managed approved list, password reset via Resend email service, TOTP two-factor authentication with backup codes, admin panel (user management, approved emails, global AI toggle), shared password strength validation, database-backed login replacing env-var auth
 
 ## Extension Ideas (Future)
 

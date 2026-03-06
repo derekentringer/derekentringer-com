@@ -8,7 +8,7 @@ import { FinLogo } from "@/components/FinLogo.tsx";
 
 export function LoginPage() {
   const { isAuthenticated, isLoading, login } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -22,7 +22,7 @@ export function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await login(username, password);
+      await login(email, password);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -43,8 +43,8 @@ export function LoginPage() {
         <Input
           type="text"
           placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           autoComplete="username"
           autoFocus
         />
@@ -60,7 +60,7 @@ export function LoginPage() {
         )}
         <Button
           type="submit"
-          disabled={isSubmitting || !username || !password}
+          disabled={isSubmitting || !email || !password}
           className="w-full"
         >
           {isSubmitting ? "Signing in..." : "Sign in"}

@@ -1,9 +1,8 @@
 import bcrypt from "bcryptjs";
 
 const TEST_PASSWORD = "testpassword123";
+const TEST_EMAIL = "admin@test.com";
 
-process.env.ADMIN_USERNAME = "admin";
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-auth-tests-min32chars";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
 process.env.CORS_ORIGIN = "http://localhost:3005";
@@ -53,16 +52,34 @@ describe("Auth routes", () => {
     );
   }
 
+  function makeMockUser(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "admin-001",
+      email: TEST_EMAIL,
+      displayName: null,
+      role: "admin",
+      passwordHash: bcrypt.hashSync(TEST_PASSWORD, 10),
+      totpEnabled: false,
+      totpSecret: null,
+      backupCodes: [],
+      mustChangePassword: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides,
+    };
+  }
+
   // --- Login ---
 
   describe("POST /auth/login", () => {
     it("returns 200, accessToken, and user with valid credentials", async () => {
       setupTokenMocks();
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
 
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(200);
@@ -71,21 +88,22 @@ describe("Auth routes", () => {
       expect(body.expiresIn).toBe(900);
       expect(body.user).toBeDefined();
       expect(body.user.id).toBe("admin-001");
-      expect(body.user.username).toBe("admin");
+      expect(body.user.email).toBe(TEST_EMAIL);
+      expect(body.user.role).toBe("admin");
     });
 
     it("sets refreshToken cookie (no body token)", async () => {
       setupTokenMocks();
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
 
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      // ns-api does NOT return refreshToken in body (no mobile support)
       expect(body.refreshToken).toBeUndefined();
 
       const cookies = res.cookies;
@@ -96,10 +114,12 @@ describe("Auth routes", () => {
     });
 
     it("returns 401 with wrong password", async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
+
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: "wrongpassword" },
+        payload: { email: TEST_EMAIL, password: "wrongpassword" },
       });
 
       expect(res.statusCode).toBe(401);
@@ -107,11 +127,13 @@ describe("Auth routes", () => {
       expect(body.message).toBe("Invalid credentials");
     });
 
-    it("returns 401 with wrong username", async () => {
+    it("returns 401 with wrong email", async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+
       const res = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "wronguser", password: TEST_PASSWORD },
+        payload: { email: "wrong@test.com", password: TEST_PASSWORD },
       });
 
       expect(res.statusCode).toBe(401);
@@ -137,11 +159,12 @@ describe("Auth routes", () => {
   describe("POST /auth/refresh", () => {
     it("returns new accessToken with valid refresh cookie", async () => {
       setupTokenMocks();
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
 
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const cookies = loginRes.cookies;
@@ -191,16 +214,54 @@ describe("Auth routes", () => {
     });
   });
 
+  // --- GET /auth/me ---
+
+  describe("GET /auth/me", () => {
+    it("returns user profile with valid auth", async () => {
+      setupTokenMocks();
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
+
+      const loginRes = await app.inject({
+        method: "POST",
+        url: "/auth/login",
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
+      });
+
+      const { accessToken } = loginRes.json();
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/auth/me",
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.user.email).toBe(TEST_EMAIL);
+      expect(body.user.role).toBe("admin");
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/auth/me",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
   // --- Logout ---
 
   describe("POST /auth/logout", () => {
     it("clears refresh token and returns success", async () => {
       setupTokenMocks();
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
 
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -236,12 +297,13 @@ describe("Auth routes", () => {
   describe("POST /auth/sessions/revoke-all", () => {
     it("revokes all sessions and returns count", async () => {
       setupTokenMocks();
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
       mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 3 });
 
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();
@@ -269,12 +331,13 @@ describe("Auth routes", () => {
 
     it("returns count 0 when no sessions exist", async () => {
       setupTokenMocks();
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
       mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
 
       const loginRes = await app.inject({
         method: "POST",
         url: "/auth/login",
-        payload: { username: "admin", password: TEST_PASSWORD },
+        payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
       });
 
       const { accessToken } = loginRes.json();

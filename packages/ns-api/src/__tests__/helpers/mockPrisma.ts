@@ -20,6 +20,9 @@ export interface MockModel {
 }
 
 export interface MockPrisma {
+  user: MockModel;
+  passkey: MockModel;
+  passwordResetToken: MockModel;
   note: MockModel;
   noteVersion: MockModel;
   noteLink: MockModel;
@@ -52,6 +55,9 @@ function createMockModel(): MockModel {
 
 export function createMockPrisma(): MockPrisma {
   const mock: MockPrisma = {
+    user: createMockModel(),
+    passkey: createMockModel(),
+    passwordResetToken: createMockModel(),
     note: createMockModel(),
     noteVersion: createMockModel(),
     noteLink: createMockModel(),
