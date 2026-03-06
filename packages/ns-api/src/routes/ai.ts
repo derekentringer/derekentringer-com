@@ -16,6 +16,7 @@ import type { AudioMode } from "@derekentringer/shared/ns";
 import {
   isEmbeddingEnabled,
   setEmbeddingEnabled,
+  getSetting,
 } from "../store/settingStore.js";
 import { processAllPendingEmbeddings } from "../services/embeddingProcessor.js";
 import { getPrisma } from "../lib/prisma.js";
@@ -103,6 +104,18 @@ const VALID_MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 
 export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  // Check if AI is globally enabled by admin
+  fastify.addHook("onRequest", async (_request, reply) => {
+    const aiEnabled = await getSetting("aiEnabled");
+    if (aiEnabled === "false") {
+      return reply.status(403).send({
+        statusCode: 403,
+        error: "Forbidden",
+        message: "AI features disabled by administrator",
+      });
+    }
+  });
 
   // POST /ai/complete — SSE streaming
   fastify.post<{ Body: { context: string; style?: string } }>(

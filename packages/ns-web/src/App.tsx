@@ -8,6 +8,7 @@ import { ResetPasswordPage } from "./pages/ResetPasswordPage.tsx";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage.tsx";
 import { NotesPage } from "./pages/NotesPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
+import { AdminPage } from "./pages/AdminPage.tsx";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -114,6 +115,14 @@ export function App() {
           element={
             <ProtectedRoute>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminPage />
             </ProtectedRoute>
           }
         />
