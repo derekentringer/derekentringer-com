@@ -39,10 +39,10 @@ function refreshCookieOptions(nodeEnv: string) {
 const loginSchema = {
   body: {
     type: "object" as const,
-    required: ["username", "password"],
+    required: ["email", "password"],
     additionalProperties: false,
     properties: {
-      username: { type: "string" },
+      email: { type: "string" },
       password: { type: "string" },
     },
   },
@@ -75,16 +75,16 @@ export default async function authRoutes(fastify: FastifyInstance) {
       },
     },
     async (request: FastifyRequest<{ Body: LoginRequest }>, reply: FastifyReply) => {
-      const { username, password } = request.body;
+      const { email, password } = request.body;
 
-      // Always run bcrypt.compare to prevent timing-based username enumeration.
-      // Use a dummy hash when username doesn't match so both paths take equal time.
+      // Always run bcrypt.compare to prevent timing-based enumeration.
+      // Use a dummy hash when credentials don't match so both paths take equal time.
       const DUMMY_HASH = "$2b$10$0000000000000000000000000000000000000000000000000000";
-      const isUsernameValid = username === config.adminUsername;
-      const hashToCompare = isUsernameValid ? config.adminPasswordHash : DUMMY_HASH;
+      const isEmailValid = email === config.adminUsername;
+      const hashToCompare = isEmailValid ? config.adminPasswordHash : DUMMY_HASH;
       const isPasswordValid = await bcrypt.compare(password, hashToCompare);
 
-      if (!isUsernameValid || !isPasswordValid) {
+      if (!isEmailValid || !isPasswordValid) {
         return reply.status(401).send({
           statusCode: 401,
           error: "Unauthorized",
@@ -96,7 +96,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         const now = new Date().toISOString();
         const accessToken = fastify.jwt.sign({
           sub: ADMIN_USER_ID,
-          username: config.adminUsername,
+          email: config.adminUsername,
+          role: "admin",
         });
 
         const refreshToken = crypto.randomBytes(32).toString("hex");
@@ -109,7 +110,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
           expiresIn: 900,
           user: {
             id: ADMIN_USER_ID,
-            username: config.adminUsername,
+            email: config.adminUsername,
+            role: "admin",
+            totpEnabled: false,
             createdAt: now,
             updatedAt: now,
           },
@@ -170,7 +173,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
         const accessToken = fastify.jwt.sign({
           sub: stored.userId,
-          username: stored.userId === ADMIN_USER_ID ? config.adminUsername : stored.userId,
+          email: stored.userId === ADMIN_USER_ID ? config.adminUsername : stored.userId,
+          role: "admin",
         });
 
         reply.setCookie("refreshToken", newRefreshToken, refreshCookieOptions(config.nodeEnv));

@@ -22,9 +22,10 @@ export function extractWikiLinks(content: string): string[] {
 
 /**
  * Resolve wiki-link texts to note IDs by case-insensitive title match.
- * Only matches non-deleted notes.
+ * Only matches non-deleted notes belonging to the given user.
  */
 export async function resolveWikiLinks(
+  userId: string,
   linkTexts: string[],
 ): Promise<Map<string, string>> {
   if (linkTexts.length === 0) return new Map();
@@ -35,8 +36,10 @@ export async function resolveWikiLinks(
   const rows = await prisma.$queryRawUnsafe<{ id: string; title: string }[]>(
     `SELECT "id", "title" FROM "notes"
      WHERE LOWER("title") = ANY($1)
+       AND "userId" = $2
        AND "deletedAt" IS NULL`,
     lowerTexts,
+    userId,
   );
 
   // Map lowercase title → note ID
@@ -52,6 +55,7 @@ export async function resolveWikiLinks(
  * Deletes existing outgoing links and creates new ones.
  */
 export async function syncNoteLinks(
+  userId: string,
   sourceNoteId: string,
   content: string,
 ): Promise<void> {
@@ -65,7 +69,7 @@ export async function syncNoteLinks(
   const linkTexts = extractWikiLinks(content);
   if (linkTexts.length === 0) return;
 
-  const resolved = await resolveWikiLinks(linkTexts);
+  const resolved = await resolveWikiLinks(userId, linkTexts);
   if (resolved.size === 0) return;
 
   const data: { sourceNoteId: string; targetNoteId: string; linkText: string }[] = [];
@@ -83,20 +87,21 @@ export async function syncNoteLinks(
 
 /**
  * Get all backlinks (incoming links) for a note.
- * Filters out links from deleted source notes.
+ * Filters out links from deleted source notes and notes not belonging to the user.
  */
 export async function getBacklinks(
+  userId: string,
   noteId: string,
 ): Promise<{ noteId: string; noteTitle: string; linkText: string }[]> {
   const prisma = getPrisma();
 
   const links = await prisma.noteLink.findMany({
     where: { targetNoteId: noteId },
-    include: { sourceNote: { select: { id: true, title: true, deletedAt: true } } },
+    include: { sourceNote: { select: { id: true, title: true, userId: true, deletedAt: true } } },
   });
 
   return links
-    .filter((link) => !link.sourceNote.deletedAt)
+    .filter((link) => !link.sourceNote.deletedAt && link.sourceNote.userId === userId)
     .map((link) => ({
       noteId: link.sourceNote.id,
       noteTitle: link.sourceNote.title,
@@ -105,13 +110,13 @@ export async function getBacklinks(
 }
 
 /**
- * List all note titles (non-deleted) for autocomplete.
+ * List all note titles (non-deleted) for autocomplete, scoped to user.
  */
-export async function listNoteTitles(): Promise<{ id: string; title: string }[]> {
+export async function listNoteTitles(userId: string): Promise<{ id: string; title: string }[]> {
   const prisma = getPrisma();
 
   return prisma.note.findMany({
-    where: { deletedAt: null },
+    where: { userId, deletedAt: null },
     select: { id: true, title: true },
     orderBy: { title: "asc" },
   });

@@ -9,8 +9,10 @@ import type { ReactNode } from "react";
 import type { User } from "@derekentringer/shared";
 import {
   login as apiLogin,
+  register as apiRegister,
   refreshSession,
   logout as apiLogout,
+  getMe,
 } from "../api/auth.ts";
 import { setOnAuthFailure } from "../api/client.ts";
 
@@ -18,8 +20,10 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
+  setUserFromLogin: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -37,14 +41,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOnAuthFailure(clearAuth);
 
     refreshSession()
-      .then((result) => {
+      .then(async (result) => {
         if (result) {
-          setUser({
-            id: "admin",
-            username: "admin",
-            createdAt: "",
-            updatedAt: "",
-          });
+          // Fetch real user data from the server
+          try {
+            const userData = await getMe();
+            setUser(userData);
+          } catch {
+            // Fallback if /auth/me fails
+            setUser(null);
+          }
         }
       })
       .finally(() => {
@@ -52,8 +58,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, [clearAuth]);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const response = await apiLogin({ username, password });
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await apiLogin({ email, password });
+    setUser(response.user);
+  }, []);
+
+  const register = useCallback(async (email: string, password: string, displayName?: string) => {
+    const response = await apiRegister({ email, password, displayName });
     setUser(response.user);
   }, []);
 
@@ -63,6 +74,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event("auth:logout"));
   }, []);
 
+  const setUserFromLogin = useCallback((userData: User) => {
+    setUser(userData);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -70,7 +85,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: user !== null,
         isLoading,
         login,
+        register,
         logout,
+        setUserFromLogin,
       }}
     >
       {children}

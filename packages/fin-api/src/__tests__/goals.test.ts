@@ -51,7 +51,7 @@ describe("Goal routes", () => {
     const res = await app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { username: "admin", password: TEST_PASSWORD },
+      payload: { email: "admin", password: TEST_PASSWORD },
     });
     return res.json().accessToken;
   }

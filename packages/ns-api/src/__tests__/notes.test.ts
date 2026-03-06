@@ -1,11 +1,11 @@
 import bcrypt from "bcryptjs";
 
 const TEST_PASSWORD = "testpassword123";
+const TEST_EMAIL = "admin@test.com";
+const TEST_USER_ID = "user-1";
 const VALID_UUID = "550e8400-e29b-41d4-a716-446655440000";
 const VALID_UUID_2 = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 
-process.env.ADMIN_USERNAME = "admin";
-process.env.ADMIN_PASSWORD_HASH = bcrypt.hashSync(TEST_PASSWORD, 10);
 process.env.JWT_SECRET = "test-jwt-secret-for-notes-tests-min32c";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret-for-tests-min32";
 process.env.CORS_ORIGIN = "http://localhost:3005";
@@ -34,12 +34,25 @@ describe("Note routes", () => {
   });
 
   async function getAccessToken(): Promise<string> {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: TEST_USER_ID,
+      email: TEST_EMAIL,
+      displayName: null,
+      role: "admin",
+      passwordHash: bcrypt.hashSync(TEST_PASSWORD, 10),
+      totpEnabled: false,
+      totpSecret: null,
+      backupCodes: [],
+      mustChangePassword: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
     mockPrisma.refreshToken.create.mockResolvedValue({});
 
     const res = await app.inject({
       method: "POST",
       url: "/auth/login",
-      payload: { username: "admin", password: TEST_PASSWORD },
+      payload: { email: TEST_EMAIL, password: TEST_PASSWORD },
     });
     return res.json().accessToken;
   }
@@ -47,6 +60,7 @@ describe("Note routes", () => {
   function makeMockNoteRow(overrides: Record<string, unknown> = {}) {
     return {
       id: VALID_UUID,
+      userId: TEST_USER_ID,
       title: "Test Note",
       content: "Some content",
       folder: "work",
@@ -473,6 +487,7 @@ describe("Note routes", () => {
       const token = await getAccessToken();
       mockPrisma.folder.findUnique.mockResolvedValue({
         id: VALID_UUID,
+        userId: TEST_USER_ID,
         name: "work",
         parentId: null,
         sortOrder: 0,
@@ -496,6 +511,7 @@ describe("Note routes", () => {
       const token = await getAccessToken();
       mockPrisma.folder.findUnique.mockResolvedValue({
         id: VALID_UUID,
+        userId: TEST_USER_ID,
         name: "work",
         parentId: null,
         sortOrder: 0,
@@ -1384,7 +1400,7 @@ describe("Note routes", () => {
           sourceNoteId: VALID_UUID_2,
           targetNoteId: VALID_UUID,
           linkText: "Test Note",
-          sourceNote: { id: VALID_UUID_2, title: "Source", deletedAt: null },
+          sourceNote: { id: VALID_UUID_2, title: "Source", userId: TEST_USER_ID, deletedAt: null },
         },
       ]);
 
@@ -1445,6 +1461,8 @@ describe("Note routes", () => {
   describe("GET /notes/:id/versions", () => {
     it("returns version list (200)", async () => {
       const token = await getAccessToken();
+      // listVersions now verifies note ownership first
+      mockPrisma.note.findUnique.mockResolvedValue({ userId: TEST_USER_ID });
       mockPrisma.noteVersion.findMany.mockResolvedValue([
         { id: "v1", noteId: VALID_UUID, title: "T1", content: "C1", createdAt: new Date() },
       ]);
@@ -1493,6 +1511,7 @@ describe("Note routes", () => {
         title: "Version Title",
         content: "Version Content",
         createdAt: new Date(),
+        note: { userId: TEST_USER_ID },
       });
 
       const res = await app.inject({
@@ -1527,6 +1546,7 @@ describe("Note routes", () => {
         title: "T",
         content: "C",
         createdAt: new Date(),
+        note: { userId: TEST_USER_ID },
       });
 
       const res = await app.inject({
@@ -1548,6 +1568,7 @@ describe("Note routes", () => {
         title: "Old Title",
         content: "Old Content",
         createdAt: new Date(),
+        note: { userId: TEST_USER_ID },
       });
       mockPrisma.note.update.mockResolvedValue(
         makeMockNoteRow({ title: "Old Title", content: "Old Content" }),

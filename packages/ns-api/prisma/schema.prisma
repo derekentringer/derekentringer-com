@@ -7,8 +7,58 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  passwordHash       String
+  displayName        String?
+  role               String    @default("user")
+  totpSecret         String?
+  totpEnabled        Boolean   @default(false)
+  backupCodes        Json      @default("[]")
+  mustChangePassword Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  notes              Note[]
+  folders            Folder[]
+  refreshTokens      RefreshToken[]
+  passkeys           Passkey[]
+
+  @@map("users")
+}
+
+model Passkey {
+  id           String    @id @default(uuid())
+  userId       String
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      BigInt    @default(0)
+  transports   Json      @default("[]")
+  deviceType   String?
+  backedUp     Boolean   @default(false)
+  friendlyName String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("passkeys")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("password_reset_tokens")
+}
+
 model Note {
   id                 String                       @id @default(uuid())
+  userId             String
   title              String
   content            String
   folder             String?
@@ -26,7 +76,9 @@ model Note {
   outgoingLinks      NoteLink[]                   @relation("OutgoingLinks")
   incomingLinks      NoteLink[]                   @relation("IncomingLinks")
   versions           NoteVersion[]
+  user               User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@index([folder])
   @@index([folderId])
   @@index([deletedAt])
@@ -71,6 +123,7 @@ model Setting {
 
 model Folder {
   id        String   @id @default(uuid())
+  userId    String
   name      String
   parentId  String?
   sortOrder Int      @default(0)
@@ -79,16 +132,20 @@ model Folder {
   children  Folder[] @relation("FolderTree")
   notes     Note[]
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([parentId, name])
+  @@unique([userId, parentId, name])
+  @@index([userId])
   @@index([parentId])
   @@map("folders")
 }
 
 model SyncCursor {
-  deviceId     String   @id
+  userId       String
+  deviceId     String
   lastSyncedAt DateTime
 
+  @@id([userId, deviceId])
   @@map("sync_cursors")
 }
 
@@ -98,6 +155,7 @@ model RefreshToken {
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt])
   @@map("refresh_tokens")

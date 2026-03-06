@@ -191,8 +191,9 @@ export default async function noteRoutes(fastify: FastifyInstance) {
   // GET /notes/titles — MUST be before /:id
   fastify.get(
     "/titles",
-    async (_request: FastifyRequest, reply: FastifyReply) => {
-      const notes = await listNoteTitles();
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
+      const notes = await listNoteTitles(userId);
       return reply.send({ notes });
     },
   );
@@ -200,8 +201,9 @@ export default async function noteRoutes(fastify: FastifyInstance) {
   // GET /notes/favorites — MUST be before /:id
   fastify.get(
     "/favorites",
-    async (_request: FastifyRequest, reply: FastifyReply) => {
-      const notes = await listFavoriteNotes();
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
+      const notes = await listFavoriteNotes(userId);
       return reply.send({ notes: notes.map(toNote) });
     },
   );
@@ -209,8 +211,9 @@ export default async function noteRoutes(fastify: FastifyInstance) {
   // GET /notes/folders — MUST be before /:id
   fastify.get(
     "/folders",
-    async (_request: FastifyRequest, reply: FastifyReply) => {
-      const folders = await listFolders();
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
+      const folders = await listFolders(userId);
       const response: FolderListResponse = { folders };
       return reply.send(response);
     },
@@ -224,8 +227,10 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: { name: string; parentId?: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       try {
         const folder = await createFolder(
+          userId,
           request.body.name,
           request.body.parentId,
         );
@@ -261,7 +266,8 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: ReorderNotesRequest }>,
       reply: FastifyReply,
     ) => {
-      await reorderNotes(request.body.order);
+      const userId = request.user.sub;
+      await reorderNotes(userId, request.body.order);
       return reply.status(204).send();
     },
   );
@@ -269,8 +275,9 @@ export default async function noteRoutes(fastify: FastifyInstance) {
   // GET /notes/tags — MUST be before /:id
   fastify.get(
     "/tags",
-    async (_request: FastifyRequest, reply: FastifyReply) => {
-      const tags = await listTags();
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
+      const tags = await listTags(userId);
       const response: TagListResponse = { tags };
       return reply.send(response);
     },
@@ -287,9 +294,10 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { name } = request.params;
       const { newName } = request.body;
-      const updated = await renameTag(name, newName);
+      const updated = await renameTag(userId, name, newName);
       return reply.send({ updated });
     },
   );
@@ -301,8 +309,9 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { name: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { name } = request.params;
-      const updated = await removeTag(name);
+      const updated = await removeTag(userId, name);
       return reply.send({ updated });
     },
   );
@@ -384,8 +393,9 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { page, pageSize } = request.query;
-      const result = await listTrashedNotes({
+      const result = await listTrashedNotes(userId, {
         page: page ? Number(page) : undefined,
         pageSize: pageSize ? Number(pageSize) : undefined,
       });
@@ -405,6 +415,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body?: { ids?: string[] } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const ids = request.body?.ids;
       if (ids !== undefined && (!Array.isArray(ids) || ids.some((id) => typeof id !== "string"))) {
         return reply.status(400).send({
@@ -413,7 +424,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
           message: "ids must be an array of strings",
         });
       }
-      const deleted = await permanentDeleteTrash(ids);
+      const deleted = await permanentDeleteTrash(userId, ids);
       return reply.send({ deleted });
     },
   );
@@ -437,6 +448,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { folder, folderId, search, searchMode, tags, page, pageSize, sortBy, sortOrder } =
         request.query;
 
@@ -469,7 +481,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         ? tags.split(",").map((t) => t.trim()).filter(Boolean)
         : undefined;
 
-      const result = await listNotes({
+      const result = await listNotes(userId, {
         folder,
         folderId,
         search,
@@ -504,6 +516,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       if (!UUID_REGEX.test(id)) {
         return reply.status(400).send({
@@ -513,7 +526,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const backlinks = await getBacklinks(id);
+      const backlinks = await getBacklinks(userId, id);
       return reply.send({ backlinks });
     },
   );
@@ -528,6 +541,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       if (!UUID_REGEX.test(id)) {
         return reply.status(400).send({
@@ -538,7 +552,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }
 
       const { page, pageSize } = request.query;
-      const result = await listVersions(id, {
+      const result = await listVersions(userId, id, {
         page: page ? Number(page) : undefined,
         pageSize: pageSize ? Number(pageSize) : undefined,
       });
@@ -559,6 +573,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id, versionId } = request.params;
       if (!UUID_REGEX.test(id) || !UUID_REGEX.test(versionId)) {
         return reply.status(400).send({
@@ -568,7 +583,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const version = await getVersion(versionId);
+      const version = await getVersion(userId, versionId);
       if (!version || version.noteId !== id) {
         return reply.status(404).send({
           statusCode: 404,
@@ -590,6 +605,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id, versionId } = request.params;
       if (!UUID_REGEX.test(id) || !UUID_REGEX.test(versionId)) {
         return reply.status(400).send({
@@ -599,7 +615,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const version = await getVersion(versionId);
+      const version = await getVersion(userId, versionId);
       if (!version || version.noteId !== id) {
         return reply.status(404).send({
           statusCode: 404,
@@ -608,7 +624,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const updated = await updateNote(id, {
+      const updated = await updateNote(userId, id, {
         title: version.title,
         content: version.content,
       });
@@ -631,6 +647,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       if (!UUID_REGEX.test(id)) {
         return reply.status(400).send({
@@ -640,7 +657,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const note = await getNote(id);
+      const note = await getNote(userId, id);
       if (!note) {
         return reply.status(404).send({
           statusCode: 404,
@@ -661,7 +678,8 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: CreateNoteRequest }>,
       reply: FastifyReply,
     ) => {
-      const note = await createNote(request.body);
+      const userId = request.user.sub;
+      const note = await createNote(userId, request.body);
       return reply.status(201).send({ note: toNote(note) });
     },
   );
@@ -674,7 +692,8 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Body: ReorderFoldersRequest }>,
       reply: FastifyReply,
     ) => {
-      await reorderFolders(request.body.order);
+      const userId = request.user.sub;
+      await reorderFolders(userId, request.body.order);
       return reply.status(204).send();
     },
   );
@@ -704,6 +723,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       if (!UUID_REGEX.test(id)) {
         return reply.status(400).send({
@@ -714,7 +734,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const folder = await toggleFolderFavorite(id, request.body.favorite);
+        const folder = await toggleFolderFavorite(userId, id, request.body.favorite);
         return reply.send({ id: folder.id, favorite: folder.favorite });
       } catch (error) {
         if (isNotFoundError(error)) {
@@ -743,9 +763,10 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       try {
-        const folder = await moveFolder(id, request.body.parentId, request.body.sortOrder);
+        const folder = await moveFolder(userId, id, request.body.parentId, request.body.sortOrder);
         return reply.send({
           id: folder.id,
           name: folder.name,
@@ -776,13 +797,14 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       const { newName } = request.body;
 
       // If it looks like a UUID, rename by ID; otherwise legacy name-based rename
       if (UUID_REGEX.test(id)) {
         try {
-          const folder = await renameFolderById(id, newName);
+          const folder = await renameFolderById(userId, id, newName);
           return reply.send({ id: folder.id, name: folder.name });
         } catch (error) {
           if (isNotFoundError(error)) {
@@ -809,7 +831,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }
 
       // Legacy name-based rename
-      const updated = await renameFolder(id, newName);
+      const updated = await renameFolder(userId, id, newName);
       return reply.send({ updated });
     },
   );
@@ -824,6 +846,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       const mode = request.query.mode as "move-up" | "recursive" | undefined;
 
@@ -837,12 +860,12 @@ export default async function noteRoutes(fastify: FastifyInstance) {
             message: "Invalid mode. Must be 'move-up' or 'recursive'",
           });
         }
-        const updated = await deleteFolderById(id, mode ?? "move-up");
+        const updated = await deleteFolderById(userId, id, mode ?? "move-up");
         return reply.send({ updated });
       }
 
       // Legacy name-based delete
-      const updated = await deleteFolder(id);
+      const updated = await deleteFolder(userId, id);
       return reply.send({ updated });
     },
   );
@@ -854,6 +877,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       if (!UUID_REGEX.test(id)) {
         return reply.status(400).send({
@@ -863,7 +887,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const note = await restoreNote(id);
+      const note = await restoreNote(userId, id);
       if (!note) {
         return reply.status(404).send({
           statusCode: 404,
@@ -884,6 +908,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string }; Body: UpdateNoteRequest }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       if (!UUID_REGEX.test(id)) {
         return reply.status(400).send({
@@ -910,7 +935,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const note = await updateNote(id, body);
+      const note = await updateNote(userId, id, body);
       if (!note) {
         return reply.status(404).send({
           statusCode: 404,
@@ -930,6 +955,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       if (!UUID_REGEX.test(id)) {
         return reply.status(400).send({
@@ -939,7 +965,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const deleted = await permanentDeleteNote(id);
+      const deleted = await permanentDeleteNote(userId, id);
       if (!deleted) {
         return reply.status(404).send({
           statusCode: 404,
@@ -959,6 +985,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       request: FastifyRequest<{ Params: { id: string } }>,
       reply: FastifyReply,
     ) => {
+      const userId = request.user.sub;
       const { id } = request.params;
       if (!UUID_REGEX.test(id)) {
         return reply.status(400).send({
@@ -968,7 +995,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const deleted = await softDeleteNote(id);
+      const deleted = await softDeleteNote(userId, id);
       if (!deleted) {
         return reply.status(404).send({
           statusCode: 404,
