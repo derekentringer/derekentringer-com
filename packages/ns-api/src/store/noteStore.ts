@@ -195,7 +195,7 @@ async function keywordSearch(
 
   const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${whereClause}`;
   const dataQuery = `
-    SELECT "id", "title", "content", "folder", "tags", "summary", "sortOrder",
+    SELECT "id", "title", "content", "folder", "tags", "summary", "favorite", "sortOrder",
       "createdAt", "updatedAt", "deletedAt",
       ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
         'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline
@@ -243,7 +243,7 @@ async function semanticSearch(
   const dataFilter = buildFilterClause(filter, 2);
   let dataParamIdx = dataFilter.nextIdx;
   const dataQuery = `
-    SELECT "id", "title", "content", "folder", "tags", "summary", "sortOrder",
+    SELECT "id", "title", "content", "folder", "tags", "summary", "favorite", "sortOrder",
       "createdAt", "updatedAt", "deletedAt"
     FROM "notes"
     WHERE ${baseWhere}${dataFilter.clause}
@@ -298,7 +298,7 @@ async function hybridSearch(
   const dataFilter = buildFilterClause(filter, 3);
   let dataParamIdx = dataFilter.nextIdx;
   const dataQuery = `
-    SELECT "id", "title", "content", "folder", "tags", "summary", "sortOrder",
+    SELECT "id", "title", "content", "folder", "tags", "summary", "favorite", "sortOrder",
       "createdAt", "updatedAt", "deletedAt",
       ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
         'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline,
@@ -365,6 +365,7 @@ export async function updateNote(
     if (data.folderId !== undefined) updateData.folderId = data.folderId;
     if (data.tags !== undefined) updateData.tags = data.tags;
     if (data.summary !== undefined) updateData.summary = data.summary;
+    if (data.favorite !== undefined) updateData.favorite = data.favorite;
 
     const updated = await prisma.note.update({
       where: { id, deletedAt: null },
@@ -523,6 +524,7 @@ function buildFolderTree(
       name: f.name,
       parentId: f.parentId,
       sortOrder: f.sortOrder,
+      favorite: f.favorite,
       count: f.count,
       totalCount: f.count,
       createdAt: f.createdAt.toISOString(),
@@ -587,6 +589,25 @@ export async function listFolders(): Promise<FolderInfo[]> {
   }));
 
   return buildFolderTree(foldersWithCount);
+}
+
+export async function listFavoriteNotes(): Promise<PrismaNote[]> {
+  const prisma = getPrisma();
+  return prisma.note.findMany({
+    where: { favorite: true, deletedAt: null },
+    orderBy: { title: "asc" },
+  });
+}
+
+export async function toggleFolderFavorite(
+  folderId: string,
+  favorite: boolean,
+): Promise<PrismaFolder> {
+  const prisma = getPrisma();
+  return prisma.folder.update({
+    where: { id: folderId },
+    data: { favorite },
+  });
 }
 
 export async function reorderNotes(

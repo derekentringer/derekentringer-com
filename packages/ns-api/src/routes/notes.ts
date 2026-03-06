@@ -34,6 +34,8 @@ import {
   listTags,
   renameTag,
   removeTag,
+  listFavoriteNotes,
+  toggleFolderFavorite,
 } from "../store/noteStore.js";
 import { getBacklinks, listNoteTitles } from "../store/linkStore.js";
 import {
@@ -88,6 +90,7 @@ const updateNoteSchema = {
       folderId: { type: ["string", "null"] },
       tags: { type: "array", items: { type: "string" } },
       summary: { type: ["string", "null"] },
+      favorite: { type: "boolean" },
     },
   },
 };
@@ -191,6 +194,15 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     async (_request: FastifyRequest, reply: FastifyReply) => {
       const notes = await listNoteTitles();
       return reply.send({ notes });
+    },
+  );
+
+  // GET /notes/favorites — MUST be before /:id
+  fastify.get(
+    "/favorites",
+    async (_request: FastifyRequest, reply: FastifyReply) => {
+      const notes = await listFavoriteNotes();
+      return reply.send({ notes: notes.map(toNote) });
     },
   );
 
@@ -667,6 +679,56 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // PATCH /notes/folders/:id/favorite — toggle folder favorite
+  fastify.patch<{
+    Params: { id: string };
+    Body: { favorite: boolean };
+  }>(
+    "/folders/:id/favorite",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["favorite"],
+          additionalProperties: false,
+          properties: {
+            favorite: { type: "boolean" },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{
+        Params: { id: string };
+        Body: { favorite: boolean };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { id } = request.params;
+      if (!UUID_REGEX.test(id)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid folder ID format",
+        });
+      }
+
+      try {
+        const folder = await toggleFolderFavorite(id, request.body.favorite);
+        return reply.send({ id: folder.id, favorite: folder.favorite });
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          return reply.status(404).send({
+            statusCode: 404,
+            error: "Not Found",
+            message: "Folder not found",
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
   // PATCH /notes/folders/:id/move — move folder to new parent
   fastify.patch<{
     Params: { id: string };
@@ -838,7 +900,8 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         body.folder === undefined &&
         body.folderId === undefined &&
         body.tags === undefined &&
-        body.summary === undefined
+        body.summary === undefined &&
+        body.favorite === undefined
       ) {
         return reply.status(400).send({
           statusCode: 400,

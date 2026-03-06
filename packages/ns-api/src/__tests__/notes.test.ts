@@ -52,6 +52,7 @@ describe("Note routes", () => {
       folder: "work",
       tags: ["tag1"],
       summary: null,
+      favorite: false,
       sortOrder: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -246,7 +247,7 @@ describe("Note routes", () => {
     it("returns folder tree (200)", async () => {
       const token = await getAccessToken();
       mockPrisma.folder.findMany.mockResolvedValue([
-        { id: "f1", name: "work", parentId: null, sortOrder: 0, createdAt: new Date() },
+        { id: "f1", name: "work", parentId: null, sortOrder: 0, favorite: false, createdAt: new Date() },
       ]);
       mockPrisma.note.groupBy.mockResolvedValue([
         { folderId: "f1", _count: { id: 3 } },
@@ -1578,6 +1579,122 @@ describe("Note routes", () => {
       });
 
       expect(res.statusCode).toBe(404);
+    });
+  });
+
+  // --- Favorites ---
+
+  describe("PATCH /notes/:id (favorite)", () => {
+    it("sets favorite to true (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.update.mockResolvedValue(
+        makeMockNoteRow({ favorite: true }),
+      );
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/${VALID_UUID}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { favorite: true },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().note.favorite).toBe(true);
+    });
+
+    it("sets favorite to false (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.update.mockResolvedValue(
+        makeMockNoteRow({ favorite: false }),
+      );
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/${VALID_UUID}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { favorite: false },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().note.favorite).toBe(false);
+    });
+  });
+
+  describe("GET /notes/favorites", () => {
+    it("returns favorite notes (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.note.findMany.mockResolvedValue([
+        makeMockNoteRow({ id: VALID_UUID, favorite: true }),
+      ]);
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/favorites",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.notes).toHaveLength(1);
+      expect(body.notes[0].favorite).toBe(true);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "GET",
+        url: "/notes/favorites",
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe("PATCH /notes/folders/:id/favorite", () => {
+    it("toggles folder favorite (200)", async () => {
+      const token = await getAccessToken();
+      mockPrisma.folder.update.mockResolvedValue({
+        id: VALID_UUID,
+        name: "work",
+        parentId: null,
+        sortOrder: 0,
+        favorite: true,
+        createdAt: new Date(),
+      });
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/folders/${VALID_UUID}/favorite`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { favorite: true },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().id).toBe(VALID_UUID);
+      expect(res.json().favorite).toBe(true);
+    });
+
+    it("returns 404 for nonexistent folder", async () => {
+      const token = await getAccessToken();
+      mockPrisma.folder.update.mockRejectedValue({ code: "P2025" });
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/folders/${VALID_UUID}/favorite`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { favorite: true },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/notes/folders/${VALID_UUID}/favorite`,
+        payload: { favorite: true },
+      });
+
+      expect(res.statusCode).toBe(401);
     });
   });
 });

@@ -88,6 +88,7 @@ export async function createNote(data: CreateNoteRequest): Promise<Note> {
         folderPath: null,
         tags: data.tags ?? [],
         summary: null,
+        favorite: false,
         sortOrder: 0,
         createdAt: now,
         updatedAt: now,
@@ -128,6 +129,7 @@ export async function updateNote(
         folderPath: cached?.folderPath ?? null,
         tags: data.tags ?? cached?.tags ?? [],
         summary: data.summary !== undefined ? data.summary : (cached?.summary ?? null),
+        favorite: data.favorite !== undefined ? data.favorite : (cached?.favorite ?? false),
         sortOrder: cached?.sortOrder ?? 0,
         createdAt: cached?.createdAt ?? now,
         updatedAt: now,
@@ -222,4 +224,6 @@ export {
   fetchVersions,
   fetchVersion,
   restoreVersion,
+  fetchFavoriteNotes,
+  toggleFolderFavoriteApi,
 } from "./notes.ts";

@@ -16,6 +16,7 @@ model Note {
   folderRef          Folder?                      @relation(fields: [folderId], references: [id], onDelete: SetNull)
   tags               Json                         @default("[]")
   summary            String?
+  favorite           Boolean                      @default(false)
   sortOrder          Int                          @default(0)
   embedding          Unsupported("vector(512)")?
   embeddingUpdatedAt DateTime?
@@ -73,6 +74,7 @@ model Folder {
   name      String
   parentId  String?
   sortOrder Int      @default(0)
+  favorite  Boolean  @default(false)
   parent    Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
   children  Folder[] @relation("FolderTree")
   notes     Note[]
