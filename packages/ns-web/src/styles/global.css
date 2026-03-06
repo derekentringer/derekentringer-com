@@ -36,7 +36,6 @@
 
   html {
     height: 100%;
-    scrollbar-gutter: stable;
   }
 
   /* Themed scrollbars */
