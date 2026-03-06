@@ -407,6 +407,32 @@ export async function fetchVersion(
   return data.version;
 }
 
+export async function fetchFavoriteNotes(): Promise<{ notes: Note[] }> {
+  const response = await apiFetch("/notes/favorites");
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch favorite notes: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function toggleFolderFavoriteApi(
+  folderId: string,
+  favorite: boolean,
+): Promise<{ id: string; favorite: boolean }> {
+  const response = await apiFetch(`/notes/folders/${encodeURIComponent(folderId)}/favorite`, {
+    method: "PATCH",
+    body: JSON.stringify({ favorite }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to toggle folder favorite: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function restoreVersion(
   noteId: string,
   versionId: string,

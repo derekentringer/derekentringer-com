@@ -75,6 +75,8 @@
 
 - [x] [08 — Version History](features/08-version-history.md) — NoteVersion snapshots on save (configurable interval: every save / 5 / 15 / 30 / 60 min, 50-cap per note), version list panel in tabbed right-side drawer (shared with AI Assistant), unified and split diff views with green/red highlighting, two-step restore with auto-dismissing success toast, stacked tab buttons (chat + clock icons) positioned above backlinks panel, resizable right drawer panel with persisted width, draggable backlinks panel with persisted height and collapsed state, version interval setting in Settings page, cascade delete on note removal
 
+- [x] [09 — Favorites](features/09-favorites.md) — Favorite notes and folders via right-click context menus, collapsible Favorites panel above Folders in sidebar with localStorage persistence, star indicators (★) in FolderTree and NoteList, dedicated API endpoints (GET /notes/favorites, PATCH /notes/folders/:id/favorite), offline support with IndexedDB merge, real-time title sync in favorites panel, collapsible Folders section header, 14px section headers (Favorites/Folders/Notes), comprehensive test coverage across 23 files
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

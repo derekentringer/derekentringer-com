@@ -136,6 +136,7 @@ describe("ensureFolderHierarchy", () => {
       name: "Work",
       parentId: null,
       sortOrder: 0,
+      favorite: false,
       count: 0,
       totalCount: 0,
       createdAt: "",
@@ -220,7 +221,7 @@ describe("importFiles", () => {
     const file = new File(["content"], "note.md");
     const entries = [{ file, pathSegments: ["Work", "note.md"] }];
     const existingFolders: FolderInfo[] = [{
-      id: "f1", name: "Work", parentId: null, sortOrder: 0, count: 0, totalCount: 0, createdAt: "", children: [],
+      id: "f1", name: "Work", parentId: null, sortOrder: 0, favorite: false, count: 0, totalCount: 0, createdAt: "", children: [],
     }];
     const createNoteFn = vi.fn().mockResolvedValue({});
 
