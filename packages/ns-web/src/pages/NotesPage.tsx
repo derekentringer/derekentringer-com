@@ -1361,8 +1361,8 @@ export function NotesPage() {
     <div className="flex h-full">
       {/* Sidebar */}
       <aside
-        className="bg-sidebar flex flex-col shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-in-out"
-        style={{ width: focusMode ? 0 : sidebarResize.size, opacity: focusMode ? 0 : 1 }}
+        className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
+        style={{ width: focusMode ? 0 : sidebarResize.size }}
       >
         <div className="pl-4 pr-2 py-4 flex items-center justify-between">
           <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
@@ -1672,7 +1672,7 @@ export function NotesPage() {
         </div>
       </aside>
 
-      <div className="transition-opacity duration-300 ease-in-out" style={{ opacity: focusMode ? 0 : 1, pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
+      <div className="flex" style={{ pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
         <ResizeDivider
           direction="vertical"
           isDragging={sidebarResize.isDragging}
