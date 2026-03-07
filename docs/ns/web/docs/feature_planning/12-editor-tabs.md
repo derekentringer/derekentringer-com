@@ -24,6 +24,7 @@ VS Code-style editor tab bar for NoteSync, allowing users to keep multiple notes
 | Delete/trash note | Tab auto-removed |
 | Create new note | Opens as permanent tab |
 | Deep-link / wiki-link / favorites | Opens as permanent tab |
+| Drag tab | Reorder tabs horizontally (locked to x-axis) |
 | Tab overflow | Horizontal scroll |
 | Switch to trash view | Tabs hidden, active tab remembered |
 | Return to notes view | Active tab restored |
@@ -39,6 +40,8 @@ VS Code-style editor tab bar for NoteSync, allowing users to keep multiple notes
 - Close button (×): visible on hover for inactive, always visible for active
 - Middle-click closes tab
 - Double-click preview tab pins it
+- Drag-and-drop reordering via `@dnd-kit/sortable` (horizontal axis only, `restrictToHorizontalAxis` modifier)
+- Each tab is a `SortableTab` sub-component using `useSortable`, with `CSS.Translate` (no scale distortion)
 - Scroll active tab into view on change
 
 ### Toolbar compacted
@@ -50,10 +53,10 @@ VS Code-style editor tab bar for NoteSync, allowing users to keep multiple notes
 
 | File | Action |
 |------|--------|
-| `packages/ns-web/src/components/TabBar.tsx` | Created — tab bar component |
+| `packages/ns-web/src/components/TabBar.tsx` | Created — tab bar component with `SortableTab` sub-component for drag-and-drop reordering |
 | `packages/ns-web/src/components/NoteList.tsx` | Modified — added `onDoubleClick` prop |
-| `packages/ns-web/src/pages/NotesPage.tsx` | Modified — tab state, handlers, preview logic, toolbar compaction, trash view tab hiding |
-| `packages/ns-web/src/__tests__/TabBar.test.tsx` | Created — 11 tab bar tests |
+| `packages/ns-web/src/pages/NotesPage.tsx` | Modified — tab state/handlers, preview logic, toolbar compaction, trash view tab hiding, separate DndContext for tab reordering with `restrictToHorizontalAxis` |
+| `packages/ns-web/src/__tests__/TabBar.test.tsx` | Created — 11 tab bar tests (wrapped in DndContext with PointerSensor distance constraint) |
 | `packages/ns-web/src/__tests__/NotesPage.test.tsx` | Modified — 11 tab integration tests, toolbar selector updates |
 
 ## Tests
