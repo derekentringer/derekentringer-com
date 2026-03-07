@@ -32,6 +32,7 @@ describe("Auth routes", () => {
 
   function setupTokenMocks() {
     mockPrisma.refreshToken.create.mockResolvedValue({});
+    mockPrisma.refreshToken.update.mockResolvedValue({});
     mockPrisma.refreshToken.delete.mockResolvedValue({});
     mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 0 });
   }
@@ -179,6 +180,7 @@ describe("Auth routes", () => {
       const refreshRes = await app.inject({
         method: "POST",
         url: "/auth/refresh",
+        headers: { "x-requested-with": "XMLHttpRequest" },
         cookies: { refreshToken: refreshCookie!.value },
       });
 
@@ -188,10 +190,23 @@ describe("Auth routes", () => {
       expect(body.expiresIn).toBe(900);
     });
 
+    it("returns 403 without X-Requested-With header", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/auth/refresh",
+        cookies: { refreshToken: "some-token" },
+      });
+
+      expect(res.statusCode).toBe(403);
+      const body = res.json();
+      expect(body.message).toBe("Missing required header");
+    });
+
     it("returns 401 without refresh cookie", async () => {
       const res = await app.inject({
         method: "POST",
         url: "/auth/refresh",
+        headers: { "x-requested-with": "XMLHttpRequest" },
       });
 
       expect(res.statusCode).toBe(401);
@@ -205,12 +220,41 @@ describe("Auth routes", () => {
       const res = await app.inject({
         method: "POST",
         url: "/auth/refresh",
+        headers: { "x-requested-with": "XMLHttpRequest" },
         cookies: { refreshToken: "invalid-token" },
       });
 
       expect(res.statusCode).toBe(401);
       const body = res.json();
       expect(body.message).toBe("Invalid or expired refresh token");
+    });
+
+    it("returns 401 and revokes all sessions on token reuse", async () => {
+      setupTokenMocks();
+      mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
+
+      // Simulate a revoked token (reuse detection)
+      mockPrisma.refreshToken.findUnique.mockResolvedValue({
+        id: "mock-id",
+        token: "hashed-token",
+        userId: "admin-001",
+        revoked: true,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/auth/refresh",
+        headers: { "x-requested-with": "XMLHttpRequest" },
+        cookies: { refreshToken: "stolen-token" },
+      });
+
+      expect(res.statusCode).toBe(401);
+      const body = res.json();
+      expect(body.message).toBe("Token reuse detected");
+      expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({
+        where: { userId: "admin-001" },
+      });
     });
   });
 

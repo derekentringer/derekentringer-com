@@ -155,6 +155,15 @@ export default async function authRoutes(fastify: FastifyInstance) {
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
+      // CSRF defense-in-depth: require X-Requested-With header
+      if (!request.headers["x-requested-with"]) {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: "Forbidden",
+          message: "Missing required header",
+        });
+      }
+
       const token = request.cookies?.refreshToken;
 
       if (!token) {
@@ -172,6 +181,21 @@ export default async function authRoutes(fastify: FastifyInstance) {
             statusCode: 401,
             error: "Unauthorized",
             message: "Invalid or expired refresh token",
+          });
+        }
+
+        // Refresh token reuse detection: if token was already revoked,
+        // an attacker may be replaying a stolen token. Revoke ALL sessions.
+        if (stored.revoked) {
+          request.log.warn(
+            { userId: stored.userId },
+            "Refresh token reuse detected — revoking all sessions",
+          );
+          await revokeAllRefreshTokens(stored.userId);
+          return reply.status(401).send({
+            statusCode: 401,
+            error: "Unauthorized",
+            message: "Token reuse detected",
           });
         }
 

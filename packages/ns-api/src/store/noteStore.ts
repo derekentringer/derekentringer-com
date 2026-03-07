@@ -56,10 +56,14 @@ export async function createNote(
   });
 
   if (created.content) {
-    syncNoteLinks(userId, created.id, created.content).catch(() => {});
+    syncNoteLinks(userId, created.id, created.content).catch((err) => {
+      console.error("Failed to sync note links:", err);
+    });
   }
 
-  captureVersion(created.id, created.title, created.content).catch(() => {});
+  captureVersion(created.id, created.title, created.content).catch((err) => {
+    console.error("Failed to capture version:", err);
+  });
 
   return created;
 }
@@ -368,11 +372,15 @@ export async function updateNote(
     });
 
     if (data.content !== undefined) {
-      syncNoteLinks(userId, updated.id, updated.content).catch(() => {});
+      syncNoteLinks(userId, updated.id, updated.content).catch((err) => {
+        console.error("Failed to sync note links:", err);
+      });
     }
 
     if (data.title !== undefined || data.content !== undefined) {
-      captureVersion(updated.id, updated.title, updated.content).catch(() => {});
+      captureVersion(updated.id, updated.title, updated.content).catch((err) => {
+        console.error("Failed to capture version:", err);
+      });
     }
 
     return updated;

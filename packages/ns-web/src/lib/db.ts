@@ -23,6 +23,7 @@ export interface OfflineQueueEntry {
   action: "create" | "update" | "delete";
   payload: Record<string, unknown>;
   timestamp: number;
+  retryCount?: number;
 }
 
 interface CachedFolders {

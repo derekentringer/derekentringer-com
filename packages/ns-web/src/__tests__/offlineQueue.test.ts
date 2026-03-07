@@ -7,6 +7,7 @@ import {
   getQueueCount,
   clearQueue,
   removeEntriesForNote,
+  requeue,
 } from "../lib/offlineQueue.ts";
 
 beforeEach(async () => {
@@ -76,6 +77,20 @@ describe("offlineQueue", () => {
     await enqueue({ noteId: "n2", action: "create", payload: {}, timestamp: 2 });
     await clearQueue();
     expect(await getQueueCount()).toBe(0);
+  });
+
+  it("requeues an entry back to the queue", async () => {
+    await enqueue({ noteId: "n1", action: "create", payload: { title: "test" }, timestamp: 1 });
+    const entry = await dequeue();
+    expect(entry).toBeDefined();
+    expect(await getQueueCount()).toBe(0);
+
+    await requeue({ ...entry!, retryCount: 1 });
+    expect(await getQueueCount()).toBe(1);
+
+    const requeued = await dequeue();
+    expect(requeued?.noteId).toBe("n1");
+    expect(requeued?.retryCount).toBe(1);
   });
 
   it("removeEntriesForNote removes only matching entries", async () => {
