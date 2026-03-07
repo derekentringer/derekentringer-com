@@ -92,6 +92,8 @@ export function NotesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [previewTabId, setPreviewTabId] = useState<string | null>(null);
+  // Cache note data for open tabs so folder navigation doesn't lose them
+  const tabNoteCacheRef = useRef<Map<string, Note>>(new Map());
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isDirty, setIsDirty] = useState(false);
@@ -404,7 +406,7 @@ export function NotesPage() {
 
   const selectedNote =
     sidebarView === "notes"
-      ? notes.find((n) => n.id === selectedId) ?? null
+      ? notes.find((n) => n.id === selectedId) ?? tabNoteCacheRef.current.get(selectedId!) ?? null
       : trashNotes.find((n) => n.id === selectedId) ?? null;
 
   useEffect(() => {
@@ -433,6 +435,8 @@ export function NotesPage() {
     }
     loadedTitleRef.current = note.title;
     loadedContentRef.current = note.content;
+    // Update tab note cache so folder navigation doesn't lose tab data
+    tabNoteCacheRef.current.set(note.id, note as Note);
     setSelectedId(note.id);
     setTitle(note.title);
     setContent(note.content);
@@ -495,7 +499,7 @@ export function NotesPage() {
   }
 
   function switchTab(noteId: string) {
-    const note = notes.find((n) => n.id === noteId);
+    const note = notes.find((n) => n.id === noteId) ?? tabNoteCacheRef.current.get(noteId);
     if (note) selectNote(note);
   }
 
@@ -527,10 +531,13 @@ export function NotesPage() {
         } else {
           const newIdx = Math.min(idx, next.length - 1);
           const newActiveId = next[newIdx];
-          const newNote = notes.find((n) => n.id === newActiveId);
+          const newNote = notes.find((n) => n.id === newActiveId) ?? tabNoteCacheRef.current.get(newActiveId);
           if (newNote) selectNote(newNote);
         }
       }
+
+      // Clean up cache for closed tab
+      tabNoteCacheRef.current.delete(noteId);
 
       return next;
     });
@@ -543,7 +550,7 @@ export function NotesPage() {
         if (id === selectedId) {
           return { id, title: title || "Untitled", isDirty, isPreview };
         }
-        const note = notes.find((n) => n.id === id);
+        const note = notes.find((n) => n.id === id) ?? tabNoteCacheRef.current.get(id);
         if (!note) return null;
         return { id, title: note.title || "Untitled", isDirty: false, isPreview };
       })
