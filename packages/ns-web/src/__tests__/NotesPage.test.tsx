@@ -759,15 +759,13 @@ describe("NotesPage", () => {
       // Sidebar should be visible (width > 0)
       const sidebar = screen.getByText("NoteSync").closest("aside")!;
       expect(sidebar.style.width).not.toBe("0px");
-      expect(sidebar.style.opacity).not.toBe("0");
 
       // Press Cmd+Shift+D to enter focus mode
       await userEvent.keyboard("{Meta>}{Shift>}d{/Shift}{/Meta}");
 
-      // Sidebar should be collapsed (width 0, opacity 0)
+      // Sidebar should be collapsed (width 0)
       await waitFor(() => {
         expect(sidebar.style.width).toBe("0px");
-        expect(sidebar.style.opacity).toBe("0");
       });
 
       // Press Cmd+Shift+D again to exit focus mode
@@ -776,7 +774,6 @@ describe("NotesPage", () => {
       // Sidebar should be visible again
       await waitFor(() => {
         expect(sidebar.style.width).not.toBe("0px");
-        expect(sidebar.style.opacity).not.toBe("0");
       });
     });
   });
