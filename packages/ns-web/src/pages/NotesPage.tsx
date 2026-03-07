@@ -48,6 +48,7 @@ import {
 } from "../components/EditorToolbar.tsx";
 import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
 import { NoteList } from "../components/NoteList.tsx";
+import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { TagBrowser } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
@@ -89,6 +90,8 @@ export function NotesPage() {
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [previewTabId, setPreviewTabId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isDirty, setIsDirty] = useState(false);
@@ -101,6 +104,11 @@ export function NotesPage() {
   const [showLineNumbers, setShowLineNumbers] = useState(editorSettings.showLineNumbers);
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const titleRef = useRef(title);
+
+  // Track the "loaded" content so we only set isDirty on real user edits
+  const loadedContentRef = useRef("");
+  const loadedTitleRef = useRef("");
+
   titleRef.current = title;
 
   // Note sort state
@@ -192,6 +200,8 @@ export function NotesPage() {
   type DrawerTab = "assistant" | "history";
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("assistant");
   const [qaOpen, setQaOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const focusModeDrawerRef = useRef(false);
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const qaResize = useResizable({
     direction: "vertical",
@@ -356,19 +366,22 @@ export function NotesPage() {
     setSelectedId((prev) =>
       prev && reconciledIds.has(prev) ? reconciledIds.get(prev)! : prev,
     );
+    setOpenTabs((prev) => prev.map((id) => reconciledIds.get(id) ?? id));
+    setPreviewTabId((prev) => prev && reconciledIds.has(prev) ? reconciledIds.get(prev)! : prev);
     loadNotes(debouncedSearch || undefined);
   }, [reconciledIds]);
 
-  // Deep-link: navigate to note from URL on mount
+  // Deep-link: navigate to note from URL on mount (only on initial load)
   const deepLinkHandled = useRef(false);
   useEffect(() => {
-    if (!routeNoteId || deepLinkHandled.current || isLoading) return;
+    if (isLoading || deepLinkHandled.current) return;
     deepLinkHandled.current = true;
+    if (!routeNoteId) return;
 
     // Try to find the note in the already-loaded list
     const found = notes.find((n) => n.id === routeNoteId);
     if (found) {
-      selectNote(found);
+      openNoteAsTab(found);
     } else {
       // Fetch the specific note
       import("../api/offlineNotes.ts").then(({ fetchNote }) => {
@@ -378,7 +391,7 @@ export function NotesPage() {
               if (prev.some((n) => n.id === note.id)) return prev;
               return [note, ...prev];
             });
-            selectNote(note);
+            openNoteAsTab(note);
           })
           .catch(() => {
             showError("Note not found");
@@ -399,6 +412,13 @@ export function NotesPage() {
     return () => { document.title = "NoteSync"; };
   }, [selectedNote]);
 
+  // Auto-pin preview tab when user edits content
+  useEffect(() => {
+    if (isDirty && previewTabId && selectedId === previewTabId) {
+      setPreviewTabId(null);
+    }
+  }, [isDirty, previewTabId, selectedId]);
+
   function showError(message: string) {
     setError(message);
     setTimeout(() => setError(null), 4000);
@@ -411,6 +431,8 @@ export function NotesPage() {
         showError("Failed to save changes to previous note");
       });
     }
+    loadedTitleRef.current = note.title;
+    loadedContentRef.current = note.content;
     setSelectedId(note.id);
     setTitle(note.title);
     setContent(note.content);
@@ -425,6 +447,109 @@ export function NotesPage() {
     navigate(`/notes/${note.id}`, { replace: true });
   }
 
+  // Single-click from sidebar when tabs are open → preview tab behavior
+  function handleNoteSelect(note: NoteSearchResult) {
+    if (openTabs.length === 0 || openTabs.includes(note.id)) {
+      // No tabs yet, or note already has a tab — just select
+      selectNote(note);
+      return;
+    }
+
+    // Tabs exist, note is not in any tab — create or replace preview
+    if (previewTabId) {
+      setOpenTabs((prev) => prev.map((id) => id === previewTabId ? note.id : id));
+    } else {
+      setOpenTabs((prev) => [...prev, note.id]);
+    }
+    setPreviewTabId(note.id);
+    selectNote(note);
+  }
+
+  // Double-click from sidebar → open as permanent tab
+  function openNoteAsTab(note: Note) {
+    // Double-clicking the preview note pins it
+    if (previewTabId === note.id) {
+      setPreviewTabId(null);
+      selectNote(note);
+      return;
+    }
+
+    // Close existing preview tab, add new note as permanent
+    const closingPreview = previewTabId;
+
+    setOpenTabs((prev) => {
+      let next = closingPreview ? prev.filter((id) => id !== closingPreview) : prev;
+      if (!next.includes(note.id)) {
+        next = [...next, note.id];
+      }
+      return next;
+    });
+    setPreviewTabId(null);
+    selectNote(note);
+  }
+
+  function pinTab(tabId: string) {
+    if (tabId === previewTabId) {
+      setPreviewTabId(null);
+    }
+  }
+
+  function switchTab(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) selectNote(note);
+  }
+
+  function closeTab(noteId: string) {
+    if (noteId === previewTabId) {
+      setPreviewTabId(null);
+    }
+
+    // If closing the active tab and it's dirty, fire-and-forget save
+    if (noteId === selectedId && isDirty) {
+      updateNote(noteId, { title, content }).catch(() => {
+        showError("Failed to save changes");
+      });
+    }
+
+    setOpenTabs((prev) => {
+      const idx = prev.indexOf(noteId);
+      const next = prev.filter((id) => id !== noteId);
+
+      // If closing the active tab, switch to adjacent
+      if (noteId === selectedId) {
+        if (next.length === 0) {
+          setSelectedId(null);
+          setTitle("");
+          setContent("");
+          setIsDirty(false);
+          setConfirmDelete(false);
+          navigate("/", { replace: true });
+        } else {
+          const newIdx = Math.min(idx, next.length - 1);
+          const newActiveId = next[newIdx];
+          const newNote = notes.find((n) => n.id === newActiveId);
+          if (newNote) selectNote(newNote);
+        }
+      }
+
+      return next;
+    });
+  }
+
+  const tabsForDisplay: Tab[] = useMemo(() => {
+    return openTabs
+      .map((id) => {
+        const isPreview = id === previewTabId;
+        if (id === selectedId) {
+          return { id, title: title || "Untitled", isDirty, isPreview };
+        }
+        const note = notes.find((n) => n.id === id);
+        if (!note) return null;
+        return { id, title: note.title || "Untitled", isDirty: false, isPreview };
+      })
+      .filter((t): t is Tab => t !== null);
+  }, [openTabs, selectedId, title, isDirty, notes, previewTabId]);
+
   async function handleCreate() {
     try {
       const folderId =
@@ -433,7 +558,7 @@ export function NotesPage() {
           : undefined;
       const note = await createNote({ title: "Untitled", folderId });
       setNotes((prev) => [note, ...prev]);
-      selectNote(note);
+      openNoteAsTab(note);
       loadFolders();
       loadNoteTitles();
     } catch {
@@ -453,6 +578,8 @@ export function NotesPage() {
       setFavoriteNotes((prev) =>
         prev.map((n) => (n.id === updated.id ? { ...n, title: updated.title, content: updated.content } : n)),
       );
+      loadedTitleRef.current = title;
+      loadedContentRef.current = content;
       setIsDirty(false);
       loadNoteTitles();
     } catch {
@@ -472,6 +599,8 @@ export function NotesPage() {
 
     try {
       await deleteNote(selectedId);
+      if (selectedId === previewTabId) setPreviewTabId(null);
+      setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
       setNotes((prev) => prev.filter((n) => n.id !== selectedId));
       setSelectedId(null);
       setTitle("");
@@ -490,6 +619,8 @@ export function NotesPage() {
   async function handleDeleteNoteById(noteId: string) {
     try {
       await deleteNote(noteId);
+      if (noteId === previewTabId) setPreviewTabId(null);
+      setOpenTabs((prev) => prev.filter((id) => id !== noteId));
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
       if (selectedId === noteId) {
         setSelectedId(null);
@@ -720,7 +851,15 @@ export function NotesPage() {
     }
   }
 
+  const savedTabSelectionRef = useRef<string | null>(null);
+
   function switchToTrash() {
+    // Remember which tab was active so we can restore on return
+    if (openTabs.length > 0 && selectedId && openTabs.includes(selectedId)) {
+      savedTabSelectionRef.current = selectedId;
+    } else {
+      savedTabSelectionRef.current = null;
+    }
     setSidebarView("trash");
     setSelectedId(null);
     setTitle("");
@@ -733,12 +872,23 @@ export function NotesPage() {
 
   function switchToNotes() {
     setSidebarView("notes");
+    setConfirmPermanentDelete(false);
+    setSelectedTrashIds(new Set());
+
+    // Restore previously active tab
+    const restoreId = savedTabSelectionRef.current;
+    savedTabSelectionRef.current = null;
+    if (restoreId && openTabs.includes(restoreId)) {
+      const note = notes.find((n) => n.id === restoreId);
+      if (note) {
+        selectNote(note);
+        return;
+      }
+    }
     setSelectedId(null);
     setTitle("");
     setContent("");
     setIsDirty(false);
-    setConfirmPermanentDelete(false);
-    setSelectedTrashIds(new Set());
     navigate("/", { replace: true });
   }
 
@@ -895,17 +1045,31 @@ export function NotesPage() {
     }
   }
 
-  // Keyboard shortcut: Cmd/Ctrl+S
+  // Keyboard shortcuts: Cmd/Ctrl+S (save), Cmd/Ctrl+Shift+D (focus mode)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         handleSave();
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D")) {
+        e.preventDefault();
+        setFocusMode((prev) => {
+          if (!prev) {
+            // Entering focus mode — capture drawer state and close it
+            focusModeDrawerRef.current = qaOpen;
+            if (qaOpen) setQaOpen(false);
+          } else {
+            // Exiting focus mode — restore drawer state
+            if (focusModeDrawerRef.current) setQaOpen(true);
+          }
+          return !prev;
+        });
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave]);
+  }, [handleSave, qaOpen]);
 
   // Autosave: debounce after changes
   useEffect(() => {
@@ -988,7 +1152,7 @@ export function NotesPage() {
   function handleFavoriteNoteClick(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
-      selectNote(note);
+      openNoteAsTab(note);
     } else {
       import("../api/offlineNotes.ts").then(({ fetchNote }) => {
         fetchNote(noteId)
@@ -997,7 +1161,7 @@ export function NotesPage() {
               if (prev.some((n) => n.id === fetched.id)) return prev;
               return [fetched, ...prev];
             });
-            selectNote(fetched);
+            openNoteAsTab(fetched);
           })
           .catch(() => showError("Favorited note not found"));
       });
@@ -1007,7 +1171,7 @@ export function NotesPage() {
   function handleWikiLinkClick(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
-      selectNote(note);
+      openNoteAsTab(note);
     } else {
       // Note may not be in the current list, fetch it
       import("../api/offlineNotes.ts").then(({ fetchNote }) => {
@@ -1017,7 +1181,7 @@ export function NotesPage() {
               if (prev.some((n) => n.id === fetched.id)) return prev;
               return [fetched, ...prev];
             });
-            selectNote(fetched);
+            openNoteAsTab(fetched);
           })
           .catch(() => showError("Linked note not found"));
       });
@@ -1163,11 +1327,12 @@ export function NotesPage() {
     // Find the note in the current list
     const note = notes.find((n) => n.id === noteId);
     if (note) {
-      selectNote(note);
+      openNoteAsTab(note);
     } else {
       // Note may not be loaded (different folder/search), so reload and select
       loadNotes().then(() => {
         // After reload, try to find and select
+        setOpenTabs((prev) => prev.includes(noteId) ? prev : [...prev, noteId]);
         setSelectedId(noteId);
       });
     }
@@ -1176,7 +1341,10 @@ export function NotesPage() {
   return (
     <div className="flex h-full">
       {/* Sidebar */}
-      <aside className="bg-sidebar flex flex-col shrink-0" style={{ width: sidebarResize.size }}>
+      <aside
+        className="bg-sidebar flex flex-col shrink-0 overflow-hidden transition-[width,opacity] duration-300 ease-in-out"
+        style={{ width: focusMode ? 0 : sidebarResize.size, opacity: focusMode ? 0 : 1 }}
+      >
         <div className="pl-4 pr-2 py-4 flex items-center justify-between">
           <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
           {sidebarView === "notes" && (
@@ -1340,7 +1508,8 @@ export function NotesPage() {
                 <NoteList
                   notes={notes}
                   selectedId={selectedId}
-                  onSelect={selectNote}
+                  onSelect={handleNoteSelect}
+                  onDoubleClick={openNoteAsTab}
                   onDeleteNote={handleDeleteNoteById}
                   onExportNote={handleExportNote}
                   onToggleFavorite={handleToggleNoteFavorite}
@@ -1351,12 +1520,12 @@ export function NotesPage() {
           </DndContext>
         ) : (
           <>
-            <div className="p-2">
+            <div className="p-2 pb-4">
               <button
                 onClick={switchToNotes}
                 className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                <span>&larr;</span> Back to notes
+                <span>&larr;</span> Back
               </button>
             </div>
 
@@ -1484,11 +1653,13 @@ export function NotesPage() {
         </div>
       </aside>
 
-      <ResizeDivider
-        direction="vertical"
-        isDragging={sidebarResize.isDragging}
-        onPointerDown={sidebarResize.onPointerDown}
-      />
+      <div className="transition-opacity duration-300 ease-in-out" style={{ opacity: focusMode ? 0 : 1, pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
+        <ResizeDivider
+          direction="vertical"
+          isDragging={sidebarResize.isDragging}
+          onPointerDown={sidebarResize.onPointerDown}
+        />
+      </div>
 
       {/* Editor area */}
       <main
@@ -1504,17 +1675,26 @@ export function NotesPage() {
           </div>
         )}
         <div className="flex-1 flex flex-col min-w-0">
+        {openTabs.length > 0 && sidebarView === "notes" && (
+          <TabBar
+            tabs={tabsForDisplay}
+            activeTabId={selectedId}
+            onSelectTab={switchTab}
+            onCloseTab={closeTab}
+            onPinTab={pinTab}
+          />
+        )}
         {selectedNote && sidebarView === "notes" ? (
           <>
             {/* Toolbar */}
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
-              <span className="text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border shrink-0">
+              <span className="text-[11px] text-muted-foreground">
                 {isSyncing
                   ? "Syncing..."
                   : isSaving
                     ? "Saving..."
                     : isDirty
-                      ? "Unsaved changes"
+                      ? "Unsaved"
                       : "Saved"}
               </span>
               <div className="flex-1" />
@@ -1522,54 +1702,56 @@ export function NotesPage() {
                 <button
                   onClick={handleSummarize}
                   disabled={isSummarizing}
-                  className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
-                  title="Summarize note"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={isSummarizing ? "Summarizing..." : "Summarize"}
+                  aria-label="Summarize"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
-                  {isSummarizing ? "Summarizing..." : "Summarize"}
                 </button>
               )}
               {settings.masterAiEnabled && settings.tagSuggestions && (
                 <button
                   onClick={handleSuggestTags}
                   disabled={isSuggestingTags}
-                  className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
-                  title="Suggest tags"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={isSuggestingTags ? "Suggesting..." : "Suggest tags"}
+                  aria-label="Suggest tags"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                  {isSuggestingTags ? "Suggesting..." : "Suggest tags"}
                 </button>
               )}
               <button
                 onClick={handleCopyLink}
-                className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center gap-1"
-                title="Copy link to note"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title={linkCopied ? "Copied!" : "Copy link"}
+                aria-label="Copy link"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                {linkCopied ? "Copied!" : "Copy link"}
               </button>
               {confirmDelete ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-destructive">Delete?</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] text-destructive">Delete?</span>
                   <button
                     onClick={handleDelete}
-                    className="px-3 py-1 rounded-md bg-destructive text-foreground text-sm hover:bg-destructive-hover transition-colors"
+                    className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors"
                   >
-                    Confirm
+                    Yes
                   </button>
                   <button
                     onClick={() => setConfirmDelete(false)}
-                    className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="px-1.5 py-0.5 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    Cancel
+                    No
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={handleDelete}
-                  className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-destructive hover:border-destructive transition-colors"
+                  className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors"
+                  title="Delete"
+                  aria-label="Delete"
                 >
-                  Delete
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 </button>
               )}
             </div>
@@ -1625,7 +1807,7 @@ export function NotesPage() {
                 value={title}
                 onChange={(e) => {
                   setTitle(e.target.value);
-                  setIsDirty(true);
+                  if (e.target.value !== loadedTitleRef.current) setIsDirty(true);
                 }}
                 onFocus={(e) => {
                   if (e.target.value === "Untitled") {
@@ -1744,7 +1926,7 @@ export function NotesPage() {
                   value={content}
                   onChange={(val) => {
                     setContent(val);
-                    setIsDirty(true);
+                    if (val !== loadedContentRef.current) setIsDirty(true);
                   }}
                   onSave={handleSave}
                   showLineNumbers={showLineNumbers}
@@ -1865,7 +2047,7 @@ export function NotesPage() {
         }}
       >
         {/* Tab buttons on left edge, above backlinks panel */}
-        <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
+        {!focusMode && <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
           {/* AI Assistant tab */}
           {settings.masterAiEnabled && settings.qaAssistant && (
             <button
@@ -1901,7 +2083,7 @@ export function NotesPage() {
               </svg>
             </button>
           )}
-        </div>
+        </div>}
         <div className="h-full flex bg-card shadow-lg">
           <ResizeDivider
             direction="vertical"
