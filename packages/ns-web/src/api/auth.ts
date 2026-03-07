@@ -34,6 +34,7 @@ export async function refreshSession(): Promise<RefreshResponse | null> {
     const response = await fetch(`${BASE_URL}/auth/refresh`, {
       method: "POST",
       credentials: "include",
+      headers: { "X-Requested-With": "XMLHttpRequest" },
     });
 
     if (!response.ok) {
