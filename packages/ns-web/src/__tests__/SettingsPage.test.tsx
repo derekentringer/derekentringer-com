@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { SettingsPage } from "../pages/SettingsPage.tsx";
@@ -329,7 +329,9 @@ describe("SettingsPage", () => {
     mockGetTrashRetention.mockResolvedValue({ days: 7 });
     renderSettingsPage();
     const select = await screen.findByLabelText("Trash retention period");
-    expect((select as HTMLSelectElement).value).toBe("7");
+    await waitFor(() => {
+      expect((select as HTMLSelectElement).value).toBe("7");
+    });
   });
 
   it("changing trash retention calls setTrashRetention", async () => {
