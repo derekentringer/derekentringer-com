@@ -9,7 +9,8 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
+import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import type { Note, NoteVersion, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import {
@@ -705,6 +706,17 @@ export function NotesPage() {
       showError("Failed to reorder notes");
       loadNotes(debouncedSearch || undefined);
     }
+  }
+
+  function handleTabDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setOpenTabs((prev) => {
+      const oldIndex = prev.indexOf(String(active.id));
+      const newIndex = prev.indexOf(String(over.id));
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -1683,13 +1695,15 @@ export function NotesPage() {
         )}
         <div className="flex-1 flex flex-col min-w-0">
         {openTabs.length > 0 && sidebarView === "notes" && (
-          <TabBar
-            tabs={tabsForDisplay}
-            activeTabId={selectedId}
-            onSelectTab={switchTab}
-            onCloseTab={closeTab}
-            onPinTab={pinTab}
-          />
+          <DndContext sensors={dndSensors} collisionDetection={closestCenter} modifiers={[restrictToHorizontalAxis]} onDragEnd={handleTabDragEnd}>
+            <TabBar
+              tabs={tabsForDisplay}
+              activeTabId={selectedId}
+              onSelectTab={switchTab}
+              onCloseTab={closeTab}
+              onPinTab={pinTab}
+            />
+          </DndContext>
         )}
         {selectedNote && sidebarView === "notes" ? (
           <>

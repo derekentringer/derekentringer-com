@@ -25,6 +25,13 @@ VS Code-style editor tab bar for NoteSync, allowing users to keep multiple notes
 
 ### Closing Tabs
 
+- Drag-and-drop reordering via `@dnd-kit/sortable` with `horizontalListSortingStrategy`
+  - Movement locked to horizontal axis via `restrictToHorizontalAxis` modifier from `@dnd-kit/modifiers`
+  - Each tab is a `SortableTab` sub-component using `useSortable({ id: tab.id })`
+  - Uses `CSS.Translate.toString()` (not `CSS.Transform`) to avoid scale distortion during drag
+  - Dragged tab shows `opacity: 0.5` feedback (same pattern as `SortableNoteItem` in NoteList)
+  - Separate `DndContext` wrapping `TabBar` (independent from sidebar's note/folder DndContext)
+  - `handleTabDragEnd` uses `arrayMove` to reorder `openTabs` state
 - Close button (×) on each tab, visible on hover (always visible for active tab)
 - Middle-click (mouse button 1) closes a tab
 - Closing active tab switches to adjacent tab (right, then left)
@@ -140,10 +147,10 @@ These now call `openNoteAsTab` instead of `selectNote`:
 
 | File | Action |
 |------|--------|
-| `packages/ns-web/src/components/TabBar.tsx` | Created — tab bar component with preview/permanent styling |
+| `packages/ns-web/src/components/TabBar.tsx` | Created — tab bar component with preview/permanent styling and `SortableTab` sub-component for drag-and-drop reordering |
 | `packages/ns-web/src/components/NoteList.tsx` | Modified — added `onDoubleClick` prop to NoteListProps and SortableNoteItemProps |
-| `packages/ns-web/src/pages/NotesPage.tsx` | Modified — tab state/handlers, preview logic, isDirty fix, toolbar compaction, trash integration |
-| `packages/ns-web/src/__tests__/TabBar.test.tsx` | Created — 11 unit tests |
+| `packages/ns-web/src/pages/NotesPage.tsx` | Modified — tab state/handlers, preview logic, isDirty fix, toolbar compaction, trash integration, separate DndContext for tab reordering with `restrictToHorizontalAxis` modifier |
+| `packages/ns-web/src/__tests__/TabBar.test.tsx` | Created — 11 unit tests (wrapped in DndContext with PointerSensor distance constraint) |
 | `packages/ns-web/src/__tests__/NotesPage.test.tsx` | Modified — 11 new tab integration tests, updated toolbar selectors |
 
 ## Tests
