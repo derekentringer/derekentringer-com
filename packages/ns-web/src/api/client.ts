@@ -26,6 +26,7 @@ async function doRefresh(): Promise<boolean> {
       const refreshResponse = await fetch(`${BASE_URL}/auth/refresh`, {
         method: "POST",
         credentials: "include",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
       });
 
       if (refreshResponse.ok) {

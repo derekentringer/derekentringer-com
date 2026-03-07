@@ -22,7 +22,7 @@ export async function storeRefreshToken(
 
 export async function lookupRefreshToken(
   token: string,
-): Promise<{ userId: string } | undefined> {
+): Promise<{ userId: string; revoked?: boolean } | undefined> {
   const prisma = getPrisma();
   const hashed = hashToken(token);
   const entry = await prisma.refreshToken.findUnique({
@@ -36,13 +36,20 @@ export async function lookupRefreshToken(
     return undefined;
   }
 
+  if (entry.revoked) {
+    return { userId: entry.userId, revoked: true };
+  }
+
   return { userId: entry.userId };
 }
 
 export async function revokeRefreshToken(token: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
-    await prisma.refreshToken.delete({ where: { token: hashToken(token) } });
+    await prisma.refreshToken.update({
+      where: { token: hashToken(token) },
+      data: { revoked: true },
+    });
     return true;
   } catch {
     return false;

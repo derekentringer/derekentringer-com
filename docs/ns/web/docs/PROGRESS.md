@@ -81,6 +81,10 @@
 
 - [x] [10 — Multi-User Auth](features/10-multi-user-auth.md) — User model with per-user data isolation (userId on all notes/folders/sync cursors), email-based registration gated by admin-managed approved list, password reset via Resend email service, TOTP two-factor authentication with backup codes, admin panel (user management, approved emails, global AI toggle), shared password strength validation, database-backed login replacing env-var auth
 
+### Architecture Hardening
+
+- [x] [11 — Architecture Hardening](features/11-architecture-hardening.md) — 6 high-priority fixes from architecture review: error toast on note switch save failure, offline queue transient error retry with max 3 retries and permanent error skip, console.error logging on fire-and-forget syncNoteLinks/captureVersion, refresh token reuse detection with soft-delete and session family invalidation, CSRF defense-in-depth via X-Requested-With header on /auth/refresh, audio upload magic byte validation (WebM/MP4/MP3/WAV/OGG)
+
 ### UI Fixes
 
 - [x] Custom scrollbar styling — thin themed scrollbars via `scrollbar-width`/`scrollbar-color` (Firefox) and `::-webkit-scrollbar` (Chrome/Edge) matching dark/light themes; fixes default Windows Chrome scrollbars in editor and preview areas

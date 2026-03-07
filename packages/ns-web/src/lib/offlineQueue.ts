@@ -36,6 +36,12 @@ export async function clearQueue(): Promise<void> {
   await db.clear("offlineQueue");
 }
 
+export async function requeue(
+  entry: Omit<OfflineQueueEntry, "id">,
+): Promise<number> {
+  return enqueue(entry);
+}
+
 export async function removeEntriesForNote(noteId: string): Promise<void> {
   const db = await getDB();
   const tx = db.transaction("offlineQueue", "readwrite");
