@@ -68,6 +68,7 @@ These fix silent data loss risks — the most impactful issues for a note-taking
 - `useNoteList()` — notes, search, sort, pagination, folder filter
 - `useTrash()` — trash notes, bulk operations
 - `useFolderState()` — folder tree, active folder
+- `useEditorTabs()` — openTabs, previewTabId, tab handlers (added in v1.54.0, increases extraction priority)
 
 ### 12. Fix createNote sort order race condition (Finding #21)
 - Use a single INSERT with subquery for atomic sort order assignment

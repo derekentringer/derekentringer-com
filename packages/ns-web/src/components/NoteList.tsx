@@ -14,6 +14,7 @@ interface NoteListProps {
   notes: NoteSearchResult[];
   selectedId: string | null;
   onSelect: (note: NoteSearchResult) => void;
+  onDoubleClick?: (note: NoteSearchResult) => void;
   onDeleteNote?: (noteId: string) => void;
   onExportNote?: (noteId: string, format: ExportFormat) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
@@ -30,6 +31,7 @@ interface SortableNoteItemProps {
   note: NoteSearchResult;
   isSelected: boolean;
   onSelect: (note: NoteSearchResult) => void;
+  onDoubleClick?: (note: NoteSearchResult) => void;
   onDeleteNote?: (noteId: string) => void;
   onExportNote?: (noteId: string, format: ExportFormat) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
@@ -45,6 +47,7 @@ function SortableNoteItem({
   note,
   isSelected,
   onSelect,
+  onDoubleClick,
   onDeleteNote,
   onExportNote,
   onToggleFavorite,
@@ -84,6 +87,7 @@ function SortableNoteItem({
       )}
       <button
         onClick={() => onSelect(note)}
+        onDoubleClick={(e) => { e.preventDefault(); onDoubleClick?.(note); }}
         onContextMenu={(e) => {
           if (!onDeleteNote && !onExportNote && !onToggleFavorite) return;
           e.preventDefault();
@@ -167,6 +171,7 @@ export function NoteList({
   notes,
   selectedId,
   onSelect,
+  onDoubleClick,
   onDeleteNote,
   onExportNote,
   onToggleFavorite,
@@ -206,6 +211,7 @@ export function NoteList({
             note={note}
             isSelected={note.id === selectedId}
             onSelect={onSelect}
+            onDoubleClick={onDoubleClick}
             onDeleteNote={onDeleteNote}
             onExportNote={onExportNote}
             onToggleFavorite={onToggleFavorite}

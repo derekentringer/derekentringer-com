@@ -142,6 +142,7 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
   { shortcut: "Ctrl + Shift + Space", macShortcut: "Cmd + Shift + Space", description: "Continue writing / suggest structure" },
   { shortcut: "Tab", macShortcut: "Tab", description: "Accept AI completion" },
   { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
+  { shortcut: "Ctrl + Shift + D", macShortcut: "Cmd + Shift + D", description: "Toggle focus mode (hide panels)" },
 ];
 
 const AUTO_SAVE_OPTIONS: { value: number; label: string }[] = [

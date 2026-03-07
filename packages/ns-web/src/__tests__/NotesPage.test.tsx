@@ -243,15 +243,15 @@ describe("NotesPage", () => {
     await userEvent.click(noteButton);
 
     // Click delete — first click shows confirmation
-    const deleteButton = screen.getByText("Delete");
+    const deleteButton = screen.getByLabelText("Delete");
     await userEvent.click(deleteButton);
 
     // Confirmation UI should appear
     expect(screen.getByText("Delete?")).toBeInTheDocument();
-    expect(screen.getByText("Confirm")).toBeInTheDocument();
+    expect(screen.getByText("Yes")).toBeInTheDocument();
 
     // Click confirm to actually delete
-    await userEvent.click(screen.getByText("Confirm"));
+    await userEvent.click(screen.getByText("Yes"));
 
     await waitFor(() => {
       expect(mockDeleteNote).toHaveBeenCalledWith("note-1");
@@ -340,7 +340,7 @@ describe("NotesPage", () => {
       await userEvent.click(trashButton);
 
       await screen.findByText("Trashed Note");
-      expect(screen.getByText("Back to notes")).toBeInTheDocument();
+      expect(screen.getByText("Back")).toBeInTheDocument();
     });
 
     it("shows empty trash message", async () => {
@@ -440,7 +440,7 @@ describe("NotesPage", () => {
 
       await screen.findByText("Trash is empty");
 
-      await userEvent.click(screen.getByText("Back to notes"));
+      await userEvent.click(screen.getByText("Back"));
 
       await screen.findByText("No notes yet");
     });
@@ -744,7 +744,40 @@ describe("NotesPage", () => {
       const noteButton = await screen.findByText("Test Note");
       await userEvent.click(noteButton);
 
-      expect(screen.getByTitle("Copy link to note")).toBeInTheDocument();
+      expect(screen.getByLabelText("Copy link")).toBeInTheDocument();
+    });
+  });
+
+  describe("Focus mode", () => {
+    it("collapses sidebar after Cmd+Shift+D and restores on second press", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      renderNotesPage();
+
+      await screen.findByText("Test Note");
+
+      // Sidebar should be visible (width > 0)
+      const sidebar = screen.getByText("NoteSync").closest("aside")!;
+      expect(sidebar.style.width).not.toBe("0px");
+      expect(sidebar.style.opacity).not.toBe("0");
+
+      // Press Cmd+Shift+D to enter focus mode
+      await userEvent.keyboard("{Meta>}{Shift>}d{/Shift}{/Meta}");
+
+      // Sidebar should be collapsed (width 0, opacity 0)
+      await waitFor(() => {
+        expect(sidebar.style.width).toBe("0px");
+        expect(sidebar.style.opacity).toBe("0");
+      });
+
+      // Press Cmd+Shift+D again to exit focus mode
+      await userEvent.keyboard("{Meta>}{Shift>}d{/Shift}{/Meta}");
+
+      // Sidebar should be visible again
+      await waitFor(() => {
+        expect(sidebar.style.width).not.toBe("0px");
+        expect(sidebar.style.opacity).not.toBe("0");
+      });
     });
   });
 
@@ -777,6 +810,255 @@ describe("NotesPage", () => {
       expect(screen.getByText("Export as .md")).toBeInTheDocument();
       expect(screen.getByText("Export as .txt")).toBeInTheDocument();
       expect(screen.getByText("Export as .pdf")).toBeInTheDocument();
+    });
+  });
+
+  describe("Editor tabs", () => {
+    const mockNote2 = {
+      ...mockNote,
+      id: "note-2",
+      title: "Second Note",
+      content: "Second content",
+    };
+
+    const mockNote3 = {
+      ...mockNote,
+      id: "note-3",
+      title: "Third Note",
+      content: "Third content",
+    };
+
+    it("does not show tab bar on single-click when no tabs open", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.click(noteButton);
+
+      // Tab bar should not appear — single-click with no tabs doesn't open a tab
+      expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
+    });
+
+    it("single-click with no tabs does not create tab when switching notes", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote, mockNote2], total: 2 });
+
+      renderNotesPage();
+
+      await userEvent.click(await screen.findByText("Test Note"));
+      await userEvent.click(screen.getByText("Second Note"));
+
+      // No tabs should exist
+      expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Close Second Note")).not.toBeInTheDocument();
+    });
+
+    it("opens a tab on double-click", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      renderNotesPage();
+
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.dblClick(noteButton);
+
+      // Tab bar should appear with close button
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
+    });
+
+    it("double-clicking a note only opens that note as a tab (no promote)", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote, mockNote2], total: 2 });
+
+      renderNotesPage();
+
+      // Single-click first note (no tab created)
+      const noteButton1 = await screen.findByText("Test Note");
+      await userEvent.click(noteButton1);
+      expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
+
+      // Double-click second note — only the double-clicked note opens as a tab
+      const noteButton2 = await screen.findByText("Second Note");
+      await userEvent.dblClick(noteButton2);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Second Note")).toBeInTheDocument();
+      });
+      // The single-clicked note should NOT have a tab
+      expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
+    });
+
+    it("single-click opens preview tab when tabs are already open", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote, mockNote2], total: 2 });
+
+      renderNotesPage();
+
+      // Double-click to open a permanent tab
+      await userEvent.dblClick(await screen.findByText("Test Note"));
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
+
+      // Single-click another note — should open as preview (italic) tab
+      await userEvent.click(screen.getByText("Second Note"));
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Second Note")).toBeInTheDocument();
+      });
+    });
+
+    it("single-click replaces existing preview tab", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote, mockNote2, mockNote3], total: 3 });
+
+      renderNotesPage();
+
+      // Open permanent tab
+      await userEvent.dblClick(await screen.findByText("Test Note"));
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
+
+      // Single-click note 2 — opens preview tab
+      await userEvent.click(screen.getByText("Second Note"));
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Second Note")).toBeInTheDocument();
+      });
+
+      // Single-click note 3 — should REPLACE preview tab (note 2 removed)
+      await userEvent.click(screen.getByText("Third Note"));
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Third Note")).toBeInTheDocument();
+        expect(screen.queryByLabelText("Close Second Note")).not.toBeInTheDocument();
+      });
+    });
+
+    it("double-clicking preview note pins it", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote, mockNote2, mockNote3], total: 3 });
+
+      renderNotesPage();
+
+      // Open permanent tab
+      await userEvent.dblClick(await screen.findByText("Test Note"));
+
+      // Single-click note 2 — opens preview tab
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
+      await userEvent.click(screen.getByText("Second Note"));
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Second Note")).toBeInTheDocument();
+      });
+
+      // Double-click same note 2 in sidebar — should pin it
+      const sidebarNotes = screen.getByTestId("note-list");
+      const sidebarNote2 = sidebarNotes.querySelector("button")!;
+      // Find the Second Note button within the sidebar
+      const allSecondNotes = screen.getAllByText("Second Note");
+      const sidebarSecondNote = allSecondNotes.find((el) => sidebarNotes.contains(el))!;
+      await userEvent.dblClick(sidebarSecondNote);
+
+      // Now single-click note 3 — should open a NEW preview tab (note 2 stays)
+      await userEvent.click(screen.getByText("Third Note"));
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+        expect(screen.getByLabelText("Close Second Note")).toBeInTheDocument();
+        expect(screen.getByLabelText("Close Third Note")).toBeInTheDocument();
+      });
+    });
+
+    it("closes tab and switches to adjacent when closing active tab", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote, mockNote2], total: 2 });
+
+      renderNotesPage();
+
+      // Double-click both notes to open them as tabs
+      const noteButton1 = await screen.findByText("Test Note");
+      await userEvent.dblClick(noteButton1);
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
+
+      const noteButton2 = await screen.findByText("Second Note");
+      await userEvent.dblClick(noteButton2);
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Second Note")).toBeInTheDocument();
+      });
+
+      // Close the active tab (Second Note)
+      await userEvent.click(screen.getByLabelText("Close Second Note"));
+
+      // Should switch to Test Note (remaining tab)
+      await waitFor(() => {
+        expect(screen.getByDisplayValue("Test Note")).toBeInTheDocument();
+        expect(screen.queryByLabelText("Close Second Note")).not.toBeInTheDocument();
+      });
+    });
+
+    it("clears editor when closing the last tab", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+
+      renderNotesPage();
+
+      // Open note as tab
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.dblClick(noteButton);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
+
+      // Close the only tab
+      await userEvent.click(screen.getByLabelText("Close Test Note"));
+
+      // Editor should be cleared — no title input
+      await waitFor(() => {
+        expect(screen.queryByDisplayValue("Test Note")).not.toBeInTheDocument();
+      });
+    });
+
+    it("removes tab when note is deleted", async () => {
+      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+      mockDeleteNote.mockResolvedValue(undefined);
+
+      renderNotesPage();
+
+      // Open note as tab via double-click
+      const noteButton = await screen.findByText("Test Note");
+      await userEvent.dblClick(noteButton);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
+
+      // Delete the note
+      const deleteButton = screen.getByLabelText("Delete");
+      await userEvent.click(deleteButton);
+      await userEvent.click(screen.getByText("Yes"));
+
+      // Tab should be removed
+      await waitFor(() => {
+        expect(mockDeleteNote).toHaveBeenCalledWith("note-1");
+        expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
+      });
+    });
+
+    it("creates a tab when creating a new note", async () => {
+      const newNote = {
+        ...mockNote,
+        id: "note-new",
+        title: "Untitled",
+        content: "",
+      };
+      mockCreateNote.mockResolvedValue(newNote);
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const createButtons = screen.getAllByTitle("New note");
+      await userEvent.click(createButtons[0]);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Untitled")).toBeInTheDocument();
+      });
     });
   });
 });
