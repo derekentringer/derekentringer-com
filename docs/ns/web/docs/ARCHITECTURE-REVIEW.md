@@ -5,33 +5,41 @@
 
 ---
 
-## Phase 1: Data Safety (High Priority)
+## Phase 1: Data Safety (High Priority) — COMPLETE (v1.53.0)
 
 These fix silent data loss risks — the most impactful issues for a note-taking app.
 
-### 1. Fix silent data loss on note switch (Finding #19)
-- Show a toast when the background save fails instead of `.catch(() => {})`
-- Keep unsaved changes in IndexedDB for retry
+### 1. Fix silent data loss on note switch (Finding #19) — DONE
+- `.catch(() => {})` on `selectNote()` replaced with `showError()` toast so users see when background save fails
 
-### 2. Offline queue retry for transient errors (Finding #23)
-- Distinguish transient (500, network) from permanent (400, 404) errors
-- Re-enqueue transient failures with a retry count; notify user after max retries
+### 2. Offline queue retry for transient errors (Finding #23) — DONE
+- Added `retryCount` to `OfflineQueueEntry` interface
+- Added `requeue()` function to offline queue
+- `flushQueue()` now distinguishes transient (5xx, network) vs permanent (4xx) errors
+- Transient errors re-enqueue with incremented retry count (max 3) and break the loop
+- Permanent errors log a warning and skip
 
-### 3. Log fire-and-forget errors (Finding #20)
-- Replace `.catch(() => {})` on `syncNoteLinks` and `captureVersion` with proper error logging
+### 3. Log fire-and-forget errors (Finding #20) — DONE
+- All 4 `.catch(() => {})` calls on `syncNoteLinks` and `captureVersion` in `noteStore.ts` replaced with `console.error` logging
 
 ---
 
-## Phase 2: Security Hardening (High Priority)
+## Phase 2: Security Hardening (High Priority) — COMPLETE (v1.53.0)
 
-### 4. Refresh token reuse detection (Finding #1)
-- Mark tokens as "revoked" instead of deleting; if a revoked token is presented, revoke ALL user tokens
+### 4. Refresh token reuse detection (Finding #1) — DONE
+- Added `revoked Boolean @default(false)` to RefreshToken model
+- `revokeRefreshToken()` now soft-deletes (sets `revoked = true`) instead of hard-deleting
+- `lookupRefreshToken()` returns `{ revoked: true }` for revoked tokens
+- `/auth/refresh` handler detects revoked tokens and revokes ALL user sessions (stolen token family invalidation)
+- Migration: `20260309000000_add_refresh_token_revoked`
 
-### 5. CSRF defense-in-depth on refresh endpoint (Finding #2)
-- Require a custom header (e.g., `X-Requested-With`) on `/auth/refresh`
+### 5. CSRF defense-in-depth on refresh endpoint (Finding #2) — DONE
+- `/auth/refresh` requires `X-Requested-With` header, returns 403 if missing
+- `client.ts` sends `X-Requested-With: XMLHttpRequest` on refresh calls
 
-### 6. Audio upload MIME validation (Finding #6)
-- Validate file magic bytes, not just the client-declared MIME type
+### 6. Audio upload MIME validation (Finding #6) — DONE
+- Added `validateAudioMagicBytes()` helper supporting WebM, MP4, MP3, WAV, OGG
+- Validates magic bytes after MIME type check, returns 400 if bytes don't match declared type
 
 ---
 

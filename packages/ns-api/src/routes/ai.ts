@@ -102,6 +102,39 @@ const VALID_AUDIO_TYPES = new Set([
 
 const VALID_MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 
+function validateAudioMagicBytes(buffer: Buffer, mimetype: string): boolean {
+  if (buffer.length < 12) return false;
+
+  switch (mimetype) {
+    case "audio/webm":
+    case "video/webm":
+      // WebM/EBML: 0x1A 0x45 0xDF 0xA3
+      return buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3;
+
+    case "audio/mp4":
+      // MP4: "ftyp" at offset 4
+      return buffer.toString("ascii", 4, 8) === "ftyp";
+
+    case "audio/mpeg":
+      // ID3 tag or MPEG sync word
+      return (
+        (buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) || // ID3
+        (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) // MPEG sync
+      );
+
+    case "audio/wav":
+      // RIFF at 0 + WAVE at 8
+      return buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WAVE";
+
+    case "audio/ogg":
+      // OggS at 0
+      return buffer.toString("ascii", 0, 4) === "OggS";
+
+    default:
+      return false;
+  }
+}
+
 export default async function aiRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
 
@@ -373,6 +406,14 @@ export default async function aiRoutes(fastify: FastifyInstance) {
           statusCode: 400,
           error: "Bad Request",
           message: `Unsupported audio type: ${file.mimetype}`,
+        });
+      }
+
+      if (!validateAudioMagicBytes(file.buffer, file.mimetype)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "File content does not match declared audio type",
         });
       }
 

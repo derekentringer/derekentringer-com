@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
-import { getQueueCount } from "../lib/offlineQueue.ts";
-import { dequeue } from "../lib/offlineQueue.ts";
+import { getQueueCount, dequeue, requeue } from "../lib/offlineQueue.ts";
 import { cacheNote, deleteCachedNote, setMeta, getCachedNote } from "../lib/db.ts";
 import * as api from "../api/notes.ts";
 
@@ -71,8 +70,18 @@ export function useOfflineCache() {
             }
             await deleteCachedNote(entry.noteId);
           }
-        } catch {
-          // Skip failed entries — last-write-wins
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "";
+          const isTransient = /\b(5\d{2})\b/.test(msg) || !msg.includes(":");
+          const retryCount = entry.retryCount ?? 0;
+
+          if (isTransient && retryCount < 3) {
+            const { id: _id, ...rest } = entry;
+            await requeue({ ...rest, retryCount: retryCount + 1 });
+            break; // stop processing — server may be down
+          } else {
+            console.warn("Offline queue: skipping failed entry", entry.action, entry.noteId, msg);
+          }
         }
 
         const count = await getQueueCount();

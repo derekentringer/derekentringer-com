@@ -143,8 +143,36 @@ describe("useOfflineCache", () => {
     }, { timeout: 5000 });
   });
 
-  it("skips failed queue entries without stopping", async () => {
-    mockCreateNote.mockRejectedValueOnce(new Error("fail"));
+  it("requeues transient errors and stops processing", async () => {
+    mockCreateNote.mockRejectedValueOnce(new Error("500: Internal Server Error"));
+    mockUpdateNote.mockResolvedValue(makeNote({ title: "Updated" }));
+
+    await cacheNote(makeNote({ id: "temp-xyz" }));
+    await enqueue({ noteId: "temp-xyz", action: "create", payload: { title: "will fail" }, timestamp: 1 });
+    await enqueue({ noteId: "note-1", action: "update", payload: { title: "Updated" }, timestamp: 2 });
+
+    Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
+    renderHook(() => useOfflineCache());
+
+    await act(async () => {
+      Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+      window.dispatchEvent(new Event("online"));
+    });
+
+    await waitFor(() => {
+      expect(mockCreateNote).toHaveBeenCalled();
+    }, { timeout: 5000 });
+
+    // Transient error causes break — update should NOT be called yet
+    expect(mockUpdateNote).not.toHaveBeenCalled();
+
+    // The failed entry should be requeued (pending count includes both)
+    const count = await getQueueCount();
+    expect(count).toBeGreaterThanOrEqual(1);
+  });
+
+  it("skips permanent errors and continues processing", async () => {
+    mockCreateNote.mockRejectedValueOnce(new Error("400: Bad Request"));
     mockUpdateNote.mockResolvedValue(makeNote({ title: "Updated" }));
 
     await cacheNote(makeNote({ id: "temp-xyz" }));

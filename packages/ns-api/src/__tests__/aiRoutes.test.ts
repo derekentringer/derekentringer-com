@@ -587,6 +587,9 @@ describe("AI routes", () => {
   // --- POST /ai/transcribe ---
 
   describe("POST /ai/transcribe", () => {
+    // WebM EBML magic bytes: 0x1A 0x45 0xDF 0xA3
+    const WEBM_MAGIC = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
     it("returns 200 with structured note", async () => {
       const token = await getAccessToken();
       mockTranscribeAudioChunked.mockResolvedValue("This is a test transcript.");
@@ -604,7 +607,7 @@ describe("AI routes", () => {
       mockPrisma.note.create.mockResolvedValue(noteRow);
 
       const form = new FormData();
-      form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
+      form.append("file", new Blob([WEBM_MAGIC], { type: "audio/webm" }), "recording.webm");
       form.append("mode", "meeting");
 
       const res = await app.inject({
@@ -629,6 +632,24 @@ describe("AI routes", () => {
       expect(body.note.id).toBe(VALID_UUID);
     });
 
+    it("returns 400 when file content does not match declared audio type", async () => {
+      const token = await getAccessToken();
+
+      const form = new FormData();
+      // Send plain text content with audio/webm mimetype
+      form.append("file", new Blob(["not-audio-data"], { type: "audio/webm" }), "recording.webm");
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/transcribe",
+        headers: { authorization: `Bearer ${token}` },
+        payload: form,
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toBe("File content does not match declared audio type");
+    });
+
     it("returns 400 with no file", async () => {
       const token = await getAccessToken();
 
@@ -651,7 +672,7 @@ describe("AI routes", () => {
       mockTranscribeAudioChunked.mockResolvedValue("");
 
       const form = new FormData();
-      form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
+      form.append("file", new Blob([WEBM_MAGIC], { type: "audio/webm" }), "recording.webm");
 
       const res = await app.inject({
         method: "POST",
@@ -681,7 +702,7 @@ describe("AI routes", () => {
       mockPrisma.note.create.mockResolvedValue(noteRow);
 
       const form = new FormData();
-      form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
+      form.append("file", new Blob([WEBM_MAGIC], { type: "audio/webm" }), "recording.webm");
 
       const res = await app.inject({
         method: "POST",
@@ -699,7 +720,7 @@ describe("AI routes", () => {
 
     it("returns 401 without auth", async () => {
       const form = new FormData();
-      form.append("file", new Blob(["audio-data"], { type: "audio/webm" }), "recording.webm");
+      form.append("file", new Blob([WEBM_MAGIC], { type: "audio/webm" }), "recording.webm");
 
       const res = await app.inject({
         method: "POST",

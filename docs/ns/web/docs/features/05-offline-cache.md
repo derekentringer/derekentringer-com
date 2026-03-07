@@ -139,7 +139,7 @@ Wraps each notes API function with identical signatures:
 - No database/schema changes — offline cache is entirely client-side (IndexedDB in the browser)
 - `idb` library provides typed Promise wrappers for IndexedDB — no raw `IDBRequest` handling
 - Fire-and-forget cache updates (`.catch(() => {})`) keep the online path fast — cache misses degrade gracefully
-- Queue flush uses last-write-wins strategy: failed entries are skipped, not retried
+- Queue flush distinguishes transient vs permanent errors (see [11 — Architecture Hardening](11-architecture-hardening.md)): transient errors (5xx/network) re-enqueue with retry count (max 3) and break; permanent errors (4xx) log and skip
 - Temp IDs (`temp-{uuid}`) are reconciled to real server IDs after sync via `reconciledIds` Map
 - Folder/tag mutations are online-only to avoid complex tree reconciliation
 

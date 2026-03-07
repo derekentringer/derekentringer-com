@@ -407,7 +407,9 @@ export function NotesPage() {
   function selectNote(note: Note) {
     if (isDirty && selectedId) {
       // Fire-and-forget save of current note before switching
-      updateNote(selectedId, { title, content }).catch(() => {});
+      updateNote(selectedId, { title, content }).catch(() => {
+        showError("Failed to save changes to previous note");
+      });
     }
     setSelectedId(note.id);
     setTitle(note.title);
