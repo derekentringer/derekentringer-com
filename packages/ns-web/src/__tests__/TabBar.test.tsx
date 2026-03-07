@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { TabBar, type Tab } from "../components/TabBar.tsx";
 
 const tabs: Tab[] = [
@@ -9,11 +10,28 @@ const tabs: Tab[] = [
   { id: "3", title: "Note Three", isDirty: false, isPreview: false },
 ];
 
+function DndWrapper({ children }: { children: React.ReactNode }) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  return <DndContext sensors={sensors}>{children}</DndContext>;
+}
+
+function renderTabBar(props: Partial<React.ComponentProps<typeof TabBar>> = {}) {
+  return render(
+    <DndWrapper>
+      <TabBar
+        tabs={tabs}
+        activeTabId="1"
+        onSelectTab={vi.fn()}
+        onCloseTab={vi.fn()}
+        {...props}
+      />
+    </DndWrapper>,
+  );
+}
+
 describe("TabBar", () => {
   it("renders all tab titles", () => {
-    render(
-      <TabBar tabs={tabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />,
-    );
+    renderTabBar();
 
     expect(screen.getByText("Note One")).toBeInTheDocument();
     expect(screen.getByText("Note Two")).toBeInTheDocument();
@@ -21,9 +39,7 @@ describe("TabBar", () => {
   });
 
   it("shows dirty indicator for dirty tabs", () => {
-    render(
-      <TabBar tabs={tabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />,
-    );
+    renderTabBar();
 
     // Tab 2 is dirty — should have the ● indicator
     expect(screen.getByText("●")).toBeInTheDocument();
@@ -31,9 +47,7 @@ describe("TabBar", () => {
 
   it("calls onSelectTab when a tab is clicked", async () => {
     const onSelectTab = vi.fn();
-    render(
-      <TabBar tabs={tabs} activeTabId="1" onSelectTab={onSelectTab} onCloseTab={vi.fn()} />,
-    );
+    renderTabBar({ onSelectTab });
 
     await userEvent.click(screen.getByText("Note Two"));
     expect(onSelectTab).toHaveBeenCalledWith("2");
@@ -41,9 +55,7 @@ describe("TabBar", () => {
 
   it("calls onCloseTab when close button is clicked", async () => {
     const onCloseTab = vi.fn();
-    render(
-      <TabBar tabs={tabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={onCloseTab} />,
-    );
+    renderTabBar({ onCloseTab });
 
     await userEvent.click(screen.getByLabelText("Close Note Two"));
     expect(onCloseTab).toHaveBeenCalledWith("2");
@@ -52,9 +64,7 @@ describe("TabBar", () => {
   it("does not call onSelectTab when close button is clicked", async () => {
     const onSelectTab = vi.fn();
     const onCloseTab = vi.fn();
-    render(
-      <TabBar tabs={tabs} activeTabId="1" onSelectTab={onSelectTab} onCloseTab={onCloseTab} />,
-    );
+    renderTabBar({ onSelectTab, onCloseTab });
 
     await userEvent.click(screen.getByLabelText("Close Note Three"));
     expect(onCloseTab).toHaveBeenCalledWith("3");
@@ -62,9 +72,7 @@ describe("TabBar", () => {
   });
 
   it("applies active styling to active tab", () => {
-    render(
-      <TabBar tabs={tabs} activeTabId="2" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />,
-    );
+    renderTabBar({ activeTabId: "2" });
 
     const activeTab = screen.getByText("Note Two").closest("button")!;
     expect(activeTab.className).toContain("bg-card");
@@ -72,9 +80,7 @@ describe("TabBar", () => {
   });
 
   it("applies inactive styling to non-active tabs", () => {
-    render(
-      <TabBar tabs={tabs} activeTabId="2" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />,
-    );
+    renderTabBar({ activeTabId: "2" });
 
     const inactiveTab = screen.getByText("Note One").closest("button")!;
     expect(inactiveTab.className).toContain("bg-background");
@@ -83,9 +89,7 @@ describe("TabBar", () => {
 
   it("closes tab on middle-click", () => {
     const onCloseTab = vi.fn();
-    render(
-      <TabBar tabs={tabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={onCloseTab} />,
-    );
+    renderTabBar({ onCloseTab });
 
     const tab = screen.getByText("Note Three").closest("button")!;
     fireEvent.mouseDown(tab, { button: 1 });
@@ -95,7 +99,9 @@ describe("TabBar", () => {
   it("renders 'Untitled' for tabs with empty title", () => {
     const tabsWithEmpty: Tab[] = [{ id: "1", title: "", isDirty: false, isPreview: false }];
     render(
-      <TabBar tabs={tabsWithEmpty} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />,
+      <DndWrapper>
+        <TabBar tabs={tabsWithEmpty} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("Untitled")).toBeInTheDocument();
@@ -107,7 +113,9 @@ describe("TabBar", () => {
       { id: "2", title: "Preview", isDirty: false, isPreview: true },
     ];
     render(
-      <TabBar tabs={previewTabs} activeTabId="2" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />,
+      <DndWrapper>
+        <TabBar tabs={previewTabs} activeTabId="2" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />
+      </DndWrapper>,
     );
 
     const previewTitle = screen.getByText("Preview").closest("span")!;
@@ -123,7 +131,9 @@ describe("TabBar", () => {
       { id: "1", title: "Preview Note", isDirty: false, isPreview: true },
     ];
     render(
-      <TabBar tabs={previewTabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} onPinTab={onPinTab} />,
+      <DndWrapper>
+        <TabBar tabs={previewTabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} onPinTab={onPinTab} />
+      </DndWrapper>,
     );
 
     await userEvent.dblClick(screen.getByText("Preview Note"));
