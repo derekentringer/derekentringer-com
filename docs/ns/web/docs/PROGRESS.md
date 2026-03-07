@@ -85,7 +85,9 @@
 
 - [x] [11 — Architecture Hardening](features/11-architecture-hardening.md) — 6 high-priority fixes from architecture review: error toast on note switch save failure, offline queue transient error retry with max 3 retries and permanent error skip, console.error logging on fire-and-forget syncNoteLinks/captureVersion, refresh token reuse detection with soft-delete and session family invalidation, CSRF defense-in-depth via X-Requested-With header on /auth/refresh, audio upload magic byte validation (WebM/MP4/MP3/WAV/OGG)
 
-### UI Fixes
+### UI Enhancements
+
+- [x] [12 — Editor Tabs](features/12-editor-tabs.md) — VS Code-style tab bar with permanent tabs (double-click), preview tabs (single-click with italic title, auto-pin on edit), compact icon-only toolbar, middle-click close, trash view integration with tab state preservation, 22 new tests across TabBar and NotesPage
 
 - [x] Custom scrollbar styling — thin themed scrollbars via `scrollbar-width`/`scrollbar-color` (Firefox) and `::-webkit-scrollbar` (Chrome/Edge) matching dark/light themes; fixes default Windows Chrome scrollbars in editor and preview areas
 
