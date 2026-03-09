@@ -37,13 +37,13 @@ export function FolderDeleteDialog({
         <div className="flex flex-col gap-2">
           <button
             onClick={() => onConfirm("move-up")}
-            className="px-3 py-2 rounded-md border border-border text-sm text-foreground hover:bg-accent transition-colors text-left"
+            className="px-3 py-2 rounded-md border border-border text-sm text-foreground hover:bg-accent transition-colors text-left cursor-pointer"
           >
             Move contents to parent folder
           </button>
           <button
             onClick={() => onConfirm("recursive")}
-            className="px-3 py-2 rounded-md border border-destructive text-sm text-destructive hover:bg-destructive/10 transition-colors text-left"
+            className="px-3 py-2 rounded-md border border-destructive text-sm text-destructive hover:bg-destructive/10 transition-colors text-left cursor-pointer"
           >
             Delete folder and all subfolders
             <span className="block text-xs opacity-70">
@@ -52,7 +52,7 @@ export function FolderDeleteDialog({
           </button>
           <button
             onClick={onCancel}
-            className="px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             Cancel
           </button>

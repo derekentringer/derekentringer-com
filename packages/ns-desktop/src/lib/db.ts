@@ -537,6 +537,48 @@ async function collectDescendantFolderIds(parentId: string): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Reorder / Move
+// ---------------------------------------------------------------------------
+
+export async function reorderNotes(
+  order: { id: string; sortOrder: number }[],
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  for (const item of order) {
+    await db.execute(
+      "UPDATE notes SET sort_order = $1, updated_at = $2 WHERE id = $3",
+      [item.sortOrder, now, item.id],
+    );
+  }
+}
+
+export async function moveFolderParent(
+  folderId: string,
+  newParentId: string | null,
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE folders SET parent_id = $1, updated_at = $2 WHERE id = $3",
+    [newParentId, now, folderId],
+  );
+}
+
+export async function reorderFolders(
+  order: { id: string; sortOrder: number }[],
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  for (const item of order) {
+    await db.execute(
+      "UPDATE folders SET sort_order = $1, updated_at = $2 WHERE id = $3",
+      [item.sortOrder, now, item.id],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tags
 // ---------------------------------------------------------------------------
 
@@ -638,4 +680,43 @@ export async function restoreNote(id: string): Promise<void> {
   if (note) {
     await ftsInsert(id, note.title, note.content, JSON.stringify(note.tags));
   }
+}
+
+export async function bulkHardDelete(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const db = await getDb();
+  let count = 0;
+  for (const id of ids) {
+    await db.execute("DELETE FROM notes WHERE id = $1", [id]);
+    await ftsDelete(id);
+    count++;
+  }
+  return count;
+}
+
+export async function emptyTrash(): Promise<number> {
+  const db = await getDb();
+  const rows = await db.select<{ id: string }[]>(
+    "SELECT id FROM notes WHERE is_deleted = 1",
+  );
+  for (const row of rows) {
+    await db.execute("DELETE FROM notes WHERE id = $1", [row.id]);
+    await ftsDelete(row.id);
+  }
+  return rows.length;
+}
+
+export async function purgeOldTrash(retentionDays: number): Promise<number> {
+  if (retentionDays === 0) return 0;
+  const db = await getDb();
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  const rows = await db.select<{ id: string }[]>(
+    "SELECT id FROM notes WHERE is_deleted = 1 AND deleted_at < $1",
+    [cutoff],
+  );
+  for (const row of rows) {
+    await db.execute("DELETE FROM notes WHERE id = $1", [row.id]);
+    await ftsDelete(row.id);
+  }
+  return rows.length;
 }

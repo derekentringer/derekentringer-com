@@ -1,7 +1,18 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import { NoteList } from "../components/NoteList.tsx";
-import type { Note, NoteSearchResult, FolderInfo } from "@derekentringer/ns-shared";
+import type { Note, NoteSearchResult } from "@derekentringer/ns-shared";
+
+function DndWrapper({ children }: { children: React.ReactNode }) {
+  const sensors = useSensors(useSensor(PointerSensor));
+  return <DndContext sensors={sensors}>{children}</DndContext>;
+}
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {
@@ -22,21 +33,6 @@ function makeNote(overrides: Partial<Note> = {}): Note {
   };
 }
 
-function makeFolder(overrides: Partial<FolderInfo> = {}): FolderInfo {
-  return {
-    id: "folder-1",
-    name: "Test Folder",
-    parentId: null,
-    sortOrder: 0,
-    favorite: false,
-    count: 0,
-    totalCount: 0,
-    createdAt: "2024-01-01T00:00:00.000Z",
-    children: [],
-    ...overrides,
-  };
-}
-
 describe("NoteList", () => {
   it("renders note titles", () => {
     const notes = [
@@ -45,7 +41,9 @@ describe("NoteList", () => {
     ];
 
     render(
-      <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} />,
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("First Note")).toBeInTheDocument();
@@ -56,7 +54,9 @@ describe("NoteList", () => {
     const notes = [makeNote({ id: "1", title: "" })];
 
     render(
-      <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} />,
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("Untitled")).toBeInTheDocument();
@@ -67,7 +67,9 @@ describe("NoteList", () => {
     const note = makeNote({ id: "1", title: "Click Me" });
 
     render(
-      <NoteList notes={[note]} selectedId={null} onSelect={onSelect} />,
+      <DndWrapper>
+        <NoteList notes={[note]} selectedId={null} onSelect={onSelect} sortByManual={false} />
+      </DndWrapper>,
     );
 
     await userEvent.click(screen.getByText("Click Me"));
@@ -81,7 +83,9 @@ describe("NoteList", () => {
     ];
 
     render(
-      <NoteList notes={notes} selectedId="1" onSelect={vi.fn()} />,
+      <DndWrapper>
+        <NoteList notes={notes} selectedId="1" onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
 
     const selectedButton = screen.getByText("Selected").closest("button");
@@ -96,12 +100,15 @@ describe("NoteList", () => {
     const onDeleteNote = vi.fn();
 
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onDeleteNote={onDeleteNote}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDeleteNote={onDeleteNote}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     const button = screen.getByText("Right Click Me");
@@ -115,12 +122,15 @@ describe("NoteList", () => {
     const onDeleteNote = vi.fn();
 
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onDeleteNote={onDeleteNote}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDeleteNote={onDeleteNote}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     const button = screen.getByText("My Special Note");
@@ -136,12 +146,15 @@ describe("NoteList", () => {
     const onDeleteNote = vi.fn();
 
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onDeleteNote={onDeleteNote}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDeleteNote={onDeleteNote}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     const button = screen.getByText("Confirm Delete");
@@ -164,12 +177,15 @@ describe("NoteList", () => {
     const onDeleteNote = vi.fn();
 
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onDeleteNote={onDeleteNote}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDeleteNote={onDeleteNote}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     const button = screen.getByText("Cancel Delete");
@@ -183,7 +199,9 @@ describe("NoteList", () => {
 
   it("renders empty list without errors", () => {
     const { container } = render(
-      <NoteList notes={[]} selectedId={null} onSelect={vi.fn()} />,
+      <DndWrapper>
+        <NoteList notes={[]} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
     expect(container).toBeTruthy();
   });
@@ -198,12 +216,15 @@ describe("NoteList", () => {
     ];
 
     render(
-      <NoteList
-        notes={[]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        searchResults={searchResults}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          searchResults={searchResults}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("Search Hit")).toBeInTheDocument();
@@ -220,61 +241,44 @@ describe("NoteList", () => {
     ];
 
     render(
-      <NoteList
-        notes={notes}
-        selectedId={null}
-        onSelect={vi.fn()}
-        searchResults={searchResults}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={notes}
+          selectedId={null}
+          onSelect={vi.fn()}
+          searchResults={searchResults}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("Search Result")).toBeInTheDocument();
     expect(screen.queryByText("Regular Note")).not.toBeInTheDocument();
   });
 
-  // Folder breadcrumb test
-  it("shows folder breadcrumb when viewing All Notes", () => {
-    const folders = [
-      makeFolder({
-        id: "f1",
-        name: "Work",
-        children: [
-          makeFolder({ id: "f2", name: "Projects", parentId: "f1" }),
-        ],
-      }),
-    ];
-
-    const notes = [makeNote({ id: "1", title: "In Folder", folderId: "f2" })];
+  // Drag handle tests
+  it("shows drag handle when sortByManual is true", () => {
+    const notes = [makeNote({ id: "1", title: "Manual Sort Note" })];
 
     render(
-      <NoteList
-        notes={notes}
-        selectedId={null}
-        onSelect={vi.fn()}
-        folders={folders}
-        activeFolder={null}
-      />,
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={true} />
+      </DndWrapper>,
     );
 
-    expect(screen.getByText("Work / Projects")).toBeInTheDocument();
+    const handle = screen.getByTitle("Drag to reorder");
+    expect(handle).toBeInTheDocument();
   });
 
-  // Move to folder context menu
-  it("shows 'Move to folder' in context menu when onMoveToFolder is provided", async () => {
-    const note = makeNote({ id: "1", title: "Move Me" });
+  it("hides drag handle when sortByManual is false", () => {
+    const notes = [makeNote({ id: "1", title: "Auto Sort Note" })];
+
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onMoveToFolder={vi.fn()}
-        folders={[makeFolder({ id: "f1", name: "Target" })]}
-      />,
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
 
-    const button = screen.getByText("Move Me");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.getByText("Move to folder")).toBeInTheDocument();
+    expect(screen.queryByTitle("Drag to reorder")).not.toBeInTheDocument();
   });
 });

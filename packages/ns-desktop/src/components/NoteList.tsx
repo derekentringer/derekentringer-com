@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef } from "react";
-import type { Note, NoteSearchResult, FolderInfo } from "@derekentringer/ns-shared";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import type { Note, NoteSearchResult } from "@derekentringer/ns-shared";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { SearchSnippet } from "./SearchSnippet.tsx";
-import { flattenFolderTree, getFolderBreadcrumb } from "./FolderTree.tsx";
 
 interface NoteListProps {
   notes: Note[];
@@ -10,9 +15,7 @@ interface NoteListProps {
   onSelect: (note: Note) => void;
   onDeleteNote?: (noteId: string) => void;
   searchResults?: NoteSearchResult[] | null;
-  folders?: FolderInfo[];
-  activeFolder?: string | null;
-  onMoveToFolder?: (noteId: string, folderId: string | null) => void;
+  sortByManual: boolean;
 }
 
 interface ContextMenuState {
@@ -21,19 +24,106 @@ interface ContextMenuState {
   y: number;
 }
 
+interface SortableNoteItemProps {
+  note: Note;
+  isSelected: boolean;
+  onSelect: (note: Note) => void;
+  onDeleteNote?: (noteId: string) => void;
+  sortByManual: boolean;
+  contextMenu: ContextMenuState | null;
+  onContextMenuOpen: (noteId: string, x: number, y: number) => void;
+  onDeleteClick: (noteId: string) => void;
+  contextMenuRef: React.RefObject<HTMLDivElement | null>;
+}
+
+function SortableNoteItem({
+  note,
+  isSelected,
+  onSelect,
+  onDeleteNote,
+  sortByManual,
+  contextMenu,
+  onContextMenuOpen,
+  onDeleteClick,
+  contextMenuRef,
+}: SortableNoteItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: note.id, disabled: !sortByManual });
+
+  const searchNote = note as NoteSearchResult;
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center relative">
+      {sortByManual && (
+        <span
+          {...attributes}
+          {...listeners}
+          className="cursor-grab px-1 text-muted-foreground hover:text-foreground text-xs select-none shrink-0"
+          title="Drag to reorder"
+        >
+          &#x2630;
+        </span>
+      )}
+      <button
+        onClick={() => onSelect(note)}
+        onContextMenu={(e) => {
+          if (!onDeleteNote) return;
+          e.preventDefault();
+          onContextMenuOpen(note.id, e.clientX, e.clientY);
+        }}
+        className={`flex-1 text-left px-2 py-2 rounded-md text-sm transition-colors cursor-pointer ${
+          isSelected
+            ? "bg-accent text-foreground"
+            : "text-muted hover:bg-accent hover:text-foreground"
+        }`}
+      >
+        <span className="block truncate">
+          {note.title || "Untitled"}
+        </span>
+        {searchNote.headline && (
+          <SearchSnippet headline={searchNote.headline} />
+        )}
+      </button>
+      {contextMenu?.noteId === note.id && onDeleteNote && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            onClick={() => onDeleteClick(note.id)}
+            className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors cursor-pointer"
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function NoteList({
   notes,
   selectedId,
   onSelect,
   onDeleteNote,
   searchResults,
-  folders,
-  activeFolder,
-  onMoveToFolder,
+  sortByManual,
 }: NoteListProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [showFolderSubmenu, setShowFolderSubmenu] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const displayNotes = searchResults ?? notes;
@@ -43,7 +133,6 @@ export function NoteList({
     function handleClickOutside(e: MouseEvent) {
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
         setContextMenu(null);
-        setShowFolderSubmenu(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -53,106 +142,31 @@ export function NoteList({
   function handleDeleteClick(noteId: string) {
     setPendingDeleteId(noteId);
     setContextMenu(null);
-    setShowFolderSubmenu(false);
   }
-
-  function handleMoveToFolder(noteId: string, folderId: string | null) {
-    onMoveToFolder?.(noteId, folderId);
-    setContextMenu(null);
-    setShowFolderSubmenu(false);
-  }
-
-  const flatFolders = folders ? flattenFolderTree(folders) : [];
 
   const pendingNote = pendingDeleteId ? displayNotes.find((n) => n.id === pendingDeleteId) : null;
 
   return (
     <>
-      {displayNotes.map((note) => {
-        const searchNote = note as NoteSearchResult;
-        // Show folder breadcrumb when viewing "All Notes" (activeFolder is null)
-        const showBreadcrumb = activeFolder === null && note.folderId && folders;
-        const breadcrumb = showBreadcrumb
-          ? getFolderBreadcrumb(folders!, note.folderId!)
-          : null;
-
-        return (
-          <div key={note.id} className="flex items-center relative">
-            <button
-              onClick={() => onSelect(note)}
-              onContextMenu={(e) => {
-                if (!onDeleteNote && !onMoveToFolder) return;
-                e.preventDefault();
-                setContextMenu({ noteId: note.id, x: e.clientX, y: e.clientY });
-                setShowFolderSubmenu(false);
-              }}
-              className={`flex-1 text-left px-2 py-2 rounded-md text-sm transition-colors ${
-                note.id === selectedId
-                  ? "bg-accent text-foreground"
-                  : "text-muted hover:bg-accent hover:text-foreground"
-              }`}
-            >
-              <span className="block truncate">
-                {note.title || "Untitled"}
-              </span>
-              {breadcrumb && breadcrumb.length > 0 && (
-                <span className="block text-[10px] text-muted-foreground truncate">
-                  {breadcrumb.map((b) => b.name).join(" / ")}
-                </span>
-              )}
-              {searchNote.headline && (
-                <SearchSnippet headline={searchNote.headline} />
-              )}
-            </button>
-            {contextMenu?.noteId === note.id && (onDeleteNote || onMoveToFolder) && (
-              <div
-                ref={contextMenuRef}
-                className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
-                style={{ left: contextMenu.x, top: contextMenu.y }}
-              >
-                {onMoveToFolder && (
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowFolderSubmenu((v) => !v)}
-                      className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors flex items-center justify-between"
-                    >
-                      Move to folder
-                      <span className="text-[10px] ml-2">▸</span>
-                    </button>
-                    {showFolderSubmenu && (
-                      <div className="absolute left-full top-0 ml-0.5 bg-card border border-border rounded-md shadow-lg py-1 min-w-[120px] max-h-48 overflow-y-auto z-50">
-                        <button
-                          onClick={() => handleMoveToFolder(note.id, null)}
-                          className="w-full text-left px-3 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors"
-                        >
-                          Unfiled
-                        </button>
-                        {flatFolders.map((f) => (
-                          <button
-                            key={f.id}
-                            onClick={() => handleMoveToFolder(note.id, f.id)}
-                            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
-                          >
-                            {f.displayName}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {onDeleteNote && (
-                  <button
-                    onClick={() => handleDeleteClick(note.id)}
-                    className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors"
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      <SortableContext
+        items={displayNotes.map((n) => n.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        {displayNotes.map((note) => (
+          <SortableNoteItem
+            key={note.id}
+            note={note}
+            isSelected={note.id === selectedId}
+            onSelect={onSelect}
+            onDeleteNote={onDeleteNote}
+            sortByManual={sortByManual}
+            contextMenu={contextMenu}
+            onContextMenuOpen={(noteId, x, y) => setContextMenu({ noteId, x, y })}
+            onDeleteClick={handleDeleteClick}
+            contextMenuRef={contextMenuRef}
+          />
+        ))}
+      </SortableContext>
 
       {pendingDeleteId && (
         <ConfirmDialog

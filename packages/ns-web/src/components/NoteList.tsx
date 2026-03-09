@@ -93,7 +93,7 @@ function SortableNoteItem({
           e.preventDefault();
           onContextMenuOpen(note.id, e.clientX, e.clientY);
         }}
-        className={`flex-1 text-left px-2 py-2 rounded-md text-sm transition-colors ${
+        className={`flex-1 text-left px-2 py-2 rounded-md text-sm transition-colors cursor-pointer ${
           isSelected
             ? "bg-accent text-foreground"
             : "text-muted hover:bg-accent hover:text-foreground"

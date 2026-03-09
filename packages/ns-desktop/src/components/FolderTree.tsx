@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useDroppable, useDraggable } from "@dnd-kit/core";
 import type { FolderInfo } from "@derekentringer/ns-shared";
 import { FolderDeleteDialog } from "./FolderDeleteDialog.tsx";
 
@@ -10,6 +11,7 @@ interface FolderTreeProps {
   onCreateFolder: (name: string, parentId?: string) => void;
   onRenameFolder: (folderId: string, newName: string) => void;
   onDeleteFolder: (folderId: string, mode: "move-up" | "recursive") => void;
+  onMoveFolder: (folderId: string, parentId: string | null) => void;
 }
 
 interface FolderTreeNodeProps {
@@ -30,6 +32,58 @@ interface FolderTreeNodeProps {
   setCreatingIn: (id: string | null) => void;
   setNewFolderName: (name: string) => void;
   onCreateSubmit: (parentId: string) => void;
+}
+
+function DraggableFolderItem({
+  folderId,
+  children,
+}: {
+  folderId: string;
+  children: React.ReactNode;
+}) {
+  const { isOver, setNodeRef: setDropRef } = useDroppable({
+    id: `folder:${folderId}`,
+  });
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+    isDragging,
+  } = useDraggable({
+    id: `drag-folder:${folderId}`,
+  });
+
+  return (
+    <div
+      ref={(node) => {
+        setDropRef(node);
+        setDragRef(node);
+      }}
+      {...attributes}
+      {...listeners}
+      className={`${isOver ? "ring-2 ring-primary rounded" : ""} ${isDragging ? "opacity-50" : ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function DroppableZone({
+  droppableId,
+  children,
+}: {
+  droppableId: string;
+  children: React.ReactNode;
+}) {
+  const { isOver, setNodeRef } = useDroppable({ id: droppableId });
+  return (
+    <div
+      ref={setNodeRef}
+      className={isOver ? "ring-2 ring-primary rounded" : ""}
+    >
+      {children}
+    </div>
+  );
 }
 
 function FolderTreeNode({
@@ -57,8 +111,9 @@ function FolderTreeNode({
 
   return (
     <div>
-      <div className="relative">
-        {renamingFolder === folder.id ? (
+      <DraggableFolderItem folderId={folder.id}>
+        <div className="relative">
+          {renamingFolder === folder.id ? (
           <input
             type="text"
             value={renameValue}
@@ -110,7 +165,8 @@ function FolderTreeNode({
             </span>
           </button>
         )}
-      </div>
+        </div>
+      </DraggableFolderItem>
 
       {/* Inline create inside this folder */}
       {creatingIn === folder.id && (
@@ -189,6 +245,7 @@ export function FolderTree({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
+  onMoveFolder,
 }: FolderTreeProps) {
   const [expandedMap, setExpandedMap] = useState<Map<string, boolean>>(() => {
     const stored = loadExpandedState();
@@ -320,6 +377,11 @@ export function FolderTree({
     setContextMenu(null);
   }
 
+  function handleMoveToRoot(folder: FolderInfo) {
+    onMoveFolder(folder.id, null);
+    setContextMenu(null);
+  }
+
   function handleContextMenu(e: React.MouseEvent, folder: FolderInfo) {
     e.preventDefault();
     setContextMenu(
@@ -384,17 +446,19 @@ export function FolderTree({
 
           {/* Unfiled */}
           {unfiledCount > 0 && (
-            <button
-              onClick={() => onSelectFolder("__unfiled__")}
-              className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate cursor-pointer ${
-                activeFolder === "__unfiled__"
-                  ? "text-foreground bg-accent"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              Unfiled
-              <span className="ml-1 text-xs opacity-60">{unfiledCount}</span>
-            </button>
+            <DroppableZone droppableId="folder:__unfiled__">
+              <button
+                onClick={() => onSelectFolder("__unfiled__")}
+                className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate cursor-pointer ${
+                  activeFolder === "__unfiled__"
+                    ? "text-foreground bg-accent"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+              >
+                Unfiled
+                <span className="ml-1 text-xs opacity-60">{unfiledCount}</span>
+              </button>
+            </DroppableZone>
           )}
 
           {/* Folder tree */}
@@ -420,6 +484,11 @@ export function FolderTree({
               onCreateSubmit={handleCreateInSubmit}
             />
           ))}
+
+          {/* Root drop zone */}
+          <DroppableZone droppableId="folder:__root__">
+            <div className="h-4 w-full" />
+          </DroppableZone>
 
           {/* Inline create at root */}
           {isCreating && (
@@ -462,6 +531,14 @@ export function FolderTree({
           >
             Rename
           </button>
+          {contextMenu.folder.parentId && (
+            <button
+              onClick={() => handleMoveToRoot(contextMenu.folder)}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              Move to Root
+            </button>
+          )}
           <button
             onClick={() => handleDeleteClick(contextMenu.folder)}
             className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors cursor-pointer"
