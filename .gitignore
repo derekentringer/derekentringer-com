@@ -9,6 +9,10 @@ generated/
 *.log
 .DS_Store
 
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+
 # React Native / Expo
 .expo/
 ios/

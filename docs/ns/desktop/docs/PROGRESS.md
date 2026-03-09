@@ -34,7 +34,7 @@
 
 ### Phase 1: Foundation — High Priority
 
-- [ ] [00 — Project Scaffolding](feature_planning/00-project-scaffolding.md)
+- [x] [00 — Project Scaffolding](features/00-project-scaffolding.md)
 
 ### Phase 2: Notes Core — High Priority
 
