@@ -423,17 +423,6 @@ export function NotesPage() {
     }
   }
 
-  async function handleMoveToFolder(noteId: string, folderId: string | null) {
-    try {
-      const updated = await updateNote(noteId, { folderId: folderId ?? undefined });
-      setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
-      await refreshFolders();
-    } catch (err) {
-      console.error("Failed to move note:", err);
-      showError("Failed to move note");
-    }
-  }
-
   // --- Trash ---
 
   async function handleViewTrash() {
@@ -659,9 +648,6 @@ export function NotesPage() {
                     onSelect={selectNote}
                     onDeleteNote={handleDeleteNote}
                     searchResults={searchResults}
-                    folders={folders}
-                    activeFolder={activeFolder}
-                    onMoveToFolder={handleMoveToFolder}
                   />
                 )
               ) : filteredNotes.length === 0 ? (
@@ -674,9 +660,6 @@ export function NotesPage() {
                   selectedId={selectedId}
                   onSelect={selectNote}
                   onDeleteNote={handleDeleteNote}
-                  folders={folders}
-                  activeFolder={activeFolder}
-                  onMoveToFolder={handleMoveToFolder}
                 />
               )}
             </nav>

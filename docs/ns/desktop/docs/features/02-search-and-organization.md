@@ -101,12 +101,12 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 
 ### Testing
 
-- 151 tests across 12 test files:
+- 149 tests across 12 test files:
   - `db.test.ts` — 43 tests: FTS sync, folder CRUD, tag queries, trash queries, enhanced fetchNotes with sort/filter
   - `FolderTree.test.tsx` — 16 tests: tree rendering, expand/collapse, folder click, active highlight, context menu, inline create, inline rename, delete dialog modes
   - `TagBrowser.test.tsx` — 10 tests: tag pills, click/toggle, active highlight, show more, context menu rename/delete
   - `TagInput.test.tsx` — 13 tests: tag display, add via Enter, backspace remove, X remove, autocomplete
-  - `NoteList.test.tsx` — 13 tests: note rendering, selection, search results with headlines
+  - `NoteList.test.tsx` — 11 tests: note rendering, selection, search results with headlines, context menu delete
   - Previously existing tests updated (sort controls removed from NoteList, moved to NotesPage)
 
 ### Components Created
@@ -122,6 +122,8 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 ## What Was Deferred
 
 - **Drag-and-drop** — folder reordering and note-to-folder DnD not implemented (web uses `@dnd-kit`)
+- **Note list folder breadcrumbs** — not shown (matches web NoteList which only shows title + search headline)
+- **Move to folder context menu** — not in note list context menu (matches web; folder assignment handled via FolderTree)
 - **Grid/card view** — list view only
 - **Bulk trash operations** — no select-all, restore-selected, empty-trash
 - **Auto-purge trash** — no configurable retention period

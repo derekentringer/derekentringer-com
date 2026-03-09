@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NoteList } from "../components/NoteList.tsx";
-import type { Note, NoteSearchResult, FolderInfo } from "@derekentringer/ns-shared";
+import type { Note, NoteSearchResult } from "@derekentringer/ns-shared";
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {
@@ -18,21 +18,6 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
     deletedAt: null,
-    ...overrides,
-  };
-}
-
-function makeFolder(overrides: Partial<FolderInfo> = {}): FolderInfo {
-  return {
-    id: "folder-1",
-    name: "Test Folder",
-    parentId: null,
-    sortOrder: 0,
-    favorite: false,
-    count: 0,
-    totalCount: 0,
-    createdAt: "2024-01-01T00:00:00.000Z",
-    children: [],
     ...overrides,
   };
 }
@@ -232,49 +217,4 @@ describe("NoteList", () => {
     expect(screen.queryByText("Regular Note")).not.toBeInTheDocument();
   });
 
-  // Folder breadcrumb test
-  it("shows folder breadcrumb when viewing All Notes", () => {
-    const folders = [
-      makeFolder({
-        id: "f1",
-        name: "Work",
-        children: [
-          makeFolder({ id: "f2", name: "Projects", parentId: "f1" }),
-        ],
-      }),
-    ];
-
-    const notes = [makeNote({ id: "1", title: "In Folder", folderId: "f2" })];
-
-    render(
-      <NoteList
-        notes={notes}
-        selectedId={null}
-        onSelect={vi.fn()}
-        folders={folders}
-        activeFolder={null}
-      />,
-    );
-
-    expect(screen.getByText("Work / Projects")).toBeInTheDocument();
-  });
-
-  // Move to folder context menu
-  it("shows 'Move to folder' in context menu when onMoveToFolder is provided", async () => {
-    const note = makeNote({ id: "1", title: "Move Me" });
-    render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onMoveToFolder={vi.fn()}
-        folders={[makeFolder({ id: "f1", name: "Target" })]}
-      />,
-    );
-
-    const button = screen.getByText("Move Me");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.getByText("Move to folder")).toBeInTheDocument();
-  });
 });
