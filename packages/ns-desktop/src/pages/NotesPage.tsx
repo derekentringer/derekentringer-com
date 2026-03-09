@@ -1,4 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type {
   Note,
   NoteSearchResult,
@@ -24,6 +34,8 @@ import {
   fetchTrash,
   restoreNote,
   initFts,
+  reorderNotes,
+  moveFolderParent,
 } from "../lib/db.ts";
 import {
   MarkdownEditor,
@@ -80,6 +92,15 @@ export function NotesPage() {
   // Trash
   const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
   const [trashNotes, setTrashNotes] = useState<Note[]>([]);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const loadedContentRef = useRef("");
@@ -423,6 +444,95 @@ export function NotesPage() {
     }
   }
 
+  // --- DnD handlers ---
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // Folder → Folder (nesting) or Folder → Root
+    if (activeId.startsWith("drag-folder:")) {
+      const folderId = activeId.slice("drag-folder:".length);
+      if (overId.startsWith("folder:")) {
+        const targetId = overId.slice("folder:".length);
+        const newParentId =
+          targetId === "__root__" || targetId === "__unfiled__"
+            ? null
+            : targetId;
+        if (folderId === newParentId) return;
+        try {
+          await moveFolderParent(folderId, newParentId);
+          await refreshFolders();
+        } catch (err) {
+          console.error("Failed to move folder:", err);
+          showError("Failed to move folder");
+        }
+      }
+      return;
+    }
+
+    // Note → Folder
+    if (overId.startsWith("folder:")) {
+      const noteId = activeId;
+      const folderTarget = overId.slice("folder:".length);
+      const folderId =
+        folderTarget === "__unfiled__" || folderTarget === "__root__"
+          ? null
+          : folderTarget;
+
+      try {
+        await updateNote(noteId, { folderId });
+        await refreshSidebarData();
+      } catch (err) {
+        console.error("Failed to move note:", err);
+        showError("Failed to move note");
+      }
+      return;
+    }
+
+    // Note reorder (manual sort)
+    if (active.id !== over.id) {
+      await handleReorder(activeId, overId);
+    }
+  }
+
+  async function handleReorder(activeId: string, overId: string) {
+    const oldIndex = notes.findIndex((n) => n.id === activeId);
+    const newIndex = notes.findIndex((n) => n.id === overId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = [...notes];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+
+    // Optimistic update
+    const updatedNotes = reordered.map((n, i) => ({ ...n, sortOrder: i }));
+    setNotes(updatedNotes);
+
+    try {
+      await reorderNotes(
+        updatedNotes.map((n) => ({ id: n.id, sortOrder: n.sortOrder })),
+      );
+    } catch (err) {
+      console.error("Failed to reorder notes:", err);
+      showError("Failed to reorder notes");
+      await reloadNotes();
+    }
+  }
+
+  async function handleMoveFolder(folderId: string, parentId: string | null) {
+    try {
+      await moveFolderParent(folderId, parentId);
+      await refreshFolders();
+    } catch (err) {
+      console.error("Failed to move folder:", err);
+      showError("Failed to move folder");
+    }
+  }
+
   // --- Trash ---
 
   async function handleViewTrash() {
@@ -567,7 +677,11 @@ export function NotesPage() {
         </div>
 
         {sidebarView === "notes" ? (
-          <>
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
             {/* Folder tree (resizable) */}
             <div className="shrink-0 overflow-y-auto" style={{ height: folderResize.size }}>
               <FolderTree
@@ -582,6 +696,7 @@ export function NotesPage() {
                 onCreateFolder={handleCreateFolder}
                 onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
+                onMoveFolder={handleMoveFolder}
               />
             </div>
 
@@ -606,6 +721,7 @@ export function NotesPage() {
                       style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
                       aria-label="Sort by"
                     >
+                      <option value="sortOrder">Manual</option>
                       <option value="updatedAt">Modified</option>
                       <option value="createdAt">Created</option>
                       <option value="title">Title</option>
@@ -648,6 +764,7 @@ export function NotesPage() {
                     onSelect={selectNote}
                     onDeleteNote={handleDeleteNote}
                     searchResults={searchResults}
+                    sortByManual={sortBy === "sortOrder"}
                   />
                 )
               ) : filteredNotes.length === 0 ? (
@@ -660,6 +777,7 @@ export function NotesPage() {
                   selectedId={selectedId}
                   onSelect={selectNote}
                   onDeleteNote={handleDeleteNote}
+                  sortByManual={sortBy === "sortOrder"}
                 />
               )}
             </nav>
@@ -674,7 +792,7 @@ export function NotesPage() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>
-          </>
+          </DndContext>
         ) : (
           <>
             {/* Trash view */}

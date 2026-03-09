@@ -33,15 +33,18 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 - `renameFolder(id, name)` — UPDATE name + `updated_at`
 - `deleteFolder(id, mode)` — two modes: "move-up" (reparent children) or "recursive" (delete all contents)
 - `fetchNotes()` enhanced with `folderId` filter (`null` = unfiled, `undefined` = all)
-- FolderTree component ported from web minus `@dnd-kit` drag-and-drop:
+- FolderTree component ported from web with full `@dnd-kit` drag-and-drop:
   - Recursive tree rendering with disclosure triangles (expand/collapse)
   - "All Notes" and "Unfiled" entries at top
   - Folder note counts (direct + total including children)
   - Click to filter notes by folder
   - Active folder highlighted
-  - Right-click context menu: New Subfolder, Rename, Delete
+  - Right-click context menu: New Subfolder, Rename, Delete, Move to Root (nested folders only)
   - Inline create (input field under parent)
   - Inline rename (input replaces name)
+  - Drag-and-drop folders to nest under other folders
+  - Drop zones for Unfiled and root level
+  - Visual feedback (ring highlight on drop targets, opacity on dragged item)
 - `FolderDeleteDialog` component with two-mode delete confirmation (radio options + warning text)
 
 ### Tag System (`src/lib/db.ts` + `src/components/TagBrowser.tsx` + `src/components/TagInput.tsx`)
@@ -72,9 +75,10 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 
 ### Sort Options
 
-- Sort dropdown in "NOTES" panel header: Updated, Created, Title
+- Sort dropdown in "NOTES" panel header: Manual, Updated, Created, Title
 - Ascending/descending toggle button
 - `fetchNotes()` enhanced with `sortBy` and `sortOrder` parameters
+- Manual sort mode enables drag-and-drop note reordering with drag handles
 - Styled `<select>` with `appearance-none`, custom SVG chevron, `bg-subtle` background
 
 ### Resizable Sidebar Panels
@@ -91,6 +95,17 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 - Search results displayed in note list with `SearchSnippet` highlighted excerpts
 - "SEARCH RESULTS" header replaces "NOTES" during active search
 
+### Drag-and-Drop (`@dnd-kit`)
+
+- `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` — same versions as web
+- `DndContext` wraps sidebar notes view with `PointerSensor` (distance: 5) and `KeyboardSensor`
+- Drag ID prefix routing in `handleDragEnd`: `drag-folder:` for folder drags, `folder:` for folder drop targets
+- **Folder DnD**: drag folders onto other folders to nest them; `DraggableFolderItem` (combined `useDraggable` + `useDroppable`) and `DroppableZone` components
+- **Note-to-folder DnD**: drag notes from the list onto folders in the tree to move them
+- **Note reorder DnD**: `SortableNoteItem` with `useSortable`; drag handle (☰) visible only when sort is set to "Manual"
+- `reorderNotes()`, `moveFolderParent()`, `reorderFolders()` — new SQLite bulk-update functions in `db.ts`
+- Optimistic UI updates with error rollback for note reordering
+
 ### UI/UX Polish (matching web app)
 
 - "NOTES" / "SEARCH RESULTS" section header with sort controls
@@ -101,12 +116,12 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 
 ### Testing
 
-- 149 tests across 12 test files:
-  - `db.test.ts` — 43 tests: FTS sync, folder CRUD, tag queries, trash queries, enhanced fetchNotes with sort/filter
-  - `FolderTree.test.tsx` — 16 tests: tree rendering, expand/collapse, folder click, active highlight, context menu, inline create, inline rename, delete dialog modes
+- 160 tests across 12 test files:
+  - `db.test.ts` — 49 tests: FTS sync, folder CRUD, tag queries, trash queries, enhanced fetchNotes with sort/filter, reorderNotes, moveFolderParent, reorderFolders
+  - `FolderTree.test.tsx` — 16 tests: tree rendering, expand/collapse, folder click, active highlight, context menu, inline create, inline rename, delete dialog modes, Move to Root context menu
   - `TagBrowser.test.tsx` — 10 tests: tag pills, click/toggle, active highlight, show more, context menu rename/delete
   - `TagInput.test.tsx` — 13 tests: tag display, add via Enter, backspace remove, X remove, autocomplete
-  - `NoteList.test.tsx` — 11 tests: note rendering, selection, search results with headlines, context menu delete
+  - `NoteList.test.tsx` — 13 tests: note rendering, selection, search results with headlines, context menu delete, drag handle visibility
   - Previously existing tests updated (sort controls removed from NoteList, moved to NotesPage)
 
 ### Components Created
@@ -116,12 +131,11 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 | `SearchSnippet.tsx` | ~10 | FTS5 snippet HTML renderer |
 | `TagBrowser.tsx` | ~167 | Collapsible tag browser with filter/rename/delete |
 | `TagInput.tsx` | ~112 | Inline tag editor with autocomplete |
-| `FolderTree.tsx` | ~500 | Recursive folder tree (no DnD) |
+| `FolderTree.tsx` | ~550 | Recursive folder tree with DnD (draggable + droppable) |
 | `FolderDeleteDialog.tsx` | ~50 | Two-mode delete confirmation dialog |
 
 ## What Was Deferred
 
-- **Drag-and-drop** — folder reordering and note-to-folder DnD not implemented (web uses `@dnd-kit`)
 - **Note list folder breadcrumbs** — not shown (matches web NoteList which only shows title + search headline)
 - **Move to folder context menu** — not in note list context menu (matches web; folder assignment handled via FolderTree)
 - **Grid/card view** — list view only
@@ -130,7 +144,6 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 - **Semantic search** — FTS5 keyword search only, no vector/embedding search
 - **Multi-tag AND/OR filter toggle** — single tag filter only
 - **Date range filter** — not implemented
-- **Manual sort order** — no drag-and-drop reordering in note list
 - **Favorites** — deferred to Phase 4 (05 — Favorites)
 
 ## Dependencies

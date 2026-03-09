@@ -26,6 +26,7 @@ const defaultProps = {
   onCreateFolder: vi.fn(),
   onRenameFolder: vi.fn(),
   onDeleteFolder: vi.fn(),
+  onMoveFolder: vi.fn(),
 };
 
 beforeEach(() => {
@@ -140,6 +141,52 @@ describe("FolderTree", () => {
     await userEvent.type(input, "New Folder{Enter}");
 
     expect(onCreateFolder).toHaveBeenCalledWith("New Folder");
+  });
+
+  it("shows 'Move to Root' in context menu for nested folders", async () => {
+    const folders = [
+      makeFolder({
+        id: "f1",
+        name: "Parent",
+        children: [makeFolder({ id: "f2", name: "Nested", parentId: "f1" })],
+      }),
+    ];
+    render(<FolderTree {...defaultProps} folders={folders} />);
+
+    const button = screen.getByText("Nested");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+
+    expect(screen.getByText("Move to Root")).toBeInTheDocument();
+  });
+
+  it("does not show 'Move to Root' for root-level folders", async () => {
+    const folders = [makeFolder({ id: "f1", name: "Root Level" })];
+    render(<FolderTree {...defaultProps} folders={folders} />);
+
+    const button = screen.getByText("Root Level");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+
+    expect(screen.queryByText("Move to Root")).not.toBeInTheDocument();
+  });
+
+  it("calls onMoveFolder when 'Move to Root' is clicked", async () => {
+    const onMoveFolder = vi.fn();
+    const folders = [
+      makeFolder({
+        id: "f1",
+        name: "Parent",
+        children: [makeFolder({ id: "f2", name: "Nested", parentId: "f1" })],
+      }),
+    ];
+    render(
+      <FolderTree {...defaultProps} folders={folders} onMoveFolder={onMoveFolder} />,
+    );
+
+    const button = screen.getByText("Nested");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+    await userEvent.click(screen.getByText("Move to Root"));
+
+    expect(onMoveFolder).toHaveBeenCalledWith("f2", null);
   });
 
   it("toggles section collapse", async () => {

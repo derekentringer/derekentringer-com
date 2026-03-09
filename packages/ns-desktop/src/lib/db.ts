@@ -537,6 +537,48 @@ async function collectDescendantFolderIds(parentId: string): Promise<string[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Reorder / Move
+// ---------------------------------------------------------------------------
+
+export async function reorderNotes(
+  order: { id: string; sortOrder: number }[],
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  for (const item of order) {
+    await db.execute(
+      "UPDATE notes SET sort_order = $1, updated_at = $2 WHERE id = $3",
+      [item.sortOrder, now, item.id],
+    );
+  }
+}
+
+export async function moveFolderParent(
+  folderId: string,
+  newParentId: string | null,
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE folders SET parent_id = $1, updated_at = $2 WHERE id = $3",
+    [newParentId, now, folderId],
+  );
+}
+
+export async function reorderFolders(
+  order: { id: string; sortOrder: number }[],
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  for (const item of order) {
+    await db.execute(
+      "UPDATE folders SET sort_order = $1, updated_at = $2 WHERE id = $3",
+      [item.sortOrder, now, item.id],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tags
 // ---------------------------------------------------------------------------
 

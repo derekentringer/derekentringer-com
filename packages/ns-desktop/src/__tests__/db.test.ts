@@ -39,6 +39,9 @@ const {
   fetchTrash,
   restoreNote,
   initFts,
+  reorderNotes,
+  moveFolderParent,
+  reorderFolders,
 } = await import("../lib/db.ts");
 
 const sampleRow = {
@@ -577,6 +580,79 @@ describe("restoreNote", () => {
       (call[0] as string).includes("INSERT INTO notes_fts"),
     );
     expect(ftsCalls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("reorderNotes", () => {
+  it("updates sort_order for each note", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await reorderNotes([
+      { id: "n1", sortOrder: 0 },
+      { id: "n2", sortOrder: 1 },
+      { id: "n3", sortOrder: 2 },
+    ]);
+
+    expect(mockExecute).toHaveBeenCalledTimes(3);
+    for (let i = 0; i < 3; i++) {
+      const [sql] = mockExecute.mock.calls[i];
+      expect(sql).toContain("UPDATE notes SET sort_order");
+    }
+    // Check the sort_order values
+    expect(mockExecute.mock.calls[0][1][0]).toBe(0);
+    expect(mockExecute.mock.calls[1][1][0]).toBe(1);
+    expect(mockExecute.mock.calls[2][1][0]).toBe(2);
+  });
+
+  it("handles empty order array", async () => {
+    await reorderNotes([]);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("moveFolderParent", () => {
+  it("updates parent_id for a folder", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await moveFolderParent("f1", "f2");
+
+    const [sql, params] = mockExecute.mock.calls[0];
+    expect(sql).toContain("UPDATE folders SET parent_id");
+    expect(params[0]).toBe("f2");
+    expect(params[2]).toBe("f1");
+  });
+
+  it("moves folder to root when parentId is null", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await moveFolderParent("f1", null);
+
+    const [sql, params] = mockExecute.mock.calls[0];
+    expect(sql).toContain("UPDATE folders SET parent_id");
+    expect(params[0]).toBeNull();
+    expect(params[2]).toBe("f1");
+  });
+});
+
+describe("reorderFolders", () => {
+  it("updates sort_order for each folder", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await reorderFolders([
+      { id: "f1", sortOrder: 0 },
+      { id: "f2", sortOrder: 1 },
+    ]);
+
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 2; i++) {
+      const [sql] = mockExecute.mock.calls[i];
+      expect(sql).toContain("UPDATE folders SET sort_order");
+    }
+  });
+
+  it("handles empty order array", async () => {
+    await reorderFolders([]);
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 });
 
