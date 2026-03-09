@@ -1569,14 +1569,14 @@ export function NotesPage() {
                 {selectedTrashIds.size > 0 ? (
                   <button
                     onClick={() => setConfirmBulkDelete("selected")}
-                    className="text-xs text-destructive hover:text-destructive-hover transition-colors"
+                    className="text-xs text-destructive hover:text-destructive-hover transition-colors cursor-pointer"
                   >
                     Delete Selected ({selectedTrashIds.size})
                   </button>
                 ) : (
                   <button
                     onClick={() => setConfirmBulkDelete("all")}
-                    className="text-xs text-destructive hover:text-destructive-hover transition-colors"
+                    className="text-xs text-destructive hover:text-destructive-hover transition-colors cursor-pointer"
                   >
                     Delete All
                   </button>
@@ -2002,7 +2002,7 @@ export function NotesPage() {
               <div className="flex-1" />
               <button
                 onClick={handleRestore}
-                className="px-3 py-1 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors"
+                className="px-3 py-1 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors cursor-pointer"
               >
                 Restore
               </button>
@@ -2013,13 +2013,13 @@ export function NotesPage() {
                   </span>
                   <button
                     onClick={handlePermanentDelete}
-                    className="px-3 py-1 rounded-md bg-destructive text-foreground text-sm hover:bg-destructive-hover transition-colors"
+                    className="px-3 py-1 rounded-md bg-destructive text-foreground text-sm hover:bg-destructive-hover transition-colors cursor-pointer"
                   >
                     Confirm
                   </button>
                   <button
                     onClick={() => setConfirmPermanentDelete(false)}
-                    className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -2027,7 +2027,7 @@ export function NotesPage() {
               ) : (
                 <button
                   onClick={handlePermanentDelete}
-                  className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-destructive hover:border-destructive transition-colors"
+                  className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-destructive hover:border-destructive transition-colors cursor-pointer"
                 >
                   Delete Permanently
                 </button>

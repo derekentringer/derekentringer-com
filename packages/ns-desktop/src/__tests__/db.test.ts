@@ -38,6 +38,9 @@ const {
   deleteTag,
   fetchTrash,
   restoreNote,
+  bulkHardDelete,
+  emptyTrash,
+  purgeOldTrash,
   initFts,
   reorderNotes,
   moveFolderParent,
@@ -680,5 +683,83 @@ describe("initFts", () => {
       (call[0] as string).includes("INSERT INTO notes_fts"),
     );
     expect(ftsInserts).toHaveLength(2);
+  });
+});
+
+describe("bulkHardDelete", () => {
+  it("deletes specific IDs and calls ftsDelete for each", async () => {
+    mockSelect.mockResolvedValue([{ fts_rowid: 1 }]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await bulkHardDelete(["id-1", "id-2", "id-3"]);
+
+    expect(count).toBe(3);
+    const deleteCalls = mockExecute.mock.calls.filter((call: unknown[]) =>
+      (call[0] as string).includes("DELETE FROM notes WHERE id"),
+    );
+    expect(deleteCalls).toHaveLength(3);
+    expect(deleteCalls[0][1]).toEqual(["id-1"]);
+    expect(deleteCalls[1][1]).toEqual(["id-2"]);
+    expect(deleteCalls[2][1]).toEqual(["id-3"]);
+  });
+
+  it("returns 0 for empty array", async () => {
+    const count = await bulkHardDelete([]);
+    expect(count).toBe(0);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("emptyTrash", () => {
+  it("deletes all trashed notes and returns count", async () => {
+    mockSelect
+      .mockResolvedValueOnce([{ id: "t1" }, { id: "t2" }]) // SELECT trashed
+      .mockResolvedValue([{ fts_rowid: 1 }]); // ftsDelete lookups
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await emptyTrash();
+
+    expect(count).toBe(2);
+    const deleteCalls = mockExecute.mock.calls.filter((call: unknown[]) =>
+      (call[0] as string).includes("DELETE FROM notes WHERE id"),
+    );
+    expect(deleteCalls).toHaveLength(2);
+  });
+
+  it("returns 0 when trash is empty", async () => {
+    mockSelect.mockResolvedValueOnce([]);
+
+    const count = await emptyTrash();
+
+    expect(count).toBe(0);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("purgeOldTrash", () => {
+  it("deletes notes with old deleted_at timestamps", async () => {
+    mockSelect
+      .mockResolvedValueOnce([{ id: "old-1" }]) // SELECT old trashed notes
+      .mockResolvedValue([{ fts_rowid: 1 }]); // ftsDelete lookups
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await purgeOldTrash(30);
+
+    expect(count).toBe(1);
+    // Verify the cutoff query includes a date parameter
+    expect(mockSelect.mock.calls[0][0]).toContain("deleted_at < $1");
+    const deleteCalls = mockExecute.mock.calls.filter((call: unknown[]) =>
+      (call[0] as string).includes("DELETE FROM notes WHERE id"),
+    );
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0][1]).toEqual(["old-1"]);
+  });
+
+  it("returns 0 immediately when retentionDays is 0 (Never)", async () => {
+    const count = await purgeOldTrash(0);
+
+    expect(count).toBe(0);
+    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 });

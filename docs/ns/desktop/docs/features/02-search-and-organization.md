@@ -70,8 +70,17 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 - `fetchTrash()` — soft-deleted notes ordered by `deleted_at DESC`
 - `restoreNote(id)` — clears `is_deleted` and `deleted_at`, re-adds to FTS index
 - `hardDeleteNote(id)` — permanent deletion with FTS cleanup
-- Sidebar toggle between "notes" and "trash" views via icon-only trash button
-- Trash view shows restore and permanent delete buttons per note
+- `bulkHardDelete(ids)` — permanently delete multiple notes by ID array with FTS cleanup
+- `emptyTrash()` — permanently delete all trashed notes with FTS cleanup
+- `purgeOldTrash(retentionDays)` — auto-purge trash notes older than retention period (skips if 0 = Never)
+- Sidebar toggle between "notes" and "trash" views via icon-only trash button with count badge
+- **Trash count badge**: Shows number of trashed notes on the trash icon button; updated on soft-delete (+1), restore (−1), permanent delete (−1), empty trash (→0); loaded on mount for immediate badge display
+- **Trash sidebar matches web**: Search bar and + button hidden in trash view; standalone "← Back" button with `p-2 pb-4` matching web spacing
+- **Clickable trash list items**: Note titles are buttons that call `selectNote(note)` to show read-only content in editor; selected note highlighted with `bg-accent text-foreground`; no per-item restore/delete buttons (actions are in editor toolbar)
+- **Read-only trash editor**: When a trashed note is selected, editor area shows trash toolbar (deletion date, Restore button, Delete Permanently with inline two-stage confirmation), read-only title div, and `MarkdownPreview` — no editable input, no tag input, no editor toolbar
+- **Inline two-stage delete confirmation**: "Delete Permanently" button → first click shows "Delete forever?" with Confirm/Cancel; second click (Confirm) executes delete and clears editor
+- **Bulk trash operations**: Select-all checkbox, individual checkboxes, "Delete Selected (N)" / "Delete All" buttons with ConfirmDialog
+- **Auto-purge trash**: Configurable retention period (7/14/30/60/90 days or Never) via dropdown in trash view footer, persisted in localStorage, runs on app launch
 
 ### Sort Options
 
@@ -111,17 +120,18 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 - "NOTES" / "SEARCH RESULTS" section header with sort controls
 - Sort dropdown styled to match web (appearance-none, bg-subtle, custom chevron, h-5)
 - Icon-only trash button matching web's `w-7 h-7 rounded` pattern
-- `cursor-pointer` on all interactive elements (buttons, tags, dropdowns, icons, context menus, close buttons)
+- `cursor-pointer` on all interactive elements (buttons, tags, dropdowns, icons, context menus, close buttons, note list items, trash toolbar buttons, confirm dialog buttons, folder delete dialog buttons)
 - Search highlight styles in `global.css` (`.search-highlight mark`)
 
 ### Testing
 
-- 160 tests across 12 test files:
-  - `db.test.ts` — 49 tests: FTS sync, folder CRUD, tag queries, trash queries, enhanced fetchNotes with sort/filter, reorderNotes, moveFolderParent, reorderFolders
-  - `FolderTree.test.tsx` — 16 tests: tree rendering, expand/collapse, folder click, active highlight, context menu, inline create, inline rename, delete dialog modes, Move to Root context menu
+- 193 tests across 13 test files:
+  - `db.test.ts` — 55 tests: FTS sync, folder CRUD, tag queries, trash queries, enhanced fetchNotes with sort/filter, reorderNotes, moveFolderParent, reorderFolders
+  - `FolderTree.test.tsx` — 19 tests: tree rendering, expand/collapse, folder click, active highlight, context menu, inline create, inline rename, delete dialog modes, Move to Root context menu
   - `TagBrowser.test.tsx` — 10 tests: tag pills, click/toggle, active highlight, show more, context menu rename/delete
   - `TagInput.test.tsx` — 13 tests: tag display, add via Enter, backspace remove, X remove, autocomplete
   - `NoteList.test.tsx` — 13 tests: note rendering, selection, search results with headlines, context menu delete, drag handle visibility
+  - `TrashView.test.tsx` — 27 tests: bulk operations (select-all, toggle, delete selected/all, empty trash, confirmation dialogs), note selection and editor (clickable titles, read-only content, trash toolbar, formatted deletion date, Restore clears editor, Delete Permanently inline confirmation, cancel confirmation, selected note highlighting), trash count badge (shown/hidden), retention settings (dropdown, defaults, persistence, purge trigger)
   - Previously existing tests updated (sort controls removed from NoteList, moved to NotesPage)
 
 ### Components Created
@@ -139,8 +149,8 @@ Full-text search across all notes using SQLite FTS5, folder system with nested h
 - **Note list folder breadcrumbs** — not shown (matches web NoteList which only shows title + search headline)
 - **Move to folder context menu** — not in note list context menu (matches web; folder assignment handled via FolderTree)
 - **Grid/card view** — list view only
-- **Bulk trash operations** — no select-all, restore-selected, empty-trash
-- **Auto-purge trash** — no configurable retention period
+- ~~**Bulk trash operations**~~ — implemented (select-all, delete-selected, empty-trash)
+- ~~**Auto-purge trash**~~ — implemented (configurable retention period)
 - **Semantic search** — FTS5 keyword search only, no vector/embedding search
 - **Multi-tag AND/OR filter toggle** — single tag filter only
 - **Date range filter** — not implemented
