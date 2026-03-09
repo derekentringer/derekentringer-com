@@ -91,6 +91,8 @@
 
 - [x] Custom scrollbar styling — thin themed scrollbars via `scrollbar-width`/`scrollbar-color` (Firefox) and `::-webkit-scrollbar` (Chrome/Edge) matching dark/light themes; fixes default Windows Chrome scrollbars in editor and preview areas
 
+- [x] UI cursor polish — `cursor-pointer` on all interactive elements across the app (toolbar buttons, sidebar icons, tags, tab close buttons, folder items, context menus, drawer tabs, audio controls, sort dropdown, tag remove buttons, confirm dialogs); styled sort `<select>` dropdown with `appearance-none`, custom SVG chevron, `bg-subtle` background matching desktop app
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

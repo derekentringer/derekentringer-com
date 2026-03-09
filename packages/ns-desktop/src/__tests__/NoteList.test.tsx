@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NoteList } from "../components/NoteList.tsx";
-import type { Note } from "@derekentringer/ns-shared";
+import type { Note, NoteSearchResult, FolderInfo } from "@derekentringer/ns-shared";
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {
@@ -18,6 +18,21 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
     deletedAt: null,
+    ...overrides,
+  };
+}
+
+function makeFolder(overrides: Partial<FolderInfo> = {}): FolderInfo {
+  return {
+    id: "folder-1",
+    name: "Test Folder",
+    parentId: null,
+    sortOrder: 0,
+    favorite: false,
+    count: 0,
+    totalCount: 0,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    children: [],
     ...overrides,
   };
 }
@@ -112,9 +127,7 @@ describe("NoteList", () => {
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
     await userEvent.click(screen.getByText("Delete"));
 
-    // ConfirmDialog should appear with title "Delete Note" and the note title as message
     expect(screen.getByText("Delete Note")).toBeInTheDocument();
-    // The note title appears both in the list and in the dialog message
     expect(screen.getAllByText("My Special Note")).toHaveLength(2);
   });
 
@@ -131,12 +144,10 @@ describe("NoteList", () => {
       />,
     );
 
-    // Right-click → Delete → Confirm
     const button = screen.getByText("Confirm Delete");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
     await userEvent.click(screen.getByText("Delete"));
 
-    // Now the ConfirmDialog "Delete" button
     const confirmButtons = screen.getAllByText("Delete");
     const confirmDeleteBtn = confirmButtons.find(
       (btn) => btn.closest(".fixed.inset-0") !== null,
@@ -175,5 +186,95 @@ describe("NoteList", () => {
       <NoteList notes={[]} selectedId={null} onSelect={vi.fn()} />,
     );
     expect(container).toBeTruthy();
+  });
+
+  // Search results tests
+  it("displays search results with headlines", () => {
+    const searchResults: NoteSearchResult[] = [
+      {
+        ...makeNote({ id: "1", title: "Search Hit" }),
+        headline: "found <mark>term</mark> here",
+      },
+    ];
+
+    render(
+      <NoteList
+        notes={[]}
+        selectedId={null}
+        onSelect={vi.fn()}
+        searchResults={searchResults}
+      />,
+    );
+
+    expect(screen.getByText("Search Hit")).toBeInTheDocument();
+    // The headline is rendered via dangerouslySetInnerHTML
+    const snippet = document.querySelector(".search-highlight");
+    expect(snippet).toBeInTheDocument();
+    expect(snippet?.innerHTML).toContain("<mark>term</mark>");
+  });
+
+  it("prefers searchResults over notes when provided", () => {
+    const notes = [makeNote({ id: "1", title: "Regular Note" })];
+    const searchResults: NoteSearchResult[] = [
+      { ...makeNote({ id: "2", title: "Search Result" }), headline: "match" },
+    ];
+
+    render(
+      <NoteList
+        notes={notes}
+        selectedId={null}
+        onSelect={vi.fn()}
+        searchResults={searchResults}
+      />,
+    );
+
+    expect(screen.getByText("Search Result")).toBeInTheDocument();
+    expect(screen.queryByText("Regular Note")).not.toBeInTheDocument();
+  });
+
+  // Folder breadcrumb test
+  it("shows folder breadcrumb when viewing All Notes", () => {
+    const folders = [
+      makeFolder({
+        id: "f1",
+        name: "Work",
+        children: [
+          makeFolder({ id: "f2", name: "Projects", parentId: "f1" }),
+        ],
+      }),
+    ];
+
+    const notes = [makeNote({ id: "1", title: "In Folder", folderId: "f2" })];
+
+    render(
+      <NoteList
+        notes={notes}
+        selectedId={null}
+        onSelect={vi.fn()}
+        folders={folders}
+        activeFolder={null}
+      />,
+    );
+
+    expect(screen.getByText("Work / Projects")).toBeInTheDocument();
+  });
+
+  // Move to folder context menu
+  it("shows 'Move to folder' in context menu when onMoveToFolder is provided", async () => {
+    const note = makeNote({ id: "1", title: "Move Me" });
+    render(
+      <NoteList
+        notes={[note]}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onMoveToFolder={vi.fn()}
+        folders={[makeFolder({ id: "f1", name: "Target" })]}
+      />,
+    );
+
+    const button = screen.getByText("Move Me");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+
+    expect(screen.getByText("Move to folder")).toBeInTheDocument();
   });
 });

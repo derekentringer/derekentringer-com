@@ -67,7 +67,7 @@ export function FavoritesPanel({
             return next;
           })
         }
-        className="flex items-center gap-1.5 px-1 mb-1 text-sm text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors w-full text-left"
+        className="flex items-center gap-1.5 px-1 mb-1 text-sm text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors w-full text-left cursor-pointer"
       >
         <span
           className="inline-block transition-transform"
@@ -91,7 +91,7 @@ export function FavoritesPanel({
                 e.preventDefault();
                 setContextMenu({ type: "folder", id: folder.id, x: e.clientX, y: e.clientY });
               }}
-              className={`w-full text-left px-2 py-1.5 rounded-md text-sm transition-colors flex items-center gap-1 ${
+              className={`w-full text-left px-2 py-1.5 rounded-md text-sm transition-colors flex items-center gap-1 cursor-pointer ${
                 activeFolder === folder.id
                   ? "text-foreground bg-accent"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -111,7 +111,7 @@ export function FavoritesPanel({
                 e.preventDefault();
                 setContextMenu({ type: "note", id: note.id, x: e.clientX, y: e.clientY });
               }}
-              className={`w-full text-left px-2 py-1.5 rounded-md text-sm transition-colors truncate ${
+              className={`w-full text-left px-2 py-1.5 rounded-md text-sm transition-colors truncate cursor-pointer ${
                 selectedNoteId === note.id
                   ? "text-foreground bg-accent"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -139,7 +139,7 @@ export function FavoritesPanel({
               }
               setContextMenu(null);
             }}
-            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
             Unfavorite
           </button>

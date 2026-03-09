@@ -44,7 +44,7 @@
 
 ### Phase 3: Organization — High Priority
 
-- [ ] [02 — Search & Organization](feature_planning/02-search-and-organization.md)
+- [x] [02 — Search & Organization](features/02-search-and-organization.md)
 
 ### Phase 4: UI Features — High Priority
 

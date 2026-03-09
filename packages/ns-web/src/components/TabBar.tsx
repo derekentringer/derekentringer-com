@@ -64,7 +64,7 @@ function SortableTab({ tab, isActive, onSelectTab, onCloseTab, onPinTab }: Sorta
           onCloseTab(tab.id);
         }
       }}
-      className={`group relative flex items-center gap-1.5 min-w-[120px] max-w-[200px] px-3 py-1.5 text-sm transition-colors shrink-0 ${
+      className={`group relative flex items-center gap-1.5 min-w-[120px] max-w-[200px] px-3 py-1.5 text-sm transition-colors shrink-0 cursor-pointer ${
         isActive
           ? "bg-card text-foreground border-t-2 border-primary"
           : "bg-background text-muted-foreground hover:bg-accent border-t-2 border-transparent"
@@ -79,7 +79,7 @@ function SortableTab({ tab, isActive, onSelectTab, onCloseTab, onPinTab }: Sorta
           e.stopPropagation();
           onCloseTab(tab.id);
         }}
-        className={`shrink-0 w-4 h-4 flex items-center justify-center rounded-sm hover:bg-accent text-muted-foreground hover:text-foreground text-xs leading-none ${
+        className={`shrink-0 w-4 h-4 flex items-center justify-center rounded-sm hover:bg-accent text-muted-foreground hover:text-foreground text-xs leading-none cursor-pointer ${
           isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         }`}
         role="button"
