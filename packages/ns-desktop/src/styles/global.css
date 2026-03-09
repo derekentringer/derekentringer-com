@@ -271,3 +271,11 @@
 .markdown-preview input[type="checkbox"] {
   margin-right: 0.5em;
 }
+
+/* Search highlight */
+.search-highlight mark {
+  background-color: var(--color-primary);
+  color: var(--color-primary-contrast, #000);
+  border-radius: 2px;
+  padding: 0 1px;
+}

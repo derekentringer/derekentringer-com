@@ -15,6 +15,12 @@ pub fn run() {
             sql: include_str!("../migrations/002.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add folders table and FTS5 search index",
+            sql: include_str!("../migrations/003.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

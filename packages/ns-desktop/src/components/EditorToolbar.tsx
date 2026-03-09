@@ -31,7 +31,7 @@ export function EditorToolbar({
           <button
             key={mode.value}
             onClick={() => onViewModeChange(mode.value)}
-            className={`px-2.5 py-0.5 text-xs transition-colors ${
+            className={`px-2.5 py-0.5 text-xs transition-colors cursor-pointer ${
               viewMode === mode.value
                 ? "bg-primary text-primary-contrast font-medium"
                 : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -48,14 +48,14 @@ export function EditorToolbar({
           <div className="w-px h-4 bg-border mx-1" />
           <button
             onClick={onBold}
-            className="px-2 py-0.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="px-2 py-0.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors cursor-pointer"
             title="Bold (Ctrl+B)"
           >
             B
           </button>
           <button
             onClick={onItalic}
-            className="px-2 py-0.5 text-xs italic text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="px-2 py-0.5 text-xs italic text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors cursor-pointer"
             title="Italic (Ctrl+I)"
           >
             I
@@ -64,7 +64,7 @@ export function EditorToolbar({
           <div className="w-px h-4 bg-border mx-1" />
           <button
             onClick={onToggleLineNumbers}
-            className={`px-2 py-0.5 text-xs rounded transition-colors ${
+            className={`px-2 py-0.5 text-xs rounded transition-colors cursor-pointer ${
               showLineNumbers
                 ? "text-primary"
                 : "text-muted-foreground hover:text-foreground"

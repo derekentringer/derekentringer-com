@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import type { TagInfo } from "@derekentringer/shared/ns";
+import type { TagInfo } from "@derekentringer/ns-shared";
 
 const MAX_COLLAPSED_ROWS = 3;
 
@@ -33,7 +33,6 @@ export function TagBrowser({
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    // Measure full height vs collapsed height (MAX_COLLAPSED_ROWS of pill height ~24px + 4px gap)
     const rowHeight = 24 + 4; // pill height + gap
     const maxHeight = rowHeight * MAX_COLLAPSED_ROWS;
     setCollapsedHeight(maxHeight);
