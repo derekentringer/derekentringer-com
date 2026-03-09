@@ -38,7 +38,13 @@ const {
   deleteTag,
   fetchTrash,
   restoreNote,
+  bulkHardDelete,
+  emptyTrash,
+  purgeOldTrash,
   initFts,
+  reorderNotes,
+  moveFolderParent,
+  reorderFolders,
 } = await import("../lib/db.ts");
 
 const sampleRow = {
@@ -580,6 +586,79 @@ describe("restoreNote", () => {
   });
 });
 
+describe("reorderNotes", () => {
+  it("updates sort_order for each note", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await reorderNotes([
+      { id: "n1", sortOrder: 0 },
+      { id: "n2", sortOrder: 1 },
+      { id: "n3", sortOrder: 2 },
+    ]);
+
+    expect(mockExecute).toHaveBeenCalledTimes(3);
+    for (let i = 0; i < 3; i++) {
+      const [sql] = mockExecute.mock.calls[i];
+      expect(sql).toContain("UPDATE notes SET sort_order");
+    }
+    // Check the sort_order values
+    expect(mockExecute.mock.calls[0][1][0]).toBe(0);
+    expect(mockExecute.mock.calls[1][1][0]).toBe(1);
+    expect(mockExecute.mock.calls[2][1][0]).toBe(2);
+  });
+
+  it("handles empty order array", async () => {
+    await reorderNotes([]);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("moveFolderParent", () => {
+  it("updates parent_id for a folder", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await moveFolderParent("f1", "f2");
+
+    const [sql, params] = mockExecute.mock.calls[0];
+    expect(sql).toContain("UPDATE folders SET parent_id");
+    expect(params[0]).toBe("f2");
+    expect(params[2]).toBe("f1");
+  });
+
+  it("moves folder to root when parentId is null", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await moveFolderParent("f1", null);
+
+    const [sql, params] = mockExecute.mock.calls[0];
+    expect(sql).toContain("UPDATE folders SET parent_id");
+    expect(params[0]).toBeNull();
+    expect(params[2]).toBe("f1");
+  });
+});
+
+describe("reorderFolders", () => {
+  it("updates sort_order for each folder", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await reorderFolders([
+      { id: "f1", sortOrder: 0 },
+      { id: "f2", sortOrder: 1 },
+    ]);
+
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 2; i++) {
+      const [sql] = mockExecute.mock.calls[i];
+      expect(sql).toContain("UPDATE folders SET sort_order");
+    }
+  });
+
+  it("handles empty order array", async () => {
+    await reorderFolders([]);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
 describe("initFts", () => {
   it("skips backfill when FTS map already has entries", async () => {
     mockSelect.mockResolvedValueOnce([{ count: 5 }]);
@@ -604,5 +683,83 @@ describe("initFts", () => {
       (call[0] as string).includes("INSERT INTO notes_fts"),
     );
     expect(ftsInserts).toHaveLength(2);
+  });
+});
+
+describe("bulkHardDelete", () => {
+  it("deletes specific IDs and calls ftsDelete for each", async () => {
+    mockSelect.mockResolvedValue([{ fts_rowid: 1 }]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await bulkHardDelete(["id-1", "id-2", "id-3"]);
+
+    expect(count).toBe(3);
+    const deleteCalls = mockExecute.mock.calls.filter((call: unknown[]) =>
+      (call[0] as string).includes("DELETE FROM notes WHERE id"),
+    );
+    expect(deleteCalls).toHaveLength(3);
+    expect(deleteCalls[0][1]).toEqual(["id-1"]);
+    expect(deleteCalls[1][1]).toEqual(["id-2"]);
+    expect(deleteCalls[2][1]).toEqual(["id-3"]);
+  });
+
+  it("returns 0 for empty array", async () => {
+    const count = await bulkHardDelete([]);
+    expect(count).toBe(0);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("emptyTrash", () => {
+  it("deletes all trashed notes and returns count", async () => {
+    mockSelect
+      .mockResolvedValueOnce([{ id: "t1" }, { id: "t2" }]) // SELECT trashed
+      .mockResolvedValue([{ fts_rowid: 1 }]); // ftsDelete lookups
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await emptyTrash();
+
+    expect(count).toBe(2);
+    const deleteCalls = mockExecute.mock.calls.filter((call: unknown[]) =>
+      (call[0] as string).includes("DELETE FROM notes WHERE id"),
+    );
+    expect(deleteCalls).toHaveLength(2);
+  });
+
+  it("returns 0 when trash is empty", async () => {
+    mockSelect.mockResolvedValueOnce([]);
+
+    const count = await emptyTrash();
+
+    expect(count).toBe(0);
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("purgeOldTrash", () => {
+  it("deletes notes with old deleted_at timestamps", async () => {
+    mockSelect
+      .mockResolvedValueOnce([{ id: "old-1" }]) // SELECT old trashed notes
+      .mockResolvedValue([{ fts_rowid: 1 }]); // ftsDelete lookups
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await purgeOldTrash(30);
+
+    expect(count).toBe(1);
+    // Verify the cutoff query includes a date parameter
+    expect(mockSelect.mock.calls[0][0]).toContain("deleted_at < $1");
+    const deleteCalls = mockExecute.mock.calls.filter((call: unknown[]) =>
+      (call[0] as string).includes("DELETE FROM notes WHERE id"),
+    );
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0][1]).toEqual(["old-1"]);
+  });
+
+  it("returns 0 immediately when retentionDays is 0 (Never)", async () => {
+    const count = await purgeOldTrash(0);
+
+    expect(count).toBe(0);
+    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 });

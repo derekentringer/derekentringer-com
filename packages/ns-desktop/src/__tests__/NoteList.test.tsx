@@ -1,7 +1,18 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import { NoteList } from "../components/NoteList.tsx";
 import type { Note, NoteSearchResult } from "@derekentringer/ns-shared";
+
+function DndWrapper({ children }: { children: React.ReactNode }) {
+  const sensors = useSensors(useSensor(PointerSensor));
+  return <DndContext sensors={sensors}>{children}</DndContext>;
+}
 
 function makeNote(overrides: Partial<Note> = {}): Note {
   return {
@@ -30,7 +41,9 @@ describe("NoteList", () => {
     ];
 
     render(
-      <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} />,
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("First Note")).toBeInTheDocument();
@@ -41,7 +54,9 @@ describe("NoteList", () => {
     const notes = [makeNote({ id: "1", title: "" })];
 
     render(
-      <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} />,
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("Untitled")).toBeInTheDocument();
@@ -52,7 +67,9 @@ describe("NoteList", () => {
     const note = makeNote({ id: "1", title: "Click Me" });
 
     render(
-      <NoteList notes={[note]} selectedId={null} onSelect={onSelect} />,
+      <DndWrapper>
+        <NoteList notes={[note]} selectedId={null} onSelect={onSelect} sortByManual={false} />
+      </DndWrapper>,
     );
 
     await userEvent.click(screen.getByText("Click Me"));
@@ -66,7 +83,9 @@ describe("NoteList", () => {
     ];
 
     render(
-      <NoteList notes={notes} selectedId="1" onSelect={vi.fn()} />,
+      <DndWrapper>
+        <NoteList notes={notes} selectedId="1" onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
 
     const selectedButton = screen.getByText("Selected").closest("button");
@@ -81,12 +100,15 @@ describe("NoteList", () => {
     const onDeleteNote = vi.fn();
 
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onDeleteNote={onDeleteNote}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDeleteNote={onDeleteNote}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     const button = screen.getByText("Right Click Me");
@@ -100,12 +122,15 @@ describe("NoteList", () => {
     const onDeleteNote = vi.fn();
 
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onDeleteNote={onDeleteNote}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDeleteNote={onDeleteNote}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     const button = screen.getByText("My Special Note");
@@ -121,12 +146,15 @@ describe("NoteList", () => {
     const onDeleteNote = vi.fn();
 
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onDeleteNote={onDeleteNote}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDeleteNote={onDeleteNote}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     const button = screen.getByText("Confirm Delete");
@@ -149,12 +177,15 @@ describe("NoteList", () => {
     const onDeleteNote = vi.fn();
 
     render(
-      <NoteList
-        notes={[note]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        onDeleteNote={onDeleteNote}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDeleteNote={onDeleteNote}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     const button = screen.getByText("Cancel Delete");
@@ -168,7 +199,9 @@ describe("NoteList", () => {
 
   it("renders empty list without errors", () => {
     const { container } = render(
-      <NoteList notes={[]} selectedId={null} onSelect={vi.fn()} />,
+      <DndWrapper>
+        <NoteList notes={[]} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
     );
     expect(container).toBeTruthy();
   });
@@ -183,12 +216,15 @@ describe("NoteList", () => {
     ];
 
     render(
-      <NoteList
-        notes={[]}
-        selectedId={null}
-        onSelect={vi.fn()}
-        searchResults={searchResults}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={[]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          searchResults={searchResults}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("Search Hit")).toBeInTheDocument();
@@ -205,16 +241,44 @@ describe("NoteList", () => {
     ];
 
     render(
-      <NoteList
-        notes={notes}
-        selectedId={null}
-        onSelect={vi.fn()}
-        searchResults={searchResults}
-      />,
+      <DndWrapper>
+        <NoteList
+          notes={notes}
+          selectedId={null}
+          onSelect={vi.fn()}
+          searchResults={searchResults}
+          sortByManual={false}
+        />
+      </DndWrapper>,
     );
 
     expect(screen.getByText("Search Result")).toBeInTheDocument();
     expect(screen.queryByText("Regular Note")).not.toBeInTheDocument();
   });
 
+  // Drag handle tests
+  it("shows drag handle when sortByManual is true", () => {
+    const notes = [makeNote({ id: "1", title: "Manual Sort Note" })];
+
+    render(
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={true} />
+      </DndWrapper>,
+    );
+
+    const handle = screen.getByTitle("Drag to reorder");
+    expect(handle).toBeInTheDocument();
+  });
+
+  it("hides drag handle when sortByManual is false", () => {
+    const notes = [makeNote({ id: "1", title: "Auto Sort Note" })];
+
+    render(
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
+    );
+
+    expect(screen.queryByTitle("Drag to reorder")).not.toBeInTheDocument();
+  });
 });

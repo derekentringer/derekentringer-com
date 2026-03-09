@@ -1,4 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type {
   Note,
   NoteSearchResult,
@@ -23,8 +33,14 @@ import {
   deleteTag,
   fetchTrash,
   restoreNote,
+  bulkHardDelete,
+  emptyTrash,
+  purgeOldTrash,
   initFts,
+  reorderNotes,
+  moveFolderParent,
 } from "../lib/db.ts";
+import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import {
   MarkdownEditor,
   type MarkdownEditorHandle,
@@ -44,6 +60,16 @@ import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSetting
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
+
+const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
+const TRASH_RETENTION_OPTIONS: { value: number; label: string }[] = [
+  { value: 7, label: "7 days" },
+  { value: 14, label: "14 days" },
+  { value: 30, label: "30 days (default)" },
+  { value: 60, label: "60 days" },
+  { value: 90, label: "90 days" },
+  { value: 0, label: "Never" },
+];
 
 export function NotesPage() {
   const { settings: editorSettings } = useEditorSettings();
@@ -80,6 +106,23 @@ export function NotesPage() {
   // Trash
   const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
   const [trashNotes, setTrashNotes] = useState<Note[]>([]);
+  const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState<"all" | "selected" | null>(null);
+  const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
+  const [trashRetentionDays, setTrashRetentionDays] = useState<number>(() => {
+    const stored = localStorage.getItem(TRASH_RETENTION_KEY);
+    return stored !== null ? Number(stored) : 30;
+  });
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const loadedContentRef = useRef("");
@@ -134,6 +177,10 @@ export function NotesPage() {
 
   useEffect(() => {
     loadData();
+    // Load trash count for badge
+    fetchTrash()
+      .then((trash) => setTrashCount(trash.length))
+      .catch(() => {});
   }, []);
 
   async function loadData() {
@@ -147,6 +194,14 @@ export function NotesPage() {
       setNotes(notesResult);
       setFolders(foldersResult);
       setTags(tagsResult);
+
+      // Auto-purge old trash
+      const retention = Number(localStorage.getItem(TRASH_RETENTION_KEY) ?? 30);
+      if (retention > 0) {
+        purgeOldTrash(retention).catch((err) =>
+          console.error("Failed to purge old trash:", err),
+        );
+      }
     } catch (err) {
       console.error("Failed to load data:", err);
       showError(`Failed to load data: ${err instanceof Error ? err.message : String(err)}`);
@@ -225,7 +280,7 @@ export function NotesPage() {
   }
 
   function selectNote(note: Note) {
-    if (isDirty() && selectedId) {
+    if (sidebarView !== "trash" && isDirty() && selectedId) {
       updateNote(selectedId, { title, content }).catch((err) =>
         console.error("Failed to save previous note:", err),
       );
@@ -238,6 +293,7 @@ export function NotesPage() {
     setContent(note.content);
     setSaveStatus("idle");
     setConfirmDelete(false);
+    setConfirmPermanentDelete(false);
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -319,6 +375,7 @@ export function NotesPage() {
       setTitle("");
       setContent("");
       setConfirmDelete(false);
+      setTrashCount((c) => c + 1);
       await refreshSidebarData();
     } catch (err) {
       console.error("Failed to delete note:", err);
@@ -330,6 +387,7 @@ export function NotesPage() {
     try {
       await softDeleteNote(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      setTrashCount((c) => c + 1);
       if (selectedId === noteId) {
         setSelectedId(null);
         setTitle("");
@@ -423,6 +481,95 @@ export function NotesPage() {
     }
   }
 
+  // --- DnD handlers ---
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    // Folder → Folder (nesting) or Folder → Root
+    if (activeId.startsWith("drag-folder:")) {
+      const folderId = activeId.slice("drag-folder:".length);
+      if (overId.startsWith("folder:")) {
+        const targetId = overId.slice("folder:".length);
+        const newParentId =
+          targetId === "__root__" || targetId === "__unfiled__"
+            ? null
+            : targetId;
+        if (folderId === newParentId) return;
+        try {
+          await moveFolderParent(folderId, newParentId);
+          await refreshFolders();
+        } catch (err) {
+          console.error("Failed to move folder:", err);
+          showError("Failed to move folder");
+        }
+      }
+      return;
+    }
+
+    // Note → Folder
+    if (overId.startsWith("folder:")) {
+      const noteId = activeId;
+      const folderTarget = overId.slice("folder:".length);
+      const folderId =
+        folderTarget === "__unfiled__" || folderTarget === "__root__"
+          ? null
+          : folderTarget;
+
+      try {
+        await updateNote(noteId, { folderId });
+        await refreshSidebarData();
+      } catch (err) {
+        console.error("Failed to move note:", err);
+        showError("Failed to move note");
+      }
+      return;
+    }
+
+    // Note reorder (manual sort)
+    if (active.id !== over.id) {
+      await handleReorder(activeId, overId);
+    }
+  }
+
+  async function handleReorder(activeId: string, overId: string) {
+    const oldIndex = notes.findIndex((n) => n.id === activeId);
+    const newIndex = notes.findIndex((n) => n.id === overId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = [...notes];
+    const [moved] = reordered.splice(oldIndex, 1);
+    reordered.splice(newIndex, 0, moved);
+
+    // Optimistic update
+    const updatedNotes = reordered.map((n, i) => ({ ...n, sortOrder: i }));
+    setNotes(updatedNotes);
+
+    try {
+      await reorderNotes(
+        updatedNotes.map((n) => ({ id: n.id, sortOrder: n.sortOrder })),
+      );
+    } catch (err) {
+      console.error("Failed to reorder notes:", err);
+      showError("Failed to reorder notes");
+      await reloadNotes();
+    }
+  }
+
+  async function handleMoveFolder(folderId: string, parentId: string | null) {
+    try {
+      await moveFolderParent(folderId, parentId);
+      await refreshFolders();
+    } catch (err) {
+      console.error("Failed to move folder:", err);
+      showError("Failed to move folder");
+    }
+  }
+
   // --- Trash ---
 
   async function handleViewTrash() {
@@ -430,9 +577,12 @@ export function NotesPage() {
     setSelectedId(null);
     setTitle("");
     setContent("");
+    setSelectedTrashIds(new Set());
+    setConfirmPermanentDelete(false);
     try {
       const trash = await fetchTrash();
       setTrashNotes(trash);
+      setTrashCount(trash.length);
     } catch (err) {
       console.error("Failed to load trash:", err);
       showError("Failed to load trash");
@@ -443,6 +593,13 @@ export function NotesPage() {
     try {
       await restoreNote(noteId);
       setTrashNotes((prev) => prev.filter((n) => n.id !== noteId));
+      setTrashCount((c) => Math.max(0, c - 1));
+      if (selectedId === noteId) {
+        setSelectedId(null);
+        setTitle("");
+        setContent("");
+        setConfirmPermanentDelete(false);
+      }
       await refreshSidebarData();
     } catch (err) {
       console.error("Failed to restore note:", err);
@@ -450,13 +607,96 @@ export function NotesPage() {
     }
   }
 
-  async function handlePermanentDelete(noteId: string) {
+  async function handlePermanentDelete() {
+    if (!selectedId) return;
+
+    if (!confirmPermanentDelete) {
+      setConfirmPermanentDelete(true);
+      return;
+    }
+
     try {
-      await hardDeleteNote(noteId);
-      setTrashNotes((prev) => prev.filter((n) => n.id !== noteId));
+      await hardDeleteNote(selectedId);
+      setTrashNotes((prev) => prev.filter((n) => n.id !== selectedId));
+      setSelectedTrashIds((prev) => {
+        const next = new Set(prev);
+        next.delete(selectedId);
+        return next;
+      });
+      setTrashCount((c) => Math.max(0, c - 1));
+      setSelectedId(null);
+      setTitle("");
+      setContent("");
+      setConfirmPermanentDelete(false);
     } catch (err) {
       console.error("Failed to permanently delete note:", err);
       showError("Failed to permanently delete note");
+    }
+  }
+
+  function toggleTrashSelect(id: string) {
+    setSelectedTrashIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedTrashIds.size === trashNotes.length) {
+      setSelectedTrashIds(new Set());
+    } else {
+      setSelectedTrashIds(new Set(trashNotes.map((n) => n.id)));
+    }
+  }
+
+  async function handleEmptyTrash() {
+    try {
+      await emptyTrash();
+      setTrashNotes([]);
+      setSelectedTrashIds(new Set());
+      setConfirmBulkDelete(null);
+      setSelectedId(null);
+      setTitle("");
+      setContent("");
+      setConfirmPermanentDelete(false);
+      setTrashCount(0);
+    } catch (err) {
+      console.error("Failed to empty trash:", err);
+      showError("Failed to empty trash");
+    }
+  }
+
+  async function handleDeleteSelected() {
+    try {
+      const ids = [...selectedTrashIds];
+      await bulkHardDelete(ids);
+      setTrashNotes((prev) => prev.filter((n) => !selectedTrashIds.has(n.id)));
+      setTrashCount((c) => Math.max(0, c - ids.length));
+      if (selectedId && selectedTrashIds.has(selectedId)) {
+        setSelectedId(null);
+        setTitle("");
+        setContent("");
+        setConfirmPermanentDelete(false);
+      }
+      setSelectedTrashIds(new Set());
+      setConfirmBulkDelete(null);
+    } catch (err) {
+      console.error("Failed to delete selected notes:", err);
+      showError("Failed to delete selected notes");
+    }
+  }
+
+  function handleRetentionChange(days: number) {
+    setTrashRetentionDays(days);
+    localStorage.setItem(TRASH_RETENTION_KEY, String(days));
+    if (days > 0) {
+      purgeOldTrash(days).then((purged) => {
+        if (purged > 0 && sidebarView === "trash") {
+          fetchTrash().then(setTrashNotes).catch(() => {});
+        }
+      }).catch((err) => console.error("Failed to purge trash:", err));
     }
   }
 
@@ -499,7 +739,9 @@ export function NotesPage() {
     ? notes.filter((n) => activeTags.every((t) => n.tags.includes(t)))
     : notes;
 
-  const selectedNote = notes.find((n) => n.id === selectedId) ?? null;
+  const selectedNote = (sidebarView === "trash"
+    ? trashNotes.find((n) => n.id === selectedId)
+    : notes.find((n) => n.id === selectedId)) ?? null;
 
   return (
     <div className="flex h-full">
@@ -511,16 +753,19 @@ export function NotesPage() {
         {/* Sidebar header */}
         <div className="pl-4 pr-2 py-4 flex items-center justify-between">
           <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
-          <button
-            onClick={handleCreate}
-            className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
-            title="New note"
-          >
-            +
-          </button>
+          {sidebarView === "notes" && (
+            <button
+              onClick={handleCreate}
+              className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
+              title="New note"
+            >
+              +
+            </button>
+          )}
         </div>
 
-        {/* Search bar + tag browser */}
+        {/* Search bar + tag browser (hidden in trash view) */}
+        {sidebarView === "notes" && (
         <div className="px-2 pb-2">
           <div className="relative">
             <input
@@ -565,9 +810,14 @@ export function NotesPage() {
             )}
           </div>
         </div>
+        )}
 
         {sidebarView === "notes" ? (
-          <>
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
             {/* Folder tree (resizable) */}
             <div className="shrink-0 overflow-y-auto" style={{ height: folderResize.size }}>
               <FolderTree
@@ -582,6 +832,7 @@ export function NotesPage() {
                 onCreateFolder={handleCreateFolder}
                 onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
+                onMoveFolder={handleMoveFolder}
               />
             </div>
 
@@ -606,6 +857,7 @@ export function NotesPage() {
                       style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
                       aria-label="Sort by"
                     >
+                      <option value="sortOrder">Manual</option>
                       <option value="updatedAt">Modified</option>
                       <option value="createdAt">Created</option>
                       <option value="title">Title</option>
@@ -648,6 +900,7 @@ export function NotesPage() {
                     onSelect={selectNote}
                     onDeleteNote={handleDeleteNote}
                     searchResults={searchResults}
+                    sortByManual={sortBy === "sortOrder"}
                   />
                 )
               ) : filteredNotes.length === 0 ? (
@@ -660,6 +913,7 @@ export function NotesPage() {
                   selectedId={selectedId}
                   onSelect={selectNote}
                   onDeleteNote={handleDeleteNote}
+                  sortByManual={sortBy === "sortOrder"}
                 />
               )}
             </nav>
@@ -672,23 +926,71 @@ export function NotesPage() {
                 title="Trash"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                {trashCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
+                    {trashCount}
+                  </span>
+                )}
               </button>
             </div>
-          </>
+          </DndContext>
         ) : (
           <>
-            {/* Trash view */}
-            <div className="px-2 py-2 border-b border-border flex items-center justify-between">
-              <span className="text-sm text-muted-foreground uppercase tracking-wider">
-                Trash
-              </span>
+            {/* Trash view header */}
+            <div className="p-2 pb-4">
               <button
-                onClick={() => setSidebarView("notes")}
-                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setSidebarView("notes");
+                  setSelectedTrashIds(new Set());
+                  setConfirmBulkDelete(null);
+                  setConfirmPermanentDelete(false);
+                  setSelectedId(null);
+                  setTitle("");
+                  setContent("");
+                }}
+                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               >
-                Back
+                <span>&larr;</span> Back
               </button>
             </div>
+
+            {/* Select-all + bulk actions */}
+            {trashNotes.length > 0 && (
+              <div className="px-2 pb-1 flex items-center gap-2">
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedTrashIds.size === trashNotes.length}
+                    onChange={toggleSelectAll}
+                    className="mr-1.5 accent-primary cursor-pointer"
+                    aria-label="Select all"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {selectedTrashIds.size > 0
+                      ? `${selectedTrashIds.size} selected`
+                      : `${trashNotes.length} items`}
+                  </span>
+                </label>
+                <div className="flex-1" />
+                {selectedTrashIds.size > 0 ? (
+                  <button
+                    onClick={() => setConfirmBulkDelete("selected")}
+                    className="text-xs text-destructive hover:text-destructive-hover transition-colors cursor-pointer"
+                  >
+                    Delete Selected ({selectedTrashIds.size})
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setConfirmBulkDelete("all")}
+                    className="text-xs text-destructive hover:text-destructive-hover transition-colors cursor-pointer"
+                  >
+                    Delete All
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Trash note list */}
             <nav className="flex-1 overflow-y-auto p-2">
               {trashNotes.length === 0 ? (
                 <div className="px-3 py-2 text-sm text-muted-foreground">
@@ -696,28 +998,47 @@ export function NotesPage() {
                 </div>
               ) : (
                 trashNotes.map((note) => (
-                  <div key={note.id} className="flex items-center gap-1 mb-1">
-                    <span className="flex-1 text-sm text-muted-foreground truncate px-2 py-1">
+                  <div
+                    key={note.id}
+                    className={`flex items-center gap-1.5 rounded-md text-sm transition-colors ${
+                      note.id === selectedId
+                        ? "bg-accent text-foreground"
+                        : "text-muted hover:bg-accent hover:text-foreground"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedTrashIds.has(note.id)}
+                      onChange={() => toggleTrashSelect(note.id)}
+                      className="ml-2 shrink-0 accent-primary cursor-pointer"
+                      aria-label={`Select ${note.title || "Untitled"}`}
+                    />
+                    <button
+                      onClick={() => selectNote(note)}
+                      className="flex-1 text-left px-1 py-2 truncate cursor-pointer"
+                    >
                       {note.title || "Untitled"}
-                    </span>
-                    <button
-                      onClick={() => handleRestoreNote(note.id)}
-                      className="shrink-0 px-1.5 py-0.5 rounded text-[11px] text-foreground hover:bg-accent transition-colors cursor-pointer"
-                      title="Restore"
-                    >
-                      ↩
-                    </button>
-                    <button
-                      onClick={() => handlePermanentDelete(note.id)}
-                      className="shrink-0 px-1.5 py-0.5 rounded text-[11px] text-destructive hover:bg-accent transition-colors cursor-pointer"
-                      title="Delete permanently"
-                    >
-                      ✕
                     </button>
                   </div>
                 ))
               )}
             </nav>
+
+            {/* Retention setting */}
+            <div className="px-3 py-2 border-t border-border flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">Auto-delete:</span>
+              <select
+                value={trashRetentionDays}
+                onChange={(e) => handleRetentionChange(Number(e.target.value))}
+                className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
+                aria-label="Trash retention period"
+              >
+                {TRASH_RETENTION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
           </>
         )}
       </aside>
@@ -731,7 +1052,65 @@ export function NotesPage() {
       {/* Editor area */}
       <main className="flex-1 flex min-w-0 relative">
       <div className="flex-1 flex flex-col min-w-0">
-        {selectedNote ? (
+        {selectedNote && sidebarView === "trash" ? (
+          <>
+            {/* Trash toolbar */}
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
+              <span className="text-xs text-muted-foreground">
+                Deleted{" "}
+                {selectedNote.deletedAt
+                  ? new Date(selectedNote.deletedAt).toLocaleDateString()
+                  : ""}
+              </span>
+              <div className="flex-1" />
+              <button
+                onClick={() => handleRestoreNote(selectedNote.id)}
+                className="px-3 py-1 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors cursor-pointer"
+              >
+                Restore
+              </button>
+              {confirmPermanentDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-destructive">
+                    Delete forever?
+                  </span>
+                  <button
+                    onClick={handlePermanentDelete}
+                    className="px-3 py-1 rounded-md bg-destructive text-foreground text-sm hover:bg-destructive-hover transition-colors cursor-pointer"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() => setConfirmPermanentDelete(false)}
+                    className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handlePermanentDelete}
+                  className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-destructive hover:border-destructive transition-colors cursor-pointer"
+                >
+                  Delete Permanently
+                </button>
+              )}
+            </div>
+
+            {/* Read-only title */}
+            <div className="px-4 py-3 text-xl text-foreground border-b border-border">
+              {selectedNote.title || "Untitled"}
+            </div>
+
+            {/* Read-only preview */}
+            <div className="flex-1 overflow-auto">
+              <MarkdownPreview
+                content={selectedNote.content}
+                className="flex-1"
+              />
+            </div>
+          </>
+        ) : selectedNote ? (
           <>
             {/* Toolbar status bar */}
             <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border shrink-0">
@@ -860,6 +1239,20 @@ export function NotesPage() {
         )}
       </div>
       </main>
+
+      {/* Bulk delete confirm dialog */}
+      {confirmBulkDelete && (
+        <ConfirmDialog
+          title={confirmBulkDelete === "all" ? "Empty Trash" : "Delete Selected"}
+          message={
+            confirmBulkDelete === "all"
+              ? `Permanently delete all ${trashNotes.length} trashed note${trashNotes.length === 1 ? "" : "s"}? This cannot be undone.`
+              : `Permanently delete ${selectedTrashIds.size} selected note${selectedTrashIds.size === 1 ? "" : "s"}? This cannot be undone.`
+          }
+          onConfirm={confirmBulkDelete === "all" ? handleEmptyTrash : handleDeleteSelected}
+          onCancel={() => setConfirmBulkDelete(null)}
+        />
+      )}
 
       {/* Error toast */}
       {error && (
