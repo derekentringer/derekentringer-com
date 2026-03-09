@@ -37,6 +37,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@derekentringer/ns-shared": "*",
     "@fastify/jwt": "^9.0.0",
     "fastify-plugin": "^5.0.0",
     "jsonwebtoken": "^9.0.3"

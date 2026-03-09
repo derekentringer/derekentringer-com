@@ -1,4 +1,4 @@
-# 03 — Search & Organization
+# 02 — Search & Organization
 
 **Status:** Not Started
 **Phase:** 3 — Organization
@@ -17,29 +17,39 @@ Full-text search across all notes using SQLite FTS5, plus a folder and tag syste
   - Results show note title, folder, and a snippet of the matching content with highlighted search terms
   - Search across all notes including soft-deleted (with a toggle to include/exclude)
 - **Folder system**:
-  - Hierarchical folders displayed as a tree in the sidebar
-  - Create, rename, delete folders
+  - Nested FolderTree with unlimited-depth hierarchy (adjacency list model with `parent_id`)
+  - macOS Finder-inspired disclosure triangles for expand/collapse
+  - Create, rename, delete folders (two-mode delete: delete folder only vs. delete folder + contents)
   - Drag-and-drop notes between folders
-  - Drag-and-drop folders to nest them
+  - Drag-and-drop folders to nest/reorder them
   - "All Notes" view that shows everything regardless of folder
   - "Unfiled" section for notes without a folder
   - Folder note counts
+  - Global search across all folders
 - **Tag system**:
   - Notes can have multiple tags
-  - Tag browser in the sidebar (list of all tags with note counts)
+  - Collapsible tag browser in the sidebar (list of all tags with note counts)
+  - Show more / show less toggle when tag list is long
   - Click a tag to filter notes by that tag
   - Multi-tag filtering (AND/OR toggle)
   - Create tags inline from the note editor
   - Delete/rename tags globally
   - Tag autocomplete when adding tags to a note
 - **Sort & filter**:
-  - Sort notes by: title (A-Z, Z-A), created date, modified date
+  - Sort notes by: title (A-Z, Z-A), created date, modified date, manual order
+  - Manual sort order via drag-and-drop reordering in the note list (drag handle visible when sort-by-manual is active)
   - Filter by: folder, tag, date range
   - Toggle between list view and grid/card view
 - **Trash**:
-  - Soft-deleted notes appear in a "Trash" folder
+  - Soft-deleted notes appear in a "Trash" view (sidebar tab toggle between Notes and Trash)
+  - Trash counter badge in sidebar showing total trashed notes
   - Restore or permanently delete from trash
-  - Auto-purge trash after 30 days (configurable)
+  - Bulk trash operations: select all, restore selected, delete selected, empty trash (with confirmation dialogs)
+  - Auto-purge trash after configurable period (7/14/30/60/90 days or Never)
+  - Trash retention setting in Settings page
+- **Resizable sidebar dividers**:
+  - Draggable dividers between sidebar sections (folders, tags, notes)
+  - Divider positions persisted in localStorage
 
 ## Technical Considerations
 
@@ -60,8 +70,8 @@ Full-text search across all notes using SQLite FTS5, plus a folder and tag syste
 
 ## Dependencies
 
-- [00 — Project Scaffolding](00-project-scaffolding.md) — needs SQLite database
-- [02 — Note Editor](02-note-editor.md) — needs notes to exist for search and organization
+- [00 — Project Scaffolding](../features/00-project-scaffolding.md) — needs SQLite database
+- [01 — Note Editor](01-note-editor.md) — needs notes to exist for search and organization
 
 ## Open Questions
 

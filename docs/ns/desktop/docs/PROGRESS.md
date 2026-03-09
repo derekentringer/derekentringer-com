@@ -14,6 +14,7 @@
 | Vector Search | sqlite-vec | Semantic search via locally stored embeddings |
 | AI | Anthropic Claude API (via ns-api) | Tagging, summarization, semantic search, Q&A, inline markdown completions |
 | Google Drive | Google Drive REST API | One-time .txt file import |
+| Auth | JWT (via ns-api) | Shared accounts across web, desktop, and mobile |
 | Monorepo | Turborepo (existing) | `packages/ns-desktop` in `derekentringer-com` monorepo |
 | Language | TypeScript | Everywhere |
 
@@ -21,6 +22,7 @@
 
 - **Tauri over Electron** — ~5MB bundle vs ~150MB; native performance; Rust backend for file system and SQLite access
 - **Offline-first** — SQLite holds a full local copy of all notes; app is fully functional without internet
+- **Login required** — authenticates against ns-api; shared accounts across web, desktop, and mobile; app needs connectivity for initial login, then works offline
 - **Sync engine** — background sync between local SQLite and central PostgreSQL via ns-api; pending change queue with last-write-wins conflict resolution based on `updatedAt` timestamps
 - **One-time .txt import** — migration wizard scans a local folder, previews files, imports into local SQLite, then syncs to central DB; no ongoing file watching
 - **Google Drive import is one-time** — OAuth, pick a folder, import .txt files into local SQLite, done; not a live sync
@@ -34,41 +36,55 @@
 
 ### Phase 1: Foundation — High Priority
 
-- [ ] [00 — Project Scaffolding](feature_planning/00-project-scaffolding.md)
+- [x] [00 — Project Scaffolding](features/00-project-scaffolding.md)
 
 ### Phase 2: Notes Core — High Priority
 
-- [ ] [01 — .txt Import](feature_planning/01-txt-import.md)
-- [ ] [02 — Note Editor](feature_planning/02-note-editor.md)
+- [x] [01 — Note Editor](features/01-note-editor.md)
 
 ### Phase 3: Organization — High Priority
 
-- [ ] [03 — Search & Organization](feature_planning/03-search-and-organization.md)
+- [ ] [02 — Search & Organization](feature_planning/02-search-and-organization.md)
 
-### Phase 4: External Sources & Sync — Medium Priority
+### Phase 4: UI Features — High Priority
 
-- [ ] [04 — Google Drive Import](feature_planning/04-google-drive-import.md)
-- [ ] [05 — Sync Engine](feature_planning/05-sync-engine.md)
+- [ ] [03 — Note Linking + Backlinks](feature_planning/03-note-linking.md)
+- [ ] [04 — Version History](feature_planning/04-version-history.md)
+- [ ] [05 — Favorites](feature_planning/05-favorites.md)
+- [ ] [06 — Editor Tabs](feature_planning/06-editor-tabs.md)
 
-### Phase 5: AI — Medium Priority
-
-- [ ] [06 — AI Features](feature_planning/06-ai-features.md)
-
-### Phase 6: Polish — Low Priority
+### Phase 5: Settings — Medium Priority
 
 - [ ] [07 — Settings & Preferences](feature_planning/07-settings-and-preferences.md)
 
+### Phase 6: Auth & Sync — Medium Priority
+
+- [ ] [08 — Auth](feature_planning/08-auth.md)
+- [ ] [09 — Sync Engine](feature_planning/09-sync-engine.md)
+
+### Phase 7: AI — Medium Priority
+
+- [ ] [10 — AI Features](feature_planning/10-ai-features.md)
+
+### Phase 8: External Sources — Low Priority
+
+- [ ] [11 — File Import](feature_planning/11-txt-import.md)
+- [ ] [12 — Google Drive Import](feature_planning/12-google-drive-import.md)
+- [ ] [14 — Export](feature_planning/14-export.md)
+
+### Phase 9: Hardening — Low Priority
+
+- [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)
+
 ## Extension Ideas (Future)
 
-- Note linking / backlinks with graph visualization
 - Note templates (meeting notes, journal, project plan)
-- Version history (DB revisions with diff view)
 - Clipboard capture via system hotkey
 - OCR import using AI vision
 - Browser extension for web clipping
-- PDF / Markdown / HTML export
 - Encrypted notes (end-to-end encryption)
 - Kanban board view
+- Graph visualization for note links
 
 ## Status Key
 

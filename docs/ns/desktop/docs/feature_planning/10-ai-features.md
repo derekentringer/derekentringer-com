@@ -1,7 +1,7 @@
-# 06 — AI Features
+# 10 — AI Features
 
 **Status:** Not Started
-**Phase:** 5 — AI
+**Phase:** 7 — AI
 **Priority:** Medium
 
 ## Summary
@@ -28,22 +28,40 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
   - Displayed in note list/cards for quick scanning
   - Manual trigger or auto-generate on first view
 - **Semantic search**:
-  - Generate vector embeddings for each note (via Claude API or a dedicated embedding model)
+  - Generate vector embeddings for each note (via Voyage AI or a dedicated embedding model)
   - Store embeddings locally in SQLite via `sqlite-vec`
   - Search by meaning, not just keywords (e.g., "notes about weekend plans" finds relevant notes even without those exact words)
+  - Three search modes: keyword, semantic, hybrid (combined ranking)
+  - Search mode selector UI toggle
   - Complement FTS5 keyword search: show both keyword and semantic results
-- **Q&A over notes**:
-  - Ask a question in natural language
+  - Embedding status display in settings (enabled/disabled, pending count, total embedded)
+- **Audio notes**:
+  - Voice recording → AI-structured markdown via Whisper transcription + Claude formatting
+  - AudioRecorder component with mode selection (meeting, lecture, memo, verbatim)
+  - Draggable split view divider for recording panel
+  - Audio upload validation (WebM, MP4, MP3, WAV, OGG formats)
+- **AI Assistant chat panel**:
+  - Collapsible right-side panel with streaming AI answers
+  - Ask questions in natural language about your notes
   - System searches relevant notes (semantic + keyword), sends them as context to Claude
-  - Returns an answer with citations linking to source notes
-  - Chat-style interface in a side panel
+  - Citation pills linking to source notes
+  - Markdown rendering in responses
+  - Right-click context menus on notes for "Ask AI about this note"
+  - Cursor-positioned context menus on folders/notes
 - **Duplicate detection**:
   - Use embeddings to find notes with very similar content
   - Surface potential duplicates for review
   - User can merge or dismiss
+- **Completion styles**:
+  - Configurable completion styles: Continue writing, Markdown assist, Brief
+  - Per-style system prompts and max_tokens
+  - Style selector in settings and inline switcher
 - **AI settings**:
   - All AI features disabled by default
-  - Per-feature toggle in settings (inline completions, auto-tagging, summarization, semantic search, Q&A, duplicate detection)
+  - Per-feature toggle in settings (inline completions, auto-tagging, summarization, semantic search, Q&A, audio notes, duplicate detection)
+  - Completion styles and delay configuration
+  - Audio mode selection
+  - Info tooltips on all AI settings explaining each feature
   - Daily request limit to control API costs (configurable)
 
 ## Technical Considerations
@@ -69,10 +87,10 @@ AI-powered features using the Claude API (via ns-api) for smart tagging, summari
 
 ## Dependencies
 
-- [00 — Project Scaffolding](00-project-scaffolding.md) — needs app shell
-- [02 — Note Editor](02-note-editor.md) — inline completions and rewrite integrate into the editor
-- [03 — Search & Organization](03-search-and-organization.md) — semantic search extends the existing search system
-- [05 — Sync Engine](05-sync-engine.md) — embeddings need to sync between local and central database
+- [00 — Project Scaffolding](../features/00-project-scaffolding.md) — needs app shell
+- [01 — Note Editor](01-note-editor.md) — inline completions and rewrite integrate into the editor
+- [02 — Search & Organization](02-search-and-organization.md) — semantic search extends the existing search system
+- [09 — Sync Engine](09-sync-engine.md) — embeddings need to sync between local and central database
 
 ## Open Questions
 

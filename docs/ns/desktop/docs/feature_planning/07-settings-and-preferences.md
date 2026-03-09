@@ -1,8 +1,8 @@
 # 07 — Settings & Preferences
 
 **Status:** Not Started
-**Phase:** 6 — Polish
-**Priority:** Low
+**Phase:** 5 — Settings
+**Priority:** Medium
 
 ## Summary
 
@@ -12,25 +12,34 @@ Settings panel for theme, editor preferences, AI feature toggles, sync configura
 
 - **Appearance**:
   - Theme toggle: dark / light / system
-  - Font size adjustment for the editor
+  - Configurable accent color palette (11 presets with dark/light variants and contrast-aware text)
+  - Font size adjustment for the editor (slider)
   - Sidebar width (draggable or preset sizes)
 - **Editor preferences**:
   - Default view mode: editor-only, split-pane, or preview-only
   - Line numbers on/off
   - Word wrap on/off
-  - Auto-save delay (default 500ms)
+  - Auto-save delay slider (default 500ms)
   - Markdown preview theme
   - Tab size (2 or 4 spaces)
+- **Keyboard shortcuts reference**:
+  - Read-only reference panel listing all editor and app keyboard shortcuts
+  - Grouped by category (editor, navigation, AI, etc.)
 - **AI settings**:
   - Master AI toggle (enable/disable all AI features)
   - Per-feature toggles:
     - Inline ghost text completions
+    - Continue writing (Ctrl+Shift+Space)
     - Smart auto-tagging
     - Note summarization
+    - Select-and-rewrite (right-click or Ctrl+Shift+R)
     - Semantic search
-    - Q&A over notes
+    - Q&A assistant (requires semantic search enabled)
+    - Audio notes
     - Duplicate detection
-  - Completion debounce delay
+  - Completion styles (Continue writing, Markdown assist, Brief) and debounce delay (200-1500ms)
+  - Audio mode selection (meeting, lecture, memo, verbatim)
+  - Info tooltips on all AI settings explaining each feature
   - Daily API request limit
   - AI usage stats (requests today / limit)
 - **Sync settings**:
@@ -43,8 +52,10 @@ Settings panel for theme, editor preferences, AI feature toggles, sync configura
   - Connected account info (email)
   - Disconnect / revoke access
   - "Import from Google Drive" shortcut (opens import wizard)
+- **Version history**:
+  - Capture interval: every save, 5 min, 15 min (default), 30 min, 60 min
 - **Trash**:
-  - Auto-purge interval (default 30 days)
+  - Trash retention period (7/14/30/60/90 days or Never)
   - "Empty Trash Now" button
 - **About**:
   - App version
@@ -60,9 +71,9 @@ Settings panel for theme, editor preferences, AI feature toggles, sync configura
 
 ## Dependencies
 
-- [00 — Project Scaffolding](00-project-scaffolding.md) — needs app shell and SQLite
-- [05 — Sync Engine](05-sync-engine.md) — sync settings depend on sync engine being implemented
-- [06 — AI Features](06-ai-features.md) — AI toggles depend on AI features being implemented
+- [00 — Project Scaffolding](../features/00-project-scaffolding.md) — needs app shell and SQLite
+- [09 — Sync Engine](09-sync-engine.md) — sync settings depend on sync engine being implemented
+- [10 — AI Features](10-ai-features.md) — AI toggles depend on AI features being implemented
 
 ## Open Questions
 

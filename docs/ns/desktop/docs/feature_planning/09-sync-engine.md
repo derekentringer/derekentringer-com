@@ -1,7 +1,7 @@
-# 05 — Sync Engine
+# 09 — Sync Engine
 
 **Status:** Not Started
-**Phase:** 4 — External Sources & Sync
+**Phase:** 6 — Auth & Sync
 **Priority:** Medium
 
 ## Summary
@@ -57,8 +57,9 @@ Background sync engine that keeps the local SQLite database in sync with the cen
 
 ## Dependencies
 
-- [00 — Project Scaffolding](00-project-scaffolding.md) — needs SQLite database with sync tables
-- [02 — Note Editor](02-note-editor.md) — needs note CRUD operations to generate sync queue entries
+- [00 — Project Scaffolding](../features/00-project-scaffolding.md) — needs SQLite database with sync tables
+- [01 — Note Editor](01-note-editor.md) — needs note CRUD operations to generate sync queue entries
+- [08 — Auth](08-auth.md) — needs authentication tokens for API calls
 
 ## Open Questions
 
