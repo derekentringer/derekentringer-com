@@ -118,7 +118,7 @@ function FolderTreeNode({
             <button
               onClick={() => onSelectFolder(folder.id)}
               onContextMenu={(e) => onContextMenu(e, folder)}
-              className={`w-full text-left pr-2 py-1 rounded text-sm transition-colors flex items-center ${
+              className={`w-full text-left pr-2 py-1 rounded text-sm transition-colors flex items-center cursor-pointer ${
                 activeFolder === folder.id
                   ? "text-foreground bg-accent"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -388,7 +388,7 @@ export function FolderTree({
               return next;
             })
           }
-          className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+          className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors cursor-pointer"
         >
           <span
             className="inline-block transition-transform"
@@ -404,7 +404,7 @@ export function FolderTree({
           <div className="flex items-center gap-1">
             <button
               onClick={() => setIsCreating(true)}
-              className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title="New folder"
             >
               +
@@ -418,7 +418,7 @@ export function FolderTree({
           {/* All Notes */}
           <button
             onClick={() => onSelectFolder(null)}
-            className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
+            className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate cursor-pointer ${
               activeFolder === null
                 ? "text-foreground bg-accent"
                 : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -433,7 +433,7 @@ export function FolderTree({
             <DroppableZone droppableId="folder:__unfiled__">
               <button
                 onClick={() => onSelectFolder("__unfiled__")}
-                className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate ${
+                className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate cursor-pointer ${
                   activeFolder === "__unfiled__"
                     ? "text-foreground bg-accent"
                     : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -505,20 +505,20 @@ export function FolderTree({
         >
           <button
             onClick={() => startCreateSubfolder(contextMenu.folder)}
-            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
             New Subfolder
           </button>
           <button
             onClick={() => startRename(contextMenu.folder)}
-            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
             Rename
           </button>
           {contextMenu.folder.parentId && (
             <button
               onClick={() => handleMoveToRoot(contextMenu.folder)}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
               Move to Root
             </button>
@@ -529,7 +529,7 @@ export function FolderTree({
                 onExportFolder(contextMenu.folder.id);
                 setContextMenu(null);
               }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
               Export as .zip
             </button>
@@ -540,14 +540,14 @@ export function FolderTree({
                 onToggleFavorite(contextMenu.folder.id, !contextMenu.folder.favorite);
                 setContextMenu(null);
               }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
               {contextMenu.folder.favorite ? "Unfavorite" : "Favorite"}
             </button>
           )}
           <button
             onClick={() => handleDeleteClick(contextMenu.folder)}
-            className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors"
+            className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors cursor-pointer"
           >
             Delete
           </button>

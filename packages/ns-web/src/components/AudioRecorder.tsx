@@ -153,7 +153,7 @@ export function AudioRecorder({ defaultMode, onNoteCreated, onError }: AudioReco
         </span>
         <button
           onClick={handleStop}
-          className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+          className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors cursor-pointer"
           title="Stop recording"
         >
           Stop
@@ -166,7 +166,7 @@ export function AudioRecorder({ defaultMode, onNoteCreated, onError }: AudioReco
     <div className="relative flex items-center" ref={dropdownRef}>
       <button
         onClick={handleRecord}
-        className="h-7 px-2 rounded-l-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center gap-1"
+        className="h-7 px-2 rounded-l-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center gap-1 cursor-pointer"
         title={`Record audio (${MODE_LABELS[mode]})`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -178,7 +178,7 @@ export function AudioRecorder({ defaultMode, onNoteCreated, onError }: AudioReco
       </button>
       <button
         onClick={() => setShowModes(!showModes)}
-        className="h-7 px-1 rounded-r-md border border-l-0 border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center"
+        className="h-7 px-1 rounded-r-md border border-l-0 border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center cursor-pointer"
         title="Change recording mode"
         aria-label="Recording mode"
       >
@@ -195,7 +195,7 @@ export function AudioRecorder({ defaultMode, onNoteCreated, onError }: AudioReco
                 setMode(m);
                 setShowModes(false);
               }}
-              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+              className={`w-full text-left px-3 py-1.5 text-sm transition-colors cursor-pointer ${
                 m === mode
                   ? "text-foreground bg-accent"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"

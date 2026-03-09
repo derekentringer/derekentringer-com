@@ -105,7 +105,7 @@ export function TagBrowser({
               key={tag.name}
               onClick={() => onToggleTag(tag.name)}
               onContextMenu={(e) => handleContextMenu(e, tag.name)}
-              className={`px-2 py-0.5 rounded-full text-xs transition-colors ${
+              className={`px-2 py-0.5 rounded-full text-xs transition-colors cursor-pointer ${
                 isActive
                   ? "bg-primary text-primary-contrast"
                   : "bg-border text-muted-foreground hover:text-foreground"
@@ -122,7 +122,7 @@ export function TagBrowser({
       {isOverflowing && (
         <button
           onClick={() => setExpanded((prev) => !prev)}
-          className="text-xs text-muted-foreground hover:text-foreground mt-1"
+          className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
         >
           {expanded ? "show less" : "show more"}
         </button>
@@ -131,7 +131,7 @@ export function TagBrowser({
       {activeTags.length > 0 && (
         <button
           onClick={() => activeTags.forEach((t) => onToggleTag(t))}
-          className="text-xs text-muted-foreground hover:text-foreground mt-1"
+          className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
         >
           Clear filter
         </button>
@@ -148,13 +148,13 @@ export function TagBrowser({
             style={{ top: contextMenu.y, left: contextMenu.x }}
           >
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors"
+              className="w-full text-left px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors cursor-pointer"
               onClick={() => startRename(contextMenu.tag)}
             >
               Rename
             </button>
             <button
-              className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors"
+              className="w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors cursor-pointer"
               onClick={() => handleDeleteTag(contextMenu.tag)}
             >
               Delete

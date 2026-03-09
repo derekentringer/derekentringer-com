@@ -1377,7 +1377,7 @@ export function NotesPage() {
               )}
               <button
                 onClick={handleCreate}
-                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none"
+                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
                 title="New note"
               >
                 +
@@ -1417,7 +1417,7 @@ export function NotesPage() {
                   <button
                     type="button"
                     onClick={() => setSearch("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors text-xs"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors text-xs cursor-pointer"
                     aria-label="Clear search"
                   >
                     ✕
@@ -1486,7 +1486,8 @@ export function NotesPage() {
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as NoteSortField)}
-                      className="px-1 py-0 rounded bg-transparent border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                      className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                      style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
                       aria-label="Sort by"
                     >
                       <option value="sortOrder">Manual</option>
@@ -1496,7 +1497,7 @@ export function NotesPage() {
                     </select>
                     <button
                       onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                       title={sortOrder === "asc" ? "Ascending" : "Descending"}
                       aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
                     >
@@ -1504,7 +1505,7 @@ export function NotesPage() {
                     </button>
                     <button
                       onClick={handleCreate}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                       title="New note"
                     >
                       +
@@ -1629,7 +1630,7 @@ export function NotesPage() {
               <>
                 <button
                   onClick={switchToTrash}
-                  className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
                   title="Trash"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1647,7 +1648,7 @@ export function NotesPage() {
             )}
             <button
               onClick={() => navigate("/settings")}
-              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
               title="Settings"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -1655,7 +1656,7 @@ export function NotesPage() {
             {user?.role === "admin" && (
               <button
                 onClick={() => navigate("/admin")}
-                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
                 title="Admin"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -1664,7 +1665,7 @@ export function NotesPage() {
           </div>
           <button
             onClick={logout}
-            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
             title="Sign out"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -1723,7 +1724,7 @@ export function NotesPage() {
                 <button
                   onClick={handleSummarize}
                   disabled={isSummarizing}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                   title={isSummarizing ? "Summarizing..." : "Summarize"}
                   aria-label="Summarize"
                 >
@@ -1734,7 +1735,7 @@ export function NotesPage() {
                 <button
                   onClick={handleSuggestTags}
                   disabled={isSuggestingTags}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                   title={isSuggestingTags ? "Suggesting..." : "Suggest tags"}
                   aria-label="Suggest tags"
                 >
@@ -1743,7 +1744,7 @@ export function NotesPage() {
               )}
               <button
                 onClick={handleCopyLink}
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
                 title={linkCopied ? "Copied!" : "Copy link"}
                 aria-label="Copy link"
               >
@@ -1754,13 +1755,13 @@ export function NotesPage() {
                   <span className="text-[11px] text-destructive">Delete?</span>
                   <button
                     onClick={handleDelete}
-                    className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors"
+                    className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors cursor-pointer"
                   >
                     Yes
                   </button>
                   <button
                     onClick={() => setConfirmDelete(false)}
-                    className="px-1.5 py-0.5 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                    className="px-1.5 py-0.5 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                   >
                     No
                   </button>
@@ -1768,7 +1769,7 @@ export function NotesPage() {
               ) : (
                 <button
                   onClick={handleDelete}
-                  className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors"
+                  className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
                   title="Delete"
                   aria-label="Delete"
                 >
@@ -1782,7 +1783,7 @@ export function NotesPage() {
               <div className="absolute left-1.5 bottom-1.5" ref={folderDropdownRef}>
                 <button
                   onClick={() => setShowFolderDropdown((v) => !v)}
-                  className="w-8 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  className="w-8 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                   title={selectedNote?.folderId ? flatFolders.find((f) => f.id === selectedNote.folderId)?.displayName ?? "Unfiled" : "Unfiled"}
                   aria-label="Note folder"
                   data-testid="note-folder-select"
@@ -1864,7 +1865,7 @@ export function NotesPage() {
                 {selectedNote.summary}
                 <button
                   onClick={() => setConfirmDeleteSummary(true)}
-                  className="absolute top-1.5 right-2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute top-1.5 right-2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                   title="Remove summary"
                 >
                   &times;
@@ -2073,7 +2074,7 @@ export function NotesPage() {
           {settings.masterAiEnabled && settings.qaAssistant && (
             <button
               onClick={() => handleDrawerTabClick("assistant")}
-              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors ${
+              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors cursor-pointer ${
                 qaOpen && drawerTab === "assistant"
                   ? "bg-primary text-primary-contrast"
                   : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-muted"
@@ -2090,7 +2091,7 @@ export function NotesPage() {
           {selectedId && sidebarView === "notes" && (
             <button
               onClick={() => handleDrawerTabClick("history")}
-              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors ${
+              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors cursor-pointer ${
                 qaOpen && drawerTab === "history"
                   ? "bg-primary text-primary-contrast"
                   : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-muted"
