@@ -1,18 +1,24 @@
-# 01 — .txt Import
+# 11 — File Import
 
 **Status:** Not Started
-**Phase:** 2 — Notes Core
-**Priority:** High
+**Phase:** 8 — External Sources
+**Priority:** Low
 
 ## Summary
 
-One-time migration wizard that imports existing `.txt` files from a local directory into the local SQLite database as markdown notes.
+Import wizard that imports existing text and markdown files from local directories into the local SQLite database as notes. Supports individual file selection and folder import with directory structure preserved.
 
 ## Requirements
 
-- Import wizard UI:
-  - "Select Folder" button that opens the native OS file picker (Tauri dialog API)
-  - Recursively scan the selected directory for `.txt` files
+- **Import methods**:
+  - "Import Files" — native OS file picker for individual files (Tauri dialog API)
+  - "Import Folder" — native OS folder picker to import all supported files recursively
+- **Supported formats**:
+  - `.txt` — plain text files
+  - `.md` — markdown files
+  - `.markdown` — markdown files (alternate extension)
+  - File extension validation before import
+- **Import wizard UI**:
   - Display a preview list of all found files with:
     - File name (becomes note title)
     - File path (shown for context)
@@ -21,16 +27,17 @@ One-time migration wizard that imports existing `.txt` files from a local direct
   - Checkbox to select/deselect individual files
   - "Select All" / "Deselect All" controls
   - "Import Selected" button
-- Import behavior:
-  - File name (without `.txt` extension) becomes the note title
-  - File content becomes the note body (raw text is valid markdown)
-  - Directory structure becomes folder assignments (e.g., `notes/work/meeting.txt` → folder: `work`)
+- **Import behavior**:
+  - File name (without extension) becomes the note title
+  - File content becomes the note body (raw text / markdown)
+  - Directory structure becomes folder assignments (e.g., `notes/work/meeting.txt` → folder: `work`), auto-creating nested folders as needed
   - Preserve original file creation/modification dates as `createdAt`/`updatedAt` if available
   - Generate UUID for each imported note
   - Set `syncStatus` to `pending` for all imported notes
-- Progress indicator during import (file count / total)
-- Summary screen after import: "Imported X notes into Y folders"
-- Error handling: skip files that can't be read, report them at the end
+- **Progress & results**:
+  - Progress indicator during import (file count / total)
+  - Summary screen after import: "Imported X notes into Y folders"
+  - Error handling: skip files that can't be read, report success/failure counts at the end
 
 ## Technical Considerations
 
@@ -44,7 +51,7 @@ One-time migration wizard that imports existing `.txt` files from a local direct
 
 ## Dependencies
 
-- [00 — Project Scaffolding](00-project-scaffolding.md) — needs Tauri app shell and SQLite database
+- [00 — Project Scaffolding](../features/00-project-scaffolding.md) — needs Tauri app shell and SQLite database
 
 ## Open Questions
 

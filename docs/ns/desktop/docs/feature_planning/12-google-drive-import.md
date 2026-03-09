@@ -1,8 +1,8 @@
-# 04 — Google Drive Import
+# 12 — Google Drive Import
 
 **Status:** Not Started
-**Phase:** 4 — External Sources & Sync
-**Priority:** Medium
+**Phase:** 8 — External Sources
+**Priority:** Low
 
 ## Summary
 
@@ -51,8 +51,8 @@ One-time import of `.txt` files from Google Drive into the local SQLite database
 
 ## Dependencies
 
-- [00 — Project Scaffolding](00-project-scaffolding.md) — needs Tauri app shell and SQLite database
-- [01 — .txt Import](01-txt-import.md) — shares the same import UI pattern and SQLite insert logic
+- [00 — Project Scaffolding](../features/00-project-scaffolding.md) — needs Tauri app shell and SQLite database
+- [11 — .txt Import](11-txt-import.md) — shares the same import UI pattern and SQLite insert logic
 
 ## Open Questions
 
