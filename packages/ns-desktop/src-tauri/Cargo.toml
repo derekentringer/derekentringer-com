@@ -1,5 +1,5 @@
 [package]
-name = "notesync-desktop"
+name = "NoteSync"
 version = "0.1.0"
 description = "NoteSync Desktop"
 authors = ["Derek Entringer"]
@@ -7,6 +7,10 @@ license = ""
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
+
+[[bin]]
+name = "NoteSync"
+path = "src/main.rs"
 
 [lib]
 name = "app_lib"

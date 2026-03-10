@@ -422,6 +422,27 @@ function buildFolderTree(
   return roots;
 }
 
+export async function toggleFolderFavorite(
+  folderId: string,
+  favorite: boolean,
+): Promise<FolderInfo[]> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE folders SET favorite = $1, updated_at = $2 WHERE id = $3",
+    [favorite ? 1 : 0, now, folderId],
+  );
+  return fetchFolders();
+}
+
+export async function fetchFavoriteNotes(): Promise<Note[]> {
+  const db = await getDb();
+  const rows = await db.select<NoteRow[]>(
+    "SELECT * FROM notes WHERE favorite = 1 AND is_deleted = 0 ORDER BY title ASC",
+  );
+  return rows.map(rowToNote);
+}
+
 export async function fetchFolders(): Promise<FolderInfo[]> {
   const db = await getDb();
   const folderRows = await db.select<FolderRow[]>(

@@ -189,6 +189,46 @@ describe("FolderTree", () => {
     expect(onMoveFolder).toHaveBeenCalledWith("f2", null);
   });
 
+  it("shows Favorite in context menu when onToggleFavorite is provided", async () => {
+    const onToggleFavorite = vi.fn();
+    const folders = [makeFolder({ id: "f1", name: "Fav Folder", favorite: false })];
+    render(
+      <FolderTree {...defaultProps} folders={folders} onToggleFavorite={onToggleFavorite} />,
+    );
+
+    const button = screen.getByText("Fav Folder");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+
+    expect(screen.getByText("Favorite")).toBeInTheDocument();
+  });
+
+  it("shows Unfavorite for already-favorited folders in context menu", async () => {
+    const onToggleFavorite = vi.fn();
+    const folders = [makeFolder({ id: "f1", name: "Fav Folder", favorite: true })];
+    render(
+      <FolderTree {...defaultProps} folders={folders} onToggleFavorite={onToggleFavorite} />,
+    );
+
+    const button = screen.getByText("Fav Folder");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+
+    expect(screen.getByText("Unfavorite")).toBeInTheDocument();
+  });
+
+  it("calls onToggleFavorite with correct args", async () => {
+    const onToggleFavorite = vi.fn();
+    const folders = [makeFolder({ id: "f1", name: "Toggle Fav", favorite: false })];
+    render(
+      <FolderTree {...defaultProps} folders={folders} onToggleFavorite={onToggleFavorite} />,
+    );
+
+    const button = screen.getByText("Toggle Fav");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+    await userEvent.click(screen.getByText("Favorite"));
+
+    expect(onToggleFavorite).toHaveBeenCalledWith("f1", true);
+  });
+
   it("toggles section collapse", async () => {
     const folders = [makeFolder({ id: "f1", name: "Work" })];
     render(<FolderTree {...defaultProps} folders={folders} />);

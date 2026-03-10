@@ -46,6 +46,8 @@ import {
   fetchNoteById,
   captureVersion,
   restoreVersion,
+  fetchFavoriteNotes,
+  toggleFolderFavorite,
 } from "../lib/db.ts";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import {
@@ -59,6 +61,7 @@ import {
   type ViewMode,
 } from "../components/EditorToolbar.tsx";
 import { NoteList } from "../components/NoteList.tsx";
+import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { FolderTree } from "../components/FolderTree.tsx";
 import { TagBrowser } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
@@ -106,6 +109,9 @@ export function NotesPage() {
   // Folders
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+
+  // Favorites
+  const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
 
   // Tags
   const [tags, setTags] = useState<TagInfo[]>([]);
@@ -220,6 +226,22 @@ export function NotesPage() {
     try { setNoteTitles(await listNoteTitles()); } catch {}
   }, []);
 
+  const loadFavoriteNotes = useCallback(async () => {
+    try { setFavoriteNotes(await fetchFavoriteNotes()); } catch {}
+  }, []);
+
+  const favoriteFolders = useMemo(() => {
+    const result: FolderInfo[] = [];
+    function collect(items: FolderInfo[]) {
+      for (const f of items) {
+        if (f.favorite) result.push(f);
+        collect(f.children);
+      }
+    }
+    collect(folders);
+    return result;
+  }, [folders]);
+
   async function loadData() {
     try {
       await initFts();
@@ -232,6 +254,7 @@ export function NotesPage() {
       setFolders(foldersResult);
       setTags(tagsResult);
       loadNoteTitles();
+      loadFavoriteNotes();
 
       // Auto-purge old trash
       const retention = Number(localStorage.getItem(TRASH_RETENTION_KEY) ?? 30);
@@ -520,6 +543,47 @@ export function NotesPage() {
       console.error("Failed to rename folder:", err);
       showError("Failed to rename folder");
     }
+  }
+
+  // --- Favorites ---
+
+  async function handleToggleNoteFavorite(noteId: string, favorite: boolean) {
+    try {
+      const updated = await updateNote(noteId, { favorite });
+      setNotes((prev) =>
+        prev.map((n) => (n.id === updated.id ? { ...n, favorite: updated.favorite } : n)),
+      );
+      loadFavoriteNotes();
+    } catch {
+      showError("Failed to update favorite");
+    }
+  }
+
+  async function handleToggleFolderFavorite(folderId: string, favorite: boolean) {
+    try {
+      const updatedFolders = await toggleFolderFavorite(folderId, favorite);
+      setFolders(updatedFolders);
+    } catch {
+      showError("Failed to update favorite");
+    }
+  }
+
+  function handleFavoriteNoteClick(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      selectNote(note);
+      return;
+    }
+    fetchNoteById(noteId)
+      .then((fetched) => {
+        if (fetched) {
+          setNotes((prev) =>
+            prev.some((n) => n.id === fetched.id) ? prev : [fetched, ...prev],
+          );
+          selectNote(fetched);
+        }
+      })
+      .catch(() => showError("Favorited note not found"));
   }
 
   async function handleDeleteFolder(folderId: string, mode: "move-up" | "recursive") {
@@ -929,8 +993,24 @@ export function NotesPage() {
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
           >
-            {/* Folder tree (resizable) */}
+            {/* Favorites + Folder tree (resizable) */}
             <div className="shrink-0 overflow-y-auto" style={{ height: folderResize.size }}>
+              {(favoriteFolders.length > 0 || favoriteNotes.length > 0) && (
+                <FavoritesPanel
+                  favoriteFolders={favoriteFolders}
+                  favoriteNotes={favoriteNotes}
+                  activeFolder={searchResults ? null : activeFolder}
+                  selectedNoteId={selectedId}
+                  onSelectFolder={(folderId) => {
+                    setActiveFolder(folderId);
+                    setSearchQuery("");
+                    setSearchResults(null);
+                  }}
+                  onSelectNote={handleFavoriteNoteClick}
+                  onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
+                  onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
+                />
+              )}
               <FolderTree
                 folders={folders}
                 activeFolder={searchResults ? null : activeFolder}
@@ -944,6 +1024,7 @@ export function NotesPage() {
                 onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
                 onMoveFolder={handleMoveFolder}
+                onToggleFavorite={handleToggleFolderFavorite}
               />
             </div>
 
@@ -1010,6 +1091,7 @@ export function NotesPage() {
                     selectedId={selectedId}
                     onSelect={selectNote}
                     onDeleteNote={handleDeleteNote}
+                    onToggleFavorite={handleToggleNoteFavorite}
                     searchResults={searchResults}
                     sortByManual={sortBy === "sortOrder"}
                   />
@@ -1024,6 +1106,7 @@ export function NotesPage() {
                   selectedId={selectedId}
                   onSelect={selectNote}
                   onDeleteNote={handleDeleteNote}
+                  onToggleFavorite={handleToggleNoteFavorite}
                   sortByManual={sortBy === "sortOrder"}
                 />
               )}
