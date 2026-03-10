@@ -27,6 +27,12 @@ pub fn run() {
             sql: include_str!("../migrations/004.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "add note_versions table for version history",
+            sql: include_str!("../migrations/005.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

@@ -9,6 +9,8 @@ import type {
   SortOrder,
   BacklinkInfo,
   NoteTitleEntry,
+  NoteVersion,
+  NoteVersionListResponse,
 } from "@derekentringer/ns-shared";
 
 let dbInstance: Database | null = null;
@@ -817,4 +819,105 @@ export async function listNoteTitles(): Promise<NoteTitleEntry[]> {
   return db.select<NoteTitleEntry[]>(
     "SELECT id, title FROM notes WHERE is_deleted = 0 ORDER BY title ASC",
   );
+}
+
+// ---------------------------------------------------------------------------
+// Version History
+// ---------------------------------------------------------------------------
+
+const MAX_VERSIONS_PER_NOTE = 50;
+
+interface NoteVersionRow {
+  id: string;
+  note_id: string;
+  title: string;
+  content: string;
+  origin: string;
+  created_at: string;
+}
+
+function rowToNoteVersion(row: NoteVersionRow): NoteVersion {
+  return {
+    id: row.id,
+    noteId: row.note_id,
+    title: row.title,
+    content: row.content,
+    origin: row.origin,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Capture a version snapshot of a note, respecting the interval cooldown.
+ * If intervalMinutes > 0, skips if the last version was created within that interval.
+ * If intervalMinutes === 0, always captures (every save).
+ */
+export async function captureVersion(
+  noteId: string,
+  title: string,
+  content: string,
+  intervalMinutes: number,
+): Promise<void> {
+  const db = await getDb();
+
+  if (intervalMinutes > 0) {
+    const cooldownMs = intervalMinutes * 60 * 1000;
+    const rows = await db.select<NoteVersionRow[]>(
+      "SELECT * FROM note_versions WHERE note_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [noteId],
+    );
+    if (rows.length > 0) {
+      const elapsed = Date.now() - new Date(rows[0].created_at).getTime();
+      if (elapsed < cooldownMs) return;
+    }
+  }
+
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  await db.execute(
+    "INSERT INTO note_versions (id, note_id, title, content, origin, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+    [id, noteId, title, content, "desktop", now],
+  );
+
+  // Enforce version cap
+  await db.execute(
+    "DELETE FROM note_versions WHERE id IN (SELECT id FROM note_versions WHERE note_id = $1 ORDER BY created_at DESC LIMIT -1 OFFSET $2)",
+    [noteId, MAX_VERSIONS_PER_NOTE],
+  );
+}
+
+/**
+ * List all versions for a note, newest first.
+ */
+export async function listVersions(noteId: string): Promise<NoteVersionListResponse> {
+  const db = await getDb();
+  const rows = await db.select<NoteVersionRow[]>(
+    "SELECT * FROM note_versions WHERE note_id = $1 ORDER BY created_at DESC",
+    [noteId],
+  );
+  return {
+    versions: rows.map(rowToNoteVersion),
+    total: rows.length,
+  };
+}
+
+/**
+ * Get a single version by ID.
+ */
+export async function getVersion(versionId: string): Promise<NoteVersion | null> {
+  const db = await getDb();
+  const rows = await db.select<NoteVersionRow[]>(
+    "SELECT * FROM note_versions WHERE id = $1",
+    [versionId],
+  );
+  return rows.length > 0 ? rowToNoteVersion(rows[0]) : null;
+}
+
+/**
+ * Restore a version: update the note's title and content from the version.
+ */
+export async function restoreVersion(noteId: string, versionId: string): Promise<Note> {
+  const version = await getVersion(versionId);
+  if (!version) throw new Error(`Version ${versionId} not found`);
+  return updateNote(noteId, { title: version.title, content: version.content });
 }
