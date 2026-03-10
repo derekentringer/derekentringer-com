@@ -1,6 +1,6 @@
 # 04 — Version History
 
-**Status:** Not Started
+**Status:** Complete — see [features/04-version-history.md](../features/04-version-history.md)
 **Phase:** 4 — UI Features
 **Priority:** High
 

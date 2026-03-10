@@ -169,6 +169,7 @@ export interface NoteVersion {
   noteId: string;
   title: string;
   content: string;
+  origin: string;
   createdAt: string;
 }
 

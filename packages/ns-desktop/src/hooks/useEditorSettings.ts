@@ -35,6 +35,7 @@ export interface EditorSettings {
   editorFontSize: number;
   maxCachedNotes: number;
   accentColor: AccentColorPreset;
+  versionIntervalMinutes: number;
 }
 
 const STORAGE_KEY = "ns-editor-settings";
@@ -53,6 +54,7 @@ const DEFAULT_SETTINGS: EditorSettings = {
   editorFontSize: 14,
   maxCachedNotes: 100,
   accentColor: "lime",
+  versionIntervalMinutes: 15,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -84,6 +86,9 @@ function loadSettings(): EditorSettings {
       accentColor: VALID_ACCENT_COLORS.includes(parsed.accentColor)
         ? parsed.accentColor
         : "lime",
+      versionIntervalMinutes: typeof parsed.versionIntervalMinutes === "number"
+        ? clamp(parsed.versionIntervalMinutes, 0, 60)
+        : 15,
     };
   } catch {
     return DEFAULT_SETTINGS;

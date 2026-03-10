@@ -26,6 +26,7 @@ describe("useEditorSettings", () => {
     expect(settings.editorFontSize).toBe(14);
     expect(settings.maxCachedNotes).toBe(100);
     expect(settings.accentColor).toBe("lime");
+    expect(settings.versionIntervalMinutes).toBe(15);
   });
 
   it("loads saved settings from localStorage", () => {
@@ -39,6 +40,7 @@ describe("useEditorSettings", () => {
       editorFontSize: 16,
       maxCachedNotes: 50,
       accentColor: "blue",
+      versionIntervalMinutes: 5,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
 
@@ -93,6 +95,51 @@ describe("useEditorSettings", () => {
     );
     const { result } = renderHook(() => useEditorSettings());
     expect(result.current.settings.maxCachedNotes).toBe(500);
+  });
+
+  it("returns default versionIntervalMinutes of 15", () => {
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.versionIntervalMinutes).toBe(15);
+  });
+
+  it("persists versionIntervalMinutes", () => {
+    const { result } = renderHook(() => useEditorSettings());
+
+    act(() => {
+      result.current.updateSetting("versionIntervalMinutes", 5);
+    });
+
+    expect(result.current.settings.versionIntervalMinutes).toBe(5);
+
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(persisted.versionIntervalMinutes).toBe(5);
+  });
+
+  it("clamps versionIntervalMinutes below min to 0", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ versionIntervalMinutes: -5 }),
+    );
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.versionIntervalMinutes).toBe(0);
+  });
+
+  it("clamps versionIntervalMinutes above max to 60", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ versionIntervalMinutes: 120 }),
+    );
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.versionIntervalMinutes).toBe(60);
+  });
+
+  it("allows versionIntervalMinutes of 0 (every save)", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ versionIntervalMinutes: 0 }),
+    );
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.versionIntervalMinutes).toBe(0);
   });
 
   it("falls back to defaults for invalid enum values", () => {

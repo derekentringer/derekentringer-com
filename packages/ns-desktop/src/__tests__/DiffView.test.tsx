@@ -3,14 +3,14 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DiffView } from "../components/DiffView.tsx";
-import type { NoteVersion } from "@derekentringer/shared/ns";
+import type { NoteVersion } from "@derekentringer/ns-shared";
 
 const mockVersion: NoteVersion = {
   id: "v1",
   noteId: "n1",
   title: "Old Title",
   content: "line one\nline two\nline three",
-  origin: "web",
+  origin: "desktop",
   createdAt: "2025-01-01T00:00:00.000Z",
 };
 
