@@ -168,7 +168,7 @@ describe("note link db functions", () => {
       { id: "n2", title: "Beta" },
     ]);
     expect(mockSelect.mock.calls[0][0]).toContain("is_deleted = 0");
-    expect(mockSelect.mock.calls[0][0]).toContain("ORDER BY title ASC");
+    expect(mockSelect.mock.calls[0][0]).toContain("ORDER BY title COLLATE NOCASE ASC");
   });
 });
 

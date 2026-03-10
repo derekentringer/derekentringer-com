@@ -7,6 +7,7 @@ import rateLimit from "@fastify/rate-limit";
 import authPlugin from "@derekentringer/shared/auth";
 import { loadConfig } from "./config.js";
 import { getPrisma } from "./lib/prisma.js";
+import { createSseHub, type SseHub } from "./lib/sseHub.js";
 import { cleanupExpiredTokens } from "./store/refreshTokenStore.js";
 import { purgeOldTrash } from "./store/noteStore.js";
 import { getTrashRetentionDays } from "./store/settingStore.js";
@@ -17,9 +18,16 @@ import noteRoutes from "./routes/notes.js";
 import aiRoutes from "./routes/ai.js";
 import adminRoutes from "./routes/admin.js";
 import totpRoutes from "./routes/totp.js";
+import syncRoutes from "./routes/sync.js";
 
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+declare module "fastify" {
+  interface FastifyInstance {
+    sseHub: SseHub;
+  }
+}
 
 export interface BuildAppOptions {
   disableRateLimit?: boolean;
@@ -28,6 +36,9 @@ export interface BuildAppOptions {
 export function buildApp(opts?: BuildAppOptions) {
   const config = loadConfig();
   const app = Fastify({ logger: true });
+
+  const sseHub = createSseHub();
+  app.decorate("sseHub", sseHub);
 
   app.register(cookie);
   app.register(cors, {
@@ -44,6 +55,7 @@ export function buildApp(opts?: BuildAppOptions) {
       directives: {
         defaultSrc: ["'none'"],
         frameAncestors: ["'none'"],
+        connectSrc: ["'self'", ...config.corsOrigins],
       },
     },
   });
@@ -51,6 +63,8 @@ export function buildApp(opts?: BuildAppOptions) {
     app.register(rateLimit, {
       max: 200,
       timeWindow: "1 minute",
+      allowList: (request: { url: string }) =>
+        request.url.startsWith("/sync/events"),
     });
   }
   app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1 } });
@@ -84,6 +98,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(aiRoutes, { prefix: "/ai" });
   app.register(adminRoutes, { prefix: "/admin" });
   app.register(totpRoutes, { prefix: "/auth/totp" });
+  app.register(syncRoutes, { prefix: "/sync" });
 
 
   app.get("/robots.txt", async (_request, reply) => {
@@ -113,6 +128,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.addHook("onClose", async () => {
     if (cleanupTimer) clearInterval(cleanupTimer);
     if (embeddingProcessor) embeddingProcessor.stop();
+    sseHub.cleanup();
     await getPrisma().$disconnect();
   });
 

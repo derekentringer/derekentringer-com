@@ -10,6 +10,7 @@ import type {
   FolderListResponse,
   FolderInfo,
   ReorderNotesRequest,
+  ReorderFavoriteNotesRequest,
   ReorderFoldersRequest,
   TagListResponse,
   BacklinksResponse,
@@ -407,14 +408,36 @@ export async function fetchVersion(
   return data.version;
 }
 
-export async function fetchFavoriteNotes(): Promise<{ notes: Note[] }> {
-  const response = await apiFetch("/notes/favorites");
+export async function fetchFavoriteNotes(params?: {
+  sortBy?: NoteSortField;
+  sortOrder?: SortOrder;
+}): Promise<{ notes: Note[] }> {
+  const qs = new URLSearchParams();
+  if (params?.sortBy) qs.set("sortBy", params.sortBy);
+  if (params?.sortOrder) qs.set("sortOrder", params.sortOrder);
+
+  const query = qs.toString();
+  const path = query ? `/notes/favorites?${query}` : "/notes/favorites";
+  const response = await apiFetch(path);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch favorite notes: ${response.status}`);
   }
 
   return response.json();
+}
+
+export async function reorderFavoriteNotes(
+  data: ReorderFavoriteNotesRequest,
+): Promise<void> {
+  const response = await apiFetch("/notes/favorites/reorder", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to reorder favorite notes: ${response.status}`);
+  }
 }
 
 export async function toggleFolderFavoriteApi(

@@ -91,6 +91,7 @@ vi.mock("../api/offlineNotes.ts", () => ({
   fetchVersion: (...args: unknown[]) => mockFetchVersion(...args),
   restoreVersion: (...args: unknown[]) => mockRestoreVersion(...args),
   fetchFavoriteNotes: (...args: unknown[]) => mockFetchFavoriteNotes(...args),
+  reorderFavoriteNotes: vi.fn().mockResolvedValue(undefined),
   toggleFolderFavoriteApi: (...args: unknown[]) => mockToggleFolderFavoriteApi(...args),
 }));
 
@@ -150,6 +151,7 @@ const mockNote = {
   summary: null,
   favorite: false,
   sortOrder: 0,
+  favoriteSortOrder: 0,
   createdAt: "2025-01-01T00:00:00.000Z",
   updatedAt: "2025-01-01T00:00:00.000Z",
   deletedAt: null,
@@ -173,6 +175,7 @@ function renderNotesPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   mockFetchNotes.mockResolvedValue({ notes: [], total: 0 });
   mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
   mockFetchFolders.mockResolvedValue({ folders: [] });
@@ -275,8 +278,8 @@ describe("NotesPage", () => {
       // Default call should include sortBy and sortOrder
       expect(mockFetchNotes).toHaveBeenCalledWith(
         expect.objectContaining({
-          sortBy: "sortOrder",
-          sortOrder: "asc",
+          sortBy: "updatedAt",
+          sortOrder: "desc",
         }),
       );
     });
@@ -301,14 +304,14 @@ describe("NotesPage", () => {
       renderNotesPage();
       await screen.findByText("No notes yet");
 
-      // Default is asc, button shows up arrow
-      const sortOrderButton = screen.getByLabelText("Sort ascending");
+      // Default is desc, button shows down arrow
+      const sortOrderButton = screen.getByLabelText("Sort descending");
       await userEvent.click(sortOrderButton);
 
       await waitFor(() => {
         expect(mockFetchNotes).toHaveBeenCalledWith(
           expect.objectContaining({
-            sortOrder: "desc",
+            sortOrder: "asc",
           }),
         );
       });

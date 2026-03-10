@@ -68,6 +68,7 @@ model Note {
   summary            String?
   favorite           Boolean                      @default(false)
   sortOrder          Int                          @default(0)
+  favoriteSortOrder  Int                          @default(0)
   embedding          Unsupported("vector(512)")?
   embeddingUpdatedAt DateTime?
   createdAt          DateTime                     @default(now())
@@ -83,6 +84,7 @@ model Note {
   @@index([folderId])
   @@index([deletedAt])
   @@index([sortOrder])
+  @@index([favoriteSortOrder])
   @@map("notes")
 }
 
@@ -122,21 +124,24 @@ model Setting {
 }
 
 model Folder {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
   name      String
   parentId  String?
-  sortOrder Int      @default(0)
-  favorite  Boolean  @default(false)
-  parent    Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Folder[] @relation("FolderTree")
+  sortOrder Int       @default(0)
+  favorite  Boolean   @default(false)
+  parent    Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Folder[]  @relation("FolderTree")
   notes     Note[]
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+  deletedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, parentId, name])
   @@index([userId])
   @@index([parentId])
+  @@index([deletedAt])
   @@map("folders")
 }
 

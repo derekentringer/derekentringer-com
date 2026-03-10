@@ -8,39 +8,46 @@ Users can mark notes and folders as favorites for quick access. A collapsible "F
 
 - **`favorite` column on Note model** — `Boolean @default(false)` in `ns-api/prisma/schema.prisma`
 - **`favorite` column on Folder model** — `Boolean @default(false)` in `ns-api/prisma/schema.prisma`
+- **`favoriteSortOrder` column on Note model** — `Int @default(0)` with index, for manual drag-and-drop reordering within the favorites panel
 - Migration: `20260307000000_add_favorites/migration.sql`
+- Migration: `20260311000000_add_favorite_sort_order/migration.sql`
 
 ## Backend
 
 ### Note Store (`ns-api/src/store/noteStore.ts`)
 
-- `updateNote()` — handles `favorite` field updates (does not trigger `captureVersion` or `syncNoteLinks`)
-- `listFavoriteNotes()` — returns all non-deleted notes with `favorite: true`, ordered by title ascending
+- `updateNote()` — handles `favorite` field updates (does not trigger `captureVersion` or `syncNoteLinks`); when `favorite` is set to `true`, auto-assigns next `favoriteSortOrder` (max + 1)
+- `listFavoriteNotes(userId, sortBy?, sortOrder?)` — returns all non-deleted notes with `favorite: true`; supports sorting by `updatedAt` (default, desc), `createdAt`, `title`, or `sortOrder` (manual); maps `"sortOrder"` field to `favoriteSortOrder` column
+- `reorderFavoriteNotes(userId, order)` — batch-updates `favoriteSortOrder` for manual drag-and-drop reordering within the favorites panel
 - `toggleFolderFavorite(folderId, favorite)` — updates folder's favorite flag via `prisma.folder.update()`
 - `buildFolderTree()` — includes `favorite: f.favorite` in FolderInfo mapping
 - Raw SQL SELECTs (`keywordSearch`, `semanticSearch`, `hybridSearch`) — `"favorite"` added to all three column lists
 
 ### Mapper (`ns-api/src/lib/mappers.ts`)
 
-- `toNote()` — includes `favorite: row.favorite` in output
+- `toNote()` — includes `favorite: row.favorite` and `favoriteSortOrder: row.favoriteSortOrder` in output
 
 ### API Routes (`ns-api/src/routes/notes.ts`)
 
-- `GET /notes/favorites` — returns `{ notes: Note[] }` of all favorite notes (auth required)
+- `GET /notes/favorites` — returns `{ notes: Note[] }` of all favorite notes; accepts optional `sortBy` and `sortOrder` query params (auth required)
+- `PUT /notes/favorites/reorder` — batch-updates `favoriteSortOrder` for manual drag-and-drop reordering; accepts `{ order: [{ id, favoriteSortOrder }] }` body
 - `PATCH /notes/folders/:id/favorite` — toggles folder favorite flag, validates UUID, returns `{ id, favorite }`
 - `PATCH /notes/:id` — `favorite` added to update schema and empty-body check
+- All mutation routes broadcast SSE notifications via `sseHub.notify(userId)` for real-time cross-device sync
 
 ## Shared Types (`shared/src/ns/types.ts`)
 
-- `Note` — added `favorite: boolean`
+- `Note` — added `favorite: boolean` and `favoriteSortOrder: number`
 - `UpdateNoteRequest` — added `favorite?: boolean`
 - `FolderInfo` — added `favorite: boolean`
+- `ReorderFavoriteNotesRequest` — `{ order: { id: string; favoriteSortOrder: number }[] }`
 
 ## Frontend
 
 ### API Client (`ns-web/src/api/notes.ts`)
 
-- `fetchFavoriteNotes()` → `{ notes: Note[] }` — GET `/notes/favorites`
+- `fetchFavoriteNotes({ sortBy?, sortOrder? })` → `{ notes: Note[] }` — GET `/notes/favorites` with optional sort query params
+- `reorderFavoriteNotes(order)` — PUT `/notes/favorites/reorder` with `{ order }` body
 - `toggleFolderFavoriteApi(folderId, favorite)` → `{ id, favorite }` — PATCH `/notes/folders/:id/favorite`
 
 ### Offline Support (`ns-web/src/api/offlineNotes.ts`)
@@ -52,9 +59,11 @@ Users can mark notes and folders as favorites for quick access. A collapsible "F
 ### FavoritesPanel (`ns-web/src/components/FavoritesPanel.tsx`)
 
 - Collapsible section with localStorage persistence (`ns-favorites-collapsed`)
-- Header: "Favorites" label (uppercase, `text-sm text-muted-foreground tracking-wider`) with collapse toggle (▾ chevron)
+- Header row: "Favorites" label (uppercase, `text-sm text-muted-foreground tracking-wider`) with collapse toggle (▾ chevron), sort dropdown and asc/desc toggle inline on the right
+- Sort controls: dropdown (Manual/Modified/Created/Title) + direction button (↑/↓), matching notes sort styling; only shown when not collapsed
 - Renders nothing (not even the header) when no favorites exist
 - Folders listed first (📁 icon), then notes
+- Notes wrapped in `SortableContext` from `@dnd-kit/sortable` with `verticalListSortingStrategy`; each note uses `SortableFavoriteNoteItem` sub-component with `useSortable`; drag handle (☰) shown only in manual sort mode
 - Items styled to match FolderTree/NoteList: `px-2 py-1.5 rounded-md text-sm`, active state with `bg-accent`
 - Right-click context menu with "Unfavorite" option (fixed-position pattern matching FolderTree/NoteList)
 - Scrollable content with `max-h-[200px] overflow-y-auto`
@@ -74,13 +83,18 @@ Users can mark notes and folders as favorites for quick access. A collapsible "F
 
 ### NotesPage Integration (`ns-web/src/pages/NotesPage.tsx`)
 
-- `favoriteNotes` state with `loadFavoriteNotes()` callback (fetched on mount and after toggles)
+- `favoriteNotes` state with `loadFavoriteNotes()` callback (fetched on mount and after toggles/save)
 - `favoriteFolders` derived from `folders` state via `useMemo` (recursive collect where `f.favorite`)
+- `favSortBy` / `favSortOrder` state with localStorage persistence (`ns-fav-sort-by`, `ns-fav-sort-order`); default: `updatedAt` / `desc` (Modified Descending)
 - `handleToggleNoteFavorite(noteId, favorite)` — calls `updateNote()`, updates local notes state, reloads favorites
 - `handleToggleFolderFavorite(folderId, favorite)` — calls `toggleFolderFavoriteApi()`, refreshes folder tree
+- `handleFavSortByChange` / `handleFavSortOrderChange` — update state + persist to localStorage
+- `handleReorderFavoriteNotes(activeId, overId)` — strips `fav-note:` prefix, reorders array with `arrayMove`, optimistic update, calls `apiReorderFavoriteNotes`
 - `handleFavoriteNoteClick(noteId)` — navigates to favorited note (switches to "All Notes" if note not in current folder)
+- `handleDragEnd` — detects `fav-note:` prefixed drag IDs and routes to `handleReorderFavoriteNotes`
 - FavoritesPanel inserted above FolderTree in sidebar
-- `handleSave` syncs title/content changes to `favoriteNotes` state for real-time panel updates
+- `handleSave` syncs title/content changes to `favoriteNotes` state for real-time panel updates, then re-fetches both notes and favorites for correct sort order
+- Default note sort: `updatedAt` / `desc` (Modified Descending)
 - Section headers (Favorites, Folders, Notes) all use `text-sm` (14px)
 
 ## Tests
