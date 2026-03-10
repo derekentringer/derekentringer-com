@@ -395,7 +395,7 @@ export async function softDeleteNote(userId: string, id: string): Promise<boolea
   try {
     await prisma.note.update({
       where: { id, userId, deletedAt: null },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), favorite: false },
     });
     return true;
   } catch (error) {
