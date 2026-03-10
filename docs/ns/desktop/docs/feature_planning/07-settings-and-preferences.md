@@ -3,6 +3,7 @@
 **Status:** Complete
 **Phase:** 5 — Settings
 **Priority:** Medium
+**Completed:** v1.60.0 (initial), v1.61.0 (added 2FA settings)
 
 ## Summary
 
