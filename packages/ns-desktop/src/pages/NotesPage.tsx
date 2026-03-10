@@ -595,6 +595,7 @@ export function NotesPage() {
       setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
       tabNoteCacheRef.current.delete(selectedId);
       setNotes((prev) => prev.filter((n) => n.id !== selectedId));
+      setFavoriteNotes((prev) => prev.filter((n) => n.id !== selectedId));
       setSelectedId(null);
       setTitle("");
       setContent("");
@@ -615,6 +616,7 @@ export function NotesPage() {
       setOpenTabs((prev) => prev.filter((id) => id !== noteId));
       tabNoteCacheRef.current.delete(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      setFavoriteNotes((prev) => prev.filter((n) => n.id !== noteId));
       setTrashCount((c) => c + 1);
       if (selectedId === noteId) {
         setSelectedId(null);

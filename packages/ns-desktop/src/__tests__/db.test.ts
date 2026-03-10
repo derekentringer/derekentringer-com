@@ -326,6 +326,7 @@ describe("softDeleteNote", () => {
     const [sql, params] = mockExecute.mock.calls[0];
     expect(sql).toContain("is_deleted = 1");
     expect(sql).toContain("deleted_at");
+    expect(sql).toContain("favorite = 0");
     expect(params[1]).toBe("abc-123");
 
     // Should also call DELETE FROM notes_fts

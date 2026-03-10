@@ -377,7 +377,7 @@ describe("noteStore", () => {
       expect(result).toBe(true);
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
-        data: { deletedAt: expect.any(Date) },
+        data: { deletedAt: expect.any(Date), favorite: false },
       });
     });
 
