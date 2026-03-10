@@ -37,12 +37,14 @@ beforeEach(() => {
 
 function SettingsPageWrapper(props: {
   onBack: () => void;
+  onChangePassword?: () => void;
   onTrashRetentionChange?: (days: number) => void;
 }) {
   const { settings, updateSetting } = useEditorSettings();
   return (
     <SettingsPage
       onBack={props.onBack}
+      onChangePassword={props.onChangePassword}
       onTrashRetentionChange={props.onTrashRetentionChange}
       editorSettings={settings}
       updateEditorSetting={updateSetting}
@@ -78,8 +80,26 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Editor Preferences")).toBeInTheDocument();
     expect(screen.getByText("Trash")).toBeInTheDocument();
     expect(screen.getByText("Version History")).toBeInTheDocument();
+    expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument();
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
+  });
+
+  // --- Account ---
+
+  it("renders Change Password button in Account section", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Change Password")).toBeInTheDocument();
+  });
+
+  it("calls onChangePassword when Change Password button clicked", async () => {
+    const onChangePassword = vi.fn();
+    const onBack = vi.fn();
+    render(
+      <SettingsPageWrapper onBack={onBack} onChangePassword={onChangePassword} />,
+    );
+    await userEvent.click(screen.getByText("Change Password"));
+    expect(onChangePassword).toHaveBeenCalledTimes(1);
   });
 
   // --- Appearance ---
