@@ -366,4 +366,43 @@ describe("NoteList", () => {
 
     expect(onToggleFavorite).toHaveBeenCalledWith("note-fav", true);
   });
+
+  // Double-click tests
+  it("calls onDoubleClick when a note is double-clicked", async () => {
+    const onDoubleClick = vi.fn();
+    const note = makeNote({ id: "1", title: "Double Click Me" });
+
+    render(
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onDoubleClick={onDoubleClick}
+          sortByManual={false}
+        />
+      </DndWrapper>,
+    );
+
+    await userEvent.dblClick(screen.getByText("Double Click Me"));
+    expect(onDoubleClick).toHaveBeenCalledWith(note);
+  });
+
+  it("does not error when onDoubleClick is not provided", async () => {
+    const note = makeNote({ id: "1", title: "No Handler" });
+
+    render(
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          sortByManual={false}
+        />
+      </DndWrapper>,
+    );
+
+    // Should not throw
+    await userEvent.dblClick(screen.getByText("No Handler"));
+  });
 });

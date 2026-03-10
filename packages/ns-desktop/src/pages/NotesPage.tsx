@@ -8,7 +8,8 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
+import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import type {
   Note,
   NoteSearchResult,
@@ -61,6 +62,7 @@ import {
   type ViewMode,
 } from "../components/EditorToolbar.tsx";
 import { NoteList } from "../components/NoteList.tsx";
+import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { FolderTree } from "../components/FolderTree.tsx";
 import { TagBrowser } from "../components/TagBrowser.tsx";
@@ -92,11 +94,15 @@ export function NotesPage() {
   // Notes
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [previewTabId, setPreviewTabId] = useState<string | null>(null);
+  const tabNoteCacheRef = useRef<Map<string, Note>>(new Map());
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveGeneration, setSaveGeneration] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(editorSettings.defaultViewMode);
   const [showLineNumbers, setShowLineNumbers] = useState(editorSettings.showLineNumbers);
@@ -340,6 +346,18 @@ export function NotesPage() {
     return title !== loadedTitleRef.current || content !== loadedContentRef.current;
   }
 
+  const isDirtyValue = useMemo(() => {
+    return title !== loadedTitleRef.current || content !== loadedContentRef.current;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, content, saveGeneration]);
+
+  // Auto-pin preview tab when user edits content
+  useEffect(() => {
+    if (isDirtyValue && previewTabId && selectedId === previewTabId) {
+      setPreviewTabId(null);
+    }
+  }, [isDirtyValue, previewTabId, selectedId]);
+
   function selectNote(note: Note) {
     if (sidebarView !== "trash" && isDirty() && selectedId) {
       updateNote(selectedId, { title, content }).catch((err) =>
@@ -349,6 +367,7 @@ export function NotesPage() {
 
     loadedTitleRef.current = note.title;
     loadedContentRef.current = note.content;
+    tabNoteCacheRef.current.set(note.id, note);
     setSelectedId(note.id);
     setTitle(note.title);
     setContent(note.content);
@@ -380,6 +399,7 @@ export function NotesPage() {
       );
       loadedTitleRef.current = title;
       loadedContentRef.current = content;
+      setSaveGeneration((g) => g + 1);
       setSaveStatus("saved");
 
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
@@ -414,6 +434,122 @@ export function NotesPage() {
     };
   }, [title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
 
+  // --- Tab handlers ---
+
+  function handleNoteSelect(note: Note) {
+    if (openTabs.length === 0 || openTabs.includes(note.id)) {
+      selectNote(note);
+      return;
+    }
+
+    // Tabs exist, note is not in any tab — create or replace preview
+    if (previewTabId) {
+      setOpenTabs((prev) => prev.map((id) => id === previewTabId ? note.id : id));
+    } else {
+      setOpenTabs((prev) => [...prev, note.id]);
+    }
+    setPreviewTabId(note.id);
+    selectNote(note);
+  }
+
+  function openNoteAsTab(note: Note) {
+    // Double-clicking the preview note pins it
+    if (previewTabId === note.id) {
+      setPreviewTabId(null);
+      selectNote(note);
+      return;
+    }
+
+    // Close existing preview tab, add new note as permanent
+    const closingPreview = previewTabId;
+
+    setOpenTabs((prev) => {
+      let next = closingPreview ? prev.filter((id) => id !== closingPreview) : prev;
+      if (!next.includes(note.id)) {
+        next = [...next, note.id];
+      }
+      return next;
+    });
+    setPreviewTabId(null);
+    selectNote(note);
+  }
+
+  function pinTab(tabId: string) {
+    if (tabId === previewTabId) {
+      setPreviewTabId(null);
+    }
+  }
+
+  function switchTab(noteId: string) {
+    const note = notes.find((n) => n.id === noteId) ?? tabNoteCacheRef.current.get(noteId);
+    if (note) selectNote(note);
+  }
+
+  function closeTab(noteId: string) {
+    if (noteId === previewTabId) {
+      setPreviewTabId(null);
+    }
+
+    // If closing the active tab and it's dirty, fire-and-forget save
+    if (noteId === selectedId && isDirty()) {
+      updateNote(noteId, { title, content }).catch((err) =>
+        console.error("Failed to save changes:", err),
+      );
+    }
+
+    setOpenTabs((prev) => {
+      const idx = prev.indexOf(noteId);
+      const next = prev.filter((id) => id !== noteId);
+
+      // If closing the active tab, switch to adjacent
+      if (noteId === selectedId) {
+        if (next.length === 0) {
+          setSelectedId(null);
+          setTitle("");
+          setContent("");
+          loadedTitleRef.current = "";
+          loadedContentRef.current = "";
+          setConfirmDelete(false);
+        } else {
+          const newIdx = Math.min(idx, next.length - 1);
+          const newActiveId = next[newIdx];
+          const newNote = notes.find((n) => n.id === newActiveId) ?? tabNoteCacheRef.current.get(newActiveId);
+          if (newNote) selectNote(newNote);
+        }
+      }
+
+      // Clean up cache for closed tab
+      tabNoteCacheRef.current.delete(noteId);
+
+      return next;
+    });
+  }
+
+  function handleTabDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setOpenTabs((prev) => {
+      const oldIndex = prev.indexOf(String(active.id));
+      const newIndex = prev.indexOf(String(over.id));
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }
+
+  const tabsForDisplay: Tab[] = useMemo(() => {
+    return openTabs
+      .map((id) => {
+        const isPreview = id === previewTabId;
+        if (id === selectedId) {
+          return { id, title: title || "Untitled", isDirty: isDirtyValue, isPreview };
+        }
+        const note = notes.find((n) => n.id === id) ?? tabNoteCacheRef.current.get(id);
+        if (!note) return null;
+        return { id, title: note.title || "Untitled", isDirty: false, isPreview };
+      })
+      .filter((t): t is Tab => t !== null);
+  }, [openTabs, selectedId, title, isDirtyValue, notes, previewTabId]);
+
   // --- CRUD handlers ---
 
   async function handleCreate() {
@@ -422,7 +558,7 @@ export function NotesPage() {
         activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined;
       const note = await createNote({ title: "Untitled", folderId });
       setNotes((prev) => [note, ...prev]);
-      selectNote(note);
+      openNoteAsTab(note);
       await refreshSidebarData();
       loadNoteTitles();
       setTimeout(() => {
@@ -445,6 +581,9 @@ export function NotesPage() {
 
     try {
       await softDeleteNote(selectedId);
+      if (selectedId === previewTabId) setPreviewTabId(null);
+      setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
+      tabNoteCacheRef.current.delete(selectedId);
       setNotes((prev) => prev.filter((n) => n.id !== selectedId));
       setSelectedId(null);
       setTitle("");
@@ -462,6 +601,9 @@ export function NotesPage() {
   async function handleDeleteNote(noteId: string) {
     try {
       await softDeleteNote(noteId);
+      if (noteId === previewTabId) setPreviewTabId(null);
+      setOpenTabs((prev) => prev.filter((id) => id !== noteId));
+      tabNoteCacheRef.current.delete(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
       setTrashCount((c) => c + 1);
       if (selectedId === noteId) {
@@ -571,7 +713,7 @@ export function NotesPage() {
   function handleFavoriteNoteClick(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
-      selectNote(note);
+      openNoteAsTab(note);
       return;
     }
     fetchNoteById(noteId)
@@ -580,7 +722,7 @@ export function NotesPage() {
           setNotes((prev) =>
             prev.some((n) => n.id === fetched.id) ? prev : [fetched, ...prev],
           );
-          selectNote(fetched);
+          openNoteAsTab(fetched);
         }
       })
       .catch(() => showError("Favorited note not found"));
@@ -860,7 +1002,7 @@ export function NotesPage() {
 
   const selectedNote = (sidebarView === "trash"
     ? trashNotes.find((n) => n.id === selectedId)
-    : notes.find((n) => n.id === selectedId)) ?? null;
+    : notes.find((n) => n.id === selectedId) ?? (selectedId ? tabNoteCacheRef.current.get(selectedId) : undefined)) ?? null;
 
   // --- Wiki-link memoized values ---
 
@@ -903,7 +1045,7 @@ export function NotesPage() {
   function handleWikiLinkClick(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
-      selectNote(note);
+      openNoteAsTab(note);
       return;
     }
     fetchNoteById(noteId)
@@ -912,7 +1054,7 @@ export function NotesPage() {
           setNotes((prev) =>
             prev.some((n) => n.id === fetched.id) ? prev : [fetched, ...prev],
           );
-          selectNote(fetched);
+          openNoteAsTab(fetched);
         }
       })
       .catch(() => showError("Linked note not found"));
@@ -1089,7 +1231,8 @@ export function NotesPage() {
                   <NoteList
                     notes={filteredNotes}
                     selectedId={selectedId}
-                    onSelect={selectNote}
+                    onSelect={handleNoteSelect}
+                    onDoubleClick={openNoteAsTab}
                     onDeleteNote={handleDeleteNote}
                     onToggleFavorite={handleToggleNoteFavorite}
                     searchResults={searchResults}
@@ -1104,7 +1247,8 @@ export function NotesPage() {
                 <NoteList
                   notes={filteredNotes}
                   selectedId={selectedId}
-                  onSelect={selectNote}
+                  onSelect={handleNoteSelect}
+                  onDoubleClick={openNoteAsTab}
                   onDeleteNote={handleDeleteNote}
                   onToggleFavorite={handleToggleNoteFavorite}
                   sortByManual={sortBy === "sortOrder"}
@@ -1246,6 +1390,17 @@ export function NotesPage() {
       {/* Editor area */}
       <main className="flex-1 flex min-w-0 relative">
       <div className="flex-1 flex flex-col min-w-0">
+        {openTabs.length > 0 && sidebarView === "notes" && (
+          <DndContext sensors={dndSensors} collisionDetection={closestCenter} modifiers={[restrictToHorizontalAxis]} onDragEnd={handleTabDragEnd}>
+            <TabBar
+              tabs={tabsForDisplay}
+              activeTabId={selectedId}
+              onSelectTab={switchTab}
+              onCloseTab={closeTab}
+              onPinTab={pinTab}
+            />
+          </DndContext>
+        )}
         {selectedNote && sidebarView === "trash" ? (
           <>
             {/* Trash toolbar */}
