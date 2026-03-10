@@ -51,7 +51,7 @@
 - [x] [03 — Note Linking + Backlinks](features/03-note-linking.md)
 - [x] [04 — Version History](features/04-version-history.md)
 - [x] [05 — Favorites](features/05-favorites.md)
-- [ ] [06 — Editor Tabs](feature_planning/06-editor-tabs.md)
+- [x] [06 — Editor Tabs](features/06-editor-tabs.md)
 
 ### Phase 5: Settings — Medium Priority
 
