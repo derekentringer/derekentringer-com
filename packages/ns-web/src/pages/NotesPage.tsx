@@ -612,6 +612,7 @@ export function NotesPage() {
       if (selectedId === previewTabId) setPreviewTabId(null);
       setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
       setNotes((prev) => prev.filter((n) => n.id !== selectedId));
+      setFavoriteNotes((prev) => prev.filter((n) => n.id !== selectedId));
       setSelectedId(null);
       setTitle("");
       setContent("");
@@ -632,6 +633,7 @@ export function NotesPage() {
       if (noteId === previewTabId) setPreviewTabId(null);
       setOpenTabs((prev) => prev.filter((id) => id !== noteId));
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      setFavoriteNotes((prev) => prev.filter((n) => n.id !== noteId));
       if (selectedId === noteId) {
         setSelectedId(null);
         setTitle("");

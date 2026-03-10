@@ -319,7 +319,7 @@ export async function softDeleteNote(id: string): Promise<void> {
   const db = await getDb();
   const now = new Date().toISOString();
   await db.execute(
-    "UPDATE notes SET is_deleted = 1, deleted_at = $1, updated_at = $1 WHERE id = $2",
+    "UPDATE notes SET is_deleted = 1, deleted_at = $1, updated_at = $1, favorite = 0 WHERE id = $2",
     [now, id],
   );
   await ftsDelete(id);
