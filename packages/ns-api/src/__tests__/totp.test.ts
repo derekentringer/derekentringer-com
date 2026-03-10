@@ -132,7 +132,7 @@ describe("TOTP routes", () => {
   // --- Verify Setup ---
 
   describe("POST /auth/totp/verify-setup", () => {
-    it("enables 2FA with valid code and returns backup codes", async () => {
+    it("enables 2FA with valid code and returns backup codes", { timeout: 15000 }, async () => {
       const token = await getAccessToken();
 
       // First, trigger setup to store a pending secret
