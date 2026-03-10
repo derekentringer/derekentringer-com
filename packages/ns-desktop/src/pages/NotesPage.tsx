@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   DndContext,
   closestCenter,
@@ -16,6 +16,7 @@ import type {
   TagInfo,
   NoteSortField,
   SortOrder,
+  NoteTitleEntry,
 } from "@derekentringer/ns-shared";
 import {
   fetchNotes,
@@ -39,6 +40,9 @@ import {
   initFts,
   reorderNotes,
   moveFolderParent,
+  syncNoteLinks,
+  listNoteTitles,
+  fetchNoteById,
 } from "../lib/db.ts";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import {
@@ -46,6 +50,7 @@ import {
   type MarkdownEditorHandle,
 } from "../components/MarkdownEditor.tsx";
 import { MarkdownPreview } from "../components/MarkdownPreview.tsx";
+import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import {
   EditorToolbar,
   type ViewMode,
@@ -57,6 +62,7 @@ import { TagInput } from "../components/TagInput.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
+import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
@@ -114,6 +120,11 @@ export function NotesPage() {
     const stored = localStorage.getItem(TRASH_RETENTION_KEY);
     return stored !== null ? Number(stored) : 30;
   });
+
+  // Note titles (for wiki-link autocomplete)
+  const [noteTitles, setNoteTitles] = useState<NoteTitleEntry[]>([]);
+  const noteTitlesRef = useRef<NoteTitleEntry[]>([]);
+  noteTitlesRef.current = noteTitles;
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
@@ -183,6 +194,10 @@ export function NotesPage() {
       .catch(() => {});
   }, []);
 
+  const loadNoteTitles = useCallback(async () => {
+    try { setNoteTitles(await listNoteTitles()); } catch {}
+  }, []);
+
   async function loadData() {
     try {
       await initFts();
@@ -194,6 +209,7 @@ export function NotesPage() {
       setNotes(notesResult);
       setFolders(foldersResult);
       setTags(tagsResult);
+      loadNoteTitles();
 
       // Auto-purge old trash
       const retention = Number(localStorage.getItem(TRASH_RETENTION_KEY) ?? 30);
@@ -312,6 +328,8 @@ export function NotesPage() {
       );
       loadedTitleRef.current = title;
       loadedContentRef.current = content;
+      await syncNoteLinks(selectedId, content);
+      loadNoteTitles();
       setSaveStatus("saved");
 
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
@@ -350,6 +368,7 @@ export function NotesPage() {
       setNotes((prev) => [note, ...prev]);
       selectNote(note);
       await refreshSidebarData();
+      loadNoteTitles();
       setTimeout(() => {
         const titleInput = document.querySelector<HTMLInputElement>("[data-title-input]");
         titleInput?.select();
@@ -377,6 +396,7 @@ export function NotesPage() {
       setConfirmDelete(false);
       setTrashCount((c) => c + 1);
       await refreshSidebarData();
+      loadNoteTitles();
     } catch (err) {
       console.error("Failed to delete note:", err);
       showError("Failed to delete note");
@@ -396,6 +416,7 @@ export function NotesPage() {
         loadedContentRef.current = "";
       }
       await refreshSidebarData();
+      loadNoteTitles();
     } catch (err) {
       console.error("Failed to delete note:", err);
       showError("Failed to delete note");
@@ -601,6 +622,7 @@ export function NotesPage() {
         setConfirmPermanentDelete(false);
       }
       await refreshSidebarData();
+      loadNoteTitles();
     } catch (err) {
       console.error("Failed to restore note:", err);
       showError("Failed to restore note");
@@ -742,6 +764,37 @@ export function NotesPage() {
   const selectedNote = (sidebarView === "trash"
     ? trashNotes.find((n) => n.id === selectedId)
     : notes.find((n) => n.id === selectedId)) ?? null;
+
+  // --- Wiki-link memoized values ---
+
+  const wikiLinkTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of noteTitles) map.set(t.title.toLowerCase(), t.id);
+    return map;
+  }, [noteTitles]);
+
+  const wikiLinkExt = useMemo(
+    () => wikiLinkAutocomplete(() => noteTitlesRef.current),
+    [],
+  );
+
+  function handleWikiLinkClick(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      selectNote(note);
+      return;
+    }
+    fetchNoteById(noteId)
+      .then((fetched) => {
+        if (fetched) {
+          setNotes((prev) =>
+            prev.some((n) => n.id === fetched.id) ? prev : [fetched, ...prev],
+          );
+          selectNote(fetched);
+        }
+      })
+      .catch(() => showError("Linked note not found"));
+  }
 
   return (
     <div className="flex h-full">
@@ -1211,6 +1264,7 @@ export function NotesPage() {
                   fontSize={editorSettings.editorFontSize}
                   theme={resolvedTheme}
                   accentColor={accentHex}
+                  extensions={[wikiLinkExt]}
                   className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                   style={viewMode === "split" ? { width: splitResize.size } : undefined}
                 />
@@ -1226,9 +1280,14 @@ export function NotesPage() {
                 <MarkdownPreview
                   content={content}
                   className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
+                  wikiLinkTitleMap={wikiLinkTitleMap}
+                  onWikiLinkClick={handleWikiLinkClick}
                 />
               )}
             </div>
+            {selectedId && sidebarView !== "trash" && (
+              <BacklinksPanel noteId={selectedId} onNavigate={handleWikiLinkClick} />
+            )}
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
