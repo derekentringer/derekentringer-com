@@ -33,6 +33,18 @@ pub fn run() {
             sql: include_str!("../migrations/005.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "add deleted_at to folders for soft-delete sync",
+            sql: include_str!("../migrations/006.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 7,
+            description: "add favorite_sort_order to notes",
+            sql: include_str!("../migrations/007.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

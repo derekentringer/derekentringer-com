@@ -34,6 +34,7 @@ import {
   fetchNoteTitles,
   restoreVersion,
   fetchFavoriteNotes,
+  reorderFavoriteNotes as apiReorderFavoriteNotes,
   toggleFolderFavoriteApi,
 } from "../api/offlineNotes.ts";
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
@@ -67,6 +68,7 @@ import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { DiffView } from "../components/DiffView.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
+import { connectSseStream } from "../api/sse.ts";
 import { ImportButton } from "../components/ImportButton.tsx";
 import {
   parseFileList,
@@ -115,8 +117,8 @@ export function NotesPage() {
   titleRef.current = title;
 
   // Note sort state
-  const [sortBy, setSortBy] = useState<NoteSortField>("sortOrder");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+  const [sortBy, setSortBy] = useState<NoteSortField>("updatedAt");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
   // Folder state
   const [folders, setFolders] = useState<FolderInfo[]>([]);
@@ -129,6 +131,16 @@ export function NotesPage() {
 
   // Favorites state
   const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
+  const [favSortBy, setFavSortBy] = useState<NoteSortField>(() => {
+    try {
+      return (localStorage.getItem("ns-fav-sort-by") as NoteSortField) || "updatedAt";
+    } catch { return "updatedAt"; }
+  });
+  const [favSortOrder, setFavSortOrder] = useState<SortOrder>(() => {
+    try {
+      return (localStorage.getItem("ns-fav-sort-order") as SortOrder) || "desc";
+    } catch { return "desc"; }
+  });
 
   // Trash state
   const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
@@ -305,12 +317,12 @@ export function NotesPage() {
 
   const loadFavoriteNotes = useCallback(async () => {
     try {
-      const result = await fetchFavoriteNotes();
+      const result = await fetchFavoriteNotes({ sortBy: favSortBy, sortOrder: favSortOrder });
       setFavoriteNotes(result.notes);
     } catch {
       // Silent fail
     }
-  }, []);
+  }, [favSortBy, favSortOrder]);
 
   const favoriteFolders = useMemo(() => {
     const result: FolderInfo[] = [];
@@ -357,6 +369,38 @@ export function NotesPage() {
       loadTrash();
     }
   }, [sidebarView, loadTrash]);
+
+  // SSE for real-time sync notifications (replaces 30s polling)
+  useEffect(() => {
+    let sseConn: { disconnect: () => void } | null = null;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handleSyncEvent = () => {
+      // Debounce 500ms — multiple rapid pushes collapse into one reload
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadNotes(debouncedSearch || undefined);
+        loadFolders();
+        loadFavoriteNotes();
+      }, 500);
+    };
+
+    sseConn = connectSseStream(handleSyncEvent);
+
+    // Fallback poll at 120s (safety net if SSE drops silently)
+    const FALLBACK_POLL_MS = 120_000;
+    const fallbackTimer = setInterval(() => {
+      loadNotes(debouncedSearch || undefined);
+      loadFolders();
+      loadFavoriteNotes();
+    }, FALLBACK_POLL_MS);
+
+    return () => {
+      sseConn?.disconnect();
+      if (debounceTimer) clearTimeout(debounceTimer);
+      clearInterval(fallbackTimer);
+    };
+  }, [loadNotes, loadFolders, loadFavoriteNotes, debouncedSearch]);
 
   // Reconcile temp IDs after offline sync
   useEffect(() => {
@@ -592,12 +636,16 @@ export function NotesPage() {
       setIsDirty(false);
       loadNoteTitles();
       setVersionRefreshKey((k) => k + 1);
+
+      // Re-fetch so sort order is respected (e.g. modified-desc moves edited note to top)
+      loadNotes(debouncedSearch || undefined);
+      loadFavoriteNotes();
     } catch {
       showError("Failed to save note");
     } finally {
       setIsSaving(false);
     }
-  }, [selectedId, isDirty, isSaving, title, content, loadNoteTitles]);
+  }, [selectedId, isDirty, isSaving, title, content, loadNoteTitles, loadNotes, loadFavoriteNotes, debouncedSearch]);
 
   async function handleDelete() {
     if (!selectedId) return;
@@ -729,6 +777,12 @@ export function NotesPage() {
 
     const activeId = String(active.id);
     const overId = String(over.id);
+
+    // Favorite note reorder
+    if (activeId.startsWith("fav-note:") && overId.startsWith("fav-note:")) {
+      handleReorderFavoriteNotes(activeId, overId);
+      return;
+    }
 
     // Folder → Folder (nesting) or Folder → Root
     if (activeId.startsWith("drag-folder:")) {
@@ -1105,6 +1159,22 @@ export function NotesPage() {
     return () => clearTimeout(timer);
   }, [isDirty, title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
 
+  // Auto-refresh editor content when notes array updates (e.g. after sync)
+  useEffect(() => {
+    if (!selectedId || sidebarView === "trash") return;
+    const updatedNote = notes.find((n) => n.id === selectedId);
+    if (!updatedNote) return;
+    const titleChanged = updatedNote.title !== loadedTitleRef.current;
+    const contentChanged = updatedNote.content !== loadedContentRef.current;
+    if ((titleChanged || contentChanged) && !isDirty) {
+      loadedTitleRef.current = updatedNote.title;
+      loadedContentRef.current = updatedNote.content;
+      setTitle(updatedNote.title);
+      setContent(updatedNote.content);
+      tabNoteCacheRef.current.set(updatedNote.id, updatedNote as Note);
+    }
+  }, [notes, selectedId, sidebarView, isDirty]);
+
   const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
   // Resolve "system" theme to actual "dark" or "light" for CodeMirror
@@ -1169,6 +1239,39 @@ export function NotesPage() {
       loadFolders();
     } catch {
       showError("Failed to update favorite");
+    }
+  }
+
+  function handleFavSortByChange(field: NoteSortField) {
+    setFavSortBy(field);
+    try { localStorage.setItem("ns-fav-sort-by", field); } catch {}
+  }
+
+  function handleFavSortOrderChange(order: SortOrder) {
+    setFavSortOrder(order);
+    try { localStorage.setItem("ns-fav-sort-order", order); } catch {}
+  }
+
+  async function handleReorderFavoriteNotes(activeId: string, overId: string) {
+    const stripPrefix = (id: string) => id.replace("fav-note:", "");
+    const aId = stripPrefix(activeId);
+    const oId = stripPrefix(overId);
+
+    const oldIndex = favoriteNotes.findIndex((n) => n.id === aId);
+    const newIndex = favoriteNotes.findIndex((n) => n.id === oId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove([...favoriteNotes], oldIndex, newIndex);
+    const updated = reordered.map((n, i) => ({ ...n, favoriteSortOrder: i }));
+    setFavoriteNotes(updated);
+
+    try {
+      await apiReorderFavoriteNotes({
+        order: updated.map((n) => ({ id: n.id, favoriteSortOrder: n.favoriteSortOrder })),
+      });
+    } catch {
+      showError("Failed to reorder favorites");
+      loadFavoriteNotes();
     }
   }
 
@@ -1458,6 +1561,10 @@ export function NotesPage() {
                   onSelectNote={handleFavoriteNoteClick}
                   onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
                   onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
+                  favSortBy={favSortBy}
+                  favSortOrder={favSortOrder}
+                  onFavSortByChange={handleFavSortByChange}
+                  onFavSortOrderChange={handleFavSortOrderChange}
                 />
               )}
               <FolderTree
@@ -1482,7 +1589,8 @@ export function NotesPage() {
 
             <div className="px-2 py-1">
               <div className="flex items-center justify-between px-1 mb-1">
-                <span className="text-sm text-muted-foreground uppercase tracking-wider">
+                <span className="text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg>
                   {debouncedSearch ? "Search Results" : "Notes"}
                 </span>
                 {!debouncedSearch && (

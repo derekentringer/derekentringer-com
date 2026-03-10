@@ -56,6 +56,7 @@ const sampleRow = {
   summary: "A summary",
   favorite: 0,
   sort_order: 1,
+  favorite_sort_order: 0,
   is_deleted: 0,
   deleted_at: null,
   sync_status: "pending",
@@ -63,7 +64,9 @@ const sampleRow = {
   updated_at: "2024-01-02T00:00:00.000Z",
 };
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Flush fire-and-forget promises (enqueueSyncAction) from previous test
+  await new Promise((r) => setTimeout(r, 0));
   vi.clearAllMocks();
 });
 
@@ -84,13 +87,14 @@ describe("fetchNotes", () => {
       summary: "A summary",
       favorite: false,
       sortOrder: 1,
+      favoriteSortOrder: 0,
       createdAt: "2024-01-01T00:00:00.000Z",
       updatedAt: "2024-01-02T00:00:00.000Z",
       deletedAt: null,
     });
   });
 
-  it("queries non-deleted notes ordered by updated_at", async () => {
+  it("queries non-deleted notes ordered by updated_at desc", async () => {
     mockSelect.mockResolvedValue([]);
     await fetchNotes();
 
@@ -131,7 +135,7 @@ describe("fetchNotes", () => {
     await fetchNotes({ sortBy: "title", sortOrder: "asc" });
 
     expect(mockSelect).toHaveBeenCalledWith(
-      expect.stringContaining("ORDER BY title ASC"),
+      expect.stringContaining("ORDER BY title COLLATE NOCASE ASC"),
       [],
     );
   });
@@ -456,36 +460,44 @@ describe("renameFolder", () => {
 describe("deleteFolder", () => {
   it("move-up mode: moves children and notes to parent", async () => {
     mockSelect.mockResolvedValueOnce([
-      { id: "f1", name: "Work", parent_id: "root-id", sort_order: 0, favorite: 0, created_at: "2024-01-01", updated_at: "2024-01-01" },
+      { id: "f1", name: "Work", parent_id: "root-id", sort_order: 0, favorite: 0, created_at: "2024-01-01", updated_at: "2024-01-01", deleted_at: null },
     ]);
     mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
 
     await deleteFolder("f1", "move-up");
+    await new Promise((r) => setTimeout(r, 0)); // flush enqueue
 
-    // Should: SELECT folder, UPDATE children folders, UPDATE notes, DELETE folder
-    expect(mockExecute).toHaveBeenCalledTimes(3);
-    const calls = mockExecute.mock.calls;
-    expect(calls[0][0]).toContain("UPDATE folders SET parent_id");
-    expect(calls[1][0]).toContain("UPDATE notes SET folder_id");
-    expect(calls[2][0]).toContain("DELETE FROM folders");
+    const moveChildrenCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      (c[0] as string).includes("UPDATE folders SET parent_id"),
+    );
+    expect(moveChildrenCalls.length).toBe(1);
+
+    const moveNotesCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      (c[0] as string).includes("UPDATE notes SET folder_id"),
+    );
+    expect(moveNotesCalls.length).toBe(1);
+
+    const softDeleteCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      (c[0] as string).includes("UPDATE folders SET deleted_at"),
+    );
+    expect(softDeleteCalls.length).toBe(1);
   });
 
   it("recursive mode: deletes folder and descendants", async () => {
     // collectDescendantFolderIds for f1
     mockSelect
       .mockResolvedValueOnce([{ id: "f2" }]) // children of f1
-      .mockResolvedValueOnce([]) // children of f2 (none)
-      .mockResolvedValueOnce([]) // notes in f2
-      .mockResolvedValueOnce([]); // notes in f1
+      .mockResolvedValueOnce([]); // children of f2 (none)
     mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
 
     await deleteFolder("f1", "recursive");
+    await new Promise((r) => setTimeout(r, 0)); // flush enqueue
 
-    // Should delete folders in reverse order (f1, f2 reversed = f2 first, then f1)
-    const deleteCalls = mockExecute.mock.calls.filter((call: unknown[]) =>
-      (call[0] as string).includes("DELETE FROM folders"),
+    // Should soft-delete both folders
+    const softDeleteCalls = mockExecute.mock.calls.filter((call: unknown[]) =>
+      (call[0] as string).includes("UPDATE folders SET deleted_at"),
     );
-    expect(deleteCalls.length).toBe(2);
+    expect(softDeleteCalls.length).toBe(2);
   });
 });
 
@@ -596,16 +608,15 @@ describe("reorderNotes", () => {
       { id: "n2", sortOrder: 1 },
       { id: "n3", sortOrder: 2 },
     ]);
+    await new Promise((r) => setTimeout(r, 0)); // flush enqueue
 
-    expect(mockExecute).toHaveBeenCalledTimes(3);
-    for (let i = 0; i < 3; i++) {
-      const [sql] = mockExecute.mock.calls[i];
-      expect(sql).toContain("UPDATE notes SET sort_order");
-    }
-    // Check the sort_order values
-    expect(mockExecute.mock.calls[0][1][0]).toBe(0);
-    expect(mockExecute.mock.calls[1][1][0]).toBe(1);
-    expect(mockExecute.mock.calls[2][1][0]).toBe(2);
+    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      (c[0] as string).includes("UPDATE notes SET sort_order"),
+    );
+    expect(updateCalls.length).toBe(3);
+    expect(updateCalls[0][1][0]).toBe(0);
+    expect(updateCalls[1][1][0]).toBe(1);
+    expect(updateCalls[2][1][0]).toBe(2);
   });
 
   it("handles empty order array", async () => {
@@ -646,12 +657,12 @@ describe("reorderFolders", () => {
       { id: "f1", sortOrder: 0 },
       { id: "f2", sortOrder: 1 },
     ]);
+    await new Promise((r) => setTimeout(r, 0)); // flush enqueue
 
-    expect(mockExecute).toHaveBeenCalledTimes(2);
-    for (let i = 0; i < 2; i++) {
-      const [sql] = mockExecute.mock.calls[i];
-      expect(sql).toContain("UPDATE folders SET sort_order");
-    }
+    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      (c[0] as string).includes("UPDATE folders SET sort_order"),
+    );
+    expect(updateCalls.length).toBe(2);
   });
 
   it("handles empty order array", async () => {

@@ -115,6 +115,7 @@ describe("AI routes", () => {
       tags: ["existing-tag"],
       summary: null,
       sortOrder: 0,
+      favoriteSortOrder: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,

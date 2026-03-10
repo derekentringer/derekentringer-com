@@ -7,6 +7,7 @@ import type {
   SortOrder,
   FolderListResponse,
   ReorderNotesRequest,
+  ReorderFavoriteNotesRequest,
   ReorderFoldersRequest,
   TagListResponse,
 } from "@derekentringer/shared/ns";
@@ -24,6 +25,7 @@ import {
   createFolder,
   listFolders,
   reorderNotes,
+  reorderFavoriteNotes,
   renameFolder,
   deleteFolder,
   renameFolderById,
@@ -201,10 +203,73 @@ export default async function noteRoutes(fastify: FastifyInstance) {
   // GET /notes/favorites — MUST be before /:id
   fastify.get(
     "/favorites",
-    async (request: FastifyRequest, reply: FastifyReply) => {
+    async (
+      request: FastifyRequest<{
+        Querystring: { sortBy?: string; sortOrder?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
       const userId = request.user.sub;
-      const notes = await listFavoriteNotes(userId);
+      const { sortBy, sortOrder } = request.query;
+
+      if (sortBy && !VALID_SORT_FIELDS.includes(sortBy as NoteSortField)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: `Invalid sortBy value. Must be one of: ${VALID_SORT_FIELDS.join(", ")}`,
+        });
+      }
+      if (sortOrder && !VALID_SORT_ORDERS.includes(sortOrder as SortOrder)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: `Invalid sortOrder value. Must be one of: ${VALID_SORT_ORDERS.join(", ")}`,
+        });
+      }
+
+      const notes = await listFavoriteNotes(
+        userId,
+        sortBy as NoteSortField | undefined,
+        sortOrder as SortOrder | undefined,
+      );
       return reply.send({ notes: notes.map(toNote) });
+    },
+  );
+
+  // PUT /notes/favorites/reorder — MUST be before /:id
+  fastify.put<{ Body: ReorderFavoriteNotesRequest }>(
+    "/favorites/reorder",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["order"],
+          additionalProperties: false,
+          properties: {
+            order: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "favoriteSortOrder"],
+                additionalProperties: false,
+                properties: {
+                  id: { type: "string" },
+                  favoriteSortOrder: { type: "integer" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: ReorderFavoriteNotesRequest }>,
+      reply: FastifyReply,
+    ) => {
+      const userId = request.user.sub;
+      await reorderFavoriteNotes(userId, request.body.order);
+      fastify.sseHub.notify(userId);
+      return reply.status(204).send();
     },
   );
 
@@ -234,6 +299,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
           request.body.name,
           request.body.parentId,
         );
+        fastify.sseHub.notify(userId);
         return reply.status(201).send({
           id: folder.id,
           name: folder.name,
@@ -268,6 +334,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     ) => {
       const userId = request.user.sub;
       await reorderNotes(userId, request.body.order);
+      fastify.sseHub.notify(userId);
       return reply.status(204).send();
     },
   );
@@ -298,6 +365,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       const { name } = request.params;
       const { newName } = request.body;
       const updated = await renameTag(userId, name, newName);
+      fastify.sseHub.notify(userId);
       return reply.send({ updated });
     },
   );
@@ -312,6 +380,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       const userId = request.user.sub;
       const { name } = request.params;
       const updated = await removeTag(userId, name);
+      fastify.sseHub.notify(userId);
       return reply.send({ updated });
     },
   );
@@ -425,6 +494,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
       const deleted = await permanentDeleteTrash(userId, ids);
+      fastify.sseHub.notify(userId);
       return reply.send({ deleted });
     },
   );
@@ -636,6 +706,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
+      fastify.sseHub.notify(userId);
       return reply.send({ note: toNote(updated) });
     },
   );
@@ -680,6 +751,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     ) => {
       const userId = request.user.sub;
       const note = await createNote(userId, request.body);
+      fastify.sseHub.notify(userId);
       return reply.status(201).send({ note: toNote(note) });
     },
   );
@@ -694,6 +766,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     ) => {
       const userId = request.user.sub;
       await reorderFolders(userId, request.body.order);
+      fastify.sseHub.notify(userId);
       return reply.status(204).send();
     },
   );
@@ -735,6 +808,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
 
       try {
         const folder = await toggleFolderFavorite(userId, id, request.body.favorite);
+        fastify.sseHub.notify(userId);
         return reply.send({ id: folder.id, favorite: folder.favorite });
       } catch (error) {
         if (isNotFoundError(error)) {
@@ -767,6 +841,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       const { id } = request.params;
       try {
         const folder = await moveFolder(userId, id, request.body.parentId, request.body.sortOrder);
+        fastify.sseHub.notify(userId);
         return reply.send({
           id: folder.id,
           name: folder.name,
@@ -805,6 +880,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       if (UUID_REGEX.test(id)) {
         try {
           const folder = await renameFolderById(userId, id, newName);
+          fastify.sseHub.notify(userId);
           return reply.send({ id: folder.id, name: folder.name });
         } catch (error) {
           if (isNotFoundError(error)) {
@@ -832,6 +908,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
 
       // Legacy name-based rename
       const updated = await renameFolder(userId, id, newName);
+      fastify.sseHub.notify(userId);
       return reply.send({ updated });
     },
   );
@@ -861,11 +938,13 @@ export default async function noteRoutes(fastify: FastifyInstance) {
           });
         }
         const updated = await deleteFolderById(userId, id, mode ?? "move-up");
+        fastify.sseHub.notify(userId);
         return reply.send({ updated });
       }
 
       // Legacy name-based delete
       const updated = await deleteFolder(userId, id);
+      fastify.sseHub.notify(userId);
       return reply.send({ updated });
     },
   );
@@ -896,6 +975,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
+      fastify.sseHub.notify(userId);
       return reply.send({ note: toNote(note) });
     },
   );
@@ -944,6 +1024,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
+      fastify.sseHub.notify(userId);
       return reply.send({ note: toNote(note) });
     },
   );
@@ -974,6 +1055,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
+      fastify.sseHub.notify(userId);
       return reply.status(204).send();
     },
   );
@@ -1004,6 +1086,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         });
       }
 
+      fastify.sseHub.notify(userId);
       return reply.status(204).send();
     },
   );

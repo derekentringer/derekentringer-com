@@ -46,6 +46,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     summary: null,
     favorite: false,
     sortOrder: 0,
+    favoriteSortOrder: 0,
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
     deletedAt: null,
