@@ -26,7 +26,7 @@ describe("useEditorSettings", () => {
     expect(settings.editorFontSize).toBe(14);
     expect(settings.maxCachedNotes).toBe(100);
     expect(settings.accentColor).toBe("lime");
-    expect(settings.versionIntervalMinutes).toBe(15);
+    expect(settings.versionIntervalMinutes).toBe(0);
   });
 
   it("loads saved settings from localStorage", () => {
@@ -97,9 +97,9 @@ describe("useEditorSettings", () => {
     expect(result.current.settings.maxCachedNotes).toBe(500);
   });
 
-  it("returns default versionIntervalMinutes of 15", () => {
+  it("returns default versionIntervalMinutes of 0", () => {
     const { result } = renderHook(() => useEditorSettings());
-    expect(result.current.settings.versionIntervalMinutes).toBe(15);
+    expect(result.current.settings.versionIntervalMinutes).toBe(0);
   });
 
   it("persists versionIntervalMinutes", () => {

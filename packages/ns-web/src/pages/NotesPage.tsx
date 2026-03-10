@@ -206,6 +206,7 @@ export function NotesPage() {
   const [focusMode, setFocusMode] = useState(false);
   const focusModeDrawerRef = useRef(false);
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
+  const [versionRefreshKey, setVersionRefreshKey] = useState(0);
   const qaResize = useResizable({
     direction: "vertical",
     initialSize: 350,
@@ -590,6 +591,7 @@ export function NotesPage() {
       loadedContentRef.current = content;
       setIsDirty(false);
       loadNoteTitles();
+      setVersionRefreshKey((k) => k + 1);
     } catch {
       showError("Failed to save note");
     } finally {
@@ -2120,6 +2122,7 @@ export function NotesPage() {
                 noteId={selectedId}
                 onSelectVersion={setSelectedVersion}
                 selectedVersionId={selectedVersion?.id}
+                refreshKey={versionRefreshKey}
               />
             ) : null}
           </div>
