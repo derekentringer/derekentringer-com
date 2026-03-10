@@ -59,7 +59,7 @@
 
 ### Phase 6: Auth & Sync — Medium Priority
 
-- [ ] [08 — Auth](feature_planning/08-auth.md)
+- [x] [08 — Auth](features/08-auth.md)
 - [ ] [09 — Sync Engine](feature_planning/09-sync-engine.md)
 
 ### Phase 7: AI — Medium Priority

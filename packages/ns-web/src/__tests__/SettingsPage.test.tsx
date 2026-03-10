@@ -69,7 +69,15 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Version History")).toBeInTheDocument();
     expect(screen.getByText("AI Features")).toBeInTheDocument();
     expect(screen.getByText("Offline Cache")).toBeInTheDocument();
+    expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
+  });
+
+  // --- Account ---
+
+  it("renders Change Password button in Account section", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Change Password")).toBeInTheDocument();
   });
 
   // --- Editor Preferences ---

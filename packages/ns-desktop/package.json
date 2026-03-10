@@ -29,6 +29,7 @@
     "@tailwindcss/vite": "^4.2.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
+    "@tauri-apps/plugin-stronghold": "^2.0.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",

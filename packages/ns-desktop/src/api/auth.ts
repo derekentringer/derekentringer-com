@@ -8,6 +8,7 @@ import type {
   TotpVerifySetupResponse,
 } from "@derekentringer/shared";
 import { apiFetch, setAccessToken, setRefreshToken, clearRefreshToken } from "./client.ts";
+import { getSecureItem } from "../lib/secureStorage.ts";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3004";
 
@@ -29,14 +30,14 @@ export async function login(
     setAccessToken(data.accessToken);
   }
   if (data.refreshToken) {
-    setRefreshToken(data.refreshToken);
+    await setRefreshToken(data.refreshToken);
   }
   return data;
 }
 
 export async function refreshSession(): Promise<RefreshResponse | null> {
   try {
-    const storedRefresh = localStorage.getItem("ns-desktop:refreshToken");
+    const storedRefresh = await getSecureItem("ns-desktop:refreshToken");
     if (!storedRefresh) return null;
 
     const response = await fetch(`${BASE_URL}/auth/refresh`, {
@@ -55,7 +56,7 @@ export async function refreshSession(): Promise<RefreshResponse | null> {
     const data: RefreshResponse = await response.json();
     setAccessToken(data.accessToken);
     if (data.refreshToken) {
-      setRefreshToken(data.refreshToken);
+      await setRefreshToken(data.refreshToken);
     }
     return data;
   } catch {
@@ -79,7 +80,7 @@ export async function logout(): Promise<void> {
     await apiFetch("/auth/logout", { method: "POST" });
   } finally {
     setAccessToken(null);
-    clearRefreshToken();
+    await clearRefreshToken();
   }
 }
 
@@ -101,7 +102,7 @@ export async function register(
     setAccessToken(result.accessToken);
   }
   if (result.refreshToken) {
-    setRefreshToken(result.refreshToken);
+    await setRefreshToken(result.refreshToken);
   }
   return result;
 }
@@ -150,6 +151,21 @@ export async function disableTotp(code: string): Promise<void> {
   }
 }
 
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const response = await apiFetch("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || "Failed to change password");
+  }
+}
+
 export async function verifyTotp(
   totpToken: string,
   code: string,
@@ -167,7 +183,7 @@ export async function verifyTotp(
     setAccessToken(data.accessToken);
   }
   if (data.refreshToken) {
-    setRefreshToken(data.refreshToken);
+    await setRefreshToken(data.refreshToken);
   }
   return data;
 }
