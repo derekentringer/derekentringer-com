@@ -61,6 +61,7 @@ function makeMockNoteRow(overrides: Record<string, unknown> = {}) {
     tags: ["tag1"],
     summary: null,
     sortOrder: 0,
+    favoriteSortOrder: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -167,7 +168,7 @@ describe("noteStore", () => {
       expect(result.total).toBe(2);
       expect(mockPrisma.note.findMany).toHaveBeenCalledWith({
         where: { userId: TEST_USER_ID, deletedAt: null },
-        orderBy: { sortOrder: "asc" },
+        orderBy: { updatedAt: "desc" },
         skip: 0,
         take: 50,
       });
@@ -240,7 +241,7 @@ describe("noteStore", () => {
       );
     });
 
-    it("defaults to sortOrder asc when no sort params", async () => {
+    it("defaults to updatedAt desc when no sort params", async () => {
       mockPrisma.note.findMany.mockResolvedValue([]);
       mockPrisma.note.count.mockResolvedValue(0);
 
@@ -248,7 +249,7 @@ describe("noteStore", () => {
 
       expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          orderBy: { sortOrder: "asc" },
+          orderBy: { updatedAt: "desc" },
         }),
       );
     });
@@ -643,16 +644,17 @@ describe("noteStore", () => {
         parentId: null,
         sortOrder: 0,
         createdAt: new Date(),
+        deletedAt: null,
       });
       mockPrisma.folder.updateMany.mockResolvedValue({ count: 2 });
       mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
-      mockPrisma.folder.delete.mockResolvedValue({});
+      mockPrisma.folder.update.mockResolvedValue({});
 
       const result = await deleteFolderById(TEST_USER_ID, "f1", "move-up");
 
       expect(result).toBe(3);
       expect(mockPrisma.folder.updateMany).toHaveBeenCalledWith({
-        where: { parentId: "f1" },
+        where: { parentId: "f1", deletedAt: null },
         data: { parentId: null },
       });
     });
@@ -753,9 +755,10 @@ describe("noteStore", () => {
   });
 
   describe("deleteFolder (legacy)", () => {
-    it("unfiles all notes in folder and removes from folders table", async () => {
+    it("unfiles all notes in folder and soft-deletes from folders table", async () => {
       mockPrisma.note.updateMany.mockResolvedValue({ count: 2 });
-      mockPrisma.folder.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrisma.folder.findFirst.mockResolvedValue({ id: "f1", userId: TEST_USER_ID, name: "work" });
+      mockPrisma.folder.update.mockResolvedValue({});
 
       const result = await deleteFolder(TEST_USER_ID, "work");
 
@@ -764,8 +767,12 @@ describe("noteStore", () => {
         where: { userId: TEST_USER_ID, folder: "work", deletedAt: null },
         data: { folder: null },
       });
-      expect(mockPrisma.folder.deleteMany).toHaveBeenCalledWith({
-        where: { userId: TEST_USER_ID, name: "work" },
+      expect(mockPrisma.folder.findFirst).toHaveBeenCalledWith({
+        where: { userId: TEST_USER_ID, name: "work", deletedAt: null },
+      });
+      expect(mockPrisma.folder.update).toHaveBeenCalledWith({
+        where: { id: "f1" },
+        data: { deletedAt: expect.any(Date) },
       });
     });
   });

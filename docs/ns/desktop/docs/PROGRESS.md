@@ -50,7 +50,7 @@
 
 - [x] [03 — Note Linking + Backlinks](features/03-note-linking.md)
 - [x] [04 — Version History](features/04-version-history.md)
-- [x] [05 — Favorites](features/05-favorites.md)
+- [x] [05 — Favorites](features/05-favorites.md) — Favorite notes and folders via right-click context menus, collapsible Favorites panel with sort dropdown (Manual/Modified/Created/Title) and asc/desc toggle inline with header, drag-and-drop manual reordering via `@dnd-kit/sortable`, `favorite_sort_order` SQLite column (migration 007) with auto-assignment on favorite toggle, default sort Modified Descending, case-insensitive title sorting via `COLLATE NOCASE`, `handleSave` re-fetches notes and favorites for correct sort order
 - [x] [06 — Editor Tabs](features/06-editor-tabs.md)
 
 ### Phase 5: Settings — Medium Priority

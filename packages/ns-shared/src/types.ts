@@ -9,6 +9,7 @@ export interface Note {
   summary: string | null;
   favorite: boolean;
   sortOrder: number;
+  favoriteSortOrder: number;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -75,6 +76,10 @@ export interface ReorderNotesRequest {
   order: { id: string; sortOrder: number }[];
 }
 
+export interface ReorderFavoriteNotesRequest {
+  order: { id: string; favoriteSortOrder: number }[];
+}
+
 export interface TagInfo {
   name: string;
   count: number;
@@ -88,10 +93,22 @@ export interface NoteSearchResult extends Note {
   headline?: string;
 }
 
+export interface FolderSyncData {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  favorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
 export interface SyncChange {
   id: string;
+  type: "note" | "folder";
   action: "create" | "update" | "delete";
-  note: Note | null;
+  data: Note | FolderSyncData | null;
   timestamp: string;
 }
 
@@ -105,8 +122,20 @@ export interface SyncPushRequest {
   changes: SyncChange[];
 }
 
+export interface SyncPullRequest {
+  deviceId: string;
+  since: string;
+}
+
 export interface SyncPullResponse {
   changes: SyncChange[];
+  cursor: SyncCursor;
+  hasMore: boolean;
+}
+
+export interface SyncPushResponse {
+  applied: number;
+  rejected: number;
   cursor: SyncCursor;
 }
 

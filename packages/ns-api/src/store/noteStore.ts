@@ -101,8 +101,8 @@ export async function listNotes(
   const page = filter?.page ?? 1;
   const pageSize = filter?.pageSize ?? 50;
   const skip = (page - 1) * pageSize;
-  const sortBy = filter?.sortBy ?? "sortOrder";
-  const sortOrder = filter?.sortOrder ?? "asc";
+  const sortBy = filter?.sortBy ?? "updatedAt";
+  const sortOrder = filter?.sortOrder ?? "desc";
 
   // Use raw SQL for search
   if (filter?.search) {
@@ -364,7 +364,17 @@ export async function updateNote(
     if (data.folderId !== undefined) updateData.folderId = data.folderId;
     if (data.tags !== undefined) updateData.tags = data.tags;
     if (data.summary !== undefined) updateData.summary = data.summary;
-    if (data.favorite !== undefined) updateData.favorite = data.favorite;
+    if (data.favorite !== undefined) {
+      updateData.favorite = data.favorite;
+      if (data.favorite) {
+        // Auto-assign next favoriteSortOrder
+        const maxResult = await prisma.note.aggregate({
+          _max: { favoriteSortOrder: true },
+          where: { userId, favorite: true, deletedAt: null },
+        });
+        updateData.favoriteSortOrder = (maxResult._max.favoriteSortOrder ?? -1) + 1;
+      }
+    }
 
     const updated = await prisma.note.update({
       where: { id, userId, deletedAt: null },
@@ -482,10 +492,11 @@ export async function getDescendantIds(folderId: string): Promise<string[]> {
   const prisma = getPrisma();
   const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `WITH RECURSIVE descendants AS (
-      SELECT "id" FROM "folders" WHERE "parentId" = $1
+      SELECT "id" FROM "folders" WHERE "parentId" = $1 AND "deletedAt" IS NULL
       UNION ALL
       SELECT f."id" FROM "folders" f
       INNER JOIN descendants d ON f."parentId" = d."id"
+      WHERE f."deletedAt" IS NULL
     )
     SELECT "id" FROM descendants`,
     folderId,
@@ -572,9 +583,9 @@ function buildFolderTree(
 export async function listFolders(userId: string): Promise<FolderInfo[]> {
   const prisma = getPrisma();
 
-  // Get all folders for user
+  // Get all folders for user (exclude soft-deleted)
   const allFolders = await prisma.folder.findMany({
-    where: { userId },
+    where: { userId, deletedAt: null },
     orderBy: { sortOrder: "asc" },
   });
 
@@ -597,11 +608,21 @@ export async function listFolders(userId: string): Promise<FolderInfo[]> {
   return buildFolderTree(foldersWithCount);
 }
 
-export async function listFavoriteNotes(userId: string): Promise<PrismaNote[]> {
+export async function listFavoriteNotes(
+  userId: string,
+  sortBy?: NoteSortField,
+  sortOrder?: SortOrder,
+): Promise<PrismaNote[]> {
   const prisma = getPrisma();
+  const field = sortBy ?? "title";
+  const order = sortOrder ?? "asc";
+
+  // Map "sortOrder" field name to "favoriteSortOrder" for favorites
+  const orderByField = field === "sortOrder" ? "favoriteSortOrder" : field;
+
   return prisma.note.findMany({
     where: { userId, favorite: true, deletedAt: null },
-    orderBy: { title: "asc" },
+    orderBy: { [orderByField]: order },
   });
 }
 
@@ -627,6 +648,21 @@ export async function reorderNotes(
       prisma.note.update({
         where: { id: item.id, userId },
         data: { sortOrder: item.sortOrder },
+      }),
+    ),
+  );
+}
+
+export async function reorderFavoriteNotes(
+  userId: string,
+  order: { id: string; favoriteSortOrder: number }[],
+): Promise<void> {
+  const prisma = getPrisma();
+  await prisma.$transaction(
+    order.map((item) =>
+      prisma.note.update({
+        where: { id: item.id, userId },
+        data: { favoriteSortOrder: item.favoriteSortOrder },
       }),
     ),
   );
@@ -703,7 +739,9 @@ export async function deleteFolderById(
   const prisma = getPrisma();
 
   const folder = await prisma.folder.findUnique({ where: { id: folderId } });
-  if (!folder || folder.userId !== userId) return 0;
+  if (!folder || folder.userId !== userId || folder.deletedAt) return 0;
+
+  const now = new Date();
 
   if (mode === "recursive") {
     // Get all descendant folder IDs
@@ -716,11 +754,17 @@ export async function deleteFolderById(
       data: { folderId: null, folder: null },
     });
 
-    // Delete all descendant folders then this folder
+    // Soft-delete all descendant folders then this folder
     if (descendantIds.length > 0) {
-      await prisma.folder.deleteMany({ where: { id: { in: descendantIds } } });
+      await prisma.folder.updateMany({
+        where: { id: { in: descendantIds } },
+        data: { deletedAt: now },
+      });
     }
-    await prisma.folder.delete({ where: { id: folderId } });
+    await prisma.folder.update({
+      where: { id: folderId },
+      data: { deletedAt: now },
+    });
 
     return result.count;
   }
@@ -730,7 +774,7 @@ export async function deleteFolderById(
 
   // Move children to parent
   await prisma.folder.updateMany({
-    where: { parentId: folderId },
+    where: { parentId: folderId, deletedAt: null },
     data: { parentId },
   });
 
@@ -740,8 +784,11 @@ export async function deleteFolderById(
     data: { folderId: parentId, folder: null },
   });
 
-  // Delete the folder
-  await prisma.folder.delete({ where: { id: folderId } });
+  // Soft-delete the folder
+  await prisma.folder.update({
+    where: { id: folderId },
+    data: { deletedAt: now },
+  });
 
   return result.count;
 }
@@ -775,8 +822,14 @@ export async function deleteFolder(userId: string, name: string): Promise<number
     where: { userId, folder: name, deletedAt: null },
     data: { folder: null },
   });
-  // Remove from folders table
-  await prisma.folder.deleteMany({ where: { userId, name } });
+  // Soft-delete from folders table
+  const folder = await prisma.folder.findFirst({ where: { userId, name, deletedAt: null } });
+  if (folder) {
+    await prisma.folder.update({
+      where: { id: folder.id },
+      data: { deletedAt: new Date() },
+    });
+  }
   return result.count;
 }
 

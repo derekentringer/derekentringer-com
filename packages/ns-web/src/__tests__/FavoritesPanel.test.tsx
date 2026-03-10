@@ -1,8 +1,9 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { DndContext } from "@dnd-kit/core";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
-import type { FolderInfo, Note } from "@derekentringer/shared/ns";
+import type { FolderInfo, Note, NoteSortField, SortOrder } from "@derekentringer/shared/ns";
 
 function makeFolder(overrides: Partial<FolderInfo> = {}): FolderInfo {
   return {
@@ -31,6 +32,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     summary: null,
     favorite: true,
     sortOrder: 0,
+    favoriteSortOrder: 0,
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
     deletedAt: null,
@@ -47,7 +49,15 @@ const defaultProps = {
   onSelectNote: vi.fn(),
   onUnfavoriteFolder: vi.fn(),
   onUnfavoriteNote: vi.fn(),
+  favSortBy: "title" as NoteSortField,
+  favSortOrder: "asc" as SortOrder,
+  onFavSortByChange: vi.fn(),
+  onFavSortOrderChange: vi.fn(),
 };
+
+function renderWithDnd(ui: React.ReactElement) {
+  return render(<DndContext>{ui}</DndContext>);
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -56,12 +66,12 @@ beforeEach(() => {
 
 describe("FavoritesPanel", () => {
   it("renders nothing when no favorites", () => {
-    const { container } = render(<FavoritesPanel {...defaultProps} />);
-    expect(container.innerHTML).toBe("");
+    const { container } = renderWithDnd(<FavoritesPanel {...defaultProps} />);
+    expect(container.querySelector("[data-testid='favorites-panel']")).toBeNull();
   });
 
   it("renders section header when items exist", () => {
-    render(
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteFolders={[makeFolder()]}
@@ -71,7 +81,7 @@ describe("FavoritesPanel", () => {
   });
 
   it("renders favorite folders and notes", () => {
-    render(
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteFolders={[makeFolder()]}
@@ -84,7 +94,7 @@ describe("FavoritesPanel", () => {
 
   it("calls onSelectFolder when folder is clicked", () => {
     const onSelectFolder = vi.fn();
-    render(
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteFolders={[makeFolder()]}
@@ -97,7 +107,7 @@ describe("FavoritesPanel", () => {
 
   it("calls onSelectNote when note is clicked", () => {
     const onSelectNote = vi.fn();
-    render(
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteNotes={[makeNote()]}
@@ -109,7 +119,7 @@ describe("FavoritesPanel", () => {
   });
 
   it("shows Unfavorite context menu on right-click", () => {
-    render(
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteNotes={[makeNote()]}
@@ -121,7 +131,7 @@ describe("FavoritesPanel", () => {
 
   it("calls onUnfavoriteNote from context menu", () => {
     const onUnfavoriteNote = vi.fn();
-    render(
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteNotes={[makeNote()]}
@@ -135,7 +145,7 @@ describe("FavoritesPanel", () => {
 
   it("calls onUnfavoriteFolder from context menu", () => {
     const onUnfavoriteFolder = vi.fn();
-    render(
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteFolders={[makeFolder()]}
@@ -148,7 +158,7 @@ describe("FavoritesPanel", () => {
   });
 
   it("collapse/expand toggle persists", () => {
-    const { rerender } = render(
+    const { rerender } = renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteFolders={[makeFolder()]}
@@ -167,11 +177,86 @@ describe("FavoritesPanel", () => {
 
     // Re-render preserves collapsed state
     rerender(
-      <FavoritesPanel
-        {...defaultProps}
-        favoriteFolders={[makeFolder()]}
-      />,
+      <DndContext>
+        <FavoritesPanel
+          {...defaultProps}
+          favoriteFolders={[makeFolder()]}
+        />
+      </DndContext>,
     );
     expect(screen.queryByText("Work")).not.toBeInTheDocument();
+  });
+
+  // Sort controls tests
+  it("renders sort dropdown with correct value", () => {
+    renderWithDnd(
+      <FavoritesPanel
+        {...defaultProps}
+        favoriteNotes={[makeNote()]}
+        favSortBy="updatedAt"
+      />,
+    );
+    const select = screen.getByTestId("fav-sort-by") as HTMLSelectElement;
+    expect(select.value).toBe("updatedAt");
+  });
+
+  it("calls onFavSortByChange when sort dropdown changes", () => {
+    const onFavSortByChange = vi.fn();
+    renderWithDnd(
+      <FavoritesPanel
+        {...defaultProps}
+        favoriteNotes={[makeNote()]}
+        onFavSortByChange={onFavSortByChange}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("fav-sort-by"), { target: { value: "createdAt" } });
+    expect(onFavSortByChange).toHaveBeenCalledWith("createdAt");
+  });
+
+  it("calls onFavSortOrderChange when direction button is clicked", () => {
+    const onFavSortOrderChange = vi.fn();
+    renderWithDnd(
+      <FavoritesPanel
+        {...defaultProps}
+        favoriteNotes={[makeNote()]}
+        favSortOrder="asc"
+        onFavSortOrderChange={onFavSortOrderChange}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("fav-sort-order"));
+    expect(onFavSortOrderChange).toHaveBeenCalledWith("desc");
+  });
+
+  it("does not show sort controls when collapsed", () => {
+    localStorage.setItem("ns-favorites-collapsed", "true");
+    renderWithDnd(
+      <FavoritesPanel
+        {...defaultProps}
+        favoriteNotes={[makeNote()]}
+      />,
+    );
+    expect(screen.queryByTestId("fav-sort-by")).not.toBeInTheDocument();
+  });
+
+  it("shows drag handles only when sort is manual", () => {
+    const { rerender } = renderWithDnd(
+      <FavoritesPanel
+        {...defaultProps}
+        favoriteNotes={[makeNote()]}
+        favSortBy="sortOrder"
+      />,
+    );
+    expect(screen.getByLabelText("Drag to reorder")).toBeInTheDocument();
+
+    rerender(
+      <DndContext>
+        <FavoritesPanel
+          {...defaultProps}
+          favoriteNotes={[makeNote()]}
+          favSortBy="title"
+        />
+      </DndContext>,
+    );
+    expect(screen.queryByLabelText("Drag to reorder")).not.toBeInTheDocument();
   });
 });

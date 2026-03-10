@@ -68,6 +68,7 @@ describe("Note routes", () => {
       summary: null,
       favorite: false,
       sortOrder: 0,
+      favoriteSortOrder: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,

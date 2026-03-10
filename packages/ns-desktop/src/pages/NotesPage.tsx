@@ -49,6 +49,7 @@ import {
   captureVersion,
   restoreVersion,
   fetchFavoriteNotes,
+  reorderFavoriteNotes,
   toggleFolderFavorite,
 } from "../lib/db.ts";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
@@ -74,6 +75,14 @@ import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
+import { SyncStatusButton } from "../components/SyncStatusButton.tsx";
+import {
+  initSyncEngine,
+  destroySyncEngine,
+  notifyLocalChange,
+  manualSync,
+  type SyncStatus,
+} from "../lib/syncEngine.ts";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
@@ -123,6 +132,16 @@ export function NotesPage() {
 
   // Favorites
   const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
+  const [favSortBy, setFavSortBy] = useState<NoteSortField>(() => {
+    try {
+      return (localStorage.getItem("ns-fav-sort-by") as NoteSortField) || "updatedAt";
+    } catch { return "updatedAt"; }
+  });
+  const [favSortOrder, setFavSortOrder] = useState<SortOrder>(() => {
+    try {
+      return (localStorage.getItem("ns-fav-sort-order") as SortOrder) || "desc";
+    } catch { return "desc"; }
+  });
 
   // Tags
   const [tags, setTags] = useState<TagInfo[]>([]);
@@ -160,6 +179,10 @@ export function NotesPage() {
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
+
+  // Sync engine
+  const [syncStatusState, setSyncStatusState] = useState<SyncStatus>("idle");
+  const [syncErrorState, setSyncErrorState] = useState<string | null>(null);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
@@ -236,6 +259,23 @@ export function NotesPage() {
     fetchTrash()
       .then((trash) => setTrashCount(trash.length))
       .catch(() => {});
+
+    // Initialize sync engine
+    initSyncEngine({
+      onStatusChange: (status, error) => {
+        setSyncStatusState(status);
+        setSyncErrorState(error);
+      },
+      onDataChanged: () => {
+        refreshSidebarData();
+        loadFavoriteNotes();
+        loadNoteTitles();
+      },
+    }).catch((err) => console.error("Failed to init sync engine:", err));
+
+    return () => {
+      destroySyncEngine();
+    };
   }, []);
 
   const loadNoteTitles = useCallback(async () => {
@@ -243,8 +283,8 @@ export function NotesPage() {
   }, []);
 
   const loadFavoriteNotes = useCallback(async () => {
-    try { setFavoriteNotes(await fetchFavoriteNotes()); } catch {}
-  }, []);
+    try { setFavoriteNotes(await fetchFavoriteNotes({ sortBy: favSortBy, sortOrder: favSortOrder })); } catch {}
+  }, [favSortBy, favSortOrder]);
 
   const favoriteFolders = useMemo(() => {
     const result: FolderInfo[] = [];
@@ -286,6 +326,13 @@ export function NotesPage() {
       setIsLoading(false);
     }
   }
+
+  // --- Reload favorites when fav sort changes ---
+
+  useEffect(() => {
+    if (isLoading) return;
+    loadFavoriteNotes();
+  }, [loadFavoriteNotes]);
 
   // --- Reload notes when folder/sort changes ---
 
@@ -415,12 +462,17 @@ export function NotesPage() {
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
       saveStatusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
 
+      // Re-fetch so sort order is respected (e.g. modified-desc moves edited note to top)
+      reloadNotes();
+      loadFavoriteNotes();
+
       // Fire-and-forget: sync wiki-links + refresh titles + capture version
       syncNoteLinks(selectedId, content).catch(() => {});
       captureVersion(selectedId, title, content, editorSettings.versionIntervalMinutes)
         .then(() => setVersionRefreshKey((k) => k + 1))
         .catch(() => {});
       loadNoteTitles();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to save note:", err);
       showError("Failed to save note");
@@ -443,6 +495,22 @@ export function NotesPage() {
       }
     };
   }, [title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
+
+  // Auto-refresh editor content when notes array updates (e.g. after sync)
+  useEffect(() => {
+    if (!selectedId || sidebarView === "trash") return;
+    const updatedNote = notes.find((n) => n.id === selectedId);
+    if (!updatedNote) return;
+    const titleChanged = updatedNote.title !== loadedTitleRef.current;
+    const contentChanged = updatedNote.content !== loadedContentRef.current;
+    if ((titleChanged || contentChanged) && !isDirty()) {
+      loadedTitleRef.current = updatedNote.title;
+      loadedContentRef.current = updatedNote.content;
+      setTitle(updatedNote.title);
+      setContent(updatedNote.content);
+      tabNoteCacheRef.current.set(updatedNote.id, updatedNote);
+    }
+  }, [notes, selectedId, sidebarView]);
 
   // --- Tab handlers ---
 
@@ -571,6 +639,7 @@ export function NotesPage() {
       openNoteAsTab(note);
       await refreshSidebarData();
       loadNoteTitles();
+      notifyLocalChange();
       setTimeout(() => {
         const titleInput = document.querySelector<HTMLInputElement>("[data-title-input]");
         titleInput?.select();
@@ -603,6 +672,7 @@ export function NotesPage() {
       setTrashCount((c) => c + 1);
       await refreshSidebarData();
       loadNoteTitles();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to delete note:", err);
       showError("Failed to delete note");
@@ -627,6 +697,7 @@ export function NotesPage() {
       }
       await refreshSidebarData();
       loadNoteTitles();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to delete note:", err);
       showError("Failed to delete note");
@@ -640,6 +711,7 @@ export function NotesPage() {
       const updated = await updateNote(noteId, { tags: newTags });
       setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
       await refreshTags();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to update tags:", err);
       showError("Failed to update tags");
@@ -656,6 +728,7 @@ export function NotesPage() {
     try {
       await renameTag(oldName, newName);
       await refreshSidebarData();
+      notifyLocalChange();
       // Update active tags if the renamed tag was active
       setActiveTags((prev) =>
         prev.map((t) => (t === oldName ? newName : t)),
@@ -670,6 +743,7 @@ export function NotesPage() {
     try {
       await deleteTag(name);
       await refreshSidebarData();
+      notifyLocalChange();
       setActiveTags((prev) => prev.filter((t) => t !== name));
     } catch (err) {
       console.error("Failed to delete tag:", err);
@@ -683,6 +757,7 @@ export function NotesPage() {
     try {
       await createFolder(name, parentId);
       await refreshFolders();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to create folder:", err);
       showError("Failed to create folder");
@@ -693,6 +768,7 @@ export function NotesPage() {
     try {
       await renameFolder(folderId, newName);
       await refreshFolders();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to rename folder:", err);
       showError("Failed to rename folder");
@@ -708,6 +784,7 @@ export function NotesPage() {
         prev.map((n) => (n.id === updated.id ? { ...n, favorite: updated.favorite } : n)),
       );
       loadFavoriteNotes();
+      notifyLocalChange();
     } catch {
       showError("Failed to update favorite");
     }
@@ -717,8 +794,43 @@ export function NotesPage() {
     try {
       const updatedFolders = await toggleFolderFavorite(folderId, favorite);
       setFolders(updatedFolders);
+      notifyLocalChange();
     } catch {
       showError("Failed to update favorite");
+    }
+  }
+
+  function handleFavSortByChange(field: NoteSortField) {
+    setFavSortBy(field);
+    try { localStorage.setItem("ns-fav-sort-by", field); } catch {}
+  }
+
+  function handleFavSortOrderChange(order: SortOrder) {
+    setFavSortOrder(order);
+    try { localStorage.setItem("ns-fav-sort-order", order); } catch {}
+  }
+
+  async function handleReorderFavoriteNotes(activeId: string, overId: string) {
+    const stripPrefix = (id: string) => id.replace("fav-note:", "");
+    const aId = stripPrefix(activeId);
+    const oId = stripPrefix(overId);
+
+    const oldIndex = favoriteNotes.findIndex((n) => n.id === aId);
+    const newIndex = favoriteNotes.findIndex((n) => n.id === oId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove([...favoriteNotes], oldIndex, newIndex);
+    const updated = reordered.map((n, i) => ({ ...n, favoriteSortOrder: i }));
+    setFavoriteNotes(updated);
+
+    try {
+      await reorderFavoriteNotes(
+        updated.map((n) => ({ id: n.id, favoriteSortOrder: n.favoriteSortOrder })),
+      );
+      notifyLocalChange();
+    } catch {
+      showError("Failed to reorder favorites");
+      loadFavoriteNotes();
     }
   }
 
@@ -747,6 +859,7 @@ export function NotesPage() {
         setActiveFolder(null);
       }
       await refreshSidebarData();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to delete folder:", err);
       showError("Failed to delete folder");
@@ -762,6 +875,12 @@ export function NotesPage() {
     const activeId = String(active.id);
     const overId = String(over.id);
 
+    // Favorite note reorder
+    if (activeId.startsWith("fav-note:") && overId.startsWith("fav-note:")) {
+      handleReorderFavoriteNotes(activeId, overId);
+      return;
+    }
+
     // Folder → Folder (nesting) or Folder → Root
     if (activeId.startsWith("drag-folder:")) {
       const folderId = activeId.slice("drag-folder:".length);
@@ -775,6 +894,7 @@ export function NotesPage() {
         try {
           await moveFolderParent(folderId, newParentId);
           await refreshFolders();
+          notifyLocalChange();
         } catch (err) {
           console.error("Failed to move folder:", err);
           showError("Failed to move folder");
@@ -795,6 +915,7 @@ export function NotesPage() {
       try {
         await updateNote(noteId, { folderId });
         await refreshSidebarData();
+        notifyLocalChange();
       } catch (err) {
         console.error("Failed to move note:", err);
         showError("Failed to move note");
@@ -825,6 +946,7 @@ export function NotesPage() {
       await reorderNotes(
         updatedNotes.map((n) => ({ id: n.id, sortOrder: n.sortOrder })),
       );
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to reorder notes:", err);
       showError("Failed to reorder notes");
@@ -836,6 +958,7 @@ export function NotesPage() {
     try {
       await moveFolderParent(folderId, parentId);
       await refreshFolders();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to move folder:", err);
       showError("Failed to move folder");
@@ -874,6 +997,7 @@ export function NotesPage() {
       }
       await refreshSidebarData();
       loadNoteTitles();
+      notifyLocalChange();
     } catch (err) {
       console.error("Failed to restore note:", err);
       showError("Failed to restore note");
@@ -1201,6 +1325,10 @@ export function NotesPage() {
                   onSelectNote={handleFavoriteNoteClick}
                   onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
                   onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
+                  favSortBy={favSortBy}
+                  favSortOrder={favSortOrder}
+                  onFavSortByChange={handleFavSortByChange}
+                  onFavSortOrderChange={handleFavSortOrderChange}
                 />
               )}
               <FolderTree
@@ -1229,7 +1357,8 @@ export function NotesPage() {
             {/* Notes header with sort controls */}
             <div className="px-2 py-1">
               <div className="flex items-center justify-between px-1 mb-1">
-                <span className="text-sm text-muted-foreground uppercase tracking-wider">
+                <span className="text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg>
                   {searchResults ? "Search Results" : "Notes"}
                 </span>
                 {!searchResults && (
@@ -1309,6 +1438,11 @@ export function NotesPage() {
             {/* Sidebar bottom bar */}
             <div className="px-4 py-3 border-t border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
+                <SyncStatusButton
+                  status={syncStatusState}
+                  error={syncErrorState}
+                  onSync={manualSync}
+                />
                 <button
                   onClick={handleViewTrash}
                   className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
