@@ -281,4 +281,89 @@ describe("NoteList", () => {
 
     expect(screen.queryByTitle("Drag to reorder")).not.toBeInTheDocument();
   });
+
+  // Favorite tests
+  it("shows star indicator for favorite notes", () => {
+    const notes = [
+      makeNote({ id: "1", title: "Fav Note", favorite: true }),
+      makeNote({ id: "2", title: "Normal Note", favorite: false }),
+    ];
+
+    render(
+      <DndWrapper>
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+      </DndWrapper>,
+    );
+
+    expect(screen.getByText("★")).toBeInTheDocument();
+    // Only one star for the favorite note
+    expect(screen.getAllByText("★")).toHaveLength(1);
+  });
+
+  it("shows Favorite/Unfavorite in context menu when onToggleFavorite is provided", async () => {
+    const note = makeNote({ id: "1", title: "Fav Menu", favorite: false });
+    const onToggleFavorite = vi.fn();
+
+    render(
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onToggleFavorite={onToggleFavorite}
+          sortByManual={false}
+        />
+      </DndWrapper>,
+    );
+
+    const button = screen.getByText("Fav Menu");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+
+    expect(screen.getByText("Favorite")).toBeInTheDocument();
+  });
+
+  it("shows 'Unfavorite' for already-favorited notes in context menu", async () => {
+    const note = makeNote({ id: "1", title: "Already Fav", favorite: true });
+    const onToggleFavorite = vi.fn();
+
+    render(
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onToggleFavorite={onToggleFavorite}
+          sortByManual={false}
+        />
+      </DndWrapper>,
+    );
+
+    const button = screen.getByText("Already Fav");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+
+    expect(screen.getByText("Unfavorite")).toBeInTheDocument();
+  });
+
+  it("calls onToggleFavorite with correct args when Favorite is clicked", async () => {
+    const note = makeNote({ id: "note-fav", title: "Toggle Fav", favorite: false });
+    const onToggleFavorite = vi.fn();
+
+    render(
+      <DndWrapper>
+        <NoteList
+          notes={[note]}
+          selectedId={null}
+          onSelect={vi.fn()}
+          onToggleFavorite={onToggleFavorite}
+          sortByManual={false}
+        />
+      </DndWrapper>,
+    );
+
+    const button = screen.getByText("Toggle Fav");
+    await userEvent.pointer({ keys: "[MouseRight]", target: button });
+    await userEvent.click(screen.getByText("Favorite"));
+
+    expect(onToggleFavorite).toHaveBeenCalledWith("note-fav", true);
+  });
 });
