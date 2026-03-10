@@ -81,6 +81,17 @@
     color: var(--color-foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Re-enable text selection in editable / readable areas */
+  input,
+  textarea,
+  .cm-editor,
+  .markdown-preview {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   a:link,
