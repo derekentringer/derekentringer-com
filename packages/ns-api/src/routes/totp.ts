@@ -240,6 +240,7 @@ export default async function totpRoutes(fastify: FastifyInstance) {
         accessToken,
         expiresIn: 900,
         user: toUserResponse(user),
+        refreshToken,
       };
 
       return reply.send(response);

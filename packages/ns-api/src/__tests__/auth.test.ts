@@ -93,7 +93,7 @@ describe("Auth routes", () => {
       expect(body.user.role).toBe("admin");
     });
 
-    it("sets refreshToken cookie (no body token)", async () => {
+    it("sets refreshToken cookie and includes refreshToken in body", async () => {
       setupTokenMocks();
       mockPrisma.user.findUnique.mockResolvedValue(makeMockUser());
 
@@ -105,7 +105,7 @@ describe("Auth routes", () => {
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.refreshToken).toBeUndefined();
+      expect(body.refreshToken).toBeDefined();
 
       const cookies = res.cookies;
       const refreshCookie = cookies.find(

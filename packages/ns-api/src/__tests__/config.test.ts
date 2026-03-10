@@ -21,6 +21,7 @@ describe("loadConfig", () => {
     expect(config.jwtSecret).toBe("dev-jwt-secret-do-not-use-in-prod");
     expect(config.refreshTokenSecret).toBe("dev-refresh-secret-do-not-use-in-prod");
     expect(config.corsOrigin).toBe("http://localhost:3005");
+    expect(config.corsOrigins).toEqual(["http://localhost:3005"]);
     expect(config.port).toBe(3004);
     expect(config.nodeEnv).toBe("development");
     expect(config.isProduction).toBe(false);
@@ -40,6 +41,7 @@ describe("loadConfig", () => {
 
     expect(config.jwtSecret).toBe("custom-jwt-secret");
     expect(config.corsOrigin).toBe("https://example.com");
+    expect(config.corsOrigins).toEqual(["https://example.com"]);
     expect(config.port).toBe(9999);
   });
 
@@ -84,6 +86,7 @@ describe("loadConfig", () => {
 
     expect(config1).toBe(config2);
     expect(config2.corsOrigin).toBe(config1.corsOrigin);
+    expect(config2.corsOrigins).toEqual(config1.corsOrigins);
   });
 
   it("resets cache with resetConfig", () => {
@@ -98,5 +101,16 @@ describe("loadConfig", () => {
 
     const config2 = loadConfig();
     expect(config2.corsOrigin).toBe("https://second.example.com");
+    expect(config2.corsOrigins).toEqual(["https://second.example.com"]);
+  });
+
+  it("parses comma-separated CORS origins", () => {
+    process.env.NODE_ENV = "development";
+    process.env.CORS_ORIGIN = "http://localhost:3005, http://localhost:3006";
+
+    const config = loadConfig();
+
+    expect(config.corsOrigins).toEqual(["http://localhost:3005", "http://localhost:3006"]);
+    expect(config.corsOrigin).toBe("http://localhost:3005");
   });
 });

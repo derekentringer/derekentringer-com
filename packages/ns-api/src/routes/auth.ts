@@ -129,6 +129,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
           accessToken,
           expiresIn: 900,
           user: toUserResponse(user),
+          refreshToken,
         };
 
         return reply.send(response);
@@ -164,7 +165,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const token = request.cookies?.refreshToken;
+      const token = (request.body as { refreshToken?: string })?.refreshToken
+        || request.cookies?.refreshToken;
 
       if (!token) {
         return reply.status(401).send({
@@ -225,6 +227,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         const response: RefreshResponse = {
           accessToken,
           expiresIn: 900,
+          refreshToken: newRefreshToken,
         };
 
         return reply.send(response);
@@ -405,6 +408,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
           accessToken,
           expiresIn: 900,
           user: toUserResponse(user),
+          refreshToken,
         };
 
         return reply.status(201).send(response);
