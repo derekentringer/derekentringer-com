@@ -7,6 +7,8 @@ import type {
   NoteSearchResult,
   NoteSortField,
   SortOrder,
+  BacklinkInfo,
+  NoteTitleEntry,
 } from "@derekentringer/ns-shared";
 
 let dbInstance: Database | null = null;
@@ -719,4 +721,100 @@ export async function purgeOldTrash(retentionDays: number): Promise<number> {
     await ftsDelete(row.id);
   }
   return rows.length;
+}
+
+// ---------------------------------------------------------------------------
+// Note Links
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract wiki-link targets from markdown content.
+ * Matches [[title]] syntax, returns deduplicated trimmed titles.
+ */
+export function extractWikiLinks(content: string): string[] {
+  const regex = /\[\[([^\[\]]+?)\]\]/g;
+  const seen = new Map<string, string>(); // lowercase → original
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    const raw = match[1].trim();
+    if (raw.length > 0) {
+      const key = raw.toLowerCase();
+      if (!seen.has(key)) {
+        seen.set(key, raw);
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Sync outgoing wiki-links for a note.
+ * Deletes existing outgoing links and creates new ones.
+ */
+export async function syncNoteLinks(
+  sourceNoteId: string,
+  content: string,
+): Promise<void> {
+  const db = await getDb();
+
+  // Delete existing outgoing links
+  await db.execute("DELETE FROM note_links WHERE source_note_id = $1", [sourceNoteId]);
+
+  const linkTexts = extractWikiLinks(content);
+  if (linkTexts.length === 0) return;
+
+  // Resolve titles to note IDs (case-insensitive)
+  const lowerTexts = linkTexts.map((t) => t.toLowerCase());
+  const placeholders = lowerTexts.map((_, i) => `$${i + 1}`).join(", ");
+  const rows = await db.select<{ id: string; title: string }[]>(
+    `SELECT id, title FROM notes WHERE LOWER(title) IN (${placeholders}) AND is_deleted = 0`,
+    lowerTexts,
+  );
+
+  const resolved = new Map<string, string>();
+  for (const row of rows) {
+    resolved.set(row.title.toLowerCase(), row.id);
+  }
+
+  if (resolved.size === 0) return;
+
+  for (const text of linkTexts) {
+    const targetId = resolved.get(text.toLowerCase());
+    if (targetId && targetId !== sourceNoteId) {
+      await db.execute(
+        "INSERT OR IGNORE INTO note_links (id, source_note_id, target_note_id, link_text) VALUES ($1, $2, $3, $4)",
+        [uuidv4(), sourceNoteId, targetId, text],
+      );
+    }
+  }
+}
+
+/**
+ * Get all backlinks (incoming links) for a note.
+ * Filters out links from deleted source notes.
+ */
+export async function getBacklinks(noteId: string): Promise<BacklinkInfo[]> {
+  const db = await getDb();
+  const rows = await db.select<{ link_text: string; note_id: string; note_title: string }[]>(
+    `SELECT nl.link_text, n.id as note_id, n.title as note_title
+     FROM note_links nl
+     JOIN notes n ON n.id = nl.source_note_id
+     WHERE nl.target_note_id = $1 AND n.is_deleted = 0`,
+    [noteId],
+  );
+  return rows.map((r) => ({
+    noteId: r.note_id,
+    noteTitle: r.note_title,
+    linkText: r.link_text,
+  }));
+}
+
+/**
+ * List all note titles (non-deleted) for autocomplete.
+ */
+export async function listNoteTitles(): Promise<NoteTitleEntry[]> {
+  const db = await getDb();
+  return db.select<NoteTitleEntry[]>(
+    "SELECT id, title FROM notes WHERE is_deleted = 0 ORDER BY title ASC",
+  );
 }
