@@ -1,8 +1,9 @@
 # 08 — Auth
 
-**Status:** Not Started
+**Status:** Complete
 **Phase:** 6 — Auth & Sync
 **Priority:** Medium
+**Completed:** v1.61.0
 
 ## Summary
 
