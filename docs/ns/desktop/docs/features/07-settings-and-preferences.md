@@ -7,7 +7,7 @@
 
 ## Summary
 
-Full-page settings view for NoteSync Desktop, ported from the ns-web SettingsPage with desktop-specific adaptations. Accessible via a gear icon in the sidebar bottom bar. Includes 5 sections: Appearance, Editor Preferences, Trash, Version History, and Keyboard Shortcuts. All settings persist via localStorage through the shared `useEditorSettings` hook.
+Full-page settings view for NoteSync Desktop, ported from the ns-web SettingsPage with desktop-specific adaptations. Accessible via a gear icon in the sidebar bottom bar. Includes 6 sections: Appearance, Editor Preferences, Trash, Version History, Two-Factor Authentication, and Keyboard Shortcuts. All settings persist via localStorage through the shared `useEditorSettings` hook. 2FA section uses the ns-api TOTP endpoints for setup, verification, and disabling.
 
 ---
 
@@ -52,7 +52,19 @@ Full-page settings view for NoteSync Desktop, ported from the ns-web SettingsPag
 - **Capture interval:** `<select>` dropdown (Every save, 5 min, 15 min, 30 min, 60 min)
 - Uses `editorSettings.versionIntervalMinutes` via shared `useEditorSettings` hook
 
-### 5. Keyboard Shortcuts
+### 5. Two-Factor Authentication
+
+- **4-state UI** ported from ns-web SettingsPage:
+  1. **Not enabled:** Description text + "Enable 2FA" button → calls `setupTotp()` API
+  2. **QR code setup:** QR code image + manual secret + 6-digit verification input + "Verify & Enable" / Cancel
+  3. **Backup codes:** Success message + mono code list + Copy / Done buttons
+  4. **Enabled:** "Enabled" badge + "Disable 2FA" button → code input + "Confirm Disable" / Cancel
+- Uses `useAuth()` for `user.totpEnabled` state and `setUserFromLogin` to refresh after enable/disable
+- API functions added to `api/auth.ts`: `setupTotp()`, `verifyTotpSetup()`, `disableTotp()`
+- All use `apiFetch` with Bearer token auth (no special handling needed)
+- After verify/disable, calls `getMe()` to refresh user state
+
+### 6. Keyboard Shortcuts
 
 - Desktop-specific shortcut list (no AI shortcuts):
   - Ctrl/Cmd + S — Save note
@@ -68,7 +80,6 @@ Full-page settings view for NoteSync Desktop, ported from the ns-web SettingsPag
 
 - **AI Features** — Phase 7, not implemented
 - **Offline Cache** — web-only (IndexedDB); desktop uses SQLite natively
-- **Two-Factor Authentication** — Phase 6, auth not implemented
 
 ---
 
@@ -97,10 +108,11 @@ All `<select>` elements use `appearance-none` with a custom SVG chevron backgrou
 
 | File | Action |
 |------|--------|
-| `packages/ns-desktop/src/pages/SettingsPage.tsx` | Created — settings page with 5 sections |
+| `packages/ns-desktop/src/pages/SettingsPage.tsx` | Created — settings page with 6 sections (added 2FA in v1.61.0) |
 | `packages/ns-desktop/src/pages/NotesPage.tsx` | Edited — `showSettings` state, gear button, conditional render, `onBack` syncs viewMode/lineNumbers |
 | `packages/ns-desktop/src/hooks/useEditorSettings.ts` | Edited — added `darkHover`/`lightHover` to `ACCENT_PRESETS` |
-| `packages/ns-desktop/src/__tests__/SettingsPage.test.tsx` | Created — 22 tests |
+| `packages/ns-desktop/src/api/auth.ts` | Edited — added `setupTotp`, `verifyTotpSetup`, `disableTotp` API functions |
+| `packages/ns-desktop/src/__tests__/SettingsPage.test.tsx` | Created — 30 tests (added 8 2FA tests in v1.61.0) |
 
 ---
 
@@ -108,7 +120,7 @@ All `<select>` elements use `appearance-none` with a custom SVG chevron backgrou
 
 | Test file | Tests |
 |-----------|-------|
-| `SettingsPage.test.tsx` | 22 tests: headings (3), appearance (5), editor preferences (6), trash (2), version history (2), keyboard shortcuts (2), navigation (2) |
+| `SettingsPage.test.tsx` | 30 tests: headings (3), appearance (5), editor preferences (6), trash (2), version history (2), 2FA (8), keyboard shortcuts (2), navigation (2) |
 
 ---
 
@@ -129,7 +141,7 @@ All `<select>` elements use `appearance-none` with a custom SVG chevron backgrou
 | Version interval | API-backed (`setVersionInterval`) | `useEditorSettings` hook (localStorage) |
 | AI Features section | Full section (8 toggles) | Skipped (Phase 7) |
 | Offline Cache section | IndexedDB cache management | Skipped (desktop uses SQLite natively) |
-| 2FA section | TOTP setup/disable | Skipped (Phase 6 Auth) |
+| 2FA section | TOTP setup/disable | Ported — identical 4-state UI |
 | Keyboard shortcuts | 9 shortcuts (incl. AI) | 4 shortcuts (no AI) |
 | Settings button | Always visible in bottom bar | Same — always visible next to trash |
 | State sharing | Separate hook per route | Props from parent hook instance |

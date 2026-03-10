@@ -1,5 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { NotesPage } from "./pages/NotesPage.tsx";
+import { AuthProvider, useAuth } from "./context/AuthContext.tsx";
+import { LoginPage } from "./pages/LoginPage.tsx";
+import { RegisterPage } from "./pages/RegisterPage.tsx";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage.tsx";
 
 const ACCENT_PRESETS: Record<string, { dark: string; light: string; darkHover: string; lightHover: string }> = {
   lime:   { dark: "#d4e157", light: "#7c8a00", darkHover: "#c0ca33", lightHover: "#636e00" },
@@ -14,6 +18,8 @@ const ACCENT_PRESETS: Record<string, { dark: string; light: string; darkHover: s
   black:  { dark: "#b0b0b0", light: "#1a1a1a", darkHover: "#9e9e9e", lightHover: "#000000" },
   white:  { dark: "#ffffff", light: "#666666", darkHover: "#e0e0e0", lightHover: "#444444" },
 };
+
+type AuthView = "login" | "register" | "forgot-password";
 
 function applyAccentCssVars(theme: string, accentColor: string) {
   const preset = ACCENT_PRESETS[accentColor] || ACCENT_PRESETS.lime;
@@ -57,8 +63,32 @@ function useThemeAttribute() {
   }, []);
 }
 
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [authView, setAuthView] = useState<AuthView>("login");
+
+  if (isLoading) return null;
+
+  if (!isAuthenticated) {
+    switch (authView) {
+      case "register":
+        return <RegisterPage onNavigate={setAuthView} />;
+      case "forgot-password":
+        return <ForgotPasswordPage onNavigate={setAuthView} />;
+      default:
+        return <LoginPage onNavigate={setAuthView} />;
+    }
+  }
+
+  return <NotesPage />;
+}
+
 export function App() {
   useThemeAttribute();
 
-  return <NotesPage />;
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
 }

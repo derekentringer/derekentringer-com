@@ -129,6 +129,20 @@ vi.mock("@dnd-kit/utilities", () => ({
   CSS: { Transform: { toString: vi.fn().mockReturnValue("") } },
 }));
 
+// Mock AuthContext
+vi.mock("../context/AuthContext.tsx", () => ({
+  useAuth: () => ({
+    user: { id: "1", email: "test@test.com", role: "user" },
+    isAuthenticated: true,
+    isLoading: false,
+    login: vi.fn(),
+    register: vi.fn(),
+    logout: vi.fn(),
+    setUserFromLogin: vi.fn(),
+  }),
+  AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 import { NotesPage } from "../pages/NotesPage.tsx";
 
 function makeTrashNote(overrides: Partial<Note> = {}): Note {

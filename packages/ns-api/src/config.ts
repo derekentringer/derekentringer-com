@@ -31,7 +31,14 @@ export function loadConfig(): Config {
     refreshTokenSecret:
       process.env.REFRESH_TOKEN_SECRET ||
       "dev-refresh-secret-do-not-use-in-prod",
-    corsOrigin: process.env.CORS_ORIGIN || "http://localhost:3005",
+    corsOrigins: (process.env.CORS_ORIGIN || "http://localhost:3005")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    corsOrigin: (process.env.CORS_ORIGIN || "http://localhost:3005")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)[0],
     port: Number(process.env.PORT) || 3004,
     nodeEnv,
     isProduction,
@@ -49,6 +56,7 @@ export function loadConfig(): Config {
 export interface Config {
   jwtSecret: string;
   refreshTokenSecret: string;
+  corsOrigins: string[];
   corsOrigin: string;
   port: number;
   nodeEnv: string;

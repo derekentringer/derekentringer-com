@@ -33,7 +33,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(cors, {
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
-      if (origin === config.corsOrigin) return cb(null, true);
+      if (config.corsOrigins.includes(origin)) return cb(null, true);
       cb(new Error("Not allowed"), false);
     },
     credentials: true,

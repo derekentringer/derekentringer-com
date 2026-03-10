@@ -1,10 +1,38 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsPage } from "../pages/SettingsPage.tsx";
 import { useEditorSettings } from "../hooks/useEditorSettings.ts";
 
+const mockSetUserFromLogin = vi.fn();
+let mockUser: { totpEnabled: boolean } | null = { totpEnabled: false };
+
+vi.mock("../context/AuthContext.tsx", () => ({
+  useAuth: () => ({
+    user: mockUser,
+    setUserFromLogin: mockSetUserFromLogin,
+  }),
+}));
+
+const mockSetupTotp = vi.fn();
+const mockVerifyTotpSetup = vi.fn();
+const mockDisableTotp = vi.fn();
+const mockGetMe = vi.fn();
+
+vi.mock("../api/auth.ts", () => ({
+  setupTotp: (...args: unknown[]) => mockSetupTotp(...args),
+  verifyTotpSetup: (...args: unknown[]) => mockVerifyTotpSetup(...args),
+  disableTotp: (...args: unknown[]) => mockDisableTotp(...args),
+  getMe: (...args: unknown[]) => mockGetMe(...args),
+}));
+
 beforeEach(() => {
   localStorage.clear();
+  mockUser = { totpEnabled: false };
+  mockSetUserFromLogin.mockReset();
+  mockSetupTotp.mockReset();
+  mockVerifyTotpSetup.mockReset();
+  mockDisableTotp.mockReset();
+  mockGetMe.mockReset();
 });
 
 function SettingsPageWrapper(props: {
@@ -50,6 +78,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Editor Preferences")).toBeInTheDocument();
     expect(screen.getByText("Trash")).toBeInTheDocument();
     expect(screen.getByText("Version History")).toBeInTheDocument();
+    expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument();
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
   });
 
@@ -165,6 +194,99 @@ describe("SettingsPage", () => {
     await userEvent.selectOptions(select, "30");
     const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
     expect(stored.versionIntervalMinutes).toBe(30);
+  });
+
+  // --- Two-Factor Authentication ---
+
+  it("renders Two-Factor Authentication section heading", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument();
+  });
+
+  it("shows Enable 2FA button when totpEnabled is false", () => {
+    mockUser = { totpEnabled: false };
+    renderSettingsPage();
+    expect(screen.getByText("Enable 2FA")).toBeInTheDocument();
+  });
+
+  it("shows description text when 2FA not enabled", () => {
+    mockUser = { totpEnabled: false };
+    renderSettingsPage();
+    expect(screen.getByText(/Add an extra layer of security/)).toBeInTheDocument();
+  });
+
+  it("calls setupTotp on Enable 2FA click and shows QR code", async () => {
+    mockUser = { totpEnabled: false };
+    mockSetupTotp.mockResolvedValue({
+      qrCodeDataUrl: "data:image/png;base64,test",
+      secret: "TESTSECRET123",
+    });
+    renderSettingsPage();
+    await userEvent.click(screen.getByText("Enable 2FA"));
+    await waitFor(() => {
+      expect(mockSetupTotp).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByAltText("TOTP QR Code")).toBeInTheDocument();
+    expect(screen.getByText(/TESTSECRET123/)).toBeInTheDocument();
+  });
+
+  it("shows verification input and Verify & Enable button during setup", async () => {
+    mockUser = { totpEnabled: false };
+    mockSetupTotp.mockResolvedValue({
+      qrCodeDataUrl: "data:image/png;base64,test",
+      secret: "TESTSECRET123",
+    });
+    renderSettingsPage();
+    await userEvent.click(screen.getByText("Enable 2FA"));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Enter 6-digit code")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Verify & Enable")).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
+  });
+
+  it("shows Enabled badge when user.totpEnabled is true", () => {
+    mockUser = { totpEnabled: true };
+    renderSettingsPage();
+    expect(screen.getByText("Enabled")).toBeInTheDocument();
+    expect(screen.getByText("Status:")).toBeInTheDocument();
+  });
+
+  it("shows Disable 2FA button when enabled", () => {
+    mockUser = { totpEnabled: true };
+    renderSettingsPage();
+    expect(screen.getByText("Disable 2FA")).toBeInTheDocument();
+  });
+
+  it("shows backup codes after successful verify setup", async () => {
+    mockUser = { totpEnabled: false };
+    mockSetupTotp.mockResolvedValue({
+      qrCodeDataUrl: "data:image/png;base64,test",
+      secret: "TESTSECRET123",
+    });
+    mockVerifyTotpSetup.mockResolvedValue({
+      backupCodes: ["code1", "code2", "code3"],
+    });
+    mockGetMe.mockResolvedValue({ totpEnabled: true });
+    renderSettingsPage();
+
+    await userEvent.click(screen.getByText("Enable 2FA"));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Enter 6-digit code")).toBeInTheDocument();
+    });
+
+    const input = screen.getByPlaceholderText("Enter 6-digit code");
+    await userEvent.type(input, "123456");
+    await userEvent.click(screen.getByText("Verify & Enable"));
+
+    await waitFor(() => {
+      expect(screen.getByText("2FA enabled successfully!")).toBeInTheDocument();
+    });
+    expect(screen.getByText("code1")).toBeInTheDocument();
+    expect(screen.getByText("code2")).toBeInTheDocument();
+    expect(screen.getByText("code3")).toBeInTheDocument();
+    expect(screen.getByText("Copy")).toBeInTheDocument();
+    expect(screen.getByText("Done")).toBeInTheDocument();
   });
 
   // --- Keyboard Shortcuts ---
