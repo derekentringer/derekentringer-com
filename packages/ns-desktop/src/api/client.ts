@@ -1,3 +1,5 @@
+import { getSecureItem, setSecureItem, removeSecureItem } from "../lib/secureStorage.ts";
+
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3004";
 
 const REFRESH_TOKEN_KEY = "ns-desktop:refreshToken";
@@ -14,12 +16,12 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
-export function setRefreshToken(token: string): void {
-  localStorage.setItem(REFRESH_TOKEN_KEY, token);
+export async function setRefreshToken(token: string): Promise<void> {
+  await setSecureItem(REFRESH_TOKEN_KEY, token);
 }
 
-export function clearRefreshToken(): void {
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+export async function clearRefreshToken(): Promise<void> {
+  await removeSecureItem(REFRESH_TOKEN_KEY);
 }
 
 export function setOnAuthFailure(callback: () => void): void {
@@ -33,7 +35,7 @@ async function doRefresh(): Promise<boolean> {
 
   refreshPromise = (async () => {
     try {
-      const storedRefresh = localStorage.getItem(REFRESH_TOKEN_KEY);
+      const storedRefresh = await getSecureItem(REFRESH_TOKEN_KEY);
       if (!storedRefresh) {
         accessToken = null;
         if (onAuthFailure) {
@@ -55,20 +57,20 @@ async function doRefresh(): Promise<boolean> {
         const data = await refreshResponse.json();
         accessToken = data.accessToken;
         if (data.refreshToken) {
-          localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+          await setSecureItem(REFRESH_TOKEN_KEY, data.refreshToken);
         }
         return true;
       }
 
       accessToken = null;
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      await removeSecureItem(REFRESH_TOKEN_KEY);
       if (onAuthFailure) {
         onAuthFailure();
       }
       return false;
     } catch {
       accessToken = null;
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      await removeSecureItem(REFRESH_TOKEN_KEY);
       if (onAuthFailure) {
         onAuthFailure();
       }

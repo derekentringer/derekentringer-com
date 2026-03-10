@@ -686,6 +686,21 @@ export function SettingsPage() {
             </div>
           </SectionCard>
 
+          {/* Account */}
+          <SectionCard title="Account">
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Update your account credentials.
+              </p>
+              <button
+                onClick={() => navigate("/change-password")}
+                className="px-3 py-1.5 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors"
+              >
+                Change Password
+              </button>
+            </div>
+          </SectionCard>
+
           {/* Two-Factor Authentication */}
           <SectionCard title="Two-Factor Authentication">
             {totpBackupCodes ? (

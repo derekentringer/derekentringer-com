@@ -3,7 +3,7 @@
 **Status:** Complete
 **Phase:** 6 — Auth & Sync
 **Priority:** Medium
-**Completed:** v1.61.0
+**Completed:** v1.62.0
 
 ## Summary
 
@@ -76,7 +76,7 @@ Login-required authentication for the NoteSync Desktop app, using shared account
 - Exposes: `user`, `isAuthenticated`, `isLoading`, `login`, `register`, `logout`, `setUserFromLogin`
 - **Auto-login on launch:** `useEffect` calls `refreshSession()` → if valid, calls `getMe()` to hydrate user state
 - **Auth failure handler:** `setOnAuthFailure` callback clears user state on token expiry
-- Token storage: access token in memory, refresh token in `localStorage` (`ns-desktop:refreshToken`)
+- Token storage: access token in memory, refresh token in Stronghold encrypted vault (Tauri) or `localStorage` (browser dev mode)
 
 ---
 
@@ -98,6 +98,7 @@ Login-required authentication for the NoteSync Desktop app, using shared account
 - `getMe()` → `GET /auth/me`
 - `logout()` → `POST /auth/logout`
 - `forgotPassword(email)` → `POST /auth/forgot-password`
+- `changePassword(currentPassword, newPassword)` → `POST /auth/change-password`
 - `verifyTotp(totpToken, code)` → `POST /auth/totp/verify`
 - `setupTotp()` → `POST /auth/totp/setup`
 - `verifyTotpSetup(code)` → `POST /auth/totp/verify-setup`
@@ -126,7 +127,17 @@ Login-required authentication for the NoteSync Desktop app, using shared account
 | `packages/ns-desktop/src/pages/ForgotPasswordPage.tsx` | Created — forgot password form |
 | `packages/ns-desktop/src/components/TotpVerifyForm.tsx` | Created — 6-digit TOTP input |
 | `packages/ns-desktop/src/components/PasswordStrengthIndicator.tsx` | Created — visual password strength bar |
-| `packages/ns-desktop/src/pages/SettingsPage.tsx` | Edited — added 2FA settings section |
+| `packages/ns-desktop/src/pages/SettingsPage.tsx` | Edited — added 2FA settings section, Account section with Change Password |
+| `packages/ns-desktop/src/pages/ChangePasswordPage.tsx` | Created — change password form with strength indicator |
+| `packages/ns-desktop/src/pages/AdminPage.tsx` | Created — admin panel (AI controls, approved emails, user management) |
+| `packages/ns-desktop/src/api/admin.ts` | Created — admin API functions (users, emails, AI settings) |
+| `packages/ns-desktop/src/lib/secureStorage.ts` | Created — Stronghold/localStorage abstraction for token storage |
+| `packages/ns-desktop/src-tauri/Cargo.toml` | Edited — added `tauri-plugin-stronghold` dependency |
+| `packages/ns-desktop/src-tauri/src/lib.rs` | Edited — registered Stronghold plugin |
+| `packages/ns-desktop/src-tauri/capabilities/default.json` | Edited — added `stronghold:default` permission |
+| `packages/ns-desktop/src/api/client.ts` | Edited — async token ops via secureStorage |
+| `packages/ns-desktop/src/api/auth.ts` | Edited — added `changePassword()`, async token ops |
+| `packages/ns-desktop/src/pages/NotesPage.tsx` | Edited — added Change Password + Admin views, shield icon |
 | `packages/ns-desktop/src/__tests__/AuthContext.test.tsx` | Created — 8 tests |
 | `packages/ns-desktop/src/__tests__/LoginPage.test.tsx` | Created — 10 tests |
 | `packages/ns-desktop/src/__tests__/RegisterPage.test.tsx` | Created — 8 tests |
@@ -147,7 +158,9 @@ Login-required authentication for the NoteSync Desktop app, using shared account
 | `ForgotPasswordPage.test.tsx` | 6 tests: rendering, email submission, success message, loading state |
 | `TotpVerifyForm.test.tsx` | 5 tests: digit inputs, auto-advance, paste, submit, error display |
 | `PasswordStrengthIndicator.test.tsx` | 4 tests: strength levels, color coding, label text |
-| `SettingsPage.test.tsx` | 8 new 2FA tests (30 total): enable/disable flow, QR code, backup codes |
+| `SettingsPage.test.tsx` | 10 new tests (32 total): 2FA enable/disable, QR code, backup codes, Account section |
+| `ChangePasswordPage.test.tsx` | 7 tests: rendering, validation, password match, API call, error, loading, success |
+| `AdminPage.test.tsx` | 8 tests: heading, sections, AI toggle, emails, user table, back, reset/delete dialogs |
 
 ---
 
@@ -156,12 +169,12 @@ Login-required authentication for the NoteSync Desktop app, using shared account
 | Aspect | Web | Desktop |
 |--------|-----|---------|
 | Routing | React Router (`/login`, `/register`, etc.) | `authView` state + `onNavigate` callback |
-| Token storage | httpOnly cookies (access), localStorage (refresh) | In-memory (access), localStorage (refresh) |
+| Token storage | httpOnly cookies (access), localStorage (refresh) | In-memory (access), Stronghold encrypted vault (refresh) |
 | Auth provider | `AuthProvider` wraps router | `AuthProvider` wraps `AppContent` |
 | Password reset | In-app reset form at `/reset-password` | Sends email via API; reset happens in ns-web browser |
 | WebAuthn passkeys | Supported (register + login) | Deferred (requires Tauri native integration) |
-| Change password | In-app settings form | Deferred |
-| Admin panel | Full admin page | Deferred |
+| Change password | In-app via `/change-password` route | In-app via `ChangePasswordPage` (state-based navigation) |
+| Admin panel | Full admin page at `/admin` route | Full `AdminPage` via shield icon in sidebar |
 
 ---
 
@@ -175,7 +188,4 @@ Login-required authentication for the NoteSync Desktop app, using shared account
 ## Deferred
 
 - **WebAuthn passkeys** — requires Tauri native integration for biometric prompts (platform authenticator)
-- **Change password** — in-app form (current password + new password with strength indicator)
-- **Admin panel** — user management, approved emails, AI toggle (may not be needed in desktop)
-- **Tauri secure token storage** — currently uses localStorage; should migrate to `tauri-plugin-store` for encrypted storage
 - **Refresh token reuse detection** — server-side feature, already in ns-api

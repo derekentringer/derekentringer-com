@@ -3,11 +3,11 @@
 **Status:** Complete
 **Phase:** 6 — Auth & Sync
 **Priority:** Medium
-**Completed:** v1.61.0
+**Completed:** v1.62.0
 
 ## Summary
 
-Login-required authentication for the desktop app, using shared accounts across web, desktop, and mobile platforms. All auth routes through ns-api. Supports registration, password reset, TOTP 2FA, and WebAuthn passkeys. Matches the ns-web auth model for feature parity.
+Login-required authentication for the desktop app, using shared accounts across web, desktop, and mobile platforms. All auth routes through ns-api. Supports registration, password reset, TOTP 2FA, change password, admin panel, and secure token storage via Stronghold. Matches the ns-web auth model for feature parity (except WebAuthn passkeys, deferred).
 
 ## Requirements
 
@@ -57,7 +57,7 @@ Login-required authentication for the desktop app, using shared accounts across 
 ## Technical Considerations
 
 - All auth endpoints already exist on ns-api — desktop is a new client, not a new auth system
-- Token storage: use Tauri's `tauri-plugin-store` or a dedicated encrypted SQLite table
+- Token storage: uses `tauri-plugin-stronghold` for encrypted vault storage (Stronghold); falls back to localStorage in browser dev mode
 - WebAuthn: Tauri may need native integration for biometric prompts (platform authenticator)
 - Password reset flows through ns-web in the browser (desktop just opens the URL)
 - Offline behavior: app works offline after initial login; tokens are validated locally by checking expiry

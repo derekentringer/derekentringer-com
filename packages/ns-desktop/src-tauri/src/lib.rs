@@ -41,6 +41,7 @@ pub fn run() {
                 .add_migrations("sqlite:notesync.db", migrations)
                 .build(),
         )
+        .plugin(tauri_plugin_stronghold::Builder::new(|_| "".into()).build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

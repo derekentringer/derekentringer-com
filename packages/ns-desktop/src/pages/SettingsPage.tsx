@@ -144,12 +144,13 @@ const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
 
 interface SettingsPageProps {
   onBack: () => void;
+  onChangePassword?: () => void;
   onTrashRetentionChange?: (days: number) => void;
   editorSettings: EditorSettings;
   updateEditorSetting: <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) => void;
 }
 
-export function SettingsPage({ onBack, onTrashRetentionChange, editorSettings, updateEditorSetting }: SettingsPageProps) {
+export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange, editorSettings, updateEditorSetting }: SettingsPageProps) {
   const { user, setUserFromLogin } = useAuth();
 
   const [trashRetentionDays, setTrashRetentionDays] = useState<number>(() => {
@@ -386,6 +387,21 @@ export function SettingsPage({ onBack, onTrashRetentionChange, editorSettings, u
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
+            </div>
+          </SectionCard>
+
+          {/* Account */}
+          <SectionCard title="Account">
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Update your account credentials.
+              </p>
+              <button
+                onClick={onChangePassword}
+                className="px-3 py-1.5 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors cursor-pointer"
+              >
+                Change Password
+              </button>
             </div>
           </SectionCard>
 
