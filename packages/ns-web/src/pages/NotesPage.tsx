@@ -1408,7 +1408,7 @@ export function NotesPage() {
                 )}
                 <input
                   type="text"
-                  placeholder="Search notes..."
+                  placeholder="Search notes... (⌘K)"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   onFocus={() => setSearchFocused(true)}

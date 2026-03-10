@@ -941,7 +941,7 @@ export function NotesPage() {
 
         {/* Search bar + tag browser (hidden in trash view) */}
         {sidebarView === "notes" && (
-        <div className="px-2 pb-2">
+        <div className="p-2">
           <div className="relative">
             <input
               ref={searchInputRef}
