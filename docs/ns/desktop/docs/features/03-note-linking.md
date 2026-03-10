@@ -71,8 +71,14 @@ Wiki-link syntax (`[[note title]]`) for connecting notes, with CodeMirror autoco
 - `wikiLinkExt` memoized CodeMirror extension passed to MarkdownEditor
 - Wiki-link props passed to MarkdownPreview
 - `handleWikiLinkClick` — finds note in current list or fetches by ID, then navigates
-- `syncNoteLinks` called after every save
+- `syncNoteLinks` called fire-and-forget after every save (does not block save status)
 - `loadNoteTitles` called on mount, save, create, delete, and restore
+
+### Bug Fix: Autosave Stale Closure
+
+The original `scheduleSave()` pattern created a `setTimeout` from event handlers (`handleTitleChange`, `handleContentChange`) that captured a stale `handleSave` closure. When the timer fired, it used old title/content values, causing `isDirty()` to return false (skipping the save) or saving stale data that overwrote a correct manual save (Enter key).
+
+**Fix:** Replaced `scheduleSave()` with a `useEffect`-based autosave (matching ns-web pattern). The effect re-runs whenever `title`, `content`, `selectedId`, or `handleSave` change, ensuring the timer always references the latest closure. `handleSave` also clears `saveTimerRef` on entry to prevent stale timer overwrites. `syncNoteLinks` moved to fire-and-forget after `setSaveStatus("saved")` so a link-sync failure doesn't make the save appear to fail.
 
 ### Tests (`src/__tests__/NoteLinking.test.tsx`)
 

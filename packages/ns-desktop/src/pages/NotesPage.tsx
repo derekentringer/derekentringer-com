@@ -320,6 +320,12 @@ export function NotesPage() {
   const handleSave = useCallback(async () => {
     if (!selectedId || !isDirty()) return;
 
+    // Clear any pending autosave timer to prevent stale-closure overwrites
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
     setSaveStatus("saving");
     try {
       const updated = await updateNote(selectedId, { title, content });
@@ -328,12 +334,14 @@ export function NotesPage() {
       );
       loadedTitleRef.current = title;
       loadedContentRef.current = content;
-      await syncNoteLinks(selectedId, content);
-      loadNoteTitles();
       setSaveStatus("saved");
 
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
       saveStatusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
+
+      // Fire-and-forget: sync wiki-links + refresh titles
+      syncNoteLinks(selectedId, content).catch(() => {});
+      loadNoteTitles();
     } catch (err) {
       console.error("Failed to save note:", err);
       showError("Failed to save note");
@@ -341,22 +349,21 @@ export function NotesPage() {
     }
   }, [selectedId, title, content]);
 
-  function scheduleSave() {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+  // Autosave: debounce after changes (useEffect ensures latest handleSave is always used)
+  useEffect(() => {
+    if (!isDirty() || !selectedId) return;
+
     saveTimerRef.current = setTimeout(() => {
       handleSave();
     }, editorSettings.autoSaveDelay);
-  }
 
-  function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setTitle(e.target.value);
-    scheduleSave();
-  }
-
-  function handleContentChange(newContent: string) {
-    setContent(newContent);
-    scheduleSave();
-  }
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
 
   // --- CRUD handlers ---
 
@@ -1209,7 +1216,7 @@ export function NotesPage() {
                 data-title-input
                 type="text"
                 value={title}
-                onChange={handleTitleChange}
+                onChange={(e) => setTitle(e.target.value)}
                 onFocus={(e) => {
                   if (e.target.value === "Untitled") {
                     setTitle("");
@@ -1218,7 +1225,6 @@ export function NotesPage() {
                 onBlur={(e) => {
                   if (e.target.value.trim() === "") {
                     setTitle("Untitled");
-                    scheduleSave();
                   }
                 }}
                 onKeyDown={(e) => {
@@ -1256,7 +1262,7 @@ export function NotesPage() {
                 <MarkdownEditor
                   ref={editorRef}
                   value={content}
-                  onChange={handleContentChange}
+                  onChange={(val: string) => setContent(val)}
                   onSave={handleSave}
                   showLineNumbers={showLineNumbers}
                   wordWrap={editorSettings.wordWrap}
