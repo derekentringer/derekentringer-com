@@ -137,6 +137,7 @@ export function NotesPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [versionRefreshKey, setVersionRefreshKey] = useState(0);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
@@ -363,7 +364,9 @@ export function NotesPage() {
 
       // Fire-and-forget: sync wiki-links + refresh titles + capture version
       syncNoteLinks(selectedId, content).catch(() => {});
-      captureVersion(selectedId, title, content, editorSettings.versionIntervalMinutes).catch(() => {});
+      captureVersion(selectedId, title, content, editorSettings.versionIntervalMinutes)
+        .then(() => setVersionRefreshKey((k) => k + 1))
+        .catch(() => {});
       loadNoteTitles();
     } catch (err) {
       console.error("Failed to save note:", err);
@@ -1402,6 +1405,7 @@ export function NotesPage() {
                 noteId={selectedId}
                 onSelectVersion={setSelectedVersion}
                 selectedVersionId={selectedVersion?.id}
+                refreshKey={versionRefreshKey}
               />
             ) : null}
           </div>

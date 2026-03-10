@@ -44,6 +44,7 @@ Automatic version snapshots of notes on save, with a version list panel in a rig
 - Side panel showing timestamped version list with relative time formatting (5m ago, 2h ago, etc.)
 - Calls `listVersions()` from `../lib/db.ts` directly (no API fetch — local SQLite)
 - Clicking a version sets it as selected; selected version highlighted with primary background
+- Optional `refreshKey` prop triggers re-fetch when incremented (used after saves to show new versions)
 - Empty state: "No versions yet"
 - Loading state with spinner
 - `cursor-pointer` on all version items
@@ -62,14 +63,14 @@ Automatic version snapshots of notes on save, with a version list panel in a rig
 ### Editor Settings (`src/hooks/useEditorSettings.ts`)
 
 - Added `versionIntervalMinutes` to `EditorSettings` interface
-- Default: 15, clamped to 0–60 range (0 = every save)
+- Default: 0 (every save), clamped to 0–60 range
 - Stored in localStorage (consistent with desktop's existing settings pattern)
 
 ### NotesPage Integration (`src/pages/NotesPage.tsx`)
 
 - **Drawer state**: `drawerTab` ("history"), `drawerOpen`, `selectedVersion`, `successToast`
 - **Drawer resize**: `useResizable` with `direction: "vertical"`, `initialSize: 300`, `min: 200`, `max: 500`, `invert: true`, persisted to `ns-drawer-width`
-- **Version capture on save**: fire-and-forget `captureVersion()` call after `updateNote()` succeeds (same pattern as `syncNoteLinks`)
+- **Version capture on save**: fire-and-forget `captureVersion()` call after `updateNote()` succeeds (same pattern as `syncNoteLinks`); increments `versionRefreshKey` on completion to trigger panel re-fetch
 - **Sliding drawer**: fixed-position panel with `translateX` animation, matching web app's drawer pattern
 - **Tab button**: clock icon positioned absolutely with `right-full` and `bottom: 38` (above backlinks panel); active state uses primary background; only shown when a note is selected and not in trash view
 - **DiffView replaces editor**: when `selectedVersion` is set, DiffView renders instead of the editor/preview area

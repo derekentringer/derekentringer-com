@@ -53,7 +53,7 @@ Settings panel for theme, editor preferences, AI feature toggles, sync configura
   - Disconnect / revoke access
   - "Import from Google Drive" shortcut (opens import wizard)
 - **Version history**:
-  - Capture interval: every save, 5 min, 15 min (default), 30 min, 60 min
+  - Capture interval: every save (default), 5 min, 15 min, 30 min, 60 min
 - **Trash**:
   - Trash retention period (7/14/30/60/90 days or Never)
   - "Empty Trash Now" button

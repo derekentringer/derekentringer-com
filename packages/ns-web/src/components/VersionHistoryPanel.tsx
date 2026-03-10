@@ -26,12 +26,14 @@ interface VersionHistoryPanelProps {
   noteId: string;
   onSelectVersion: (version: NoteVersion) => void;
   selectedVersionId?: string;
+  refreshKey?: number;
 }
 
 export function VersionHistoryPanel({
   noteId,
   onSelectVersion,
   selectedVersionId,
+  refreshKey,
 }: VersionHistoryPanelProps) {
   const [versions, setVersions] = useState<NoteVersion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -61,7 +63,7 @@ export function VersionHistoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [noteId]);
+  }, [noteId, refreshKey]);
 
   if (isLoading) {
     return (

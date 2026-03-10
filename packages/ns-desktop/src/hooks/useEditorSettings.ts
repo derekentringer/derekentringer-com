@@ -54,7 +54,7 @@ const DEFAULT_SETTINGS: EditorSettings = {
   editorFontSize: 14,
   maxCachedNotes: 100,
   accentColor: "lime",
-  versionIntervalMinutes: 15,
+  versionIntervalMinutes: 0,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -88,7 +88,7 @@ function loadSettings(): EditorSettings {
         : "lime",
       versionIntervalMinutes: typeof parsed.versionIntervalMinutes === "number"
         ? clamp(parsed.versionIntervalMinutes, 0, 60)
-        : 15,
+        : 0,
     };
   } catch {
     return DEFAULT_SETTINGS;
