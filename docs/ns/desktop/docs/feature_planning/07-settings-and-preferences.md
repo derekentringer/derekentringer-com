@@ -1,6 +1,6 @@
 # 07 — Settings & Preferences
 
-**Status:** Not Started
+**Status:** Complete
 **Phase:** 5 — Settings
 **Priority:** Medium
 
