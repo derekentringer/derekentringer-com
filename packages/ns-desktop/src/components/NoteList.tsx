@@ -13,6 +13,7 @@ interface NoteListProps {
   notes: Note[];
   selectedId: string | null;
   onSelect: (note: Note) => void;
+  onDoubleClick?: (note: Note) => void;
   onDeleteNote?: (noteId: string) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   searchResults?: NoteSearchResult[] | null;
@@ -29,6 +30,7 @@ interface SortableNoteItemProps {
   note: Note;
   isSelected: boolean;
   onSelect: (note: Note) => void;
+  onDoubleClick?: (note: Note) => void;
   onDeleteNote?: (noteId: string) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   sortByManual: boolean;
@@ -43,6 +45,7 @@ function SortableNoteItem({
   note,
   isSelected,
   onSelect,
+  onDoubleClick,
   onDeleteNote,
   onToggleFavorite,
   sortByManual,
@@ -83,6 +86,7 @@ function SortableNoteItem({
       )}
       <button
         onClick={() => onSelect(note)}
+        onDoubleClick={(e) => { e.preventDefault(); onDoubleClick?.(note); }}
         onContextMenu={(e) => {
           if (!onDeleteNote && !onToggleFavorite) return;
           e.preventDefault();
@@ -137,6 +141,7 @@ export function NoteList({
   notes,
   selectedId,
   onSelect,
+  onDoubleClick,
   onDeleteNote,
   onToggleFavorite,
   searchResults,
@@ -178,6 +183,7 @@ export function NoteList({
             note={note}
             isSelected={note.id === selectedId}
             onSelect={onSelect}
+            onDoubleClick={onDoubleClick}
             onDeleteNote={onDeleteNote}
             onToggleFavorite={onToggleFavorite}
             sortByManual={sortByManual}
