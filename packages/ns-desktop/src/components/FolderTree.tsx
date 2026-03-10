@@ -12,6 +12,7 @@ interface FolderTreeProps {
   onRenameFolder: (folderId: string, newName: string) => void;
   onDeleteFolder: (folderId: string, mode: "move-up" | "recursive") => void;
   onMoveFolder: (folderId: string, parentId: string | null) => void;
+  onToggleFavorite?: (folderId: string, favorite: boolean) => void;
 }
 
 interface FolderTreeNodeProps {
@@ -246,6 +247,7 @@ export function FolderTree({
   onRenameFolder,
   onDeleteFolder,
   onMoveFolder,
+  onToggleFavorite,
 }: FolderTreeProps) {
   const [expandedMap, setExpandedMap] = useState<Map<string, boolean>>(() => {
     const stored = loadExpandedState();
@@ -537,6 +539,17 @@ export function FolderTree({
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
               Move to Root
+            </button>
+          )}
+          {onToggleFavorite && (
+            <button
+              onClick={() => {
+                onToggleFavorite(contextMenu.folder.id, !contextMenu.folder.favorite);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              {contextMenu.folder.favorite ? "Unfavorite" : "Favorite"}
             </button>
           )}
           <button

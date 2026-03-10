@@ -14,6 +14,7 @@ interface NoteListProps {
   selectedId: string | null;
   onSelect: (note: Note) => void;
   onDeleteNote?: (noteId: string) => void;
+  onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   searchResults?: NoteSearchResult[] | null;
   sortByManual: boolean;
 }
@@ -29,9 +30,11 @@ interface SortableNoteItemProps {
   isSelected: boolean;
   onSelect: (note: Note) => void;
   onDeleteNote?: (noteId: string) => void;
+  onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   sortByManual: boolean;
   contextMenu: ContextMenuState | null;
   onContextMenuOpen: (noteId: string, x: number, y: number) => void;
+  onContextMenuClose: () => void;
   onDeleteClick: (noteId: string) => void;
   contextMenuRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -41,9 +44,11 @@ function SortableNoteItem({
   isSelected,
   onSelect,
   onDeleteNote,
+  onToggleFavorite,
   sortByManual,
   contextMenu,
   onContextMenuOpen,
+  onContextMenuClose,
   onDeleteClick,
   contextMenuRef,
 }: SortableNoteItemProps) {
@@ -79,7 +84,7 @@ function SortableNoteItem({
       <button
         onClick={() => onSelect(note)}
         onContextMenu={(e) => {
-          if (!onDeleteNote) return;
+          if (!onDeleteNote && !onToggleFavorite) return;
           e.preventDefault();
           onContextMenuOpen(note.id, e.clientX, e.clientY);
         }}
@@ -90,24 +95,38 @@ function SortableNoteItem({
         }`}
       >
         <span className="block truncate">
+          {note.favorite && <span className="text-[10px] text-primary mr-1">★</span>}
           {note.title || "Untitled"}
         </span>
         {searchNote.headline && (
           <SearchSnippet headline={searchNote.headline} />
         )}
       </button>
-      {contextMenu?.noteId === note.id && onDeleteNote && (
+      {contextMenu?.noteId === note.id && (onDeleteNote || onToggleFavorite) && (
         <div
           ref={contextMenuRef}
           className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
-          <button
-            onClick={() => onDeleteClick(note.id)}
-            className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors cursor-pointer"
-          >
-            Delete
-          </button>
+          {onToggleFavorite && (
+            <button
+              onClick={() => {
+                onToggleFavorite(note.id, !note.favorite);
+                onContextMenuClose();
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              {note.favorite ? "Unfavorite" : "Favorite"}
+            </button>
+          )}
+          {onDeleteNote && (
+            <button
+              onClick={() => onDeleteClick(note.id)}
+              className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors cursor-pointer"
+            >
+              Delete
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -119,6 +138,7 @@ export function NoteList({
   selectedId,
   onSelect,
   onDeleteNote,
+  onToggleFavorite,
   searchResults,
   sortByManual,
 }: NoteListProps) {
@@ -159,9 +179,11 @@ export function NoteList({
             isSelected={note.id === selectedId}
             onSelect={onSelect}
             onDeleteNote={onDeleteNote}
+            onToggleFavorite={onToggleFavorite}
             sortByManual={sortByManual}
             contextMenu={contextMenu}
             onContextMenuOpen={(noteId, x, y) => setContextMenu({ noteId, x, y })}
+            onContextMenuClose={() => setContextMenu(null)}
             onDeleteClick={handleDeleteClick}
             contextMenuRef={contextMenuRef}
           />
