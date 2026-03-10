@@ -55,7 +55,7 @@
 
 ### Phase 5: Settings — Medium Priority
 
-- [ ] [07 — Settings & Preferences](feature_planning/07-settings-and-preferences.md)
+- [x] [07 — Settings & Preferences](features/07-settings-and-preferences.md)
 
 ### Phase 6: Auth & Sync — Medium Priority
 
