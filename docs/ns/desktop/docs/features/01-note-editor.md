@@ -88,6 +88,7 @@ Markdown-based note editor using CodeMirror 6 with syntax highlighting, auto-sav
 - CSS custom property injection for accent colors
 - Themed scrollbars matching app theme
 - Full markdown preview styling (headings, code, blockquotes, tables, lists)
+- `user-select: none` on body to prevent accidental text selection on right-click across app chrome (sidebar, toolbars, buttons); `user-select: text` re-enabled on `input`, `textarea`, `.cm-editor`, and `.markdown-preview`
 
 ### Testing
 

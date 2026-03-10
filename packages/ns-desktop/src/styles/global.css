@@ -81,6 +81,17 @@
     color: var(--color-foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Re-enable text selection in editable / readable areas */
+  input,
+  textarea,
+  .cm-editor,
+  .markdown-preview {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   a:link,
@@ -278,4 +289,21 @@
   color: var(--color-primary-contrast, #000);
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* Wiki-link styles */
+.wiki-link {
+  color: var(--color-primary);
+  text-decoration: underline dashed;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.wiki-link:hover {
+  color: var(--color-primary-hover);
+}
+.wiki-link-broken {
+  color: var(--color-muted-foreground);
+  text-decoration: underline dashed;
+  text-decoration-color: var(--color-destructive);
+  text-underline-offset: 2px;
 }

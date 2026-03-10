@@ -21,6 +21,18 @@ pub fn run() {
             sql: include_str!("../migrations/003.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add note_links table for wiki-link tracking",
+            sql: include_str!("../migrations/004.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 5,
+            description: "add note_versions table for version history",
+            sql: include_str!("../migrations/005.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

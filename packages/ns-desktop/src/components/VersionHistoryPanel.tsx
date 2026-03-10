@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import type { NoteVersion } from "@derekentringer/shared/ns";
-import { fetchVersions } from "../api/offlineNotes.ts";
+import type { NoteVersion } from "@derekentringer/ns-shared";
+import { listVersions } from "../lib/db.ts";
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
@@ -44,7 +44,7 @@ export function VersionHistoryPanel({
     async function load() {
       setIsLoading(true);
       try {
-        const result = await fetchVersions(noteId);
+        const result = await listVersions(noteId);
         if (!cancelled) {
           setVersions(result.versions);
         }
@@ -93,7 +93,7 @@ export function VersionHistoryPanel({
           <button
             key={version.id}
             onClick={() => onSelectVersion(version)}
-            className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+            className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-pointer ${
               selectedVersionId === version.id
                 ? "bg-primary text-primary-contrast"
                 : "text-foreground hover:bg-accent"

@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
-import type { NoteVersion } from "@derekentringer/shared/ns";
+import type { NoteVersion } from "@derekentringer/ns-shared";
 
-const mockFetchVersions = vi.fn();
+const mockListVersions = vi.fn();
 
-vi.mock("../api/offlineNotes.ts", () => ({
-  fetchVersions: (...args: unknown[]) => mockFetchVersions(...args),
+vi.mock("../lib/db.ts", () => ({
+  listVersions: (...args: unknown[]) => mockListVersions(...args),
 }));
 
 const mockVersions: NoteVersion[] = [
@@ -17,7 +17,7 @@ const mockVersions: NoteVersion[] = [
     noteId: "n1",
     title: "Version 1",
     content: "Content 1",
-    origin: "web",
+    origin: "desktop",
     createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5m ago
   },
   {
@@ -25,7 +25,7 @@ const mockVersions: NoteVersion[] = [
     noteId: "n1",
     title: "Version 2",
     content: "Content 2",
-    origin: "web",
+    origin: "desktop",
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2h ago
   },
 ];
@@ -36,7 +36,7 @@ beforeEach(() => {
 
 describe("VersionHistoryPanel", () => {
   it("renders version list", async () => {
-    mockFetchVersions.mockResolvedValue({ versions: mockVersions, total: 2 });
+    mockListVersions.mockResolvedValue({ versions: mockVersions, total: 2 });
 
     render(
       <VersionHistoryPanel
@@ -52,7 +52,7 @@ describe("VersionHistoryPanel", () => {
   });
 
   it("shows empty state when no versions", async () => {
-    mockFetchVersions.mockResolvedValue({ versions: [], total: 0 });
+    mockListVersions.mockResolvedValue({ versions: [], total: 0 });
 
     render(
       <VersionHistoryPanel
@@ -67,7 +67,7 @@ describe("VersionHistoryPanel", () => {
   });
 
   it("highlights selected version", async () => {
-    mockFetchVersions.mockResolvedValue({ versions: mockVersions, total: 2 });
+    mockListVersions.mockResolvedValue({ versions: mockVersions, total: 2 });
 
     render(
       <VersionHistoryPanel
@@ -85,7 +85,7 @@ describe("VersionHistoryPanel", () => {
 
   it("calls onSelectVersion when clicked", async () => {
     const onSelect = vi.fn();
-    mockFetchVersions.mockResolvedValue({ versions: mockVersions, total: 2 });
+    mockListVersions.mockResolvedValue({ versions: mockVersions, total: 2 });
 
     render(
       <VersionHistoryPanel
@@ -101,7 +101,7 @@ describe("VersionHistoryPanel", () => {
   });
 
   it("shows relative time formatting", async () => {
-    mockFetchVersions.mockResolvedValue({ versions: mockVersions, total: 2 });
+    mockListVersions.mockResolvedValue({ versions: mockVersions, total: 2 });
 
     render(
       <VersionHistoryPanel

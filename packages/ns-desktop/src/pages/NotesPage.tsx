@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   DndContext,
   closestCenter,
@@ -16,6 +16,8 @@ import type {
   TagInfo,
   NoteSortField,
   SortOrder,
+  NoteTitleEntry,
+  NoteVersion,
 } from "@derekentringer/ns-shared";
 import {
   fetchNotes,
@@ -39,6 +41,11 @@ import {
   initFts,
   reorderNotes,
   moveFolderParent,
+  syncNoteLinks,
+  listNoteTitles,
+  fetchNoteById,
+  captureVersion,
+  restoreVersion,
 } from "../lib/db.ts";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import {
@@ -46,6 +53,7 @@ import {
   type MarkdownEditorHandle,
 } from "../components/MarkdownEditor.tsx";
 import { MarkdownPreview } from "../components/MarkdownPreview.tsx";
+import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import {
   EditorToolbar,
   type ViewMode,
@@ -54,12 +62,16 @@ import { NoteList } from "../components/NoteList.tsx";
 import { FolderTree } from "../components/FolderTree.tsx";
 import { TagBrowser } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
+import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
+import { DiffView } from "../components/DiffView.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
+import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
+type DrawerTab = "history";
 
 const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
 const TRASH_RETENTION_OPTIONS: { value: number; label: string }[] = [
@@ -115,6 +127,18 @@ export function NotesPage() {
     return stored !== null ? Number(stored) : 30;
   });
 
+  // Note titles (for wiki-link autocomplete)
+  const [noteTitles, setNoteTitles] = useState<NoteTitleEntry[]>([]);
+  const noteTitlesRef = useRef<NoteTitleEntry[]>([]);
+  noteTitlesRef.current = noteTitles;
+
+  // Version history drawer
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("history");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [versionRefreshKey, setVersionRefreshKey] = useState(0);
+
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 },
@@ -163,6 +187,15 @@ export function NotesPage() {
     storageKey: "ns-desktop-split-width",
   });
 
+  const drawerResize = useResizable({
+    direction: "vertical",
+    initialSize: 300,
+    minSize: 200,
+    maxSize: 500,
+    storageKey: "ns-drawer-width",
+    invert: true,
+  });
+
   // Resolve theme for editor
   const resolvedTheme = (() => {
     if (editorSettings.theme === "system") {
@@ -183,6 +216,10 @@ export function NotesPage() {
       .catch(() => {});
   }, []);
 
+  const loadNoteTitles = useCallback(async () => {
+    try { setNoteTitles(await listNoteTitles()); } catch {}
+  }, []);
+
   async function loadData() {
     try {
       await initFts();
@@ -194,6 +231,7 @@ export function NotesPage() {
       setNotes(notesResult);
       setFolders(foldersResult);
       setTags(tagsResult);
+      loadNoteTitles();
 
       // Auto-purge old trash
       const retention = Number(localStorage.getItem(TRASH_RETENTION_KEY) ?? 30);
@@ -294,6 +332,7 @@ export function NotesPage() {
     setSaveStatus("idle");
     setConfirmDelete(false);
     setConfirmPermanentDelete(false);
+    setSelectedVersion(null);
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -303,6 +342,12 @@ export function NotesPage() {
 
   const handleSave = useCallback(async () => {
     if (!selectedId || !isDirty()) return;
+
+    // Clear any pending autosave timer to prevent stale-closure overwrites
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
 
     setSaveStatus("saving");
     try {
@@ -316,6 +361,13 @@ export function NotesPage() {
 
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
       saveStatusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
+
+      // Fire-and-forget: sync wiki-links + refresh titles + capture version
+      syncNoteLinks(selectedId, content).catch(() => {});
+      captureVersion(selectedId, title, content, editorSettings.versionIntervalMinutes)
+        .then(() => setVersionRefreshKey((k) => k + 1))
+        .catch(() => {});
+      loadNoteTitles();
     } catch (err) {
       console.error("Failed to save note:", err);
       showError("Failed to save note");
@@ -323,22 +375,21 @@ export function NotesPage() {
     }
   }, [selectedId, title, content]);
 
-  function scheduleSave() {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+  // Autosave: debounce after changes (useEffect ensures latest handleSave is always used)
+  useEffect(() => {
+    if (!isDirty() || !selectedId) return;
+
     saveTimerRef.current = setTimeout(() => {
       handleSave();
     }, editorSettings.autoSaveDelay);
-  }
 
-  function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setTitle(e.target.value);
-    scheduleSave();
-  }
-
-  function handleContentChange(newContent: string) {
-    setContent(newContent);
-    scheduleSave();
-  }
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
 
   // --- CRUD handlers ---
 
@@ -350,6 +401,7 @@ export function NotesPage() {
       setNotes((prev) => [note, ...prev]);
       selectNote(note);
       await refreshSidebarData();
+      loadNoteTitles();
       setTimeout(() => {
         const titleInput = document.querySelector<HTMLInputElement>("[data-title-input]");
         titleInput?.select();
@@ -377,6 +429,7 @@ export function NotesPage() {
       setConfirmDelete(false);
       setTrashCount((c) => c + 1);
       await refreshSidebarData();
+      loadNoteTitles();
     } catch (err) {
       console.error("Failed to delete note:", err);
       showError("Failed to delete note");
@@ -396,6 +449,7 @@ export function NotesPage() {
         loadedContentRef.current = "";
       }
       await refreshSidebarData();
+      loadNoteTitles();
     } catch (err) {
       console.error("Failed to delete note:", err);
       showError("Failed to delete note");
@@ -601,6 +655,7 @@ export function NotesPage() {
         setConfirmPermanentDelete(false);
       }
       await refreshSidebarData();
+      loadNoteTitles();
     } catch (err) {
       console.error("Failed to restore note:", err);
       showError("Failed to restore note");
@@ -742,6 +797,62 @@ export function NotesPage() {
   const selectedNote = (sidebarView === "trash"
     ? trashNotes.find((n) => n.id === selectedId)
     : notes.find((n) => n.id === selectedId)) ?? null;
+
+  // --- Wiki-link memoized values ---
+
+  const wikiLinkTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of noteTitles) map.set(t.title.toLowerCase(), t.id);
+    return map;
+  }, [noteTitles]);
+
+  const wikiLinkExt = useMemo(
+    () => wikiLinkAutocomplete(() => noteTitlesRef.current),
+    [],
+  );
+
+  function handleDrawerTabClick(tab: DrawerTab) {
+    if (drawerOpen && drawerTab === tab) {
+      setDrawerOpen(false);
+    } else {
+      setDrawerTab(tab);
+      setDrawerOpen(true);
+    }
+  }
+
+  async function handleVersionRestore(noteId: string, versionId: string) {
+    try {
+      const updated = await restoreVersion(noteId, versionId);
+      setTitle(updated.title);
+      setContent(updated.content);
+      loadedTitleRef.current = updated.title;
+      loadedContentRef.current = updated.content;
+      setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+      setSelectedVersion(null);
+      setSuccessToast("Version restored");
+      setTimeout(() => setSuccessToast(null), 3000);
+    } catch {
+      showError("Failed to restore version");
+    }
+  }
+
+  function handleWikiLinkClick(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      selectNote(note);
+      return;
+    }
+    fetchNoteById(noteId)
+      .then((fetched) => {
+        if (fetched) {
+          setNotes((prev) =>
+            prev.some((n) => n.id === fetched.id) ? prev : [fetched, ...prev],
+          );
+          selectNote(fetched);
+        }
+      })
+      .catch(() => showError("Linked note not found"));
+  }
 
   return (
     <div className="flex h-full">
@@ -1156,7 +1267,7 @@ export function NotesPage() {
                 data-title-input
                 type="text"
                 value={title}
-                onChange={handleTitleChange}
+                onChange={(e) => setTitle(e.target.value)}
                 onFocus={(e) => {
                   if (e.target.value === "Untitled") {
                     setTitle("");
@@ -1165,7 +1276,6 @@ export function NotesPage() {
                 onBlur={(e) => {
                   if (e.target.value.trim() === "") {
                     setTitle("Untitled");
-                    scheduleSave();
                   }
                 }}
                 onKeyDown={(e) => {
@@ -1187,48 +1297,66 @@ export function NotesPage() {
               onChange={(newTags) => handleUpdateTags(selectedId!, newTags)}
             />
 
-            {/* Toolbar */}
-            <EditorToolbar
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              onBold={() => editorRef.current?.insertBold()}
-              onItalic={() => editorRef.current?.insertItalic()}
-              showLineNumbers={showLineNumbers}
-              onToggleLineNumbers={() => setShowLineNumbers((prev) => !prev)}
-            />
-
-            {/* Content */}
-            <div className="flex-1 flex min-h-0">
-              {viewMode !== "preview" && (
-                <MarkdownEditor
-                  ref={editorRef}
-                  value={content}
-                  onChange={handleContentChange}
-                  onSave={handleSave}
+            {selectedVersion ? (
+              <DiffView
+                version={selectedVersion}
+                currentTitle={title}
+                currentContent={content}
+                onRestore={() => handleVersionRestore(selectedId!, selectedVersion.id)}
+                onClose={() => setSelectedVersion(null)}
+              />
+            ) : (
+              <>
+                {/* Toolbar */}
+                <EditorToolbar
+                  viewMode={viewMode}
+                  onViewModeChange={setViewMode}
+                  onBold={() => editorRef.current?.insertBold()}
+                  onItalic={() => editorRef.current?.insertItalic()}
                   showLineNumbers={showLineNumbers}
-                  wordWrap={editorSettings.wordWrap}
-                  tabSize={editorSettings.tabSize}
-                  fontSize={editorSettings.editorFontSize}
-                  theme={resolvedTheme}
-                  accentColor={accentHex}
-                  className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
-                  style={viewMode === "split" ? { width: splitResize.size } : undefined}
+                  onToggleLineNumbers={() => setShowLineNumbers((prev) => !prev)}
                 />
-              )}
-              {viewMode === "split" && (
-                <ResizeDivider
-                  direction="vertical"
-                  isDragging={splitResize.isDragging}
-                  onPointerDown={splitResize.onPointerDown}
-                />
-              )}
-              {viewMode !== "editor" && (
-                <MarkdownPreview
-                  content={content}
-                  className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
-                />
-              )}
-            </div>
+
+                {/* Content */}
+                <div className="flex-1 flex min-h-0">
+                  {viewMode !== "preview" && (
+                    <MarkdownEditor
+                      ref={editorRef}
+                      value={content}
+                      onChange={(val: string) => setContent(val)}
+                      onSave={handleSave}
+                      showLineNumbers={showLineNumbers}
+                      wordWrap={editorSettings.wordWrap}
+                      tabSize={editorSettings.tabSize}
+                      fontSize={editorSettings.editorFontSize}
+                      theme={resolvedTheme}
+                      accentColor={accentHex}
+                      extensions={[wikiLinkExt]}
+                      className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
+                      style={viewMode === "split" ? { width: splitResize.size } : undefined}
+                    />
+                  )}
+                  {viewMode === "split" && (
+                    <ResizeDivider
+                      direction="vertical"
+                      isDragging={splitResize.isDragging}
+                      onPointerDown={splitResize.onPointerDown}
+                    />
+                  )}
+                  {viewMode !== "editor" && (
+                    <MarkdownPreview
+                      content={content}
+                      className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
+                      wikiLinkTitleMap={wikiLinkTitleMap}
+                      onWikiLinkClick={handleWikiLinkClick}
+                    />
+                  )}
+                </div>
+                {selectedId && sidebarView !== "trash" && (
+                  <BacklinksPanel noteId={selectedId} onNavigate={handleWikiLinkClick} />
+                )}
+              </>
+            )}
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
@@ -1237,6 +1365,51 @@ export function NotesPage() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Sliding drawer with tabbed content */}
+      <div
+        className="fixed top-0 right-0 h-full z-10 overflow-visible transition-transform duration-300 ease-in-out"
+        style={{
+          width: drawerResize.size,
+          transform: drawerOpen ? "translateX(0)" : `translateX(${drawerResize.size}px)`,
+        }}
+      >
+        {/* Tab buttons on left edge, above backlinks panel */}
+        {selectedId && sidebarView !== "trash" && (
+          <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
+            <button
+              onClick={() => handleDrawerTabClick("history")}
+              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors cursor-pointer ${
+                drawerOpen && drawerTab === "history"
+                  ? "bg-primary text-primary-contrast"
+                  : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-muted"
+              }`}
+              title="Version History"
+              aria-label="Version History"
+              data-testid="drawer-tab-history"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </button>
+          </div>
+        )}
+        <div className="h-full flex bg-card shadow-lg">
+          <ResizeDivider
+            direction="vertical"
+            isDragging={drawerResize.isDragging}
+            onPointerDown={drawerResize.onPointerDown}
+          />
+          <div className="flex-1 min-w-0 h-full">
+            {drawerTab === "history" && selectedId ? (
+              <VersionHistoryPanel
+                noteId={selectedId}
+                onSelectVersion={setSelectedVersion}
+                selectedVersionId={selectedVersion?.id}
+                refreshKey={versionRefreshKey}
+              />
+            ) : null}
+          </div>
+        </div>
       </div>
       </main>
 
@@ -1260,7 +1433,20 @@ export function NotesPage() {
           <span className="text-sm text-destructive">{error}</span>
           <button
             onClick={() => setError(null)}
-            className="text-muted-foreground hover:text-foreground text-sm"
+            className="text-muted-foreground hover:text-foreground text-sm cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Success toast */}
+      {successToast && (
+        <div className="fixed bottom-4 right-4 bg-card border border-primary rounded-md px-4 py-3 shadow-lg flex items-center gap-3">
+          <span className="text-sm text-foreground">{successToast}</span>
+          <button
+            onClick={() => setSuccessToast(null)}
+            className="text-muted-foreground hover:text-foreground text-sm cursor-pointer"
           >
             Dismiss
           </button>

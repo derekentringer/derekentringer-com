@@ -48,8 +48,8 @@
 
 ### Phase 4: UI Features — High Priority
 
-- [ ] [03 — Note Linking + Backlinks](feature_planning/03-note-linking.md)
-- [ ] [04 — Version History](feature_planning/04-version-history.md)
+- [x] [03 — Note Linking + Backlinks](features/03-note-linking.md)
+- [x] [04 — Version History](features/04-version-history.md)
 - [ ] [05 — Favorites](feature_planning/05-favorites.md)
 - [ ] [06 — Editor Tabs](feature_planning/06-editor-tabs.md)
 
