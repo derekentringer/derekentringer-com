@@ -311,6 +311,7 @@ export function SettingsPage() {
     const preset = ACCENT_PRESETS[editorSettings.accentColor];
     const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
     document.documentElement.style.setProperty("--color-primary", isLight ? preset.light : preset.dark);
+    document.documentElement.style.setProperty("--color-primary-hover", isLight ? preset.lightHover : preset.darkHover);
     document.documentElement.style.setProperty("--color-ring", isLight ? preset.light : preset.dark);
     document.documentElement.style.setProperty("--color-primary-contrast", editorSettings.accentColor === "black" ? "#ffffff" : "#000000");
   }
@@ -321,6 +322,7 @@ export function SettingsPage() {
     const theme = editorSettings.theme;
     const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
     document.documentElement.style.setProperty("--color-primary", isLight ? colors.light : colors.dark);
+    document.documentElement.style.setProperty("--color-primary-hover", isLight ? colors.lightHover : colors.darkHover);
     document.documentElement.style.setProperty("--color-ring", isLight ? colors.light : colors.dark);
     document.documentElement.style.setProperty("--color-primary-contrast", preset === "black" ? "#ffffff" : "#000000");
   }
