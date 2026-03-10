@@ -687,7 +687,7 @@ describe("NotesPage", () => {
       await screen.findByText("No notes yet");
 
       // Tags are hidden until search is focused
-      const searchInput = screen.getByPlaceholderText("Search notes...");
+      const searchInput = screen.getByPlaceholderText("Search notes... (⌘K)");
       await user.click(searchInput);
 
       expect(screen.getByText("javascript")).toBeInTheDocument();
@@ -700,7 +700,7 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      const searchInput = screen.getByPlaceholderText("Search notes...");
+      const searchInput = screen.getByPlaceholderText("Search notes... (⌘K)");
       await user.click(searchInput);
 
       expect(screen.queryByText("javascript")).not.toBeInTheDocument();
