@@ -22,7 +22,7 @@ Background sync engine keeping local SQLite in sync with central PostgreSQL via 
 - Push: `POST /sync/push` with array of local changes
 - Pull: `POST /sync/pull` with `since` timestamp, applies remote changes to local SQLite
 - Status states: `idle`, `syncing`, `error` with error message
-- `SyncStatusButton` component shows current sync state in sidebar
+- `SyncStatusButton` component shows current sync state in sidebar (dimmed green `text-green-600/50` for idle, brightens to `text-green-500` on hover)
 
 ### Database Support (`src/lib/db.ts`)
 
