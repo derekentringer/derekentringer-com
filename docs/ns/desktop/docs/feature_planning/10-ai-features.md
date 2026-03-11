@@ -1,6 +1,6 @@
 # 10 — AI Features
 
-**Status:** In Progress (10a complete, 10b–10f pending)
+**Status:** In Progress (10a–10b complete, 10c–10f pending)
 **Phase:** 7 — AI
 **Priority:** Medium
 
@@ -23,7 +23,7 @@ Port all AI-powered features from ns-web to ns-desktop for feature parity. All A
 | Release | Summary | Web Equivalent |
 |---------|---------|----------------|
 | **10a** | ~~Inline completions + completion styles, summarize, auto-tag, AI settings~~ ✅ | 04a + 04a.1 |
-| **10b** | Select-and-rewrite | 04b |
+| **10b** | ~~Select-and-rewrite~~ ✅ | 04b |
 | **10c** | Semantic search (server-side via API) | 04c |
 | **10d** | Audio notes | 04d |
 | **10e** | AI assistant chat + UI polish | 04e + 04e.1 |

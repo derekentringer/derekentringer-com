@@ -67,7 +67,8 @@
 ### Phase 7: AI — Medium Priority
 
 - [x] [10a — AI Features: Foundation](features/10a-ai-features-foundation.md) — Inline ghost text completions (SSE streaming) with completion styles (Continue/Markdown/Brief), note summarization (sparkle button → API → summary below title), smart auto-tagging (tag button → API → accept/dismiss pills), AI settings UI (master toggle, per-feature toggles, completion style radio group), ghost text CodeMirror extension (Tab accept, Escape dismiss, 600ms debounce), `useAiSettings` hook with localStorage persistence, save-before-AI-call pattern with local SQLite + sync
-- [~] [10 — AI Features](feature_planning/10-ai-features.md) — Remaining: select-and-rewrite (10b), semantic search (10c), audio notes (10d), AI assistant chat (10e), continue writing (10f)
+- [x] [10b — AI Features: Select-and-Rewrite](features/10b-ai-select-and-rewrite.md) — Select text + Cmd/Ctrl+Shift+R or right-click opens floating rewrite menu with 6 actions (Rewrite, Make concise, Fix grammar, Convert to list, Expand, Summarize), inline-styled tooltip with theme-aware colors, loading/error states with 2s auto-close, `rewriteText` API function, settings toggle + keyboard shortcuts, rewrite menu CSS moved to inline styles for both web and desktop
+- [~] [10 — AI Features](feature_planning/10-ai-features.md) — Remaining: semantic search (10c), audio notes (10d), AI assistant chat (10e), continue writing (10f)
 
 ### Phase 8: External Sources — Low Priority
 

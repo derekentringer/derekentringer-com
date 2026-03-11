@@ -6,7 +6,7 @@ vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
 }));
 
-import { fetchCompletion, summarizeNote, suggestTags } from "../api/ai.ts";
+import { fetchCompletion, summarizeNote, suggestTags, rewriteText } from "../api/ai.ts";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -183,6 +183,44 @@ describe("AI API client", () => {
       await expect(suggestTags("note-1")).rejects.toThrow(
         "Tag suggestion failed: 500",
       );
+    });
+  });
+
+  describe("rewriteText", () => {
+    it("returns rewritten text on success", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ text: "Rewritten content here." }),
+      });
+
+      const result = await rewriteText("Original text", "concise");
+
+      expect(result).toBe("Rewritten content here.");
+    });
+
+    it("throws on non-ok response", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+      });
+
+      await expect(rewriteText("text", "rewrite")).rejects.toThrow(
+        "Rewrite failed: 500",
+      );
+    });
+
+    it("sends correct text and action in request body", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ text: "result" }),
+      });
+
+      await rewriteText("Some text to rewrite", "fix-grammar");
+
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/rewrite", {
+        method: "POST",
+        body: JSON.stringify({ text: "Some text to rewrite", action: "fix-grammar" }),
+      });
     });
   });
 });
