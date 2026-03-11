@@ -80,7 +80,7 @@
 ### UI Enhancements
 
 - [x] Note timestamps in status bar — Created date and Modified date+time displayed in the toolbar status bar next to save status, separated by middle-dot (`·`) separators, with full date+time hover tooltips; `text-[11px] text-muted-foreground` styling matching save status
-- [ ] [14 — Export](feature_planning/14-export.md)
+- [x] [14 — Import Button + Export](features/14-import-export.md) — ImportButton component with file/folder picker in sidebar footer, export notes as .md/.txt/.pdf via right-click context menu, export folders as .zip with preserved structure, jszip + marked dependencies, 33 tests
 
 ### Phase 9: Hardening — Low Priority
 

@@ -1,6 +1,6 @@
 # 14 — Export
 
-**Status:** Not Started
+**Status:** Complete
 **Phase:** 8 — External Sources
 **Priority:** Low
 

@@ -6,6 +6,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { Note, NoteSearchResult } from "@derekentringer/ns-shared";
+import type { ExportFormat } from "../lib/importExport.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { SearchSnippet } from "./SearchSnippet.tsx";
 
@@ -15,6 +16,7 @@ interface NoteListProps {
   onSelect: (note: Note) => void;
   onDoubleClick?: (note: Note) => void;
   onDeleteNote?: (noteId: string) => void;
+  onExportNote?: (noteId: string, format: ExportFormat) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   searchResults?: NoteSearchResult[] | null;
   sortByManual: boolean;
@@ -32,6 +34,7 @@ interface SortableNoteItemProps {
   onSelect: (note: Note) => void;
   onDoubleClick?: (note: Note) => void;
   onDeleteNote?: (noteId: string) => void;
+  onExportNote?: (noteId: string, format: ExportFormat) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   sortByManual: boolean;
   contextMenu: ContextMenuState | null;
@@ -47,6 +50,7 @@ function SortableNoteItem({
   onSelect,
   onDoubleClick,
   onDeleteNote,
+  onExportNote,
   onToggleFavorite,
   sortByManual,
   contextMenu,
@@ -88,7 +92,7 @@ function SortableNoteItem({
         onClick={() => onSelect(note)}
         onDoubleClick={(e) => { e.preventDefault(); onDoubleClick?.(note); }}
         onContextMenu={(e) => {
-          if (!onDeleteNote && !onToggleFavorite) return;
+          if (!onDeleteNote && !onExportNote && !onToggleFavorite) return;
           e.preventDefault();
           onContextMenuOpen(note.id, e.clientX, e.clientY);
         }}
@@ -106,12 +110,43 @@ function SortableNoteItem({
           <SearchSnippet headline={searchNote.headline} />
         )}
       </button>
-      {contextMenu?.noteId === note.id && (onDeleteNote || onToggleFavorite) && (
+      {contextMenu?.noteId === note.id && (onDeleteNote || onExportNote || onToggleFavorite) && (
         <div
           ref={contextMenuRef}
           className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
+          {onExportNote && (
+            <>
+              <button
+                onClick={() => {
+                  onExportNote(note.id, "md");
+                  onContextMenuClose();
+                }}
+                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+              >
+                Export as .md
+              </button>
+              <button
+                onClick={() => {
+                  onExportNote(note.id, "txt");
+                  onContextMenuClose();
+                }}
+                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+              >
+                Export as .txt
+              </button>
+              <button
+                onClick={() => {
+                  onExportNote(note.id, "pdf");
+                  onContextMenuClose();
+                }}
+                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+              >
+                Export as .pdf
+              </button>
+            </>
+          )}
           {onToggleFavorite && (
             <button
               onClick={() => {
@@ -143,6 +178,7 @@ export function NoteList({
   onSelect,
   onDoubleClick,
   onDeleteNote,
+  onExportNote,
   onToggleFavorite,
   searchResults,
   sortByManual,
@@ -185,6 +221,7 @@ export function NoteList({
             onSelect={onSelect}
             onDoubleClick={onDoubleClick}
             onDeleteNote={onDeleteNote}
+            onExportNote={onExportNote}
             onToggleFavorite={onToggleFavorite}
             sortByManual={sortByManual}
             contextMenu={contextMenu}
