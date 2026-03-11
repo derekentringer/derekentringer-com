@@ -8,6 +8,7 @@ import {
   type TabSizeOption,
   type AccentColorPreset,
 } from "../hooks/useEditorSettings.ts";
+import type { AiSettings, CompletionStyle } from "../hooks/useAiSettings.ts";
 import { useAuth } from "../context/AuthContext.tsx";
 import { setupTotp, verifyTotpSetup, disableTotp, getMe } from "../api/auth.ts";
 
@@ -107,6 +108,18 @@ function RadioOption<T extends string | number>({
   );
 }
 
+const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions"; label: string; info: string }[] = [
+  { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
+  { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
+  { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
+];
+
+const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [
+  { value: "continue", label: "Continue writing", info: "Predicts and continues your natural writing style." },
+  { value: "markdown", label: "Markdown assist", info: "Suggests markdown formatting like headings, lists, and code blocks." },
+  { value: "brief", label: "Brief", info: "Short, concise completions — a few words at a time." },
+];
+
 const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: string }[] = [
   { shortcut: "Ctrl + S", macShortcut: "Cmd + S", description: "Save note" },
   { shortcut: "Ctrl + B", macShortcut: "Cmd + B", description: "Bold" },
@@ -148,9 +161,11 @@ interface SettingsPageProps {
   onTrashRetentionChange?: (days: number) => void;
   editorSettings: EditorSettings;
   updateEditorSetting: <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) => void;
+  aiSettings: AiSettings;
+  updateAiSetting: <K extends keyof AiSettings>(key: K, value: AiSettings[K]) => void;
 }
 
-export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange, editorSettings, updateEditorSetting }: SettingsPageProps) {
+export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange, editorSettings, updateEditorSetting, aiSettings, updateAiSetting }: SettingsPageProps) {
   const { user, setUserFromLogin } = useAuth();
 
   const [trashRetentionDays, setTrashRetentionDays] = useState<number>(() => {
@@ -565,6 +580,49 @@ export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange,
                 {totpSetupError && <p className="text-sm text-error">{totpSetupError}</p>}
               </div>
             )}
+          </SectionCard>
+
+          {/* AI Features */}
+          <SectionCard title="AI Features">
+            <div className="divide-y divide-border">
+              <ToggleSwitch
+                label="Enable AI features"
+                checked={aiSettings.masterAiEnabled}
+                onChange={(v) => updateAiSetting("masterAiEnabled", v)}
+                info="Master toggle for all AI features. When off, all AI features are disabled."
+              />
+
+              {AI_TOGGLE_SETTINGS.map(({ key, label, info }) => (
+                <div key={key}>
+                  <ToggleSwitch
+                    label={label}
+                    checked={aiSettings[key]}
+                    onChange={(value) => updateAiSetting(key, value)}
+                    info={info}
+                    disabled={!aiSettings.masterAiEnabled}
+                  />
+                  {key === "completions" && aiSettings.completions && aiSettings.masterAiEnabled && (
+                    <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">
+                      {STYLE_OPTIONS.map(({ value, label: styleLabel, info: styleInfo }) => (
+                        <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="completionStyle"
+                            value={value}
+                            checked={aiSettings.completionStyle === value}
+                            onChange={() => updateAiSetting("completionStyle", value)}
+                            className="accent-primary"
+                            aria-label={styleLabel}
+                          />
+                          <span className="text-sm text-muted-foreground">{styleLabel}</span>
+                          <InfoIcon tooltip={styleInfo} />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </SectionCard>
 
           {/* Keyboard Shortcuts */}

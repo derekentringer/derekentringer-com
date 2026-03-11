@@ -74,6 +74,9 @@ import { DiffView } from "../components/DiffView.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
+import { useAiSettings } from "../hooks/useAiSettings.ts";
+import { ghostTextExtension } from "../editor/ghostText.ts";
+import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi } from "../api/ai.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { SyncStatusButton } from "../components/SyncStatusButton.tsx";
 import {
@@ -106,6 +109,7 @@ function validateSortOrder(value: string | null, fallback: SortOrder): SortOrder
 export function NotesPage() {
   const { user, logout } = useAuth();
   const { settings: editorSettings, updateSetting: updateEditorSetting } = useEditorSettings();
+  const { settings: aiSettings, updateSetting: updateAiSetting } = useAiSettings();
 
   // Notes
   const [notes, setNotes] = useState<Note[]>([]);
@@ -177,6 +181,14 @@ export function NotesPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+
+  // AI state
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isSuggestingTags, setIsSuggestingTags] = useState(false);
+  const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
+  const [confirmDeleteSummary, setConfirmDeleteSummary] = useState(false);
+  const titleRef = useRef(title);
+  titleRef.current = title;
 
   // Note titles (for wiki-link autocomplete)
   const [noteTitles, setNoteTitles] = useState<NoteTitleEntry[]>([]);
@@ -449,6 +461,8 @@ export function NotesPage() {
     setConfirmDelete(false);
     setConfirmPermanentDelete(false);
     setSelectedVersion(null);
+    setSuggestedTags([]);
+    setConfirmDeleteSummary(false);
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -1164,6 +1178,18 @@ export function NotesPage() {
     [],
   );
 
+  const aiExtensions = useMemo(() => {
+    if (!aiSettings.masterAiEnabled) return [];
+    return [
+      ...(aiSettings.completions
+        ? [ghostTextExtension(
+            (ctx, sig) => fetchCompletion(ctx, sig, aiSettings.completionStyle),
+            aiSettings.completionDebounceMs,
+          )]
+        : []),
+    ];
+  }, [aiSettings.masterAiEnabled, aiSettings.completions, aiSettings.completionStyle, aiSettings.completionDebounceMs]);
+
   function handleDrawerTabClick(tab: DrawerTab) {
     if (drawerOpen && drawerTab === tab) {
       setDrawerOpen(false);
@@ -1171,6 +1197,80 @@ export function NotesPage() {
       setDrawerTab(tab);
       setDrawerOpen(true);
     }
+  }
+
+  async function handleSummarize() {
+    if (!selectedId || isSummarizing) return;
+    setIsSummarizing(true);
+    try {
+      if (isDirty()) {
+        await handleSave();
+      }
+      const summary = await summarizeNote(selectedId);
+      await updateNote(selectedId, { summary });
+      setNotes((prev) =>
+        prev.map((n) => (n.id === selectedId ? { ...n, summary } : n)),
+      );
+      notifyLocalChange();
+    } catch {
+      showError("Failed to generate summary");
+    } finally {
+      setIsSummarizing(false);
+    }
+  }
+
+  async function handleDeleteSummary() {
+    if (!selectedId) return;
+    try {
+      await updateNote(selectedId, { summary: null });
+      setNotes((prev) =>
+        prev.map((n) => (n.id === selectedId ? { ...n, summary: null } : n)),
+      );
+      notifyLocalChange();
+    } catch {
+      showError("Failed to delete summary");
+    }
+  }
+
+  async function handleSuggestTags() {
+    if (!selectedId || isSuggestingTags) return;
+    setIsSuggestingTags(true);
+    try {
+      if (isDirty()) {
+        await handleSave();
+      }
+      const tags = await suggestTagsApi(selectedId);
+      setSuggestedTags(tags);
+    } catch {
+      showError("Failed to suggest tags");
+    } finally {
+      setIsSuggestingTags(false);
+    }
+  }
+
+  async function handleAcceptTag(tag: string) {
+    if (!selectedId || !selectedNote) return;
+    const currentTags = selectedNote.tags ?? [];
+    if (currentTags.includes(tag)) {
+      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
+      return;
+    }
+    try {
+      const newTags = [...currentTags, tag];
+      const updated = await updateNote(selectedId, { tags: newTags });
+      setNotes((prev) =>
+        prev.map((n) => (n.id === updated.id ? updated : n)),
+      );
+      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
+      await refreshTags();
+      notifyLocalChange();
+    } catch {
+      showError("Failed to add tag");
+    }
+  }
+
+  function handleDismissTag(tag: string) {
+    setSuggestedTags((prev) => prev.filter((t) => t !== tag));
   }
 
   async function handleVersionRestore(noteId: string, versionId: string) {
@@ -1241,6 +1341,8 @@ export function NotesPage() {
         onTrashRetentionChange={handleRetentionChangeFromSettings}
         editorSettings={editorSettings}
         updateEditorSetting={updateEditorSetting}
+        aiSettings={aiSettings}
+        updateAiSetting={updateAiSetting}
       />
     );
   }
@@ -1679,6 +1781,28 @@ export function NotesPage() {
                     : "Saved"}
               </span>
               <div className="flex-1" />
+              {aiSettings.masterAiEnabled && aiSettings.summarize && (
+                <button
+                  onClick={handleSummarize}
+                  disabled={isSummarizing}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  title={isSummarizing ? "Summarizing..." : "Summarize"}
+                  aria-label="Summarize"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
+                </button>
+              )}
+              {aiSettings.masterAiEnabled && aiSettings.tagSuggestions && (
+                <button
+                  onClick={handleSuggestTags}
+                  disabled={isSuggestingTags}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                  title={isSuggestingTags ? "Suggesting..." : "Suggest tags"}
+                  aria-label="Suggest tags"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                </button>
+              )}
               {confirmDelete ? (
                 <div className="flex items-center gap-1">
                   <span className="text-[11px] text-destructive">Delete?</span>
@@ -1736,12 +1860,66 @@ export function NotesPage() {
               />
             </div>
 
+            {/* Summary */}
+            {selectedNote?.summary && (
+              <div className="relative px-4 py-2 text-sm text-muted-foreground border-b border-border italic pr-8">
+                {selectedNote.summary}
+                <button
+                  onClick={() => setConfirmDeleteSummary(true)}
+                  className="absolute top-1.5 right-2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title="Remove summary"
+                >
+                  &times;
+                </button>
+              </div>
+            )}
+            {confirmDeleteSummary && (
+              <ConfirmDialog
+                title="Delete Summary"
+                message={selectedNote?.title || "Untitled"}
+                onConfirm={() => {
+                  handleDeleteSummary();
+                  setConfirmDeleteSummary(false);
+                }}
+                onCancel={() => setConfirmDeleteSummary(false)}
+              />
+            )}
+
             {/* Tag input */}
             <TagInput
               tags={selectedNote.tags}
               allTags={tags.map((t) => t.name)}
               onChange={(newTags) => handleUpdateTags(selectedId!, newTags)}
             />
+
+            {/* Suggested tags */}
+            {suggestedTags.length > 0 && (
+              <div className="px-4 py-2 border-b border-border flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground">Suggested:</span>
+                {suggestedTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent text-xs text-foreground border border-border"
+                  >
+                    {tag}
+                    <button
+                      onClick={() => handleAcceptTag(tag)}
+                      className="text-primary hover:text-primary-hover transition-colors cursor-pointer"
+                      title="Accept tag"
+                    >
+                      +
+                    </button>
+                    <button
+                      onClick={() => handleDismissTag(tag)}
+                      className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                      title="Dismiss"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
 
             {selectedVersion ? (
               <DiffView
@@ -1777,7 +1955,7 @@ export function NotesPage() {
                       fontSize={editorSettings.editorFontSize}
                       theme={resolvedTheme}
                       accentColor={accentHex}
-                      extensions={[wikiLinkExt]}
+                      extensions={[wikiLinkExt, ...aiExtensions]}
                       className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                       style={viewMode === "split" ? { width: splitResize.size } : undefined}
                     />

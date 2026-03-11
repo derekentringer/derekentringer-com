@@ -107,6 +107,10 @@ function createDarkTheme(accent: string) {
       "&.cm-focused .cm-placeholder": {
         display: "none",
       },
+      ".cm-ghost-text": {
+        opacity: "0.4",
+        fontStyle: "italic",
+      },
     },
     { dark: true },
   );
@@ -169,6 +173,10 @@ function createLightTheme(accent: string) {
       },
       "&.cm-focused .cm-placeholder": {
         display: "none",
+      },
+      ".cm-ghost-text": {
+        opacity: "0.4",
+        fontStyle: "italic",
       },
     },
     { dark: false },
