@@ -27,7 +27,8 @@ export function TagBrowser({
   const [renameValue, setRenameValue] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
-  const [collapsedHeight, setCollapsedHeight] = useState<number | undefined>(undefined);
+  const [collapsedHeight, setCollapsedHeight] = useState<number>(0);
+  const [expandedHeight, setExpandedHeight] = useState<number>(0);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export function TagBrowser({
     const rowHeight = 24 + 4; // pill height + gap
     const maxHeight = rowHeight * MAX_COLLAPSED_ROWS;
     setCollapsedHeight(maxHeight);
+    setExpandedHeight(el.scrollHeight);
     setIsOverflowing(el.scrollHeight > maxHeight + 4);
   }, [tags]);
 
@@ -69,12 +71,12 @@ export function TagBrowser({
     <div>
       <div
         ref={wrapRef}
-        className="flex flex-wrap gap-1 overflow-hidden transition-all"
-        style={
-          !expanded && isOverflowing && collapsedHeight
-            ? { maxHeight: collapsedHeight }
-            : undefined
-        }
+        className="flex flex-wrap gap-1 overflow-hidden transition-[max-height] duration-200 ease-in-out"
+        style={{
+          maxHeight: !expanded && isOverflowing && collapsedHeight
+            ? collapsedHeight
+            : expandedHeight || undefined,
+        }}
       >
         {tags.map((tag) => {
           const isActive = activeTags.includes(tag.name);
@@ -118,23 +120,25 @@ export function TagBrowser({
         })}
       </div>
 
-      {isOverflowing && (
-        <button
-          onClick={() => setExpanded((prev) => !prev)}
-          className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
-        >
-          {expanded ? "show less" : "show more"}
-        </button>
-      )}
+      <div className="flex items-center justify-between mt-1">
+        {isOverflowing ? (
+          <button
+            onClick={() => setExpanded((prev) => !prev)}
+            className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            {expanded ? "show less" : "show more"}
+          </button>
+        ) : <span />}
 
-      {activeTags.length > 0 && (
-        <button
-          onClick={() => activeTags.forEach((t) => onToggleTag(t))}
-          className="text-xs text-muted-foreground hover:text-foreground mt-1 cursor-pointer"
-        >
-          Clear filter
-        </button>
-      )}
+        {activeTags.length > 0 && (
+          <button
+            onClick={() => activeTags.forEach((t) => onToggleTag(t))}
+            className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            clear filter
+          </button>
+        )}
+      </div>
 
       {contextMenu && (
         <>

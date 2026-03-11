@@ -258,6 +258,8 @@ export function NotesPage() {
   );
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Debounce search input
@@ -1592,7 +1594,16 @@ export function NotesPage() {
 
         {sidebarView === "notes" ? (
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <div className="p-2">
+            <div
+              ref={searchPanelRef}
+              className="p-2"
+              onMouseDown={(e) => {
+                // Prevent blur when clicking inside the search panel (tags, show more, etc.)
+                if (e.target !== searchInputRef.current) {
+                  e.preventDefault();
+                }
+              }}
+            >
               <div className="relative flex items-center rounded-md bg-input border border-border focus-within:ring-2 focus-within:ring-ring">
                 {settings.masterAiEnabled && settings.semanticSearch && (
                   <select
@@ -1609,6 +1620,7 @@ export function NotesPage() {
                   </select>
                 )}
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder="Search notes... (⌘K)"
                   value={search}
@@ -1629,7 +1641,7 @@ export function NotesPage() {
                 )}
               </div>
               <div
-                className="overflow-hidden transition-all duration-200 ease-in-out"
+                className="overflow-y-auto overflow-x-hidden transition-all duration-200 ease-in-out"
                 style={{
                   maxHeight: searchFocused || activeTags.length > 0 || search ? "200px" : "0px",
                   opacity: searchFocused || activeTags.length > 0 || search ? 1 : 0,

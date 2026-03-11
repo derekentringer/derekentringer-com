@@ -51,6 +51,7 @@ import {
   fetchFavoriteNotes,
   reorderFavoriteNotes,
   toggleFolderFavorite,
+  type SearchMode,
 } from "../lib/db.ts";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import {
@@ -85,8 +86,16 @@ import {
   destroySyncEngine,
   notifyLocalChange,
   manualSync,
+  setSyncSemanticSearchEnabled,
   type SyncStatus,
 } from "../lib/syncEngine.ts";
+import {
+  processAllPendingEmbeddings,
+  stopEmbeddingProcessor,
+  setEmbeddingStatusCallback,
+  queueEmbeddingForNote,
+  type EmbeddingStatus,
+} from "../lib/embeddingService.ts";
 import {
   parseFileList,
   importFiles,
@@ -137,6 +146,8 @@ export function NotesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchResults, setSearchResults] = useState<NoteSearchResult[] | null>(null);
+  const [searchMode, setSearchMode] = useState<SearchMode>("hybrid");
+  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatus | null>(null);
 
   // Folders
   const [folders, setFolders] = useState<FolderInfo[]>([]);
@@ -238,6 +249,7 @@ export function NotesPage() {
   const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
 
   function showError(message: string) {
     setError(message);
@@ -402,7 +414,29 @@ export function NotesPage() {
     try { localStorage.setItem("ns-desktop-sort-order", sortOrder); } catch {}
   }, [sortOrder]);
 
+  // --- Semantic search lifecycle ---
+
+  const semanticEnabled = aiSettings.masterAiEnabled && aiSettings.semanticSearch;
+
+  useEffect(() => {
+    setSyncSemanticSearchEnabled(semanticEnabled);
+    if (semanticEnabled) {
+      setEmbeddingStatusCallback(setEmbeddingStatus);
+      processAllPendingEmbeddings().catch(() => {});
+    } else {
+      setEmbeddingStatusCallback(null);
+      stopEmbeddingProcessor();
+      setEmbeddingStatus(null);
+    }
+    return () => {
+      setEmbeddingStatusCallback(null);
+      stopEmbeddingProcessor();
+    };
+  }, [semanticEnabled]);
+
   // --- Search ---
+
+  const effectiveSearchMode = semanticEnabled ? searchMode : "keyword";
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -412,7 +446,7 @@ export function NotesPage() {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const results = await searchNotes(searchQuery);
+        const results = await searchNotes(searchQuery, effectiveSearchMode);
         setSearchResults(results);
       } catch (err) {
         console.error("Search failed:", err);
@@ -422,7 +456,7 @@ export function NotesPage() {
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [searchQuery]);
+  }, [searchQuery, effectiveSearchMode]);
 
   // --- Cmd+K to focus search ---
 
@@ -515,12 +549,17 @@ export function NotesPage() {
         .catch(() => {});
       loadNoteTitles();
       notifyLocalChange();
+
+      // Queue embedding if semantic search is enabled
+      if (semanticEnabled) {
+        queueEmbeddingForNote(selectedId, title, content).catch(() => {});
+      }
     } catch (err) {
       console.error("Failed to save note:", err);
       showError("Failed to save note");
       setSaveStatus("idle");
     }
-  }, [selectedId, title, content, reloadNotes, loadFavoriteNotes, loadNoteTitles]);
+  }, [selectedId, title, content, reloadNotes, loadFavoriteNotes, loadNoteTitles, semanticEnabled]);
 
   // Autosave: debounce after changes (useEffect ensures latest handleSave is always used)
   useEffect(() => {
@@ -1412,6 +1451,7 @@ export function NotesPage() {
         updateEditorSetting={updateEditorSetting}
         aiSettings={aiSettings}
         updateAiSetting={updateAiSetting}
+        embeddingStatus={embeddingStatus}
       />
     );
   }
@@ -1439,32 +1479,55 @@ export function NotesPage() {
 
         {/* Search bar + tag browser (hidden in trash view) */}
         {sidebarView === "notes" && (
-        <div className="p-2">
-          <div className="relative">
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              placeholder="Search notes... (⌘K)"
-              className="w-full px-3 py-1.5 rounded-md text-sm bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setSearchResults(null);
-                }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs cursor-pointer"
+        <div
+          ref={searchPanelRef}
+          className="p-2"
+          onMouseDown={(e) => {
+            // Prevent blur when clicking inside the search panel (tags, show more, etc.)
+            if (e.target !== searchInputRef.current) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <div className="flex items-center rounded-md bg-input border border-border focus-within:ring-1 focus-within:ring-ring">
+            {semanticEnabled && (
+              <select
+                value={searchMode}
+                onChange={(e) => setSearchMode(e.target.value as SearchMode)}
+                className="appearance-none bg-transparent text-xs text-muted-foreground pl-2 pr-1 py-1.5 focus:outline-none cursor-pointer"
+                aria-label="Search mode"
               >
-                &times;
-              </button>
+                <option value="hybrid">Hybrid</option>
+                <option value="keyword">Keyword</option>
+                <option value="semantic">Semantic</option>
+              </select>
             )}
+            <div className="relative flex-1">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
+                placeholder="Search notes... (⌘K)"
+                className={`w-full py-1.5 pr-6 text-sm bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none ${semanticEnabled ? "pl-1" : "px-3"}`}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSearchResults(null);
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs cursor-pointer"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
           </div>
           <div
-            className="overflow-hidden transition-all duration-200 ease-in-out"
+            className="overflow-y-auto overflow-x-hidden transition-all duration-200 ease-in-out"
             style={{
               maxHeight: searchFocused || activeTags.length > 0 || searchQuery ? "200px" : "0px",
               opacity: searchFocused || activeTags.length > 0 || searchQuery ? 1 : 0,

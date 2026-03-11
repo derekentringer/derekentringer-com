@@ -20,6 +20,7 @@ import {
 } from "../store/settingStore.js";
 import { processAllPendingEmbeddings } from "../services/embeddingProcessor.js";
 import { getPrisma } from "../lib/prisma.js";
+import { generateEmbedding, generateQueryEmbedding } from "../services/embeddingService.js";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -465,6 +466,37 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     async (_request: FastifyRequest, reply: FastifyReply) => {
       await setEmbeddingEnabled(false);
       return reply.send({ enabled: false });
+    },
+  );
+
+  // POST /ai/embeddings/generate
+  const generateEmbeddingSchema = {
+    body: {
+      type: "object" as const,
+      required: ["text", "inputType"],
+      additionalProperties: false,
+      properties: {
+        text: { type: "string", minLength: 1, maxLength: 10000 },
+        inputType: { type: "string", enum: ["document", "query"] },
+      },
+    },
+  };
+
+  fastify.post<{ Body: { text: string; inputType: "document" | "query" } }>(
+    "/embeddings/generate",
+    { schema: generateEmbeddingSchema },
+    async (
+      request: FastifyRequest<{ Body: { text: string; inputType: "document" | "query" } }>,
+      reply: FastifyReply,
+    ) => {
+      const { text, inputType } = request.body;
+
+      const embedding =
+        inputType === "query"
+          ? await generateQueryEmbedding(text)
+          : await generateEmbedding(text);
+
+      return reply.send({ embedding });
     },
   );
 

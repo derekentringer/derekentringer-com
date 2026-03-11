@@ -106,3 +106,31 @@ export async function rewriteText(
   const data = await response.json();
   return data.text;
 }
+
+export async function requestEmbedding(text: string): Promise<number[]> {
+  const response = await apiFetch("/ai/embeddings/generate", {
+    method: "POST",
+    body: JSON.stringify({ text, inputType: "document" }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Embedding failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.embedding;
+}
+
+export async function requestQueryEmbedding(text: string): Promise<number[]> {
+  const response = await apiFetch("/ai/embeddings/generate", {
+    method: "POST",
+    body: JSON.stringify({ text, inputType: "query" }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Query embedding failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.embedding;
+}

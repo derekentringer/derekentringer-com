@@ -347,6 +347,7 @@ export async function softDeleteNote(id: string): Promise<void> {
     [now, id],
   );
   await ftsDelete(id);
+  import("./embeddingService.ts").then((m) => m.deleteEmbedding(id)).catch(() => {});
   enqueueSyncAction("delete", id, "note").catch(() => {});
 }
 
@@ -361,7 +362,24 @@ export async function hardDeleteNote(id: string): Promise<void> {
 // Search
 // ---------------------------------------------------------------------------
 
-export async function searchNotes(query: string): Promise<NoteSearchResult[]> {
+export type SearchMode = "keyword" | "semantic" | "hybrid";
+
+export async function searchNotes(
+  query: string,
+  mode: SearchMode = "keyword",
+): Promise<NoteSearchResult[]> {
+  if (!query.trim()) return [];
+  switch (mode) {
+    case "semantic":
+      return searchNotesSemantic(query);
+    case "hybrid":
+      return searchNotesHybrid(query);
+    default:
+      return searchNotesKeyword(query);
+  }
+}
+
+async function searchNotesKeyword(query: string): Promise<NoteSearchResult[]> {
   if (!query.trim()) return [];
 
   const db = await getDb();
@@ -381,6 +399,93 @@ export async function searchNotes(query: string): Promise<NoteSearchResult[]> {
     ...rowToNote(row),
     headline: row.headline,
   }));
+}
+
+async function searchNotesSemantic(query: string): Promise<NoteSearchResult[]> {
+  const { requestQueryEmbedding } = await import("../api/ai.ts");
+  const { getAllEmbeddings, cosineSimilarity, SIM_THRESHOLD, MIN_CONTENT_LEN } =
+    await import("./embeddingService.ts");
+
+  let queryEmbedding: number[];
+  try {
+    queryEmbedding = await requestQueryEmbedding(query);
+  } catch {
+    return []; // Offline or error — return empty
+  }
+
+  const allEmbeddings = await getAllEmbeddings();
+  const scored: { noteId: string; similarity: number }[] = [];
+
+  for (const entry of allEmbeddings) {
+    const sim = cosineSimilarity(queryEmbedding, entry.embedding);
+    if (sim >= SIM_THRESHOLD) {
+      scored.push({ noteId: entry.noteId, similarity: sim });
+    }
+  }
+
+  scored.sort((a, b) => b.similarity - a.similarity);
+
+  const results: NoteSearchResult[] = [];
+  for (const { noteId } of scored) {
+    const note = await fetchNoteById(noteId);
+    if (note && !note.deletedAt && note.content.length >= MIN_CONTENT_LEN) {
+      results.push({
+        ...note,
+        headline: note.content.slice(0, 150),
+      });
+    }
+  }
+
+  return results;
+}
+
+async function searchNotesHybrid(query: string): Promise<NoteSearchResult[]> {
+  const [keywordResults, semanticResults] = await Promise.all([
+    searchNotesKeyword(query),
+    searchNotesSemantic(query),
+  ]);
+
+  // Position-based normalization for keyword scores
+  const keywordScores = new Map<string, number>();
+  for (let i = 0; i < keywordResults.length; i++) {
+    const score = 1 - i / Math.max(keywordResults.length, 1);
+    keywordScores.set(keywordResults[i].id, score);
+  }
+
+  // Position-based normalization for semantic scores
+  const semanticScores = new Map<string, number>();
+  for (let i = 0; i < semanticResults.length; i++) {
+    const score = 1 - i / Math.max(semanticResults.length, 1);
+    semanticScores.set(semanticResults[i].id, score);
+  }
+
+  // Combine all unique note IDs
+  const allIds = new Set([...keywordScores.keys(), ...semanticScores.keys()]);
+  const hybridScored: { id: string; score: number }[] = [];
+
+  for (const id of allIds) {
+    const kw = keywordScores.get(id) ?? 0;
+    const sem = semanticScores.get(id) ?? 0;
+    const keywordBonus = keywordScores.has(id) ? 0.3 : 0;
+    const score = 0.3 * kw + 0.7 * sem + keywordBonus;
+    hybridScored.push({ id, score });
+  }
+
+  hybridScored.sort((a, b) => b.score - a.score);
+
+  // Build results using keyword results + semantic results as source
+  const resultMap = new Map<string, NoteSearchResult>();
+  for (const r of keywordResults) resultMap.set(r.id, r);
+  for (const r of semanticResults) {
+    if (!resultMap.has(r.id)) resultMap.set(r.id, r);
+  }
+
+  const results: NoteSearchResult[] = [];
+  for (const { id } of hybridScored) {
+    const result = resultMap.get(id);
+    if (result) results.push(result);
+  }
+  return results;
 }
 
 // ---------------------------------------------------------------------------
