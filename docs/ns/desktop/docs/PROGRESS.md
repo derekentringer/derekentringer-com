@@ -66,12 +66,11 @@
 
 ### Phase 7: AI — Medium Priority
 
-- [ ] [10 — AI Features](feature_planning/10-ai-features.md)
+- [~] [10 — AI Features](feature_planning/10-ai-features.md) — Port all AI features from ns-web: inline ghost text completions (SSE streaming), completion styles (Continue/Markdown/Brief), note summarization, smart auto-tagging, select-and-rewrite (6 actions with floating menu), semantic search (server-side via ns-api pgvector), audio notes (MediaRecorder → Whisper + Claude), AI assistant chat (streaming Q&A with citation pills), continue writing / structure suggestions; all AI calls route through ns-api (no backend changes needed); 6 incremental releases (10a–10f)
 
 ### Phase 8: External Sources — Low Priority
 
 - [ ] [11 — File Import](feature_planning/11-txt-import.md)
-- [ ] [12 — Google Drive Import](feature_planning/12-google-drive-import.md)
 - [ ] [14 — Export](feature_planning/14-export.md)
 
 ### Phase 9: Hardening — Low Priority
