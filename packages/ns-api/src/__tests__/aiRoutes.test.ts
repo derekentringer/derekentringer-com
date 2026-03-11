@@ -58,6 +58,14 @@ vi.mock("../services/embeddingProcessor.js", () => ({
   startEmbeddingProcessor: () => ({ stop: () => {} }),
 }));
 
+const mockGenerateEmbedding = vi.fn();
+const mockGenerateQueryEmbedding = vi.fn();
+
+vi.mock("../services/embeddingService.js", () => ({
+  generateEmbedding: (...args: unknown[]) => mockGenerateEmbedding(...args),
+  generateQueryEmbedding: (...args: unknown[]) => mockGenerateQueryEmbedding(...args),
+}));
+
 const mockFindRelevantNotes = vi.fn();
 
 vi.mock("../store/noteStore.js", async (importOriginal) => {
@@ -581,6 +589,64 @@ describe("AI routes", () => {
         method: "GET",
         url: "/ai/embeddings/status",
       });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // --- POST /ai/embeddings/generate ---
+  describe("POST /ai/embeddings/generate", () => {
+    it("generates document embedding (200)", async () => {
+      const token = await getAccessToken();
+      mockGenerateEmbedding.mockResolvedValue([0.1, 0.2, 0.3]);
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/embeddings/generate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { text: "Hello world", inputType: "document" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ embedding: [0.1, 0.2, 0.3] });
+      expect(mockGenerateEmbedding).toHaveBeenCalledWith("Hello world");
+    });
+
+    it("generates query embedding (200)", async () => {
+      const token = await getAccessToken();
+      mockGenerateQueryEmbedding.mockResolvedValue([0.4, 0.5]);
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/embeddings/generate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { text: "search query", inputType: "query" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ embedding: [0.4, 0.5] });
+      expect(mockGenerateQueryEmbedding).toHaveBeenCalledWith("search query");
+    });
+
+    it("returns 400 with missing fields", async () => {
+      const token = await getAccessToken();
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/embeddings/generate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { text: "Hello" },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/embeddings/generate",
+        payload: { text: "Hello", inputType: "document" },
+      });
+
       expect(res.statusCode).toBe(401);
     });
   });

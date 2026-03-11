@@ -25,6 +25,12 @@ const SSE_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3004";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
 
+let semanticSearchEnabled = false;
+
+export function setSyncSemanticSearchEnabled(enabled: boolean): void {
+  semanticSearchEnabled = enabled;
+}
+
 const DEBOUNCE_MS = 5_000;
 const PERIODIC_MS = 30_000;
 const MAX_BACKOFF_MS = 60_000;
@@ -376,6 +382,13 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
   const noteData = change.data as Note | null;
   if (!noteData) return;
   await upsertNoteFromRemote(noteData);
+
+  // Queue embedding generation for synced notes
+  if (semanticSearchEnabled && !noteData.deletedAt) {
+    import("./embeddingService.ts")
+      .then((m) => m.queueEmbeddingForNote(noteData.id, noteData.title, noteData.content))
+      .catch(() => {});
+  }
 }
 
 async function applyFolderChange(change: SyncChange): Promise<void> {

@@ -6,7 +6,7 @@ vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
 }));
 
-import { fetchCompletion, summarizeNote, suggestTags, rewriteText } from "../api/ai.ts";
+import { fetchCompletion, summarizeNote, suggestTags, rewriteText, requestEmbedding, requestQueryEmbedding } from "../api/ai.ts";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -220,6 +220,49 @@ describe("AI API client", () => {
       expect(mockApiFetch).toHaveBeenCalledWith("/ai/rewrite", {
         method: "POST",
         body: JSON.stringify({ text: "Some text to rewrite", action: "fix-grammar" }),
+      });
+    });
+  });
+
+  describe("requestEmbedding", () => {
+    it("returns embedding array", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ embedding: [0.1, 0.2, 0.3] }),
+      });
+
+      const result = await requestEmbedding("test text");
+
+      expect(result).toEqual([0.1, 0.2, 0.3]);
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/embeddings/generate", {
+        method: "POST",
+        body: JSON.stringify({ text: "test text", inputType: "document" }),
+      });
+    });
+
+    it("throws on non-ok response", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+      });
+
+      await expect(requestEmbedding("test")).rejects.toThrow("Embedding failed: 500");
+    });
+  });
+
+  describe("requestQueryEmbedding", () => {
+    it("sends query inputType and returns embedding", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ embedding: [0.4, 0.5] }),
+      });
+
+      const result = await requestQueryEmbedding("search query");
+
+      expect(result).toEqual([0.4, 0.5]);
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/embeddings/generate", {
+        method: "POST",
+        body: JSON.stringify({ text: "search query", inputType: "query" }),
       });
     });
   });

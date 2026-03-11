@@ -108,11 +108,12 @@ function RadioOption<T extends string | number>({
   );
 }
 
-const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite"; label: string; info: string }[] = [
+const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch"; label: string; info: string }[] = [
   { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
   { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
   { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
   { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
+  { key: "semanticSearch", label: "Semantic search", info: "Search notes by meaning, not just exact keywords. Uses AI embeddings generated via the server." },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [
@@ -159,6 +160,12 @@ const TRASH_RETENTION_OPTIONS: { value: number; label: string }[] = [
 
 const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
 
+interface EmbeddingStatus {
+  isProcessing: boolean;
+  pendingCount: number;
+  totalWithEmbeddings: number;
+}
+
 interface SettingsPageProps {
   onBack: () => void;
   onChangePassword?: () => void;
@@ -167,9 +174,10 @@ interface SettingsPageProps {
   updateEditorSetting: <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) => void;
   aiSettings: AiSettings;
   updateAiSetting: <K extends keyof AiSettings>(key: K, value: AiSettings[K]) => void;
+  embeddingStatus?: EmbeddingStatus | null;
 }
 
-export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange, editorSettings, updateEditorSetting, aiSettings, updateAiSetting }: SettingsPageProps) {
+export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange, editorSettings, updateEditorSetting, aiSettings, updateAiSetting, embeddingStatus }: SettingsPageProps) {
   const { user, setUserFromLogin } = useAuth();
 
   const [trashRetentionDays, setTrashRetentionDays] = useState<number>(() => {
@@ -622,6 +630,15 @@ export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange,
                           <InfoIcon tooltip={styleInfo} />
                         </label>
                       ))}
+                    </div>
+                  )}
+                  {key === "semanticSearch" && aiSettings.semanticSearch && aiSettings.masterAiEnabled && embeddingStatus && (
+                    <div className="pb-3 pl-1">
+                      <span className="text-xs text-muted-foreground">
+                        {embeddingStatus.isProcessing
+                          ? `Indexing notes... (${embeddingStatus.totalWithEmbeddings} indexed${embeddingStatus.pendingCount > 0 ? `, ${embeddingStatus.pendingCount} pending` : ""})`
+                          : `${embeddingStatus.totalWithEmbeddings} of ${embeddingStatus.totalWithEmbeddings + embeddingStatus.pendingCount} notes indexed`}
+                      </span>
                     </div>
                   )}
                 </div>

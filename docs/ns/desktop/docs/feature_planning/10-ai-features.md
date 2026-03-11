@@ -1,6 +1,6 @@
 # 10 — AI Features
 
-**Status:** In Progress (10a–10b complete, 10c–10f pending)
+**Status:** In Progress (10a–10c complete, 10d–10f pending)
 **Phase:** 7 — AI
 **Priority:** Medium
 
@@ -10,12 +10,12 @@ Port all AI-powered features from ns-web to ns-desktop for feature parity. All A
 
 ## Architecture
 
-- **No backend changes** — ns-api already has all AI endpoints (complete, summarize, tags, rewrite, transcribe, ask, embeddings)
+- **No backend changes** — ns-api already has all AI endpoints (complete, summarize, tags, rewrite, transcribe, ask, embeddings). Exception: 10c added `POST /ai/embeddings/generate` for on-demand embedding generation.
 - **All AI calls go through ns-api** — desktop never calls Claude or Whisper directly
-- **Frontend-only work** — port API client functions, hooks, editor extensions, components, and settings UI from ns-web
+- **Frontend-only work** — port API client functions, hooks, editor extensions, components, and settings UI from ns-web (except 10c which also added backend endpoint)
 - **Shared types** — `@derekentringer/shared/ns` already exports `AudioMode`, `QASource`, `EmbeddingStatus`
 - **CodeMirror extensions** — `ghostText.ts` and `rewriteMenu.ts` are self-contained; copy from ns-web to ns-desktop
-- **Semantic search** — uses ns-api's server-side pgvector search (not local sqlite-vec); desktop sends `searchMode` param to `GET /notes` endpoint
+- **Semantic search** — embeddings generated via ns-api's Voyage AI endpoint, stored locally in SQLite as JSON text; cosine similarity computed in pure JavaScript (no sqlite-vec — Tauri's SQL plugin doesn't support extension loading); all three search modes (keyword/semantic/hybrid) work offline once embeddings are cached
 - **Audio recording** — `MediaRecorder` API works in Tauri's webview; same implementation as web
 
 ## Incremental Releases
@@ -24,7 +24,7 @@ Port all AI-powered features from ns-web to ns-desktop for feature parity. All A
 |---------|---------|----------------|
 | **10a** | ~~Inline completions + completion styles, summarize, auto-tag, AI settings~~ ✅ | 04a + 04a.1 |
 | **10b** | ~~Select-and-rewrite~~ ✅ | 04b |
-| **10c** | Semantic search (server-side via API) | 04c |
+| **10c** | ~~Semantic search (local JSON text + pure JS cosine similarity)~~ ✅ | 04c |
 | **10d** | Audio notes | 04d |
 | **10e** | AI assistant chat + UI polish | 04e + 04e.1 |
 | **10f** | Continue writing & structure suggestions, UX polish | 04g |
@@ -131,32 +131,11 @@ Copy from `packages/ns-web/src/editor/rewriteMenu.ts`:
 
 ---
 
-## Release 10c: Semantic Search
+## Release 10c: Semantic Search ✅
 
-### Files to Modify
+**Implemented.** See [features/10c-ai-semantic-search.md](../features/10c-ai-semantic-search.md) for full details.
 
-#### AI API Client (`packages/ns-desktop/src/api/ai.ts`)
-- Add `enableEmbeddings()`, `disableEmbeddings()`, `getEmbeddingStatus()` functions
-
-#### Notes API (`packages/ns-desktop/src/api/notes.ts` or equivalent)
-- Add `searchMode?: "keyword" | "semantic" | "hybrid"` parameter to note search function
-- Append to URLSearchParams when present
-
-#### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
-- Add "Semantic search" toggle (5th toggle)
-- When toggled ON: calls `enableEmbeddings()` API
-- When toggled OFF: calls `disableEmbeddings()` API
-- Shows embedding status below toggle when enabled (pending count, total embedded)
-
-#### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
-- Add search mode `<select>` dropdown inline with search input when `settings.semanticSearch` is enabled
-- Options: Keyword, Semantic, Hybrid (default: Hybrid)
-- Pass selected `searchMode` to search API calls
-- Match web's search UI exactly
-
-### Tests
-- `ai-api.test.ts` — add embedding enable/disable/status tests (3+ tests)
-- `SettingsPage.test.tsx` — update toggle count, semantic search toggle
+Key architecture change from original plan: uses JSON text storage + pure JS cosine similarity instead of sqlite-vec (Tauri's SQL plugin doesn't support SQLite extension loading). Also required a new backend endpoint (`POST /ai/embeddings/generate`) since ns-api had no public endpoint for on-demand embedding generation.
 
 ---
 
@@ -282,7 +261,7 @@ Copy from `packages/ns-web/src/components/QAPanel.tsx`:
 | **API client** | `apiFetch` from `./client.ts` | Same pattern — desktop has its own `apiFetch` in `./client.ts` |
 | **Router** | `navigate()` for deep-links, URL sync | No router — no URL updates |
 | **Note type** | `NoteSearchResult` (from API) | `Note` (from local SQLite, synced) |
-| **Semantic search** | Server-side pgvector | Same — calls ns-api server-side search |
+| **Semantic search** | Server-side pgvector | Embeddings generated via ns-api Voyage AI, cached in SQLite as JSON text; pure JS cosine similarity; fully offline once cached |
 | **Audio recording** | `MediaRecorder` in browser | `MediaRecorder` in Tauri webview (same API) |
 | **Sync after AI create** | Offline queue handles it | Must push to sync engine after note creation |
 | **Admin AI toggle** | Admin page (separate) | Admin page already has AI global toggle |
@@ -292,7 +271,7 @@ Copy from `packages/ns-web/src/components/QAPanel.tsx`:
 ## Open Questions (Resolved from Web Implementation)
 
 - **Inline completions stream** — Yes, token-by-token via SSE
-- **Embedding model** — Voyage AI (`voyage-3-lite`, 512 dimensions), server-side only
+- **Embedding model** — Voyage AI (`voyage-3-lite`, 512 dimensions), generated server-side via ns-api, cached locally in SQLite for offline search
 - **Q&A history** — Ephemeral per session (matches web)
 - **Context window for completions** — Last ~500 characters before cursor
 

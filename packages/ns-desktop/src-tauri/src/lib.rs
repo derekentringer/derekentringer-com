@@ -45,6 +45,12 @@ pub fn run() {
             sql: include_str!("../migrations/007.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "add note_embeddings table for semantic search",
+            sql: include_str!("../migrations/008.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

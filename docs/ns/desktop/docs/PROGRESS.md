@@ -11,7 +11,7 @@
 | AI Editor Extension | @derekentringer/codemirror-ai-markdown | Custom publishable extension; ghost text completions + select-and-rewrite via Claude API |
 | Local Database | SQLite (Tauri SQL plugin) | Full offline copy of all notes |
 | Full-Text Search | SQLite FTS5 | Keyword search across all notes offline |
-| Vector Search | sqlite-vec | Semantic search via locally stored embeddings |
+| Vector Search | SQLite JSON text + pure JS cosine similarity | Semantic search via locally stored embeddings (no sqlite-vec — Tauri SQL plugin can't load extensions) |
 | AI | Anthropic Claude API (via ns-api) | Tagging, summarization, semantic search, Q&A, inline markdown completions |
 | Google Drive | Google Drive REST API | One-time .txt file import |
 | Auth | JWT (via ns-api) | Shared accounts across web, desktop, and mobile |
@@ -68,7 +68,8 @@
 
 - [x] [10a — AI Features: Foundation](features/10a-ai-features-foundation.md) — Inline ghost text completions (SSE streaming) with completion styles (Continue/Markdown/Brief), note summarization (sparkle button → API → summary below title), smart auto-tagging (tag button → API → accept/dismiss pills), AI settings UI (master toggle, per-feature toggles, completion style radio group), ghost text CodeMirror extension (Tab accept, Escape dismiss, 600ms debounce), `useAiSettings` hook with localStorage persistence, save-before-AI-call pattern with local SQLite + sync
 - [x] [10b — AI Features: Select-and-Rewrite](features/10b-ai-select-and-rewrite.md) — Select text + Cmd/Ctrl+Shift+R or right-click opens floating rewrite menu with 6 actions (Rewrite, Make concise, Fix grammar, Convert to list, Expand, Summarize), inline-styled tooltip with theme-aware colors, loading/error states with 2s auto-close, `rewriteText` API function, settings toggle + keyboard shortcuts, rewrite menu CSS moved to inline styles for both web and desktop
-- [~] [10 — AI Features](feature_planning/10-ai-features.md) — Remaining: semantic search (10c), audio notes (10d), AI assistant chat (10e), continue writing (10f)
+- [x] [10c — AI Features: Semantic Search](features/10c-ai-semantic-search.md) — Keyword/semantic/hybrid search modes with search mode dropdown, embeddings generated via ns-api Voyage AI and cached locally in SQLite as JSON text, pure JS cosine similarity (no sqlite-vec), background embedding processor with 22s rate limit, embedding status in Settings, new `POST /ai/embeddings/generate` backend endpoint, sync engine queues embeddings on pull, tag browser animation + blur fix + scrollable overflow on both web and desktop
+- [~] [10 — AI Features](feature_planning/10-ai-features.md) — Remaining: audio notes (10d), AI assistant chat (10e), continue writing (10f)
 
 ### Phase 8: External Sources — Low Priority
 
