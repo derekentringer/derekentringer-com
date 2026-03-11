@@ -109,6 +109,10 @@ vi.mock("../context/AuthContext.tsx", () => ({
   useAuth: () => ({ logout: mockLogout }),
 }));
 
+vi.mock("../api/sse.ts", () => ({
+  connectSseStream: () => ({ disconnect: vi.fn() }),
+}));
+
 vi.mock("../hooks/useAiSettings.ts", () => ({
   useAiSettings: () => ({
     settings: { completions: false, summarize: false, tagSuggestions: false, rewrite: false, audioNotes: false, audioMode: "memo", qaAssistant: false },
