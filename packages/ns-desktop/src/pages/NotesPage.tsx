@@ -106,10 +106,11 @@ import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
+import { QAPanel } from "../components/QAPanel.tsx";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
-type DrawerTab = "history";
+type DrawerTab = "assistant" | "history";
 
 const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
 
@@ -214,9 +215,11 @@ export function NotesPage() {
   const noteTitlesRef = useRef<NoteTitleEntry[]>([]);
   noteTitlesRef.current = noteTitles;
 
-  // Version history drawer
+  // Drawer + focus mode
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("history");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const focusModeDrawerRef = useRef(false);
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
@@ -286,9 +289,9 @@ export function NotesPage() {
 
   const drawerResize = useResizable({
     direction: "vertical",
-    initialSize: 300,
-    minSize: 200,
-    maxSize: 500,
+    initialSize: 350,
+    minSize: 250,
+    maxSize: 600,
     storageKey: "ns-drawer-width",
     invert: true,
   });
@@ -578,6 +581,31 @@ export function NotesPage() {
       }
     };
   }, [title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
+
+  // --- Cmd+S to save, Cmd+Shift+D for focus mode ---
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        handleSave();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D")) {
+        e.preventDefault();
+        setFocusMode((prev) => {
+          if (!prev) {
+            focusModeDrawerRef.current = drawerOpen;
+            if (drawerOpen) setDrawerOpen(false);
+          } else {
+            if (focusModeDrawerRef.current) setDrawerOpen(true);
+          }
+          return !prev;
+        });
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleSave, drawerOpen]);
 
   // Auto-refresh editor content when notes array updates (e.g. after sync)
   useEffect(() => {
@@ -1314,12 +1342,34 @@ export function NotesPage() {
     ];
   }, [aiSettings.masterAiEnabled, aiSettings.rewrite, aiSettings.completions, aiSettings.completionStyle, aiSettings.completionDebounceMs]);
 
+  // Close Q&A panel when setting is disabled
+  useEffect(() => {
+    if (!aiSettings.qaAssistant) {
+      setDrawerOpen(false);
+    }
+  }, [aiSettings.qaAssistant]);
+
   function handleDrawerTabClick(tab: DrawerTab) {
     if (drawerOpen && drawerTab === tab) {
       setDrawerOpen(false);
     } else {
       setDrawerTab(tab);
       setDrawerOpen(true);
+    }
+  }
+
+  function handleQaSelectNote(noteId: string) {
+    if (sidebarView === "trash") {
+      setSidebarView("notes");
+    }
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      openNoteAsTab(note);
+    } else {
+      reloadNotes().then(() => {
+        setOpenTabs((prev) => prev.includes(noteId) ? prev : [...prev, noteId]);
+        setSelectedId(noteId);
+      });
     }
   }
 
@@ -1477,7 +1527,7 @@ export function NotesPage() {
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-        style={{ width: sidebarResize.size }}
+        style={{ width: focusMode ? 0 : sidebarResize.size }}
       >
         {/* Sidebar header */}
         <div className="pl-4 pr-2 py-4 flex items-center justify-between">
@@ -1848,11 +1898,13 @@ export function NotesPage() {
         </div>
       </aside>
 
-      <ResizeDivider
-        direction="vertical"
-        isDragging={sidebarResize.isDragging}
-        onPointerDown={sidebarResize.onPointerDown}
-      />
+      <div className="flex" style={{ pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
+        <ResizeDivider
+          direction="vertical"
+          isDragging={sidebarResize.isDragging}
+          onPointerDown={sidebarResize.onPointerDown}
+        />
+      </div>
 
       {/* Editor area */}
       <main
@@ -2178,8 +2230,26 @@ export function NotesPage() {
         }}
       >
         {/* Tab buttons on left edge, above backlinks panel */}
-        {selectedId && sidebarView !== "trash" && (
-          <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
+        {!focusMode && <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
+          {/* AI Assistant tab — always visible when setting enabled */}
+          {aiSettings.masterAiEnabled && aiSettings.qaAssistant && (
+            <button
+              onClick={() => handleDrawerTabClick("assistant")}
+              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors cursor-pointer ${
+                drawerOpen && drawerTab === "assistant"
+                  ? "bg-primary text-primary-contrast"
+                  : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-muted"
+              }`}
+              title="AI Assistant"
+              data-testid="drawer-tab-assistant"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+          )}
+          {/* Version History tab — only when a note is selected */}
+          {selectedId && sidebarView !== "trash" && (
             <button
               onClick={() => handleDrawerTabClick("history")}
               className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors cursor-pointer ${
@@ -2193,8 +2263,8 @@ export function NotesPage() {
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </button>
-          </div>
-        )}
+          )}
+        </div>}
         <div className="h-full flex bg-card shadow-lg">
           <ResizeDivider
             direction="vertical"
@@ -2202,7 +2272,9 @@ export function NotesPage() {
             onPointerDown={drawerResize.onPointerDown}
           />
           <div className="flex-1 min-w-0 h-full">
-            {drawerTab === "history" && selectedId ? (
+            {drawerTab === "assistant" && aiSettings.masterAiEnabled && aiSettings.qaAssistant ? (
+              <QAPanel onSelectNote={handleQaSelectNote} isOpen={drawerOpen} />
+            ) : drawerTab === "history" && selectedId ? (
               <VersionHistoryPanel
                 noteId={selectedId}
                 onSelectVersion={setSelectedVersion}
