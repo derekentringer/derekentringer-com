@@ -15,9 +15,8 @@ VS Code-style editor tab bar for NoteSync, allowing users to keep multiple notes
 
 ### Opening Tabs
 
-- **Single-click (no tabs open):** Loads note in editor without creating a tab — same behavior as before tabs existed
+- **Single-click:** Always opens note as a preview tab with italic title; subsequent single-clicks replace the preview tab (only one preview tab at a time)
 - **Double-click:** Opens note as a permanent (non-italic) tab; this is the primary way to create tabs
-- **Single-click (tabs open):** Opens note as a preview tab with italic title; subsequent single-clicks replace the preview tab (only one preview tab at a time)
 - **Double-click a preview tab:** Pins it — becomes permanent, italic removed
 - **Edit preview tab (title or content):** Auto-pins via `useEffect` watching `isDirty`
 - **Create / deep-link / wiki-link / favorites:** Open as permanent tabs
@@ -98,7 +97,7 @@ Added `onDoubleClick?: (note: NoteSearchResult) => void` prop to both `NoteListP
 - `savedTabSelectionRef` — remembers active tab when switching to trash
 
 ### Key Handlers
-- `handleNoteSelect(note)` — single-click: no tab if empty, preview if tabs exist
+- `handleNoteSelect(note)` — single-click: always creates a preview tab (or replaces existing preview)
 - `openNoteAsTab(note)` — double-click / create / deep-link: permanent tab
 - `pinTab(tabId)` — clears previewTabId
 - `switchTab(noteId)` — tab click: finds note, calls selectNote
@@ -158,7 +157,7 @@ These now call `openNoteAsTab` instead of `selectNote`:
 | Test file | Tests |
 |-----------|-------|
 | `TabBar.test.tsx` | 11 tests: renders titles, dirty indicator, click callback, close callback, no select on close click, active styling, inactive styling, middle-click close, empty title fallback, italic preview styling, double-click pin |
-| `NotesPage.test.tsx` | +11 tests: no tab on single-click, no tab when switching without tabs, tab on double-click, no promote on double-click, preview tab on single-click with tabs, preview replacement, double-click pins preview, close active switches adjacent, close last clears editor, delete removes tab, create opens tab |
+| `NotesPage.test.tsx` | +11 tests: preview tab on single-click, preview replacement when switching notes, tab on double-click, double-click replaces preview with permanent, preview tab on single-click with tabs, preview replacement, double-click pins preview, close active switches adjacent, close last clears editor, delete removes tab, create opens tab |
 
 ## Dependencies
 

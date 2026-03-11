@@ -832,7 +832,7 @@ describe("NotesPage", () => {
       content: "Third content",
     };
 
-    it("does not show tab bar on single-click when no tabs open", async () => {
+    it("single-click with no tabs open creates a preview tab", async () => {
       mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
 
       renderNotesPage();
@@ -840,21 +840,29 @@ describe("NotesPage", () => {
       const noteButton = await screen.findByText("Test Note");
       await userEvent.click(noteButton);
 
-      // Tab bar should not appear — single-click with no tabs doesn't open a tab
-      expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
+      // Tab bar should appear with the preview tab
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
     });
 
-    it("single-click with no tabs does not create tab when switching notes", async () => {
+    it("single-click replaces preview tab when switching notes with no permanent tabs", async () => {
       mockFetchNotes.mockResolvedValue({ notes: [mockNote, mockNote2], total: 2 });
 
       renderNotesPage();
 
       await userEvent.click(await screen.findByText("Test Note"));
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
+
       await userEvent.click(screen.getByText("Second Note"));
 
-      // No tabs should exist
-      expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
-      expect(screen.queryByLabelText("Close Second Note")).not.toBeInTheDocument();
+      // Preview tab should be replaced — only second note tab exists
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Second Note")).toBeInTheDocument();
+        expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
+      });
     });
 
     it("opens a tab on double-click", async () => {
@@ -871,24 +879,26 @@ describe("NotesPage", () => {
       });
     });
 
-    it("double-clicking a note only opens that note as a tab (no promote)", async () => {
+    it("double-clicking a note replaces preview tab with permanent tab", async () => {
       mockFetchNotes.mockResolvedValue({ notes: [mockNote, mockNote2], total: 2 });
 
       renderNotesPage();
 
-      // Single-click first note (no tab created)
+      // Single-click first note — creates preview tab
       const noteButton1 = await screen.findByText("Test Note");
       await userEvent.click(noteButton1);
-      expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
+      });
 
-      // Double-click second note — only the double-clicked note opens as a tab
+      // Double-click second note — closes preview, opens permanent tab
       const noteButton2 = await screen.findByText("Second Note");
       await userEvent.dblClick(noteButton2);
 
       await waitFor(() => {
         expect(screen.getByLabelText("Close Second Note")).toBeInTheDocument();
       });
-      // The single-clicked note should NOT have a tab
+      // The preview tab (first note) should be closed
       expect(screen.queryByLabelText("Close Test Note")).not.toBeInTheDocument();
     });
 
