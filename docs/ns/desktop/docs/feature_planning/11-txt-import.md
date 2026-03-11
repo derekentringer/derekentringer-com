@@ -1,6 +1,6 @@
 # 11 — File Import
 
-**Status:** Not Started
+**Status:** Partially Complete (drag-and-drop import done; wizard-based import with native file picker deferred)
 **Phase:** 8 — External Sources
 **Priority:** Low
 
