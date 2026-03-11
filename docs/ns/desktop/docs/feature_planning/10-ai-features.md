@@ -15,7 +15,7 @@ Port all AI-powered features from ns-web to ns-desktop for feature parity. All A
 - **Frontend-only work** — port API client functions, hooks, editor extensions, components, and settings UI from ns-web
 - **Shared types** — `@derekentringer/shared/ns` already exports `AudioMode`, `QASource`, `EmbeddingStatus`
 - **CodeMirror extensions** — `ghostText.ts` and `rewriteMenu.ts` are self-contained; copy from ns-web to ns-desktop
-- **Semantic search** — uses ns-api's server-side pgvector search (not local sqlite-vec); desktop sends `searchMode` param to `GET /notes` endpoint
+- **Semantic search** — fully local via sqlite-vec extension in Tauri; embeddings generated via ns-api's Voyage AI endpoint, stored locally in SQLite; all three search modes (keyword/semantic/hybrid) work offline once embeddings are cached
 - **Audio recording** — `MediaRecorder` API works in Tauri's webview; same implementation as web
 
 ## Incremental Releases
@@ -131,32 +131,82 @@ Copy from `packages/ns-web/src/editor/rewriteMenu.ts`:
 
 ---
 
-## Release 10c: Semantic Search
+## Release 10c: Semantic Search (Local sqlite-vec)
+
+Desktop semantic search is fully local — embeddings are stored in SQLite via the sqlite-vec extension, enabling offline keyword, semantic, and hybrid search. Embeddings are generated via ns-api's Voyage AI endpoint when online, then cached locally.
+
+### Architecture
+
+- **sqlite-vec** — SQLite extension for vector similarity search; loaded as a Tauri plugin or bundled `.dylib`/`.dll`/`.so`
+- **Embedding generation** — calls ns-api `POST /ai/embeddings/generate` (Voyage AI `voyage-3-lite`, 512 dimensions) when online; results stored locally
+- **Local vector table** — new `note_embeddings` table in SQLite storing note ID → float32 vector
+- **Search modes** — Keyword (existing FTS5), Semantic (sqlite-vec cosine distance), Hybrid (FTS5 rank + vector similarity combined score)
+- **Background processor** — on toggle-on or new note save, queues embedding generation; processes when online; skips when offline
+- **Offline resilience** — keyword search always works (FTS5); semantic/hybrid work for notes that already have cached embeddings; notes without embeddings are excluded from vector results but still appear in keyword results
+
+### Tauri / Rust Changes
+
+#### SQLite Migration (`src-tauri/migrations/008.sql`) — NEW
+```sql
+-- Note embeddings table for local vector search
+CREATE TABLE IF NOT EXISTS note_embeddings (
+  note_id TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+  embedding BLOB NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+#### Tauri Rust Setup (`src-tauri/`)
+- Add `sqlite-vec` crate or bundle the precompiled extension
+- Load sqlite-vec extension on database connection (`SELECT load_extension('vec0')` or via Tauri SQL plugin config)
+- Create a virtual table for vector search: `CREATE VIRTUAL TABLE IF NOT EXISTS vec_notes USING vec0(embedding float[512])`
+- Alternatively, use sqlite-vec's `vec_distance_cosine()` function directly against the `note_embeddings` table without a virtual table
+
+### Files to Create
+
+#### Embedding Service (`packages/ns-desktop/src/lib/embeddingService.ts`) — NEW
+- `generateEmbedding(noteId)` — calls ns-api to generate embedding, stores result in local `note_embeddings` table
+- `generateQueryEmbedding(query)` — calls ns-api to generate query embedding (input_type: "query"), returns vector for search
+- `getEmbeddingStatus()` — returns `{ total: number, embedded: number, pending: number }` from local DB
+- `processEmbeddingQueue()` — finds notes without embeddings, generates them in batch (when online)
+- `deleteEmbedding(noteId)` — removes embedding on note delete
+- Respects online/offline status — silently skips when offline, queues for later
+
+#### Vector Search (`packages/ns-desktop/src/lib/db.ts` additions)
+- `searchNotesKeyword(query)` — existing FTS5 search (rename current `searchNotes`)
+- `searchNotesSemantic(query)` — generates query embedding, queries `note_embeddings` with `vec_distance_cosine()`, returns ranked results
+- `searchNotesHybrid(query)` — runs both FTS5 and vector search, combines scores with keyword-match bonus (matching web's hybrid scoring), deduplicates, returns merged ranked list
+- `searchNotes(query, mode)` — dispatcher that calls the appropriate function based on `mode` parameter
 
 ### Files to Modify
 
 #### AI API Client (`packages/ns-desktop/src/api/ai.ts`)
-- Add `enableEmbeddings()`, `disableEmbeddings()`, `getEmbeddingStatus()` functions
-
-#### Notes API (`packages/ns-desktop/src/api/notes.ts` or equivalent)
-- Add `searchMode?: "keyword" | "semantic" | "hybrid"` parameter to note search function
-- Append to URLSearchParams when present
+- Add `requestEmbedding(text)` — calls ns-api `POST /ai/embeddings/generate` to get a 512-dimension vector
+- Add `requestQueryEmbedding(text)` — calls ns-api with `input_type: "query"`
 
 #### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
 - Add "Semantic search" toggle (5th toggle)
-- When toggled ON: calls `enableEmbeddings()` API
-- When toggled OFF: calls `disableEmbeddings()` API
-- Shows embedding status below toggle when enabled (pending count, total embedded)
+- When toggled ON: starts background embedding processor for all existing notes
+- When toggled OFF: optionally clears local embeddings to save space
+- Shows embedding status below toggle when enabled (pending count, total embedded, "Processing..." indicator)
+- Info tooltip explaining offline capability
 
 #### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
 - Add search mode `<select>` dropdown inline with search input when `settings.semanticSearch` is enabled
 - Options: Keyword, Semantic, Hybrid (default: Hybrid)
-- Pass selected `searchMode` to search API calls
+- Pass selected `searchMode` to local `searchNotes(query, mode)` in `db.ts`
+- Trigger embedding generation on note save (if semantic search enabled and online)
 - Match web's search UI exactly
 
+#### Sync Engine (`packages/ns-desktop/src/lib/syncEngine.ts`)
+- After pulling new/updated notes from server, queue embedding generation for changed notes
+- After local note create/update, queue embedding generation
+
 ### Tests
-- `ai-api.test.ts` — add embedding enable/disable/status tests (3+ tests)
-- `SettingsPage.test.tsx` — update toggle count, semantic search toggle
+- `embeddingService.test.ts` — mock API calls, local storage/retrieval, queue processing, offline skip (6+ tests)
+- `db.test.ts` — add searchNotesKeyword, searchNotesSemantic, searchNotesHybrid tests (6+ tests)
+- `ai-api.test.ts` — add requestEmbedding, requestQueryEmbedding tests (3+ tests)
+- `SettingsPage.test.tsx` — update toggle count, semantic search toggle, embedding status display
 
 ---
 
@@ -282,7 +332,7 @@ Copy from `packages/ns-web/src/components/QAPanel.tsx`:
 | **API client** | `apiFetch` from `./client.ts` | Same pattern — desktop has its own `apiFetch` in `./client.ts` |
 | **Router** | `navigate()` for deep-links, URL sync | No router — no URL updates |
 | **Note type** | `NoteSearchResult` (from API) | `Note` (from local SQLite, synced) |
-| **Semantic search** | Server-side pgvector | Same — calls ns-api server-side search |
+| **Semantic search** | Server-side pgvector | Local sqlite-vec; embeddings generated via ns-api Voyage AI, cached in SQLite; fully offline once cached |
 | **Audio recording** | `MediaRecorder` in browser | `MediaRecorder` in Tauri webview (same API) |
 | **Sync after AI create** | Offline queue handles it | Must push to sync engine after note creation |
 | **Admin AI toggle** | Admin page (separate) | Admin page already has AI global toggle |
@@ -292,7 +342,7 @@ Copy from `packages/ns-web/src/components/QAPanel.tsx`:
 ## Open Questions (Resolved from Web Implementation)
 
 - **Inline completions stream** — Yes, token-by-token via SSE
-- **Embedding model** — Voyage AI (`voyage-3-lite`, 512 dimensions), server-side only
+- **Embedding model** — Voyage AI (`voyage-3-lite`, 512 dimensions), generated server-side via ns-api, cached locally in SQLite for offline search
 - **Q&A history** — Ephemeral per session (matches web)
 - **Context window for completions** — Last ~500 characters before cursor
 
