@@ -6,95 +6,300 @@
 
 ## Summary
 
-AI-powered features using the Claude API (via ns-api) for smart tagging, summarization, semantic search, Q&A over notes, duplicate detection, and inline AI-assisted markdown writing via a custom CodeMirror 6 extension.
+Port all AI-powered features from ns-web to ns-desktop for feature parity. All AI calls route through ns-api (already fully implemented — no backend changes needed). Desktop UI/UX must match the web app. Features include inline ghost text completions, note summarization, smart auto-tagging, select-and-rewrite, semantic search, audio notes, AI assistant chat, and continue writing/structure suggestions.
 
-## Requirements
+## Architecture
 
-- **AI-assisted markdown writing** (custom CodeMirror 6 extension):
-  - `@derekentringer/codemirror-ai-markdown` — standalone, backend-agnostic, publishable package
-  - **Inline ghost text completions**: as you type, Claude suggests the next sentence/paragraph; displayed as gray ghost text after the cursor; Tab to accept, Escape or keep typing to dismiss
-  - **Select-and-rewrite**: select text, trigger AI action (right-click menu or keyboard shortcut) to rewrite, make concise, fix grammar, convert to list, expand, or summarize
-  - **Continue writing**: keyboard shortcut (e.g., Ctrl+Shift+Space) to generate the next paragraph based on the note's content above the cursor
-  - **Heading/structure suggestions**: on a new/empty note, suggest an outline based on the title
-  - Configurable debounce (default 500ms), context window size, and keybindings
-  - All AI calls route through ns-api (extension accepts a callback function, NoteSync wires it to the API)
-- **Smart auto-tagging**:
-  - Analyze note content and suggest tags
-  - User accepts or dismisses suggested tags
-  - Runs on note save (debounced) or on manual trigger
-- **Note summarization**:
-  - Generate a 1-3 sentence summary of a note
-  - Summary stored as metadata (separate from note content)
-  - Displayed in note list/cards for quick scanning
-  - Manual trigger or auto-generate on first view
-- **Semantic search**:
-  - Generate vector embeddings for each note (via Voyage AI or a dedicated embedding model)
-  - Store embeddings locally in SQLite via `sqlite-vec`
-  - Search by meaning, not just keywords (e.g., "notes about weekend plans" finds relevant notes even without those exact words)
-  - Three search modes: keyword, semantic, hybrid (combined ranking)
-  - Search mode selector UI toggle
-  - Complement FTS5 keyword search: show both keyword and semantic results
-  - Embedding status display in settings (enabled/disabled, pending count, total embedded)
-- **Audio notes**:
-  - Voice recording → AI-structured markdown via Whisper transcription + Claude formatting
-  - AudioRecorder component with mode selection (meeting, lecture, memo, verbatim)
-  - Draggable split view divider for recording panel
-  - Audio upload validation (WebM, MP4, MP3, WAV, OGG formats)
-- **AI Assistant chat panel**:
-  - Collapsible right-side panel with streaming AI answers
-  - Ask questions in natural language about your notes
-  - System searches relevant notes (semantic + keyword), sends them as context to Claude
-  - Citation pills linking to source notes
-  - Markdown rendering in responses
-  - Right-click context menus on notes for "Ask AI about this note"
-  - Cursor-positioned context menus on folders/notes
-- **Duplicate detection**:
-  - Use embeddings to find notes with very similar content
-  - Surface potential duplicates for review
-  - User can merge or dismiss
-- **Completion styles**:
-  - Configurable completion styles: Continue writing, Markdown assist, Brief
-  - Per-style system prompts and max_tokens
-  - Style selector in settings and inline switcher
-- **AI settings**:
-  - All AI features disabled by default
-  - Per-feature toggle in settings (inline completions, auto-tagging, summarization, semantic search, Q&A, audio notes, duplicate detection)
-  - Completion styles and delay configuration
-  - Audio mode selection
-  - Info tooltips on all AI settings explaining each feature
-  - Daily request limit to control API costs (configurable)
+- **No backend changes** — ns-api already has all AI endpoints (complete, summarize, tags, rewrite, transcribe, ask, embeddings)
+- **All AI calls go through ns-api** — desktop never calls Claude or Whisper directly
+- **Frontend-only work** — port API client functions, hooks, editor extensions, components, and settings UI from ns-web
+- **Shared types** — `@derekentringer/shared/ns` already exports `AudioMode`, `QASource`, `EmbeddingStatus`
+- **CodeMirror extensions** — `ghostText.ts` and `rewriteMenu.ts` are self-contained; copy from ns-web to ns-desktop
+- **Semantic search** — uses ns-api's server-side pgvector search (not local sqlite-vec); desktop sends `searchMode` param to `GET /notes` endpoint
+- **Audio recording** — `MediaRecorder` API works in Tauri's webview; same implementation as web
 
-## Technical Considerations
+## Incremental Releases
 
-- **Custom extension architecture** (`@derekentringer/codemirror-ai-markdown`):
-  - Uses CodeMirror 6 `ViewPlugin` and `Decoration` APIs for ghost text rendering
-  - Backend-agnostic: accepts `complete: (context: string, cursor: number) => Promise<string>` callback
-  - Configurable via options object (debounce, keybindings, ghost text styling)
-  - Publishable as standalone npm package; no dependencies on NoteSync internals
-  - Shared between `ns-desktop` and `ns-web`
-- API endpoints (on ns-api):
-  - `POST /ai/complete` — inline markdown completion (streaming response for fast ghost text)
-  - `POST /ai/tags` — suggest tags for a note
-  - `POST /ai/summarize` — generate note summary
-  - `POST /ai/search` — semantic search across notes
-  - `POST /ai/ask` — Q&A with citations
-  - `POST /ai/duplicates` — find similar notes
-  - `POST /ai/rewrite` — rewrite selected text with an instruction
-- Embeddings: generated server-side, returned to client, stored in local `sqlite-vec` for offline semantic search
-- Embedding sync: embeddings are regenerated when a note changes; synced alongside note data
-- Cost control: debounce AI calls, cache results, daily usage counter stored in SQLite
-- Streaming: inline completions should use streaming responses for perceived speed
+| Release | Summary | Web Equivalent |
+|---------|---------|----------------|
+| **10a** | Inline completions + completion styles, summarize, auto-tag, AI settings | 04a + 04a.1 |
+| **10b** | Select-and-rewrite | 04b |
+| **10c** | Semantic search (server-side via API) | 04c |
+| **10d** | Audio notes | 04d |
+| **10e** | AI assistant chat + UI polish | 04e + 04e.1 |
+| **10f** | Continue writing & structure suggestions, UX polish | 04g |
+
+---
+
+## Release 10a: Inline Completions, Summarize, Auto-Tag, AI Settings
+
+### Files to Create
+
+#### AI API Client (`packages/ns-desktop/src/api/ai.ts`) — NEW
+Port from `packages/ns-web/src/api/ai.ts`. All functions identical — same endpoints, same SSE parsing:
+- `fetchCompletion(context, signal, style?)` — async generator, SSE streaming
+- `summarizeNote(noteId)` — JSON response
+- `suggestTags(noteId)` — JSON response
+- Import `apiFetch` from `./client.ts` (desktop's existing API client)
+- Import types from `../hooks/useAiSettings.ts` and `@derekentringer/shared/ns`
+
+#### AI Settings Hook (`packages/ns-desktop/src/hooks/useAiSettings.ts`) — NEW
+Copy from `packages/ns-web/src/hooks/useAiSettings.ts`. Identical implementation:
+- `CompletionStyle` type: `"continue" | "markdown" | "brief" | "paragraph" | "structure"`
+- `AudioMode` type: `"meeting" | "lecture" | "memo" | "verbatim"`
+- `AiSettings` interface with all fields (masterAiEnabled, completions, completionStyle, completionDebounceMs, continueWriting, summarize, tagSuggestions, rewrite, semanticSearch, audioNotes, audioMode, qaAssistant)
+- `useAiSettings()` hook with localStorage persistence under `"ns-ai-settings"` key
+- Validated loading with fallbacks for corrupted/partial data
+
+#### Ghost Text Extension (`packages/ns-desktop/src/editor/ghostText.ts`) — NEW
+Copy from `packages/ns-web/src/editor/ghostText.ts`:
+- `ghostTextExtension(fetchFn)` — CodeMirror 6 extension
+- `StateField<string>` for ghost text state
+- `ViewPlugin` with 600ms debounce + `AbortController`
+- `Decoration.widget` renders `<span class="cm-ghost-text">` (opacity 0.4, italic)
+- `Prec.highest` keymap: Tab to accept, Escape to dismiss
+- Context: last ~500 characters before cursor
+
+### Files to Modify
+
+#### MarkdownEditor (`packages/ns-desktop/src/components/MarkdownEditor.tsx`)
+- Add `extensions?: Extension[]` prop for AI extensions
+- Add `.cm-ghost-text` CSS styles to theme
+
+#### EditorToolbar (`packages/ns-desktop/src/components/EditorToolbar.tsx`)
+- Add Summarize button (sparkle icon), conditional on `settings.summarize`
+- Add Suggest Tags button (tag icon), conditional on `settings.tagSuggestions`
+- Match web's compact icon-only toolbar style with `aria-label` and `title` tooltips
+
+#### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
+- Add "AI Features" section matching web layout
+- Toggle switches (all default OFF): Inline completions, Summarize, Auto-tag suggestions
+- Completion style radio group (Continue writing, Markdown assist, Brief) — shown when completions enabled
+- Info tooltips on all AI settings (InfoIcon component matching web)
+- `useAiSettings()` hook integration
+
+#### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
+- Import and wire `useAiSettings`
+- Ghost text wired conditionally via `useMemo` on `settings.completions`
+- Pass AI extensions to MarkdownEditor
+- Summarize button handler: calls `summarizeNote()`, updates local state
+- Suggest Tags handler: calls `suggestTags()`, shows pills with accept/dismiss
+- Summary display below note title (italic, muted) with delete (x) button
+- Suggested tags shown as pills matching web design
+- Save-before-AI-call pattern for summarize and tag suggestions
+
+### Tests
+- `useAiSettings.test.ts` — defaults, read/write, corruption handling, completionStyle validation (8+ tests)
+- `ai-api.test.ts` — mock apiFetch, test SSE parsing, summarize, suggestTags (5+ tests)
+- `ghostText.test.ts` — StateField, effects, Tab/Escape keymaps (6+ tests)
+- `SettingsPage.test.tsx` — AI toggle rendering, completion style radio group (5+ tests)
+
+---
+
+## Release 10b: Select-and-Rewrite
+
+### Files to Create
+
+#### Rewrite Menu Extension (`packages/ns-desktop/src/editor/rewriteMenu.ts`) — NEW
+Copy from `packages/ns-web/src/editor/rewriteMenu.ts`:
+- `rewriteExtension(rewriteFn)` — CodeMirror 6 extension
+- 6 actions: Rewrite, Make concise, Fix grammar, Convert to list, Expand, Summarize
+- Floating tooltip menu positioned at selection end
+- `Mod-Shift-r` keyboard shortcut + right-click context menu
+- Loading state, error state with 2s auto-close
+
+### Files to Modify
+
+#### AI API Client (`packages/ns-desktop/src/api/ai.ts`)
+- Add `RewriteAction` type
+- Add `rewriteText(text, action)` function
+
+#### MarkdownEditor (`packages/ns-desktop/src/components/MarkdownEditor.tsx`)
+- Add `.cm-rewrite-menu`, `.cm-rewrite-action`, `.cm-rewrite-loading`, `.cm-rewrite-error` CSS styles
+
+#### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
+- Add "Select-and-rewrite" toggle (4th toggle)
+- Add Keyboard Shortcuts reference section with platform-aware labels (Cmd on Mac, Ctrl on others)
+
+#### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
+- Wire `rewriteExtension(rewriteText)` in AI extensions memo, gated on `settings.rewrite`
+
+### Tests
+- `rewriteMenu.test.ts` — extension validity, StateField, open/close effects, auto-close on change (10+ tests)
+- `ai-api.test.ts` — add rewriteText tests (3+ tests)
+- `SettingsPage.test.tsx` — update toggle count, keyboard shortcuts section
+
+---
+
+## Release 10c: Semantic Search
+
+### Files to Modify
+
+#### AI API Client (`packages/ns-desktop/src/api/ai.ts`)
+- Add `enableEmbeddings()`, `disableEmbeddings()`, `getEmbeddingStatus()` functions
+
+#### Notes API (`packages/ns-desktop/src/api/notes.ts` or equivalent)
+- Add `searchMode?: "keyword" | "semantic" | "hybrid"` parameter to note search function
+- Append to URLSearchParams when present
+
+#### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
+- Add "Semantic search" toggle (5th toggle)
+- When toggled ON: calls `enableEmbeddings()` API
+- When toggled OFF: calls `disableEmbeddings()` API
+- Shows embedding status below toggle when enabled (pending count, total embedded)
+
+#### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
+- Add search mode `<select>` dropdown inline with search input when `settings.semanticSearch` is enabled
+- Options: Keyword, Semantic, Hybrid (default: Hybrid)
+- Pass selected `searchMode` to search API calls
+- Match web's search UI exactly
+
+### Tests
+- `ai-api.test.ts` — add embedding enable/disable/status tests (3+ tests)
+- `SettingsPage.test.tsx` — update toggle count, semantic search toggle
+
+---
+
+## Release 10d: Audio Notes
+
+### Files to Create
+
+#### AudioRecorder Component (`packages/ns-desktop/src/components/AudioRecorder.tsx`) — NEW
+Copy from `packages/ns-web/src/components/AudioRecorder.tsx`:
+- `AudioRecorder({ defaultMode, onNoteCreated, onError })` — standalone component
+- Three states: idle (Record button + mode dropdown), recording (timer + Stop button), processing (spinner)
+- Browser `MediaRecorder` API with `audio/webm;codecs=opus`
+- Mode dropdown (Meeting, Lecture, Memo, Verbatim), closes on outside click
+- Recording timer (MM:SS), max 30 minutes auto-stop
+- Cleanup on unmount
+- Match web styling exactly
+
+### Files to Modify
+
+#### AI API Client (`packages/ns-desktop/src/api/ai.ts`)
+- Add `TranscribeResult` interface
+- Add `transcribeAudio(audioBlob, mode)` function
+
+#### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
+- Add "Audio notes" toggle (6th toggle)
+- Add audio mode radio group (Meeting, Lecture, Memo, Verbatim) — shown when audio notes enabled
+- Info tooltips on all mode options
+
+#### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
+- AudioRecorder shown in sidebar header next to "+" button (icon-only, matching web's 04e.1 layout)
+- `handleAudioNoteCreated(note)` — adds new note to list, selects it, reloads folders, syncs to server
+- Match web positioning and behavior exactly
+
+### Tests
+- `AudioRecorder.test.tsx` — renders Record button and mode dropdown, mode selection, button sizing (3+ tests)
+- `ai-api.test.ts` — add transcribeAudio tests (4+ tests)
+- `SettingsPage.test.tsx` — update toggle count, audio toggle and mode radio group
+
+---
+
+## Release 10e: AI Assistant Chat + UI Polish
+
+### Files to Create
+
+#### QAPanel Component (`packages/ns-desktop/src/components/QAPanel.tsx`) — NEW
+Copy from `packages/ns-web/src/components/QAPanel.tsx`:
+- Chat panel with streaming AI answers, Clear button
+- Scrollable messages with auto-scroll
+- User messages: right-aligned accent-colored bubbles
+- Assistant messages: left-aligned card-styled with ReactMarkdown + remarkGfm
+- Citation handling: `[Title]` references stripped, deduplicated source pills at bottom of replies with `border-t` separator
+- Source pills: `rounded-md` styling, click calls `onSelectNote(id)`
+- Input area: text input + Ask/Stop button, AbortController for cancellation
+- Tab button embedded in input footer, slides with panel
+- Auto-focus input when panel opens
+- Props: `onSelectNote`, `isOpen`, `onToggle`
+
+### Files to Modify
+
+#### AI API Client (`packages/ns-desktop/src/api/ai.ts`)
+- Add `AskQuestionEvent` interface
+- Add `askQuestion(question, signal)` async generator function
+
+#### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
+- Add "AI assistant chat" toggle (7th toggle)
+- Disabled when semantic search is off (dependency)
+- When semantic search toggled off, qaAssistant auto-disabled
+
+#### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
+- Add `qaOpen` state + `qaResize` hook (useResizable, vertical, 250–600px, `ns-qa-panel-width`)
+- QA panel rendered as fixed overlay with slide animation (`transition-transform duration-300 ease-in-out`)
+- Tab always visible when `settings.qaAssistant` is enabled
+- `handleQaSelectNote` callback: finds/selects note, navigates out of trash view
+- Close QA panel when qaAssistant setting turned off
+
+#### NoteList (`packages/ns-desktop/src/components/NoteList.tsx`)
+- Add `onDeleteNote` optional prop (if not already present)
+- Right-click context menu with "Delete" option matching web
+- `fixed` positioning at cursor coordinates, click-outside dismissal
+
+#### FolderList / FolderTree (`packages/ns-desktop/src/components/FolderTree.tsx`)
+- Ensure context menu uses `fixed` positioning at cursor coordinates matching web
+- Click-outside dismissal
+
+### Tests
+- `QAPanel.test.tsx` — Clear button, Ask button disabled/enabled, source pill click (4+ tests)
+- `ai-api.test.ts` — add askQuestion SSE parsing tests (2+ tests)
+- `SettingsPage.test.tsx` — update toggle count, Q&A toggle and disabled state
+
+---
+
+## Release 10f: Continue Writing & Structure Suggestions, UX Polish
+
+### Files to Modify
+
+#### Ghost Text Extension (`packages/ns-desktop/src/editor/ghostText.ts`)
+- Add `continueWritingKeymap(fetchFn, getTitle?)` — new exported function
+- Returns CodeMirror extension with `Mod-Shift-Space` keymap
+- Auto-selects style: short content → `"structure"`, otherwise → `"paragraph"`
+- Reuses existing ghost text rendering
+
+#### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
+- Add "Continue writing" toggle (8th toggle, separate from inline completions)
+- Add "Continue writing / suggest structure" to Keyboard Shortcuts reference (Cmd/Ctrl+Shift+Space)
+
+#### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
+- Wire `continueWritingKeymap` in AI extensions memo, gated on `settings.continueWriting`
+- Uses `titleRef` to pass current note title without recreating extensions
+
+#### MarkdownEditor (`packages/ns-desktop/src/components/MarkdownEditor.tsx`)
+- Add CSS rule to hide placeholder on focus: `"&.cm-focused .cm-placeholder": { display: "none" }`
+
+### Tests
+- `ghostText.test.ts` — add continueWritingKeymap tests: returns Extension, paragraph vs structure style selection (3+ tests)
+- `SettingsPage.test.tsx` — update toggle count, continue writing toggle, shortcut description
+
+---
+
+## Desktop vs Web Differences
+
+| Aspect | Web | Desktop |
+|--------|-----|---------|
+| **API client** | `apiFetch` from `./client.ts` | Same pattern — desktop has its own `apiFetch` in `./client.ts` |
+| **Router** | `navigate()` for deep-links, URL sync | No router — no URL updates |
+| **Note type** | `NoteSearchResult` (from API) | `Note` (from local SQLite, synced) |
+| **Semantic search** | Server-side pgvector | Same — calls ns-api server-side search |
+| **Audio recording** | `MediaRecorder` in browser | `MediaRecorder` in Tauri webview (same API) |
+| **Sync after AI create** | Offline queue handles it | Must push to sync engine after note creation |
+| **Admin AI toggle** | Admin page (separate) | Admin page already has AI global toggle |
+| **ConfirmDialog** | Created in 04e.1 | Already exists |
+| **Note saving** | Auto-save via `isDirty` effect | Auto-save via `isDirty()` function + `saveGeneration` |
+
+## Open Questions (Resolved from Web Implementation)
+
+- **Inline completions stream** — Yes, token-by-token via SSE
+- **Embedding model** — Voyage AI (`voyage-3-lite`, 512 dimensions), server-side only
+- **Q&A history** — Ephemeral per session (matches web)
+- **Context window for completions** — Last ~500 characters before cursor
 
 ## Dependencies
 
 - [00 — Project Scaffolding](../features/00-project-scaffolding.md) — needs app shell
-- [01 — Note Editor](01-note-editor.md) — inline completions and rewrite integrate into the editor
-- [02 — Search & Organization](02-search-and-organization.md) — semantic search extends the existing search system
-- [09 — Sync Engine](09-sync-engine.md) — embeddings need to sync between local and central database
-
-## Open Questions
-
-- Should inline completions stream token-by-token, or wait for the full response before showing ghost text?
-- Which embedding model: Claude's built-in embeddings or a separate model (e.g., Voyage AI)?
-- Should Q&A history persist, or is it ephemeral per session?
-- How large a context window to send for inline completions (current paragraph vs. full note vs. multiple notes)?
+- [01 — Note Editor](../features/01-note-editor.md) — inline completions integrate into CodeMirror editor
+- [02 — Search & Organization](../features/02-search-and-organization.md) — semantic search extends existing search
+- [09 — Sync Engine](../features/09-sync-engine.md) — AI-created notes must sync to server
+- ns-api AI endpoints (already implemented) — no backend changes needed
