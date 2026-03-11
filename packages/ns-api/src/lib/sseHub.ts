@@ -61,11 +61,27 @@ export function createSseHub(): SseHub {
 
   return {
     addConnection(userId: string, deviceId: string, stream: PassThrough) {
+      const MAX_CONNECTIONS_PER_USER = 5;
       let userConns = connections.get(userId);
       if (!userConns) {
         userConns = new Set();
         connections.set(userId, userConns);
       }
+
+      // Evict oldest connection if at capacity
+      if (userConns.size >= MAX_CONNECTIONS_PER_USER) {
+        let oldest: SseConnection | null = null;
+        for (const conn of userConns) {
+          if (!oldest || conn.lastWrite < oldest.lastWrite) {
+            oldest = conn;
+          }
+        }
+        if (oldest) {
+          oldest.stream.end();
+          userConns.delete(oldest);
+        }
+      }
+
       userConns.add({ stream, deviceId, lastWrite: Date.now() });
     },
 
@@ -90,9 +106,11 @@ export function createSseHub(): SseHub {
           conn.stream.write("event: sync\ndata: {}\n\n");
           conn.lastWrite = Date.now();
         } catch {
-          // Stream errored — will be cleaned up by sweepDead
+          conn.stream.end();
+          userConns.delete(conn);
         }
       }
+      if (userConns.size === 0) connections.delete(userId);
     },
 
     cleanup() {

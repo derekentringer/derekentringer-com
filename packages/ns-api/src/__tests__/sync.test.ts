@@ -205,6 +205,7 @@ describe("Sync routes", () => {
       const body = res.json();
       expect(body.applied).toBe(1);
       expect(body.rejected).toBe(0);
+      expect(body.skipped).toBe(0);
       expect(mockPrisma.note.create).toHaveBeenCalledTimes(1);
     });
 
@@ -251,6 +252,7 @@ describe("Sync routes", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().applied).toBe(1);
+      expect(res.json().skipped).toBe(0);
       expect(mockPrisma.note.update).toHaveBeenCalledTimes(1);
     });
 
@@ -295,11 +297,11 @@ describe("Sync routes", () => {
       });
 
       expect(res.statusCode).toBe(200);
-      // The change is silently skipped (applied count still 1 because the function
-      // doesn't throw — it just returns early). The note.update should NOT be called.
+      // The change is skipped (LWW rejection). The note.update should NOT be called.
       expect(mockPrisma.note.update).not.toHaveBeenCalled();
-      // The route counts it as applied because applyNoteChange didn't throw
-      expect(res.json().applied).toBe(1);
+      // The route correctly counts it as skipped
+      expect(res.json().applied).toBe(0);
+      expect(res.json().skipped).toBe(1);
       expect(res.json().rejected).toBe(0);
     });
 
@@ -330,6 +332,7 @@ describe("Sync routes", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().applied).toBe(1);
+      expect(res.json().skipped).toBe(0);
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1" },
         data: { deletedAt: expect.any(Date), favorite: false },
@@ -370,6 +373,7 @@ describe("Sync routes", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().applied).toBe(1);
+      expect(res.json().skipped).toBe(0);
       expect(mockPrisma.folder.create).toHaveBeenCalledTimes(1);
     });
 
@@ -400,6 +404,7 @@ describe("Sync routes", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.json().applied).toBe(1);
+      expect(res.json().skipped).toBe(0);
       expect(mockPrisma.folder.update).toHaveBeenCalledWith({
         where: { id: "folder-1" },
         data: { deletedAt: expect.any(Date) },

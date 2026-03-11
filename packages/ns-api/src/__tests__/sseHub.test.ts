@@ -121,6 +121,45 @@ describe("SseHub", () => {
     expect(hub.connectionCount("user-1")).toBe(1);
   });
 
+  it("evicts oldest connection when exceeding limit of 5", () => {
+    const streams: PassThrough[] = [];
+    for (let i = 0; i < 5; i++) {
+      const s = new PassThrough();
+      // Stagger lastWrite times by advancing timer
+      hub.addConnection("user-1", `device-${i}`, s);
+      streams.push(s);
+      vi.advanceTimersByTime(100);
+    }
+
+    expect(hub.connectionCount("user-1")).toBe(5);
+
+    // Add a 6th connection — should evict the oldest (device-0)
+    const s6 = new PassThrough();
+    hub.addConnection("user-1", "device-5", s6);
+
+    expect(hub.connectionCount("user-1")).toBe(5);
+    // The oldest stream (device-0) should be ended
+    expect(streams[0].writableEnded).toBe(true);
+  });
+
+  it("removes dead streams during notify", () => {
+    const s1 = new PassThrough();
+    const s2 = new PassThrough();
+    hub.addConnection("user-1", "device-a", s1);
+    hub.addConnection("user-1", "device-b", s2);
+
+    // Make s1 throw on write (simulating broken connection)
+    s1.write = () => {
+      throw new Error("write after destroy");
+    };
+
+    hub.notify("user-1");
+
+    // s1 should be removed, s2 should still be there
+    expect(hub.connectionCount("user-1")).toBe(1);
+    expect(s2.read()?.toString()).toBe("event: sync\ndata: {}\n\n");
+  });
+
   it("cleanup closes all streams and clears state", () => {
     const s1 = new PassThrough();
     const s2 = new PassThrough();

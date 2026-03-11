@@ -468,8 +468,8 @@ export async function fetchFavoriteNotes(options?: {
   sortOrder?: SortOrder;
 }): Promise<Note[]> {
   const db = await getDb();
-  const sortField = options?.sortBy ?? "title";
-  const sortOrder = options?.sortOrder ?? "asc";
+  const sortField = options?.sortBy ?? "updatedAt";
+  const sortOrder = options?.sortOrder ?? "desc";
 
   const columnMap: Record<NoteSortField, string> = {
     title: "title",
@@ -1099,14 +1099,17 @@ export async function getSyncQueueCount(): Promise<number> {
  */
 export async function upsertNoteFromRemote(note: Note): Promise<void> {
   const db = await getDb();
-  const existing = await db.select<{ id: string }[]>(
-    "SELECT id FROM notes WHERE id = $1",
+  const existing = await db.select<{ id: string; updated_at: string }[]>(
+    "SELECT id, updated_at FROM notes WHERE id = $1",
     [note.id],
   );
 
   const tagsJson = JSON.stringify(note.tags ?? []);
 
   if (existing.length > 0) {
+    // LWW: skip if local is newer
+    if (existing[0].updated_at > note.updatedAt) return;
+
     await db.execute(
       `UPDATE notes SET title = $1, content = $2, folder_id = $3, tags = $4,
        summary = $5, favorite = $6, sort_order = $7, updated_at = $8,

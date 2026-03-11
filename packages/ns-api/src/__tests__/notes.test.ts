@@ -162,8 +162,10 @@ describe("Note routes", () => {
 
     it("accepts sortBy and sortOrder query params", async () => {
       const token = await getAccessToken();
-      mockPrisma.note.findMany.mockResolvedValue([]);
-      mockPrisma.note.count.mockResolvedValue(0);
+      // Title sort uses raw SQL for case-insensitive ordering
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ total: 0 }])  // count query
+        .mockResolvedValueOnce([]);               // data query
 
       const res = await app.inject({
         method: "GET",
