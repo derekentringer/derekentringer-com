@@ -1,4 +1,4 @@
-import { getAccessToken } from "./client.ts";
+import { getAccessToken, refreshAccessToken } from "./client.ts";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3004";
 
@@ -40,10 +40,26 @@ export function connectSseStream(
   async function connect() {
     if (disconnected) return;
 
-    const token = getAccessToken();
+    let token = getAccessToken();
     if (!token) {
       scheduleReconnect();
       return;
+    }
+
+    // Check if token is about to expire (within 60s) and refresh proactively
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.exp && payload.exp * 1000 - Date.now() < 60_000) {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          token = newToken;
+        } else {
+          scheduleReconnect();
+          return;
+        }
+      }
+    } catch {
+      // If token parsing fails, proceed with existing token
     }
 
     abortController = new AbortController();

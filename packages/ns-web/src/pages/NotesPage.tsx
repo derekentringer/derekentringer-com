@@ -83,6 +83,16 @@ import {
 
 type SidebarView = "notes" | "trash";
 
+const validSortFields: NoteSortField[] = ["sortOrder", "updatedAt", "createdAt", "title"];
+const validSortOrders: SortOrder[] = ["asc", "desc"];
+
+function validateSortField(value: string | null, fallback: NoteSortField): NoteSortField {
+  return value && validSortFields.includes(value as NoteSortField) ? value as NoteSortField : fallback;
+}
+function validateSortOrder(value: string | null, fallback: SortOrder): SortOrder {
+  return value && validSortOrders.includes(value as SortOrder) ? value as SortOrder : fallback;
+}
+
 export function NotesPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -117,8 +127,16 @@ export function NotesPage() {
   titleRef.current = title;
 
   // Note sort state
-  const [sortBy, setSortBy] = useState<NoteSortField>("updatedAt");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [sortBy, setSortBy] = useState<NoteSortField>(() => {
+    try {
+      return validateSortField(localStorage.getItem("ns-sort-by"), "updatedAt");
+    } catch { return "updatedAt"; }
+  });
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    try {
+      return validateSortOrder(localStorage.getItem("ns-sort-order"), "desc");
+    } catch { return "desc"; }
+  });
 
   // Folder state
   const [folders, setFolders] = useState<FolderInfo[]>([]);
@@ -133,12 +151,12 @@ export function NotesPage() {
   const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
   const [favSortBy, setFavSortBy] = useState<NoteSortField>(() => {
     try {
-      return (localStorage.getItem("ns-fav-sort-by") as NoteSortField) || "updatedAt";
+      return validateSortField(localStorage.getItem("ns-fav-sort-by"), "updatedAt");
     } catch { return "updatedAt"; }
   });
   const [favSortOrder, setFavSortOrder] = useState<SortOrder>(() => {
     try {
-      return (localStorage.getItem("ns-fav-sort-order") as SortOrder) || "desc";
+      return validateSortOrder(localStorage.getItem("ns-fav-sort-order"), "desc");
     } catch { return "desc"; }
   });
 
@@ -250,6 +268,14 @@ export function NotesPage() {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
   }, [search]);
+
+  // Persist note sort preferences
+  useEffect(() => {
+    try { localStorage.setItem("ns-sort-by", sortBy); } catch {}
+  }, [sortBy]);
+  useEffect(() => {
+    try { localStorage.setItem("ns-sort-order", sortOrder); } catch {}
+  }, [sortOrder]);
 
   const loadFolders = useCallback(async () => {
     try {
@@ -370,18 +396,38 @@ export function NotesPage() {
     }
   }, [sidebarView, loadTrash]);
 
+  // Refs for SSE handler to avoid re-subscribing on every callback change
+  const loadNotesRef = useRef(loadNotes);
+  const loadFoldersRef = useRef(loadFolders);
+  const loadFavoriteNotesRef = useRef(loadFavoriteNotes);
+  const loadNoteTitlesRef = useRef(loadNoteTitles);
+  const loadTrashRef = useRef(loadTrash);
+  const debouncedSearchRef = useRef(debouncedSearch);
+  const sidebarViewRef = useRef(sidebarView);
+
+  useEffect(() => { loadNotesRef.current = loadNotes; }, [loadNotes]);
+  useEffect(() => { loadFoldersRef.current = loadFolders; }, [loadFolders]);
+  useEffect(() => { loadFavoriteNotesRef.current = loadFavoriteNotes; }, [loadFavoriteNotes]);
+  useEffect(() => { loadNoteTitlesRef.current = loadNoteTitles; }, [loadNoteTitles]);
+  useEffect(() => { loadTrashRef.current = loadTrash; }, [loadTrash]);
+  useEffect(() => { debouncedSearchRef.current = debouncedSearch; }, [debouncedSearch]);
+  useEffect(() => { sidebarViewRef.current = sidebarView; }, [sidebarView]);
+
   // SSE for real-time sync notifications (replaces 30s polling)
   useEffect(() => {
     let sseConn: { disconnect: () => void } | null = null;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handleSyncEvent = () => {
-      // Debounce 500ms — multiple rapid pushes collapse into one reload
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        loadNotes(debouncedSearch || undefined);
-        loadFolders();
-        loadFavoriteNotes();
+        loadNotesRef.current(debouncedSearchRef.current || undefined);
+        loadFoldersRef.current();
+        loadFavoriteNotesRef.current();
+        loadNoteTitlesRef.current();
+        if (sidebarViewRef.current === "trash") {
+          loadTrashRef.current();
+        }
       }, 500);
     };
 
@@ -390,9 +436,9 @@ export function NotesPage() {
     // Fallback poll at 120s (safety net if SSE drops silently)
     const FALLBACK_POLL_MS = 120_000;
     const fallbackTimer = setInterval(() => {
-      loadNotes(debouncedSearch || undefined);
-      loadFolders();
-      loadFavoriteNotes();
+      loadNotesRef.current(debouncedSearchRef.current || undefined);
+      loadFoldersRef.current();
+      loadFavoriteNotesRef.current();
     }, FALLBACK_POLL_MS);
 
     return () => {
@@ -400,7 +446,7 @@ export function NotesPage() {
       if (debounceTimer) clearTimeout(debounceTimer);
       clearInterval(fallbackTimer);
     };
-  }, [loadNotes, loadFolders, loadFavoriteNotes, debouncedSearch]);
+  }, []);
 
   // Reconcile temp IDs after offline sync
   useEffect(() => {
@@ -614,6 +660,8 @@ export function NotesPage() {
       openNoteAsTab(note);
       loadFolders();
       loadNoteTitles();
+      // Re-fetch to ensure proper sort order
+      loadNotes();
     } catch {
       showError("Failed to create note");
     }

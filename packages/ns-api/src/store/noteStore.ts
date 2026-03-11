@@ -93,6 +93,9 @@ interface FtsRow extends PrismaNote {
   headline?: string;
 }
 
+// Explicit column list for raw SQL queries (avoids issues with unsupported types like vector)
+const NOTE_COLUMNS = `"id", "userId", "title", "content", "folder", "folderId", "tags", "summary", "favorite", "sortOrder", "favoriteSortOrder", "createdAt", "updatedAt", "deletedAt"`;
+
 export async function listNotes(
   userId: string,
   filter?: ListNotesFilter,
@@ -130,6 +133,41 @@ export async function listNotes(
 
   if (filter?.tags && filter.tags.length > 0) {
     where.tags = { array_contains: filter.tags };
+  }
+
+  // Case-insensitive title sort requires raw SQL
+  if (sortBy === "title") {
+    const dir = sortOrder === "desc" ? "DESC" : "ASC";
+    const params: unknown[] = [userId];
+    let paramIdx = 2;
+    let whereClause = `"userId" = $1 AND "deletedAt" IS NULL`;
+
+    if (filter?.folderId) {
+      whereClause += ` AND "folderId" = $${paramIdx}`;
+      params.push(filter.folderId);
+      paramIdx++;
+    } else if (filter?.folder) {
+      whereClause += ` AND "folder" = $${paramIdx}`;
+      params.push(filter.folder);
+      paramIdx++;
+    }
+
+    if (filter?.tags && filter.tags.length > 0) {
+      whereClause += ` AND "tags" @> $${paramIdx}::jsonb`;
+      params.push(JSON.stringify(filter.tags));
+      paramIdx++;
+    }
+
+    const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${whereClause}`;
+    const dataQuery = `SELECT ${NOTE_COLUMNS} FROM "notes" WHERE ${whereClause} ORDER BY LOWER("title") ${dir} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+    params.push(pageSize, skip);
+
+    const [countResult, notes] = await Promise.all([
+      prisma.$queryRawUnsafe<[{ total: number }]>(countQuery, ...params.slice(0, -2)),
+      prisma.$queryRawUnsafe<FtsRow[]>(dataQuery, ...params),
+    ]);
+
+    return { notes, total: countResult[0]?.total ?? 0 };
   }
 
   const [notes, total] = await Promise.all([
@@ -204,6 +242,7 @@ async function keywordSearch(
   const countQuery = `SELECT COUNT(*)::int AS total FROM "notes" WHERE ${whereClause}`;
   const dataQuery = `
     SELECT "id", "title", "content", "folder", "tags", "summary", "favorite", "sortOrder",
+      "favoriteSortOrder", "folderId",
       "createdAt", "updatedAt", "deletedAt",
       ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
         'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline
@@ -253,6 +292,7 @@ async function semanticSearch(
   let dataParamIdx = dataFilter.nextIdx;
   const dataQuery = `
     SELECT "id", "title", "content", "folder", "tags", "summary", "favorite", "sortOrder",
+      "favoriteSortOrder", "folderId",
       "createdAt", "updatedAt", "deletedAt"
     FROM "notes"
     WHERE ${baseWhere.replace("$1", "$1")}${dataFilter.clause.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + 1}`)}
@@ -296,6 +336,7 @@ async function hybridSearch(
   let dataParamIdx = dataFilter.nextIdx;
   const dataQuery = `
     SELECT "id", "title", "content", "folder", "tags", "summary", "favorite", "sortOrder",
+      "favoriteSortOrder", "folderId",
       "createdAt", "updatedAt", "deletedAt",
       ts_headline('english', "title" || ' ' || "content", plainto_tsquery('english', $1),
         'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS headline,
@@ -614,11 +655,20 @@ export async function listFavoriteNotes(
   sortOrder?: SortOrder,
 ): Promise<PrismaNote[]> {
   const prisma = getPrisma();
-  const field = sortBy ?? "title";
-  const order = sortOrder ?? "asc";
+  const field = sortBy ?? "updatedAt";
+  const order = sortOrder ?? "desc";
 
   // Map "sortOrder" field name to "favoriteSortOrder" for favorites
   const orderByField = field === "sortOrder" ? "favoriteSortOrder" : field;
+
+  // Case-insensitive title sort requires raw SQL
+  if (orderByField === "title") {
+    const dir = order === "desc" ? "DESC" : "ASC";
+    return prisma.$queryRawUnsafe<PrismaNote[]>(
+      `SELECT ${NOTE_COLUMNS} FROM "notes" WHERE "userId" = $1 AND "favorite" = true AND "deletedAt" IS NULL ORDER BY LOWER("title") ${dir}`,
+      userId,
+    );
+  }
 
   return prisma.note.findMany({
     where: { userId, favorite: true, deletedAt: null },

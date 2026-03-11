@@ -17,7 +17,7 @@ Users can mark notes and folders as favorites for quick access. A collapsible "F
 ### Note Store (`ns-api/src/store/noteStore.ts`)
 
 - `updateNote()` — handles `favorite` field updates (does not trigger `captureVersion` or `syncNoteLinks`); when `favorite` is set to `true`, auto-assigns next `favoriteSortOrder` (max + 1)
-- `listFavoriteNotes(userId, sortBy?, sortOrder?)` — returns all non-deleted notes with `favorite: true`; supports sorting by `updatedAt` (default, desc), `createdAt`, `title`, or `sortOrder` (manual); maps `"sortOrder"` field to `favoriteSortOrder` column
+- `listFavoriteNotes(userId, sortBy?, sortOrder?)` — returns all non-deleted notes with `favorite: true`; supports sorting by `updatedAt` (default, desc), `createdAt`, `title` (case-insensitive via raw SQL `LOWER()`), or `sortOrder` (manual); maps `"sortOrder"` field to `favoriteSortOrder` column; title sort uses explicit `NOTE_COLUMNS` constant instead of `SELECT *` (see [13 — Sync Hardening](13-sync-hardening.md))
 - `reorderFavoriteNotes(userId, order)` — batch-updates `favoriteSortOrder` for manual drag-and-drop reordering within the favorites panel
 - `toggleFolderFavorite(folderId, favorite)` — updates folder's favorite flag via `prisma.folder.update()`
 - `buildFolderTree()` — includes `favorite: f.favorite` in FolderInfo mapping
@@ -85,7 +85,7 @@ Users can mark notes and folders as favorites for quick access. A collapsible "F
 
 - `favoriteNotes` state with `loadFavoriteNotes()` callback (fetched on mount and after toggles/save)
 - `favoriteFolders` derived from `folders` state via `useMemo` (recursive collect where `f.favorite`)
-- `favSortBy` / `favSortOrder` state with localStorage persistence (`ns-fav-sort-by`, `ns-fav-sort-order`); default: `updatedAt` / `desc` (Modified Descending)
+- `favSortBy` / `favSortOrder` state with localStorage persistence (`ns-fav-sort-by`, `ns-fav-sort-order`); default: `updatedAt` / `desc` (Modified Descending); validated on load via `validateSortField()` / `validateSortOrder()` helpers (see [13 — Sync Hardening](13-sync-hardening.md))
 - `handleToggleNoteFavorite(noteId, favorite)` — calls `updateNote()`, updates local notes state, reloads favorites
 - `handleToggleFolderFavorite(folderId, favorite)` — calls `toggleFolderFavoriteApi()`, refreshes folder tree
 - `handleFavSortByChange` / `handleFavSortOrderChange` — update state + persist to localStorage

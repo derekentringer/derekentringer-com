@@ -155,13 +155,14 @@ async function connectSse(): Promise<void> {
   }
 
   sseAbortController = new AbortController();
+  const localController = sseAbortController;
 
   try {
     const response = await fetch(
       `${SSE_BASE_URL}/sync/events?deviceId=${deviceId}`,
       {
         headers: { Authorization: `Bearer ${token}` },
-        signal: sseAbortController.signal,
+        signal: localController.signal,
         credentials: "include",
       },
     );
@@ -176,7 +177,7 @@ async function connectSse(): Promise<void> {
 
     // Schedule proactive reconnect before JWT expiry (13 min)
     sseRefreshTimer = setTimeout(() => {
-      sseAbortController?.abort();
+      localController.abort();
       connectSse();
     }, 13 * 60 * 1000);
 
@@ -210,8 +211,8 @@ async function connectSse(): Promise<void> {
     if (err instanceof DOMException && err.name === "AbortError") return;
   }
 
-  // Stream ended — reconnect unless manually disconnected
-  if (sseAbortController) {
+  // Stream ended — only reconnect if this is still the current connection
+  if (sseAbortController === localController) {
     scheduleSseReconnect();
   }
 }

@@ -59,3 +59,13 @@ export async function getFoldersChangedSince(
     take: BATCH_LIMIT,
   });
 }
+
+export async function cleanupStaleCursors(days = 90): Promise<number> {
+  const prisma = getPrisma();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const result = await prisma.syncCursor.deleteMany({
+    where: { lastSyncedAt: { lt: cutoff } },
+  });
+  return result.count;
+}

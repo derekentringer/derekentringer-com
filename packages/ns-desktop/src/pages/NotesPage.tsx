@@ -101,6 +101,16 @@ const TRASH_RETENTION_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: "Never" },
 ];
 
+const validSortFields: NoteSortField[] = ["sortOrder", "updatedAt", "createdAt", "title"];
+const validSortOrders: SortOrder[] = ["asc", "desc"];
+
+function validateSortField(value: string | null, fallback: NoteSortField): NoteSortField {
+  return value && validSortFields.includes(value as NoteSortField) ? value as NoteSortField : fallback;
+}
+function validateSortOrder(value: string | null, fallback: SortOrder): SortOrder {
+  return value && validSortOrders.includes(value as SortOrder) ? value as SortOrder : fallback;
+}
+
 export function NotesPage() {
   const { user, logout } = useAuth();
   const { settings: editorSettings, updateSetting: updateEditorSetting } = useEditorSettings();
@@ -134,12 +144,12 @@ export function NotesPage() {
   const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
   const [favSortBy, setFavSortBy] = useState<NoteSortField>(() => {
     try {
-      return (localStorage.getItem("ns-fav-sort-by") as NoteSortField) || "updatedAt";
+      return validateSortField(localStorage.getItem("ns-fav-sort-by"), "updatedAt");
     } catch { return "updatedAt"; }
   });
   const [favSortOrder, setFavSortOrder] = useState<SortOrder>(() => {
     try {
-      return (localStorage.getItem("ns-fav-sort-order") as SortOrder) || "desc";
+      return validateSortOrder(localStorage.getItem("ns-fav-sort-order"), "desc");
     } catch { return "desc"; }
   });
 
@@ -148,8 +158,16 @@ export function NotesPage() {
   const [activeTags, setActiveTags] = useState<string[]>([]);
 
   // Sort
-  const [sortBy, setSortBy] = useState<NoteSortField>("updatedAt");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [sortBy, setSortBy] = useState<NoteSortField>(() => {
+    try {
+      return validateSortField(localStorage.getItem("ns-desktop-sort-by"), "updatedAt");
+    } catch { return "updatedAt"; }
+  });
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    try {
+      return validateSortOrder(localStorage.getItem("ns-desktop-sort-order"), "desc");
+    } catch { return "desc"; }
+  });
 
   // Trash
   const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
@@ -183,6 +201,11 @@ export function NotesPage() {
   // Sync engine
   const [syncStatusState, setSyncStatusState] = useState<SyncStatus>("idle");
   const [syncErrorState, setSyncErrorState] = useState<string | null>(null);
+
+  // Refs to keep sync engine callbacks current (avoid stale closures)
+  const refreshSidebarDataRef = useRef<() => void>(() => {});
+  const loadFavoriteNotesRef = useRef<() => void>(() => {});
+  const loadNoteTitlesRef = useRef<() => void>(() => {});
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
@@ -260,16 +283,16 @@ export function NotesPage() {
       .then((trash) => setTrashCount(trash.length))
       .catch(() => {});
 
-    // Initialize sync engine
+    // Initialize sync engine (use refs to avoid stale closures)
     initSyncEngine({
       onStatusChange: (status, error) => {
         setSyncStatusState(status);
         setSyncErrorState(error);
       },
       onDataChanged: () => {
-        refreshSidebarData();
-        loadFavoriteNotes();
-        loadNoteTitles();
+        refreshSidebarDataRef.current();
+        loadFavoriteNotesRef.current();
+        loadNoteTitlesRef.current();
       },
     }).catch((err) => console.error("Failed to init sync engine:", err));
 
@@ -336,31 +359,33 @@ export function NotesPage() {
 
   // --- Reload notes when folder/sort changes ---
 
-  useEffect(() => {
-    if (isLoading) return;
-    reloadNotes();
-  }, [activeFolder, sortBy, sortOrder]);
-
-  async function reloadNotes() {
+  const reloadNotes = useCallback(async () => {
     try {
-      const folderId =
-        activeFolder === "__unfiled__" ? null : activeFolder === null ? undefined : activeFolder;
       const result = await fetchNotes({
         folderId: activeFolder === "__unfiled__" ? null : activeFolder === null ? undefined : activeFolder,
         sortBy,
         sortOrder,
       });
-
-      // When viewing unfiled, we need to handle the special case
-      if (activeFolder === "__unfiled__") {
-        setNotes(result);
-      } else {
-        setNotes(result);
-      }
+      setNotes(result);
     } catch (err) {
       console.error("Failed to reload notes:", err);
     }
-  }
+  }, [activeFolder, sortBy, sortOrder]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    reloadNotes();
+  }, [reloadNotes]);
+
+  // --- Persist sort preferences ---
+
+  useEffect(() => {
+    try { localStorage.setItem("ns-desktop-sort-by", sortBy); } catch {}
+  }, [sortBy]);
+
+  useEffect(() => {
+    try { localStorage.setItem("ns-desktop-sort-order", sortOrder); } catch {}
+  }, [sortOrder]);
 
   // --- Search ---
 
@@ -478,7 +503,7 @@ export function NotesPage() {
       showError("Failed to save note");
       setSaveStatus("idle");
     }
-  }, [selectedId, title, content]);
+  }, [selectedId, title, content, reloadNotes, loadFavoriteNotes, loadNoteTitles]);
 
   // Autosave: debounce after changes (useEffect ensures latest handleSave is always used)
   useEffect(() => {
@@ -1120,6 +1145,11 @@ export function NotesPage() {
   async function refreshSidebarData() {
     await Promise.all([refreshFolders(), refreshTags(), reloadNotes()]);
   }
+
+  // Keep sync engine callback refs current
+  refreshSidebarDataRef.current = refreshSidebarData;
+  loadFavoriteNotesRef.current = loadFavoriteNotes;
+  loadNoteTitlesRef.current = loadNoteTitles;
 
   // Flush save on unmount
   useEffect(() => {

@@ -136,6 +136,7 @@ export interface SyncPullResponse {
 export interface SyncPushResponse {
   applied: number;
   rejected: number;
+  skipped: number;
   cursor: SyncCursor;
 }
 
