@@ -115,7 +115,7 @@ Markdown-based note editor using CodeMirror 6 with syntax highlighting, auto-sav
 ## What Was Deferred
 
 - **Focus mode** (Ctrl+Shift+D) — not implemented in Phase 2
-- **Note metadata display** (tags, folder, timestamps below title) — deferred to Phase 3 (Search & Organization)
+- **Note metadata display** (tags, folder below title) — deferred to Phase 3 (Search & Organization); timestamps implemented in status bar (Created date + Modified date+time)
 - **Tag editing and folder assignment UI** — deferred to Phase 3
 - **Sidebar grouping by folder** — deferred to Phase 3
 - **Unsaved/unsynced visual indicators in note list** — deferred to Phase 6 (Sync Engine)

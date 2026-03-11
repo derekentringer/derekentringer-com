@@ -74,6 +74,10 @@
 ### Phase 8: External Sources — Low Priority
 
 - [x] [11 — File Drag-and-Drop Import](features/11-file-drag-and-drop-import.md) — Drag `.md`/`.txt`/`.markdown` files into editor area to import as notes, visual drag overlay with dashed border, progress toast with animated bar, folder-aware imports preserving directory structure, `dragDropEnabled: false` in Tauri config to allow HTML5 drag events, import utilities (parse/filter/read/create), `openNoteAsTab` for post-import tab, 26 tests; also fixed web bug where drag-imported notes didn't open a tab
+
+### UI Enhancements
+
+- [x] Note timestamps in status bar — Created date and Modified date+time displayed in the toolbar status bar next to save status, separated by middle-dot (`·`) separators, with full date+time hover tooltips; `text-[11px] text-muted-foreground` styling matching save status
 - [ ] [14 — Export](feature_planning/14-export.md)
 
 ### Phase 9: Hardening — Low Priority

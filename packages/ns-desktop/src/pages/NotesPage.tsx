@@ -51,6 +51,7 @@ import {
   fetchFavoriteNotes,
   reorderFavoriteNotes,
   toggleFolderFavorite,
+  upsertNoteFromRemote,
   type SearchMode,
 } from "../lib/db.ts";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
@@ -104,6 +105,7 @@ import {
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
+import { AudioRecorder } from "../components/AudioRecorder.tsx";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
@@ -729,6 +731,20 @@ export function NotesPage() {
     } catch (err) {
       console.error("Failed to create note:", err);
       showError(`Failed to create note: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async function handleAudioNoteCreated(serverNote: Note) {
+    try {
+      await upsertNoteFromRemote(serverNote);
+      setNotes((prev) => [serverNote, ...prev]);
+      openNoteAsTab(serverNote);
+      await refreshSidebarData();
+      loadNoteTitles();
+      notifyLocalChange();
+    } catch (err) {
+      console.error("Failed to save audio note:", err);
+      showError(`Failed to save audio note: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -1467,13 +1483,22 @@ export function NotesPage() {
         <div className="pl-4 pr-2 py-4 flex items-center justify-between">
           <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
           {sidebarView === "notes" && (
-            <button
-              onClick={handleCreate}
-              className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
-              title="New note"
-            >
-              +
-            </button>
+            <div className="flex items-center gap-1.5">
+              {aiSettings.masterAiEnabled && aiSettings.audioNotes && (
+                <AudioRecorder
+                  defaultMode={aiSettings.audioMode}
+                  onNoteCreated={handleAudioNoteCreated}
+                  onError={showError}
+                />
+              )}
+              <button
+                onClick={handleCreate}
+                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
+                title="New note"
+              >
+                +
+              </button>
+            </div>
           )}
         </div>
 
@@ -1922,6 +1947,14 @@ export function NotesPage() {
                   : isDirty()
                     ? "Unsaved"
                     : "Saved"}
+              </span>
+              <span className="text-[11px] text-muted-foreground">·</span>
+              <span className="text-[11px] text-muted-foreground" title={new Date(selectedNote.createdAt).toLocaleString()}>
+                Created {new Date(selectedNote.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+              </span>
+              <span className="text-[11px] text-muted-foreground">·</span>
+              <span className="text-[11px] text-muted-foreground" title={new Date(selectedNote.updatedAt).toLocaleString()}>
+                Modified {new Date(selectedNote.updatedAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
               </span>
               <div className="flex-1" />
               {aiSettings.masterAiEnabled && aiSettings.summarize && (

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { AudioMode } from "../hooks/useAiSettings.ts";
-import type { Note } from "@derekentringer/shared/ns";
+import type { Note } from "@derekentringer/ns-shared";
 import { transcribeAudio } from "../api/ai.ts";
 
 const MODE_LABELS: Record<AudioMode, string> = {

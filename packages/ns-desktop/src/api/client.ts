@@ -28,6 +28,11 @@ export function setOnAuthFailure(callback: () => void): void {
   onAuthFailure = callback;
 }
 
+export async function refreshAccessToken(): Promise<string | null> {
+  const ok = await doRefresh();
+  return ok ? accessToken : null;
+}
+
 async function doRefresh(): Promise<boolean> {
   if (refreshPromise) {
     return refreshPromise;
@@ -38,9 +43,7 @@ async function doRefresh(): Promise<boolean> {
       const storedRefresh = await getSecureItem(REFRESH_TOKEN_KEY);
       if (!storedRefresh) {
         accessToken = null;
-        if (onAuthFailure) {
-          onAuthFailure();
-        }
+        onAuthFailure?.();
         return false;
       }
 
@@ -62,18 +65,18 @@ async function doRefresh(): Promise<boolean> {
         return true;
       }
 
-      accessToken = null;
-      await removeSecureItem(REFRESH_TOKEN_KEY);
-      if (onAuthFailure) {
-        onAuthFailure();
+      // Definitive auth failure — token revoked/invalid
+      if (refreshResponse.status === 401 || refreshResponse.status === 403) {
+        accessToken = null;
+        await removeSecureItem(REFRESH_TOKEN_KEY);
+        onAuthFailure?.();
+        return false;
       }
+
+      // Transient server error (500, etc.) — don't destroy session
       return false;
     } catch {
-      accessToken = null;
-      await removeSecureItem(REFRESH_TOKEN_KEY);
-      if (onAuthFailure) {
-        onAuthFailure();
-      }
+      // Network error — don't destroy session
       return false;
     } finally {
       refreshPromise = null;
@@ -112,10 +115,6 @@ export async function apiFetch(
         ...options,
         headers,
       });
-
-      if (retryResponse.status === 401 && onAuthFailure) {
-        onAuthFailure();
-      }
 
       return retryResponse;
     }
