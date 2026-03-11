@@ -362,6 +362,11 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Inline completions")).toBeInTheDocument();
   });
 
+  it("renders Continue writing toggle", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Continue writing")).toBeInTheDocument();
+  });
+
   it("shows completion style radios when completions enabled", async () => {
     localStorage.setItem(
       "ns-ai-settings",
@@ -407,6 +412,11 @@ describe("SettingsPage", () => {
   it("displays dismiss AI completion / rewrite menu shortcut", () => {
     renderSettingsPage();
     expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
+  });
+
+  it("displays continue writing / suggest structure shortcut", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Continue writing / suggest structure")).toBeInTheDocument();
   });
 
   it("renders Audio notes toggle", () => {

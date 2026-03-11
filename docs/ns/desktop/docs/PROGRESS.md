@@ -71,7 +71,7 @@
 - [x] [10c — AI Features: Semantic Search](features/10c-ai-semantic-search.md) — Keyword/semantic/hybrid search modes with search mode dropdown, embeddings generated via ns-api Voyage AI and cached locally in SQLite as JSON text, pure JS cosine similarity (no sqlite-vec), background embedding processor with 22s rate limit, embedding status in Settings, new `POST /ai/embeddings/generate` backend endpoint, sync engine queues embeddings on pull, tag browser animation + blur fix + scrollable overflow on both web and desktop
 - [x] [10d — AI Features: Audio Notes](features/10d-ai-audio-notes.md) — Audio recording via MediaRecorder API, transcription via ns-api Whisper endpoint, four modes (Meeting/Lecture/Memo/Verbatim), AudioRecorder component with timer + mode dropdown, note timestamps in editor toolbar status bar
 - [x] [10e — AI Features: AI Assistant Chat](features/10e-ai-assistant-chat.md) — AI assistant chat panel in right-side drawer with streaming answers, citation pills, markdown rendering, source pill navigation; focus mode (Cmd/Ctrl+Shift+D) hides sidebar and drawer tabs; Cmd/Ctrl+S manual save; unified keyboard shortcuts across web and desktop Settings pages; Cmd/Ctrl+K focus search added to web
-- [~] [10 — AI Features](feature_planning/10-ai-features.md) — Remaining: continue writing (10f)
+- [x] [10f — AI Features: Continue Writing](features/10f-ai-continue-writing.md) — Continue writing & structure suggestions (Cmd/Ctrl+Shift+Space), auto-selects paragraph style for long docs or structure style for short docs, settings toggle + keyboard shortcut reference
 
 ### Phase 8: External Sources — Low Priority
 

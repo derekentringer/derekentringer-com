@@ -76,8 +76,8 @@ import { DiffView } from "../components/DiffView.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
-import { useAiSettings } from "../hooks/useAiSettings.ts";
-import { ghostTextExtension } from "../editor/ghostText.ts";
+import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
+import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
@@ -1339,8 +1339,11 @@ export function NotesPage() {
             aiSettings.completionDebounceMs,
           )]
         : []),
+      ...(aiSettings.continueWriting
+        ? [continueWritingKeymap((ctx, sig, style) => fetchCompletion(ctx, sig, style as CompletionStyle), () => titleRef.current)]
+        : []),
     ];
-  }, [aiSettings.masterAiEnabled, aiSettings.rewrite, aiSettings.completions, aiSettings.completionStyle, aiSettings.completionDebounceMs]);
+  }, [aiSettings.masterAiEnabled, aiSettings.rewrite, aiSettings.completions, aiSettings.completionStyle, aiSettings.completionDebounceMs, aiSettings.continueWriting]);
 
   // Close Q&A panel when setting is disabled
   useEffect(() => {
