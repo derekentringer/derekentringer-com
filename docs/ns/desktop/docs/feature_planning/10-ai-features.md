@@ -1,6 +1,6 @@
 # 10 — AI Features
 
-**Status:** In Progress (10a–10e complete, 10f pending)
+**Status:** Complete (10a–10f)
 **Phase:** 7 — AI
 **Priority:** Medium
 
@@ -27,7 +27,7 @@ Port all AI-powered features from ns-web to ns-desktop for feature parity. All A
 | **10c** | ~~Semantic search (local JSON text + pure JS cosine similarity)~~ ✅ | 04c |
 | **10d** | ~~Audio notes~~ ✅ | 04d |
 | **10e** | ~~AI assistant chat + focus mode + keyboard shortcuts~~ ✅ | 04e + 04e.1 |
-| **10f** | Continue writing & structure suggestions, UX polish | 04g |
+| **10f** | ~~Continue writing & structure suggestions~~ ✅ | 04g |
 
 ---
 

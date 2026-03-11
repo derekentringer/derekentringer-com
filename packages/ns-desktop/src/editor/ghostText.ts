@@ -173,6 +173,75 @@ const ghostTextKeymap = Prec.highest(
   ]),
 );
 
+type ContinueWritingFetchFn = (
+  context: string,
+  signal: AbortSignal,
+  style: string,
+) => AsyncGenerator<string>;
+
+export function continueWritingKeymap(
+  fetchFn: ContinueWritingFetchFn,
+  getTitle?: () => string,
+): Extension {
+  let abortController: AbortController | null = null;
+
+  return [
+    ghostTextField,
+    ghostTextDecorations,
+    ghostTextKeymap,
+    Prec.highest(
+    keymap.of([
+      {
+        key: "Mod-Shift-Space",
+        run(view) {
+          const text = view.state.field(ghostTextField);
+          if (text) return false;
+
+          const pos = view.state.selection.main.head;
+          const doc = view.state.doc.toString();
+          const start = Math.max(0, pos - 500);
+          const editorContext = doc.slice(start, pos);
+
+          const title = getTitle?.() ?? "";
+          const context = editorContext.trim()
+            ? editorContext
+            : title.trim()
+              ? `Title: ${title.trim()}`
+              : "";
+
+          if (!context) return false;
+
+          const style = doc.trim().length < 50 ? "structure" : "paragraph";
+
+          if (abortController) {
+            abortController.abort();
+          }
+          abortController = new AbortController();
+          const signal = abortController.signal;
+
+          (async () => {
+            try {
+              let accumulated = "";
+              for await (const chunk of fetchFn(context, signal, style)) {
+                if (signal.aborted) return;
+                accumulated += chunk;
+                view.dispatch({
+                  effects: setGhostText.of(accumulated),
+                });
+              }
+            } catch {
+              // Aborted or network error — silent
+            }
+          })();
+
+          return true;
+        },
+      },
+    ]),
+  ),
+  ];
+}
+
 export { ghostTextField, setGhostText, clearGhostText };
 
 export function ghostTextExtension(fetchFn: FetchFn, debounceMs?: number): Extension {

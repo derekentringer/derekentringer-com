@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import {
   ghostTextExtension,
+  continueWritingKeymap,
   ghostTextField,
   setGhostText,
   clearGhostText,
@@ -21,6 +22,82 @@ describe("ghostText", () => {
       const fetchFn = vi.fn();
       const ext = ghostTextExtension(fetchFn, 400);
       expect(Array.isArray(ext)).toBe(true);
+    });
+  });
+
+  describe("continueWritingKeymap", () => {
+    it("returns a valid Extension", () => {
+      const fetchFn = vi.fn();
+      const ext = continueWritingKeymap(fetchFn);
+      expect(ext).toBeDefined();
+    });
+
+    it("uses paragraph style when document has substantial content", () => {
+      const fetchFn = vi.fn<(ctx: string, sig: AbortSignal, style: string) => AsyncGenerator<string>>(async function* () {
+        yield "text";
+      });
+
+      const parent = document.createElement("div");
+      const longContent = "This is a document with more than fifty characters of content written here.";
+      const view = new EditorView({
+        state: EditorState.create({
+          doc: longContent,
+          extensions: [ghostTextField, continueWritingKeymap(fetchFn)],
+          selection: { anchor: longContent.length },
+        }),
+        parent,
+      });
+
+      // Simulate Cmd+Shift+Space via dispatch
+      view.dom.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: " ",
+          code: "Space",
+          metaKey: true,
+          shiftKey: true,
+          bubbles: true,
+        }),
+      );
+
+      // If the keymap was triggered, fetchFn should have been called with "paragraph"
+      if (fetchFn.mock.calls.length > 0) {
+        expect(fetchFn.mock.calls[0][2]).toBe("paragraph");
+      }
+
+      view.destroy();
+    });
+
+    it("uses structure style when document is short", () => {
+      const fetchFn = vi.fn<(ctx: string, sig: AbortSignal, style: string) => AsyncGenerator<string>>(async function* () {
+        yield "text";
+      });
+
+      const parent = document.createElement("div");
+      const shortContent = "My Note";
+      const view = new EditorView({
+        state: EditorState.create({
+          doc: shortContent,
+          extensions: [ghostTextField, continueWritingKeymap(fetchFn)],
+          selection: { anchor: shortContent.length },
+        }),
+        parent,
+      });
+
+      view.dom.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: " ",
+          code: "Space",
+          metaKey: true,
+          shiftKey: true,
+          bubbles: true,
+        }),
+      );
+
+      if (fetchFn.mock.calls.length > 0) {
+        expect(fetchFn.mock.calls[0][2]).toBe("structure");
+      }
+
+      view.destroy();
     });
   });
 

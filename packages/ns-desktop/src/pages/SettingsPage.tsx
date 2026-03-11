@@ -108,8 +108,9 @@ function RadioOption<T extends string | number>({
   );
 }
 
-const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes" | "qaAssistant"; label: string; info: string }[] = [
+const AI_TOGGLE_SETTINGS: { key: "completions" | "continueWriting" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes" | "qaAssistant"; label: string; info: string }[] = [
   { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
+  { key: "continueWriting", label: "Continue writing", info: "Press Cmd/Ctrl+Shift+Space to generate a full paragraph or suggest document structure." },
   { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
   { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
   { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
@@ -138,6 +139,7 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
   { shortcut: "Ctrl + K", macShortcut: "Cmd + K", description: "Focus search" },
   { shortcut: "Ctrl + Shift + R", macShortcut: "Cmd + Shift + R", description: "AI Rewrite (with selection)" },
   { shortcut: "Right-click", macShortcut: "Right-click", description: "AI Rewrite (with selection)" },
+  { shortcut: "Ctrl + Shift + Space", macShortcut: "Cmd + Shift + Space", description: "Continue writing / suggest structure" },
   { shortcut: "Tab", macShortcut: "Tab", description: "Accept AI completion" },
   { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
   { shortcut: "Ctrl + Shift + D", macShortcut: "Cmd + Shift + D", description: "Toggle focus mode (hide panels)" },
