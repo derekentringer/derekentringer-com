@@ -87,6 +87,11 @@ import {
   manualSync,
   type SyncStatus,
 } from "../lib/syncEngine.ts";
+import {
+  parseFileList,
+  importFiles,
+  type ImportProgress,
+} from "../lib/importExport.ts";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
@@ -202,6 +207,11 @@ export function NotesPage() {
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
+
+  // File drag-and-drop import
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const mainRef = useRef<HTMLElement>(null);
 
   // Sync engine
   const [syncStatusState, setSyncStatusState] = useState<SyncStatus>("idle");
@@ -1147,6 +1157,63 @@ export function NotesPage() {
   loadFavoriteNotesRef.current = loadFavoriteNotes;
   loadNoteTitlesRef.current = loadNoteTitles;
 
+  // --- File drag-and-drop import ---
+
+  async function handleImportFiles(files: FileList, autoSelect = false) {
+    const entries = parseFileList(files);
+    if (entries.length === 0) {
+      showError("No supported files found (.md, .txt, .markdown)");
+      return;
+    }
+    const targetFolderId = activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null;
+    let lastCreatedNote: Note | null = null;
+    const wrappedCreateNote = async (data: { title: string; content: string; folderId?: string }) => {
+      const note = await createNote(data);
+      lastCreatedNote = note;
+      return note;
+    };
+    const result = await importFiles(
+      entries,
+      targetFolderId,
+      folders,
+      wrappedCreateNote,
+      createFolder,
+      (progress) => setImportProgress(progress),
+    );
+    setImportProgress(null);
+    await refreshSidebarData();
+    if (autoSelect && lastCreatedNote && result.successCount > 0) {
+      openNoteAsTab(lastCreatedNote);
+    }
+    notifyLocalChange();
+    if (result.failedCount > 0) {
+      showError(`Imported ${result.successCount}, failed ${result.failedCount}`);
+    } else {
+      setSuccessToast(`Imported ${result.successCount} note${result.successCount === 1 ? "" : "s"}`);
+      setTimeout(() => setSuccessToast(null), 3000);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (mainRef.current?.contains(e.relatedTarget as Node)) return;
+    setIsDragOver(false);
+  }
+
+  function handleFileDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      handleImportFiles(e.dataTransfer.files, true);
+    }
+  }
+
   // Flush save on unmount
   useEffect(() => {
     return () => {
@@ -1700,7 +1767,18 @@ export function NotesPage() {
       />
 
       {/* Editor area */}
-      <main className="flex-1 flex min-w-0 relative">
+      <main
+        ref={mainRef}
+        className="flex-1 flex min-w-0 relative"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleFileDrop}
+      >
+      {isDragOver && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg pointer-events-none">
+          <span className="text-lg text-primary font-medium">Drop files to import</span>
+        </div>
+      )}
       <div className="flex-1 flex flex-col min-w-0">
         {openTabs.length > 0 && sidebarView === "notes" && (
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} modifiers={[restrictToHorizontalAxis]} onDragEnd={handleTabDragEnd}>
@@ -2078,6 +2156,22 @@ export function NotesPage() {
           >
             Dismiss
           </button>
+        </div>
+      )}
+
+      {/* Import progress */}
+      {importProgress && (
+        <div className="fixed bottom-4 right-4 bg-card border border-border rounded-md px-4 py-3 shadow-lg min-w-[240px]">
+          <p className="text-sm text-foreground mb-1">
+            Importing {importProgress.current} of {importProgress.total}...
+          </p>
+          <p className="text-xs text-muted-foreground truncate mb-2">{importProgress.currentFile}</p>
+          <div className="w-full h-1.5 bg-border rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all rounded-full"
+              style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+            />
+          </div>
         </div>
       )}
     </div>
