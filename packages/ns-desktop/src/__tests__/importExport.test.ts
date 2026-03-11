@@ -7,6 +7,8 @@ import {
   ensureFolderHierarchy,
   importFiles,
   sanitizeFilename,
+  exportNoteAsText,
+  exportNoteAsPdf,
 } from "../lib/importExport.ts";
 import type { FolderInfo } from "@derekentringer/ns-shared";
 
@@ -230,5 +232,67 @@ describe("importFiles", () => {
       content: "content",
       folderId: "f1",
     });
+  });
+});
+
+describe("exportNoteAsText", () => {
+  it("triggers download with .txt extension", () => {
+    const mockClick = vi.fn();
+    const mockCreateElement = vi.spyOn(document, "createElement");
+    const mockCreateObjectURL = vi.fn(() => "blob:url");
+    const mockRevokeObjectURL = vi.fn();
+    URL.createObjectURL = mockCreateObjectURL;
+    URL.revokeObjectURL = mockRevokeObjectURL;
+
+    const mockAnchor = {
+      href: "",
+      download: "",
+      click: mockClick,
+    } as unknown as HTMLAnchorElement;
+    mockCreateElement.mockReturnValueOnce(mockAnchor);
+    vi.spyOn(document.body, "appendChild").mockImplementation(() => mockAnchor);
+    vi.spyOn(document.body, "removeChild").mockImplementation(() => mockAnchor);
+
+    exportNoteAsText({ title: "My Note", content: "Some text content" });
+
+    expect(mockAnchor.download).toBe("My Note.txt");
+    expect(mockClick).toHaveBeenCalled();
+    expect(mockCreateObjectURL).toHaveBeenCalled();
+
+    mockCreateElement.mockRestore();
+  });
+});
+
+describe("exportNoteAsPdf", () => {
+  it("opens a print window with rendered HTML", () => {
+    const mockWrite = vi.fn();
+    const mockClose = vi.fn();
+    const mockPrint = vi.fn();
+    const mockAddEventListener = vi.fn();
+    const mockWindow = {
+      document: { write: mockWrite, close: mockClose },
+      print: mockPrint,
+      addEventListener: mockAddEventListener,
+    };
+    vi.spyOn(window, "open").mockReturnValue(mockWindow as unknown as Window);
+
+    const mockMarkdownToHtml = vi.fn((md: string) => `<p>${md}</p>`);
+    exportNoteAsPdf({ title: "Test", content: "Hello" }, mockMarkdownToHtml);
+
+    expect(window.open).toHaveBeenCalledWith("", "_blank");
+    expect(mockMarkdownToHtml).toHaveBeenCalledWith("Hello");
+    expect(mockWrite).toHaveBeenCalled();
+    const html = mockWrite.mock.calls[0][0] as string;
+    expect(html).toContain("<title>Test</title>");
+    expect(html).toContain("<p>Hello</p>");
+    expect(mockClose).toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+  });
+
+  it("does nothing when popup is blocked", () => {
+    vi.spyOn(window, "open").mockReturnValue(null);
+    expect(() => exportNoteAsPdf({ title: "T", content: "C" }, () => "")).not.toThrow();
+    vi.restoreAllMocks();
   });
 });
