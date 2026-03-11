@@ -60,7 +60,7 @@
 ### Phase 6: Auth & Sync — Medium Priority
 
 - [x] [08 — Auth](features/08-auth.md)
-- [x] [09 — Sync Engine](features/09-sync-engine.md) — SSE-based real-time sync with push/pull protocol and LWW conflict resolution, callback refs pattern to avoid stale closures in sync callbacks, `upsertNoteFromRemote` with LWW check (skip if local is newer), SSE reconnect race condition fix (captured local AbortController), notes/favorites sort persistence to localStorage with validation helpers, `reloadNotes` converted to `useCallback`, `handleSave` deps updated for correct re-fetch
+- [x] [09 — Sync Engine](features/09-sync-engine.md) — SSE-based real-time sync with push/pull protocol and LWW conflict resolution, callback refs pattern to avoid stale closures in sync callbacks, `upsertNoteFromRemote` with LWW check (skip if local is newer), SSE reconnect race condition fix (captured local AbortController), notes/favorites sort persistence to localStorage with validation helpers, `reloadNotes` converted to `useCallback`, `handleSave` deps updated for correct re-fetch, dimmed green idle icon (`text-green-600/50`) on SyncStatusButton matching web app
 
 ### Phase 7: AI — Medium Priority
 

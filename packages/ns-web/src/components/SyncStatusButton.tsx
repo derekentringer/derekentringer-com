@@ -1,12 +1,13 @@
-import type { SyncStatus } from "../lib/syncEngine.ts";
+export type SyncStatus = "idle" | "syncing" | "error" | "offline";
 
 interface SyncStatusButtonProps {
   status: SyncStatus;
   error: string | null;
   onSync: () => void;
+  pendingCount?: number;
 }
 
-export function SyncStatusButton({ status, error, onSync }: SyncStatusButtonProps) {
+export function SyncStatusButton({ status, error, onSync, pendingCount }: SyncStatusButtonProps) {
   const isDisabled = status === "offline";
 
   const title =
@@ -15,7 +16,9 @@ export function SyncStatusButton({ status, error, onSync }: SyncStatusButtonProp
       : status === "syncing"
         ? "Syncing..."
         : status === "offline"
-          ? "Offline"
+          ? pendingCount && pendingCount > 0
+            ? `Offline — ${pendingCount} pending`
+            : "Offline"
           : error ?? "Sync error";
 
   return (

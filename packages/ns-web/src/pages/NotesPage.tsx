@@ -38,7 +38,7 @@ import {
   toggleFolderFavoriteApi,
 } from "../api/offlineNotes.ts";
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
-import { OnlineStatusIndicator } from "../components/OnlineStatusIndicator.tsx";
+import { SyncStatusButton, type SyncStatus } from "../components/SyncStatusButton.tsx";
 import {
   MarkdownEditor,
   type MarkdownEditorHandle,
@@ -100,6 +100,8 @@ export function NotesPage() {
   const { settings } = useAiSettings();
   const { settings: editorSettings } = useEditorSettings();
   const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -413,6 +415,15 @@ export function NotesPage() {
   useEffect(() => { debouncedSearchRef.current = debouncedSearch; }, [debouncedSearch]);
   useEffect(() => { sidebarViewRef.current = sidebarView; }, [sidebarView]);
 
+  // Track sync status from online/offline state
+  useEffect(() => {
+    if (!isOnline) {
+      setSyncStatus("offline");
+      setSyncError(null);
+    }
+    // When online: SSE onConnect will set "idle"
+  }, [isOnline]);
+
   // SSE for real-time sync notifications (replaces 30s polling)
   useEffect(() => {
     let sseConn: { disconnect: () => void } | null = null;
@@ -421,17 +432,33 @@ export function NotesPage() {
     const handleSyncEvent = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        loadNotesRef.current(debouncedSearchRef.current || undefined);
-        loadFoldersRef.current();
-        loadFavoriteNotesRef.current();
-        loadNoteTitlesRef.current();
+        setSyncStatus("syncing");
+        const reloads: Promise<unknown>[] = [
+          loadNotesRef.current(debouncedSearchRef.current || undefined),
+          loadFoldersRef.current(),
+          loadFavoriteNotesRef.current(),
+          loadNoteTitlesRef.current(),
+        ];
         if (sidebarViewRef.current === "trash") {
-          loadTrashRef.current();
+          reloads.push(loadTrashRef.current());
         }
+        Promise.all(reloads)
+          .then(() => { setSyncStatus("idle"); setSyncError(null); })
+          .catch(() => { setSyncStatus("error"); setSyncError("Sync failed"); });
       }, 500);
     };
 
-    sseConn = connectSseStream(handleSyncEvent);
+    const handleSseError = () => {
+      setSyncStatus("error");
+      setSyncError("Connection lost");
+    };
+
+    const handleSseConnect = () => {
+      setSyncStatus("idle");
+      setSyncError(null);
+    };
+
+    sseConn = connectSseStream(handleSyncEvent, handleSseError, handleSseConnect);
 
     // Fallback poll at 120s (safety net if SSE drops silently)
     const FALLBACK_POLL_MS = 120_000;
@@ -464,6 +491,28 @@ export function NotesPage() {
     setPreviewTabId((prev) => prev && reconciledIds.has(prev) ? reconciledIds.get(prev)! : prev);
     loadNotes(debouncedSearch || undefined);
   }, [reconciledIds]);
+
+  // Manual sync triggered by SyncStatusButton click
+  const handleManualSync = useCallback(async () => {
+    setSyncStatus("syncing");
+    setSyncError(null);
+    try {
+      const reloads: Promise<unknown>[] = [
+        loadNotes(debouncedSearch || undefined),
+        loadFolders(),
+        loadFavoriteNotes(),
+        loadNoteTitles(),
+      ];
+      if (sidebarView === "trash") {
+        reloads.push(loadTrash());
+      }
+      await Promise.all(reloads);
+      setSyncStatus("idle");
+    } catch {
+      setSyncStatus("error");
+      setSyncError("Sync failed");
+    }
+  }, [loadNotes, loadFolders, loadFavoriteNotes, loadNoteTitles, loadTrash, debouncedSearch, sidebarView]);
 
   // Deep-link: navigate to note from URL on mount (only on initial load)
   const deepLinkHandled = useRef(false);
@@ -1781,10 +1830,11 @@ export function NotesPage() {
 
         <div className="px-4 py-3 border-t border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <OnlineStatusIndicator
-              isOnline={isOnline}
+            <SyncStatusButton
+              status={syncStatus}
+              error={syncError}
+              onSync={handleManualSync}
               pendingCount={pendingCount}
-              lastSyncedAt={lastSyncedAt}
             />
             {sidebarView === "notes" && (
               <>

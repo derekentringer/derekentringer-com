@@ -9,6 +9,7 @@ interface SseConnection {
 export function connectSseStream(
   onEvent: () => void,
   onError?: () => void,
+  onConnect?: () => void,
 ): SseConnection {
   const deviceId = crypto.randomUUID();
   let abortController: AbortController | null = null;
@@ -82,6 +83,7 @@ export function connectSseStream(
 
       // Reset backoff on successful connection
       backoffMs = 1000;
+      onConnect?.();
 
       // Schedule proactive reconnect before JWT expiry (13 min)
       refreshTimer = setTimeout(() => {

@@ -269,4 +269,31 @@ describe("SSE client (connectSseStream)", () => {
     expect(spy).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
     spy.mockRestore();
   });
+
+  it("calls onConnect when SSE connection succeeds", async () => {
+    const stream = createMockStream(["event: connected\ndata: {}\n\n"]);
+    mockFetch.mockResolvedValue({ ok: true, body: stream });
+
+    const onConnect = vi.fn();
+    const conn = connectSseStream(vi.fn(), vi.fn(), onConnect);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onConnect).toHaveBeenCalledTimes(1);
+
+    conn.disconnect();
+  });
+
+  it("does not call onConnect on fetch failure", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, body: null });
+
+    const onConnect = vi.fn();
+    const conn = connectSseStream(vi.fn(), vi.fn(), onConnect);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onConnect).not.toHaveBeenCalled();
+
+    conn.disconnect();
+  });
 });
