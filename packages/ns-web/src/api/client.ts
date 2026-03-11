@@ -16,6 +16,11 @@ export function setOnAuthFailure(callback: () => void): void {
   onAuthFailure = callback;
 }
 
+export async function refreshAccessToken(): Promise<string | null> {
+  const ok = await doRefresh();
+  return ok ? accessToken : null;
+}
+
 async function doRefresh(): Promise<boolean> {
   if (refreshPromise) {
     return refreshPromise;

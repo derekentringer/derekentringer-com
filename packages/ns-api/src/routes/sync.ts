@@ -22,6 +22,8 @@ import type {
   Folder as PrismaFolder,
 } from "../generated/prisma/client.js";
 
+type PrismaLike = Pick<ReturnType<typeof getPrisma>, "note" | "folder">;
+
 const BATCH_LIMIT = 100;
 
 function toFolderSyncData(f: PrismaFolder): FolderSyncData {
@@ -54,23 +56,34 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     const prisma = getPrisma();
     let applied = 0;
     let rejected = 0;
+    let skipped = 0;
 
-    for (const change of changes) {
-      try {
-        if (change.type === "note") {
-          await applyNoteChange(prisma, userId, change);
-          applied++;
-        } else if (change.type === "folder") {
-          await applyFolderChange(prisma, userId, change);
-          applied++;
-        } else {
+    await prisma.$transaction(async (tx) => {
+      for (const change of changes) {
+        try {
+          if (change.type === "note") {
+            const wasApplied = await applyNoteChange(tx, userId, change);
+            if (wasApplied) {
+              applied++;
+            } else {
+              skipped++;
+            }
+          } else if (change.type === "folder") {
+            const wasApplied = await applyFolderChange(tx, userId, change);
+            if (wasApplied) {
+              applied++;
+            } else {
+              skipped++;
+            }
+          } else {
+            rejected++;
+          }
+        } catch (err) {
           rejected++;
+          request.log.warn({ err, changeId: change.id }, "Sync change rejected");
         }
-      } catch (err) {
-        rejected++;
-        request.log.warn({ err, changeId: change.id }, "Sync change rejected");
       }
-    }
+    });
 
     const now = new Date();
     await upsertSyncCursor(userId, deviceId, now);
@@ -78,6 +91,7 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     const response: SyncPushResponse = {
       applied,
       rejected,
+      skipped,
       cursor: { deviceId, lastSyncedAt: now.toISOString() },
     };
 
@@ -152,14 +166,25 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       .slice(0, BATCH_LIMIT);
 
-    const now = new Date();
-    await upsertSyncCursor(userId, deviceId, now);
+    // Use max updatedAt from returned data instead of wall-clock time
+    // to avoid skipping changes that arrive between query and cursor update
+    let cursorDate: Date;
+    if (allChanges.length > 0) {
+      const allUpdatedAts = [
+        ...notes.map((n) => n.updatedAt.getTime()),
+        ...folders.map((f) => f.updatedAt.getTime()),
+      ];
+      cursorDate = new Date(Math.max(...allUpdatedAts));
+    } else {
+      cursorDate = new Date();
+    }
+    await upsertSyncCursor(userId, deviceId, cursorDate);
 
     const hasMore = (notes.length + folders.length) >= BATCH_LIMIT;
 
     const response: SyncPullResponse = {
       changes: allChanges,
-      cursor: { deviceId, lastSyncedAt: now.toISOString() },
+      cursor: { deviceId, lastSyncedAt: cursorDate.toISOString() },
       hasMore,
     };
 
@@ -186,10 +211,10 @@ function determineFolderAction(
 }
 
 async function applyNoteChange(
-  prisma: ReturnType<typeof getPrisma>,
+  prisma: PrismaLike,
   userId: string,
   change: SyncChange,
-): Promise<void> {
+): Promise<boolean> {
   const noteData = change.data as Note | null;
 
   if (change.action === "delete") {
@@ -200,20 +225,21 @@ async function applyNoteChange(
         where: { id: change.id },
         data: { deletedAt: new Date(change.timestamp), favorite: false },
       });
+      return true;
     }
-    return;
+    return false;
   }
 
-  if (!noteData) return;
+  if (!noteData) return false;
 
   // Last-write-wins: only apply if client timestamp >= server updatedAt
   const existing = await prisma.note.findUnique({ where: { id: change.id } });
 
   if (existing) {
-    if (existing.userId !== userId) return;
+    if (existing.userId !== userId) return false;
 
     const clientTime = new Date(change.timestamp);
-    if (clientTime < existing.updatedAt) return; // server wins
+    if (clientTime < existing.updatedAt) return false; // server wins
 
     await prisma.note.update({
       where: { id: change.id },
@@ -230,6 +256,7 @@ async function applyNoteChange(
         deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
       },
     });
+    return true;
   } else {
     // Create new note
     await prisma.note.create({
@@ -248,14 +275,15 @@ async function applyNoteChange(
         deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
       },
     });
+    return true;
   }
 }
 
 async function applyFolderChange(
-  prisma: ReturnType<typeof getPrisma>,
+  prisma: PrismaLike,
   userId: string,
   change: SyncChange,
-): Promise<void> {
+): Promise<boolean> {
   const folderData = change.data as FolderSyncData | null;
 
   if (change.action === "delete") {
@@ -265,19 +293,20 @@ async function applyFolderChange(
         where: { id: change.id },
         data: { deletedAt: new Date(change.timestamp) },
       });
+      return true;
     }
-    return;
+    return false;
   }
 
-  if (!folderData) return;
+  if (!folderData) return false;
 
   const existing = await prisma.folder.findUnique({ where: { id: change.id } });
 
   if (existing) {
-    if (existing.userId !== userId) return;
+    if (existing.userId !== userId) return false;
 
     const clientTime = new Date(change.timestamp);
-    if (clientTime < existing.updatedAt) return;
+    if (clientTime < existing.updatedAt) return false;
 
     await prisma.folder.update({
       where: { id: change.id },
@@ -289,6 +318,7 @@ async function applyFolderChange(
         deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
       },
     });
+    return true;
   } else {
     await prisma.folder.create({
       data: {
@@ -301,6 +331,7 @@ async function applyFolderChange(
         deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
       },
     });
+    return true;
   }
 }
 

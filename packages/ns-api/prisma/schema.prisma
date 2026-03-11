@@ -85,6 +85,7 @@ model Note {
   @@index([deletedAt])
   @@index([sortOrder])
   @@index([favoriteSortOrder])
+  @@index([updatedAt])
   @@map("notes")
 }
 
@@ -142,6 +143,7 @@ model Folder {
   @@index([userId])
   @@index([parentId])
   @@index([deletedAt])
+  @@index([updatedAt])
   @@map("folders")
 }
 

@@ -215,16 +215,17 @@ describe("noteStore", () => {
       );
     });
 
-    it("sorts by title ascending", async () => {
-      mockPrisma.note.findMany.mockResolvedValue([]);
-      mockPrisma.note.count.mockResolvedValue(0);
+    it("sorts by title ascending using case-insensitive raw SQL", async () => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: 0 }]);
+      mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([]);
 
       await listNotes(TEST_USER_ID, { sortBy: "title", sortOrder: "asc" });
 
-      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          orderBy: { title: "asc" },
-        }),
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledWith(
+        expect.stringContaining('LOWER("title") ASC'),
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
       );
     });
 
