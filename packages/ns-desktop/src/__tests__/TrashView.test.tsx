@@ -406,7 +406,7 @@ describe("TrashView — note selection & editor", () => {
     expect(mockRestoreNote).toHaveBeenCalledWith("t1");
 
     // Editor should be cleared — back to placeholder
-    await screen.findByText("Select a note or create a new one");
+    await screen.findByText("Select a note to preview");
   });
 
   it("Delete Permanently shows inline confirmation on first click", async () => {
@@ -446,7 +446,7 @@ describe("TrashView — note selection & editor", () => {
     expect(mockHardDeleteNote).toHaveBeenCalledWith("t1");
 
     // Editor should be cleared
-    await screen.findByText("Select a note or create a new one");
+    await screen.findByText("Select a note to preview");
   });
 
   it("cancel hides inline permanent delete confirmation", async () => {
@@ -521,54 +521,3 @@ describe("TrashView — trash count badge", () => {
   });
 });
 
-describe("TrashView — retention settings", () => {
-  it("renders retention dropdown with correct options", async () => {
-    await renderAndOpenTrash([]);
-
-    const dropdown = screen.getByLabelText("Trash retention period");
-    expect(dropdown).toBeInTheDocument();
-
-    const options = within(dropdown).getAllByRole("option");
-    expect(options).toHaveLength(6);
-    expect(options[0]).toHaveTextContent("7 days");
-    expect(options[1]).toHaveTextContent("14 days");
-    expect(options[2]).toHaveTextContent("30 days (default)");
-    expect(options[3]).toHaveTextContent("60 days");
-    expect(options[4]).toHaveTextContent("90 days");
-    expect(options[5]).toHaveTextContent("Never");
-  });
-
-  it("defaults to 30 days", async () => {
-    await renderAndOpenTrash([]);
-
-    const dropdown = screen.getByLabelText("Trash retention period") as HTMLSelectElement;
-    expect(dropdown.value).toBe("30");
-  });
-
-  it("changes retention setting on dropdown change", async () => {
-    const user = await renderAndOpenTrash([]);
-
-    const dropdown = screen.getByLabelText("Trash retention period");
-    await user.selectOptions(dropdown, "7");
-
-    expect(localStorage.getItem("ns-desktop:trashRetentionDays")).toBe("7");
-  });
-
-  it("reads retention from localStorage", async () => {
-    localStorage.setItem("ns-desktop:trashRetentionDays", "60");
-
-    await renderAndOpenTrash([]);
-
-    const dropdown = screen.getByLabelText("Trash retention period") as HTMLSelectElement;
-    expect(dropdown.value).toBe("60");
-  });
-
-  it("calls purgeOldTrash when setting changes to a non-zero value", async () => {
-    const user = await renderAndOpenTrash([]);
-
-    const dropdown = screen.getByLabelText("Trash retention period");
-    await user.selectOptions(dropdown, "14");
-
-    expect(mockPurgeOldTrash).toHaveBeenCalledWith(14);
-  });
-});

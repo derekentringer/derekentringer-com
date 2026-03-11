@@ -15,9 +15,8 @@ VS Code-style editor tab bar for NoteSync Desktop, allowing users to keep multip
 
 ### Opening Tabs
 
-- **Single-click (no tabs open):** Loads note in editor without creating a tab — same behavior as before tabs existed
+- **Single-click:** Always opens note as a preview tab with italic title; subsequent single-clicks replace the preview tab (only one preview tab at a time)
 - **Double-click:** Opens note as a permanent (non-italic) tab; this is the primary way to create tabs
-- **Single-click (tabs open):** Opens note as a preview tab with italic title; subsequent single-clicks replace the preview tab (only one preview tab at a time)
 - **Double-click a preview tab:** Pins it — becomes permanent, italic removed
 - **Edit preview tab (title or content):** Auto-pins via `useEffect` watching `isDirtyValue`
 - **Create / wiki-link / favorites:** Open as permanent tabs
@@ -109,7 +108,7 @@ const isDirtyValue = useMemo(() => {
 The `saveGeneration` counter increments after each successful save, forcing the memo to recalculate and clear the dirty indicator on tabs.
 
 ### Key Handlers
-- `handleNoteSelect(note)` — single-click: no tab if empty, preview if tabs exist
+- `handleNoteSelect(note)` — single-click: always creates a preview tab (or replaces existing preview)
 - `openNoteAsTab(note)` — double-click / create / wiki-link / favorites: permanent tab
 - `pinTab(tabId)` — clears previewTabId
 - `switchTab(noteId)` — tab click: finds note in list or cache, calls selectNote

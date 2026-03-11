@@ -592,15 +592,15 @@ export function NotesPage() {
     navigate(`/notes/${note.id}`, { replace: true });
   }
 
-  // Single-click from sidebar when tabs are open → preview tab behavior
+  // Single-click from sidebar → preview tab behavior
   function handleNoteSelect(note: NoteSearchResult) {
-    if (openTabs.length === 0 || openTabs.includes(note.id)) {
-      // No tabs yet, or note already has a tab — just select
+    if (openTabs.includes(note.id)) {
+      // Note already has a tab — just select
       selectNote(note);
       return;
     }
 
-    // Tabs exist, note is not in any tab — create or replace preview
+    // Note is not in any tab — create or replace preview
     if (previewTabId) {
       setOpenTabs((prev) => prev.map((id) => id === previewTabId ? note.id : id));
     } else {
