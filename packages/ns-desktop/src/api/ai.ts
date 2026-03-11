@@ -1,6 +1,6 @@
 import { apiFetch } from "./client.ts";
 import type { CompletionStyle, AudioMode } from "../hooks/useAiSettings.ts";
-import type { Note } from "@derekentringer/ns-shared";
+import type { Note, QASource } from "@derekentringer/ns-shared";
 
 export type RewriteAction =
   | "rewrite"
@@ -53,6 +53,61 @@ export async function* fetchCompletion(
           if (parsed.text) {
             yield parsed.text;
           }
+        } catch {
+          // Skip malformed JSON lines
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export interface AskQuestionEvent {
+  sources?: QASource[];
+  text?: string;
+}
+
+export async function* askQuestion(
+  question: string,
+  signal: AbortSignal,
+): AsyncGenerator<AskQuestionEvent> {
+  const response = await apiFetch("/ai/ask", {
+    method: "POST",
+    body: JSON.stringify({ question }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Q&A request failed: ${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) return;
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+        const data = trimmed.slice(6);
+        if (data === "[DONE]") return;
+
+        try {
+          const parsed = JSON.parse(data);
+          yield parsed as AskQuestionEvent;
         } catch {
           // Skip malformed JSON lines
         }

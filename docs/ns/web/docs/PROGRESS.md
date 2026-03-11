@@ -93,6 +93,8 @@
 
 - [x] UI cursor polish — `cursor-pointer` on all interactive elements across the app (toolbar buttons, sidebar icons, tags, tab close buttons, folder items, context menus, drawer tabs, audio controls, sort dropdown, tag remove buttons, confirm dialogs, note list items, trash toolbar buttons, bulk delete buttons); styled sort `<select>` dropdown with `appearance-none`, custom SVG chevron, `bg-subtle` background matching desktop app
 
+- [x] Keyboard shortcuts unification — Added Cmd/Ctrl+K (focus search) shortcut to web (ported from desktop), added Cmd/Ctrl+K to Settings keyboard shortcuts list; ensures web and desktop have identical keyboard shortcuts
+
 - [x] [14 — Sync Status Indicator](features/14-sync-status-indicator.md) — Replaced 2-state green/yellow dot `OnlineStatusIndicator` with interactive 4-state `SyncStatusButton` (idle/syncing/error/offline) matching desktop app, SSE `onConnect` callback for confirmed connection status, sync status state tracking with `Promise.all` reload, click-to-sync manual refresh, dimmed green idle icon (`text-green-600/50`), `pendingCount` tooltip enrichment for offline state, 10 new component tests + 2 SSE tests
 
 ### Bug Fixes

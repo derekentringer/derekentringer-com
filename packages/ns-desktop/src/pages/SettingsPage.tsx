@@ -108,13 +108,14 @@ function RadioOption<T extends string | number>({
   );
 }
 
-const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes"; label: string; info: string }[] = [
+const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes" | "qaAssistant"; label: string; info: string }[] = [
   { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
   { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
   { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
   { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
   { key: "semanticSearch", label: "Semantic search", info: "Search notes by meaning, not just exact keywords. Uses AI embeddings generated via the server." },
   { key: "audioNotes", label: "Audio notes", info: "Record audio and transcribe it into a note using AI." },
+  { key: "qaAssistant", label: "AI assistant chat", info: "Ask natural language questions about your notes. Requires semantic search to be enabled." },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [
@@ -137,7 +138,9 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
   { shortcut: "Ctrl + K", macShortcut: "Cmd + K", description: "Focus search" },
   { shortcut: "Ctrl + Shift + R", macShortcut: "Cmd + Shift + R", description: "AI Rewrite (with selection)" },
   { shortcut: "Right-click", macShortcut: "Right-click", description: "AI Rewrite (with selection)" },
+  { shortcut: "Tab", macShortcut: "Tab", description: "Accept AI completion" },
   { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
+  { shortcut: "Ctrl + Shift + D", macShortcut: "Cmd + Shift + D", description: "Toggle focus mode (hide panels)" },
 ];
 
 const AUTO_SAVE_OPTIONS: { value: number; label: string }[] = [
@@ -617,9 +620,14 @@ export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange,
                   <ToggleSwitch
                     label={label}
                     checked={aiSettings[key]}
-                    onChange={(value) => updateAiSetting(key, value)}
+                    onChange={(value) => {
+                      if (key === "semanticSearch" && !value) {
+                        updateAiSetting("qaAssistant", false);
+                      }
+                      updateAiSetting(key, value);
+                    }}
                     info={info}
-                    disabled={!aiSettings.masterAiEnabled}
+                    disabled={!aiSettings.masterAiEnabled || (key === "qaAssistant" && !aiSettings.semanticSearch)}
                   />
                   {key === "completions" && aiSettings.completions && aiSettings.masterAiEnabled && (
                     <div className="pb-3 pl-1" role="radiogroup" aria-label="Completion style">

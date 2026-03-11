@@ -436,6 +436,56 @@ describe("SettingsPage", () => {
     expect(screen.queryByRole("radiogroup", { name: "Audio mode" })).not.toBeInTheDocument();
   });
 
+  it("renders AI assistant chat toggle", () => {
+    renderSettingsPage();
+    expect(screen.getByText("AI assistant chat")).toBeInTheDocument();
+  });
+
+  it("qaAssistant toggle is disabled when semanticSearch is off", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: true, semanticSearch: false }),
+    );
+    renderSettingsPage();
+    const toggles = screen.getAllByRole("switch");
+    const qaToggle = toggles.find(
+      (t) => t.closest("label")?.textContent?.includes("AI assistant chat"),
+    );
+    expect(qaToggle).toBeDefined();
+    expect(qaToggle).toBeDisabled();
+  });
+
+  it("qaAssistant toggle is enabled when semanticSearch is on", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: true, semanticSearch: true }),
+    );
+    renderSettingsPage();
+    const toggles = screen.getAllByRole("switch");
+    const qaToggle = toggles.find(
+      (t) => t.closest("label")?.textContent?.includes("AI assistant chat"),
+    );
+    expect(qaToggle).toBeDefined();
+    expect(qaToggle).not.toBeDisabled();
+  });
+
+  it("toggling semanticSearch off auto-disables qaAssistant", async () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: true, semanticSearch: true, qaAssistant: true }),
+    );
+    renderSettingsPage();
+    // Find and click the semantic search toggle to turn it off
+    const toggles = screen.getAllByRole("switch");
+    const semanticToggle = toggles.find(
+      (t) => t.closest("label")?.textContent?.includes("Semantic search"),
+    );
+    expect(semanticToggle).toBeDefined();
+    await userEvent.click(semanticToggle!);
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.qaAssistant).toBe(false);
+  });
+
   it("toggling master AI switch persists to localStorage", async () => {
     renderSettingsPage();
     const toggles = screen.getAllByRole("switch");
