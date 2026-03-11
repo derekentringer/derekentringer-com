@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsPage } from "../pages/SettingsPage.tsx";
 import { useEditorSettings } from "../hooks/useEditorSettings.ts";
+import { useAiSettings } from "../hooks/useAiSettings.ts";
 
 const mockSetUserFromLogin = vi.fn();
 let mockUser: { totpEnabled: boolean } | null = { totpEnabled: false };
@@ -41,6 +42,7 @@ function SettingsPageWrapper(props: {
   onTrashRetentionChange?: (days: number) => void;
 }) {
   const { settings, updateSetting } = useEditorSettings();
+  const { settings: aiSettings, updateSetting: updateAiSetting } = useAiSettings();
   return (
     <SettingsPage
       onBack={props.onBack}
@@ -48,6 +50,8 @@ function SettingsPageWrapper(props: {
       onTrashRetentionChange={props.onTrashRetentionChange}
       editorSettings={settings}
       updateEditorSetting={updateSetting}
+      aiSettings={aiSettings}
+      updateAiSetting={updateAiSetting}
     />
   );
 }
@@ -82,6 +86,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Version History")).toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument();
+    expect(screen.getByText("AI Features")).toBeInTheDocument();
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
   });
 
@@ -338,5 +343,65 @@ describe("SettingsPage", () => {
     const select = screen.getByLabelText("Trash retention period");
     await userEvent.selectOptions(select, "7");
     expect(onTrashRetentionChange).toHaveBeenCalledWith(7);
+  });
+
+  // --- AI Features ---
+
+  it("renders AI Features section heading", () => {
+    renderSettingsPage();
+    expect(screen.getByText("AI Features")).toBeInTheDocument();
+  });
+
+  it("renders master AI toggle", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Enable AI features")).toBeInTheDocument();
+  });
+
+  it("renders inline completions toggle", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Inline completions")).toBeInTheDocument();
+  });
+
+  it("shows completion style radios when completions enabled", async () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: true, completions: true }),
+    );
+    renderSettingsPage();
+    expect(screen.getByRole("radiogroup", { name: "Completion style" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Continue writing")).toBeInTheDocument();
+    expect(screen.getByLabelText("Markdown assist")).toBeInTheDocument();
+    expect(screen.getByLabelText("Brief")).toBeInTheDocument();
+  });
+
+  it("hides completion style radios when completions disabled", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: true, completions: false }),
+    );
+    renderSettingsPage();
+    expect(screen.queryByRole("radiogroup", { name: "Completion style" })).not.toBeInTheDocument();
+  });
+
+  it("renders summarize toggle", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Summarize")).toBeInTheDocument();
+  });
+
+  it("renders auto-tag suggestions toggle", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Auto-tag suggestions")).toBeInTheDocument();
+  });
+
+  it("toggling master AI switch persists to localStorage", async () => {
+    renderSettingsPage();
+    const toggles = screen.getAllByRole("switch");
+    const aiToggle = toggles.find(
+      (t) => t.closest("label")?.textContent?.includes("Enable AI features"),
+    );
+    expect(aiToggle).toBeDefined();
+    await userEvent.click(aiToggle!);
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.masterAiEnabled).toBe(false);
   });
 });
