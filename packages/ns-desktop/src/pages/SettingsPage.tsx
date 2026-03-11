@@ -108,10 +108,11 @@ function RadioOption<T extends string | number>({
   );
 }
 
-const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions"; label: string; info: string }[] = [
+const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite"; label: string; info: string }[] = [
   { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
   { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
   { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
+  { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [
@@ -125,6 +126,9 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
   { shortcut: "Ctrl + B", macShortcut: "Cmd + B", description: "Bold" },
   { shortcut: "Ctrl + I", macShortcut: "Cmd + I", description: "Italic" },
   { shortcut: "Ctrl + K", macShortcut: "Cmd + K", description: "Focus search" },
+  { shortcut: "Ctrl + Shift + R", macShortcut: "Cmd + Shift + R", description: "AI Rewrite (with selection)" },
+  { shortcut: "Right-click", macShortcut: "Right-click", description: "AI Rewrite (with selection)" },
+  { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
 ];
 
 const AUTO_SAVE_OPTIONS: { value: number; label: string }[] = [

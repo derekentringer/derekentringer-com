@@ -88,11 +88,11 @@ const rewriteMenuField = StateField.define<RewriteMenuState | null>({
     }),
 });
 
-function getThemeColors(view: EditorView): { bg: string; border: string; text: string; accent: string; shadow: string } {
+function getThemeColors(view: EditorView): { bg: string; border: string; text: string; shadow: string } {
   const dark = view.state.facet(EditorView.darkTheme);
   return dark
-    ? { bg: "#10121a", border: "#1e2028", text: "#ececec", accent: "", shadow: "0 4px 12px rgba(0,0,0,0.4)" }
-    : { bg: "#ffffff", border: "#e0e0e0", text: "#1a1a2e", accent: "", shadow: "0 4px 12px rgba(0,0,0,0.15)" };
+    ? { bg: "#10121a", border: "#1e2028", text: "#ececec", shadow: "0 4px 12px rgba(0,0,0,0.4)" }
+    : { bg: "#ffffff", border: "#e0e0e0", text: "#1a1a2e", shadow: "0 4px 12px rgba(0,0,0,0.15)" };
 }
 
 function createRewriteMenuDOM(

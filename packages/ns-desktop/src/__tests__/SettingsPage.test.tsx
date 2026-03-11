@@ -393,6 +393,22 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Auto-tag suggestions")).toBeInTheDocument();
   });
 
+  it("renders select-and-rewrite toggle", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
+  });
+
+  it("displays AI Rewrite keyboard shortcuts", () => {
+    renderSettingsPage();
+    const rewriteEntries = screen.getAllByText("AI Rewrite (with selection)");
+    expect(rewriteEntries.length).toBe(2);
+  });
+
+  it("displays dismiss AI completion / rewrite menu shortcut", () => {
+    renderSettingsPage();
+    expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
+  });
+
   it("toggling master AI switch persists to localStorage", async () => {
     renderSettingsPage();
     const toggles = screen.getAllByRole("switch");
