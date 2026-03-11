@@ -1221,12 +1221,16 @@ export function NotesPage() {
     }
   }
 
-  // Keyboard shortcuts: Cmd/Ctrl+S (save), Cmd/Ctrl+Shift+D (focus mode)
+  // Keyboard shortcuts: Cmd/Ctrl+S (save), Cmd/Ctrl+K (search), Cmd/Ctrl+Shift+D (focus mode)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         handleSave();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D")) {
         e.preventDefault();

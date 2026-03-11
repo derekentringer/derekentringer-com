@@ -137,6 +137,7 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
   { shortcut: "Ctrl + S", macShortcut: "Cmd + S", description: "Save note" },
   { shortcut: "Ctrl + B", macShortcut: "Cmd + B", description: "Bold" },
   { shortcut: "Ctrl + I", macShortcut: "Cmd + I", description: "Italic" },
+  { shortcut: "Ctrl + K", macShortcut: "Cmd + K", description: "Focus search" },
   { shortcut: "Ctrl + Shift + R", macShortcut: "Cmd + Shift + R", description: "AI Rewrite (with selection)" },
   { shortcut: "Right-click", macShortcut: "Right-click", description: "AI Rewrite (with selection)" },
   { shortcut: "Ctrl + Shift + Space", macShortcut: "Cmd + Shift + Space", description: "Continue writing / suggest structure" },

@@ -6,7 +6,7 @@ vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
 }));
 
-import { fetchCompletion, summarizeNote, suggestTags, rewriteText, requestEmbedding, requestQueryEmbedding, transcribeAudio } from "../api/ai.ts";
+import { fetchCompletion, summarizeNote, suggestTags, rewriteText, requestEmbedding, requestQueryEmbedding, transcribeAudio, askQuestion, type AskQuestionEvent } from "../api/ai.ts";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -315,6 +315,93 @@ describe("AI API client", () => {
 
       const blob = new Blob(["audio"], { type: "audio/webm" });
       await expect(transcribeAudio(blob, "verbatim")).rejects.toThrow("Transcribe failed: 500");
+    });
+  });
+
+  describe("askQuestion", () => {
+    it("yields text events from SSE stream", async () => {
+      const sseData =
+        'data: {"text":"Hello"}\n\ndata: {"text":" world"}\n\ndata: [DONE]\n\n';
+      const encoder = new TextEncoder();
+
+      const mockReader = {
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: encoder.encode(sseData),
+          })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        releaseLock: vi.fn(),
+      };
+
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      });
+
+      const abortController = new AbortController();
+      const events: AskQuestionEvent[] = [];
+
+      for await (const event of askQuestion("What is React?", abortController.signal)) {
+        events.push(event);
+      }
+
+      expect(events).toEqual([{ text: "Hello" }, { text: " world" }]);
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/ask", {
+        method: "POST",
+        body: JSON.stringify({ question: "What is React?" }),
+        signal: abortController.signal,
+      });
+    });
+
+    it("yields source events", async () => {
+      const sseData =
+        'data: {"sources":[{"id":"n1","title":"Note 1"}]}\n\ndata: {"text":"Answer"}\n\ndata: [DONE]\n\n';
+      const encoder = new TextEncoder();
+
+      const mockReader = {
+        read: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: encoder.encode(sseData),
+          })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        releaseLock: vi.fn(),
+      };
+
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        body: { getReader: () => mockReader },
+      });
+
+      const abortController = new AbortController();
+      const events: AskQuestionEvent[] = [];
+
+      for await (const event of askQuestion("test", abortController.signal)) {
+        events.push(event);
+      }
+
+      expect(events).toEqual([
+        { sources: [{ id: "n1", title: "Note 1" }] },
+        { text: "Answer" },
+      ]);
+    });
+
+    it("throws on non-ok response", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+      });
+
+      const abortController = new AbortController();
+
+      await expect(async () => {
+        for await (const _event of askQuestion("test", abortController.signal)) {
+          // Should not reach here
+        }
+      }).rejects.toThrow("Q&A request failed: 500");
     });
   });
 });
