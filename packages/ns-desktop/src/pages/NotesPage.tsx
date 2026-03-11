@@ -100,8 +100,14 @@ import {
 import {
   parseFileList,
   importFiles,
+  exportNoteAsMarkdown,
+  exportNoteAsText,
+  exportNoteAsPdf,
+  exportNotesAsZip,
   type ImportProgress,
+  type ExportFormat,
 } from "../lib/importExport.ts";
+import { ImportButton } from "../components/ImportButton.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
@@ -1277,6 +1283,51 @@ export function NotesPage() {
     }
   }
 
+  function handleExportNote(noteId: string, format: ExportFormat = "md") {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    if (format === "txt") {
+      exportNoteAsText(note);
+    } else if (format === "pdf") {
+      import("marked").then(({ marked }) => {
+        exportNoteAsPdf(note, (md) => marked(md) as string);
+      });
+    } else {
+      exportNoteAsMarkdown(note);
+    }
+  }
+
+  async function handleExportFolder(folderId: string) {
+    const folder = findFolderById(folders, folderId);
+    if (!folder) return;
+    const folderIds = new Set<string>();
+    function collectIds(f: FolderInfo) {
+      folderIds.add(f.id);
+      f.children.forEach(collectIds);
+    }
+    collectIds(folder);
+    try {
+      const allNotes = await fetchNotes({});
+      const folderNotes = allNotes.filter((n) => n.folderId && folderIds.has(n.folderId));
+      if (folderNotes.length === 0) {
+        showError("No notes in this folder to export");
+        return;
+      }
+      await exportNotesAsZip(folderNotes, folders, folder.name);
+    } catch {
+      showError("Failed to export folder");
+    }
+  }
+
+  function findFolderById(items: FolderInfo[], id: string): FolderInfo | undefined {
+    for (const f of items) {
+      if (f.id === id) return f;
+      const found = findFolderById(f.children, id);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
   function handleDragOver(e: React.DragEvent) {
     if (!e.dataTransfer.types.includes("Files")) return;
     e.preventDefault();
@@ -1667,6 +1718,7 @@ export function NotesPage() {
                 onRenameFolder={handleRenameFolder}
                 onDeleteFolder={handleDeleteFolder}
                 onMoveFolder={handleMoveFolder}
+                onExportFolder={handleExportFolder}
                 onToggleFavorite={handleToggleFolderFavorite}
               />
             </div>
@@ -1736,6 +1788,7 @@ export function NotesPage() {
                     onSelect={handleNoteSelect}
                     onDoubleClick={openNoteAsTab}
                     onDeleteNote={handleDeleteNote}
+                    onExportNote={handleExportNote}
                     onToggleFavorite={handleToggleNoteFavorite}
                     searchResults={searchResults}
                     sortByManual={sortBy === "sortOrder"}
@@ -1752,6 +1805,7 @@ export function NotesPage() {
                   onSelect={handleNoteSelect}
                   onDoubleClick={openNoteAsTab}
                   onDeleteNote={handleDeleteNote}
+                  onExportNote={handleExportNote}
                   onToggleFavorite={handleToggleNoteFavorite}
                   sortByManual={sortBy === "sortOrder"}
                 />
@@ -1861,18 +1915,24 @@ export function NotesPage() {
               onSync={manualSync}
             />
             {sidebarView === "notes" && (
-              <button
-                onClick={handleViewTrash}
-                className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                title="Trash"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                {trashCount > 0 && (
-                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
-                    {trashCount}
-                  </span>
-                )}
-              </button>
+              <>
+                <button
+                  onClick={handleViewTrash}
+                  className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+                  title="Trash"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  {trashCount > 0 && (
+                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
+                      {trashCount}
+                    </span>
+                  )}
+                </button>
+                <ImportButton
+                  onImportFiles={(files) => handleImportFiles(files)}
+                  onImportDirectory={(files) => handleImportFiles(files)}
+                />
+              </>
             )}
             <button
               onClick={() => setShowSettings(true)}
