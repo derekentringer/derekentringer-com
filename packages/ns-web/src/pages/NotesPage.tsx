@@ -1142,7 +1142,7 @@ export function NotesPage() {
     loadNotes(debouncedSearch || undefined);
     loadFolders();
     if (autoSelect && lastCreatedNote && result.successCount > 0) {
-      selectNote(lastCreatedNote);
+      openNoteAsTab(lastCreatedNote);
     }
     if (result.failedCount > 0) {
       showError(`Imported ${result.successCount}, failed ${result.failedCount}`);
