@@ -51,7 +51,9 @@
 - [x] [03 — Note Linking + Backlinks](features/03-note-linking.md)
 - [x] [04 — Version History](features/04-version-history.md)
 - [x] [05 — Favorites](features/05-favorites.md) — Favorite notes and folders via right-click context menus, collapsible Favorites panel with sort dropdown (Manual/Modified/Created/Title) and asc/desc toggle inline with header, drag-and-drop manual reordering via `@dnd-kit/sortable`, `favorite_sort_order` SQLite column (migration 007) with auto-assignment on favorite toggle, default sort Modified Descending, case-insensitive title sorting via `COLLATE NOCASE`, `handleSave` re-fetches notes and favorites for correct sort order
-- [x] [06 — Editor Tabs](features/06-editor-tabs.md)
+- [x] [06 — Editor Tabs](features/06-editor-tabs.md) — VS Code-style tab bar with permanent tabs (double-click), preview tabs (single-click always creates preview tab with italic title, auto-pin on edit), drag-and-drop reordering, middle-click close, trash view integration
+
+- [x] Trash view UI polish — Removed redundant retention setting dropdown from trash sidebar (already in Settings page), sidebar footer (sync/settings/admin/signout) always visible regardless of view, trash button hidden when in trash view, preview pane empty state text matches web app
 
 ### Phase 5: Settings — Medium Priority
 

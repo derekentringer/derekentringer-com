@@ -92,14 +92,6 @@ type SidebarView = "notes" | "trash";
 type DrawerTab = "history";
 
 const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
-const TRASH_RETENTION_OPTIONS: { value: number; label: string }[] = [
-  { value: 7, label: "7 days" },
-  { value: 14, label: "14 days" },
-  { value: 30, label: "30 days (default)" },
-  { value: 60, label: "60 days" },
-  { value: 90, label: "90 days" },
-  { value: 0, label: "Never" },
-];
 
 const validSortFields: NoteSortField[] = ["sortOrder", "updatedAt", "createdAt", "title"];
 const validSortOrders: SortOrder[] = ["asc", "desc"];
@@ -540,12 +532,13 @@ export function NotesPage() {
   // --- Tab handlers ---
 
   function handleNoteSelect(note: Note) {
-    if (openTabs.length === 0 || openTabs.includes(note.id)) {
+    if (openTabs.includes(note.id)) {
+      // Note already has a tab — just select
       selectNote(note);
       return;
     }
 
-    // Tabs exist, note is not in any tab — create or replace preview
+    // Note is not in any tab — create or replace preview
     if (previewTabId) {
       setOpenTabs((prev) => prev.map((id) => id === previewTabId ? note.id : id));
     } else {
@@ -1110,18 +1103,6 @@ export function NotesPage() {
     }
   }
 
-  function handleRetentionChange(days: number) {
-    setTrashRetentionDays(days);
-    localStorage.setItem(TRASH_RETENTION_KEY, String(days));
-    if (days > 0) {
-      purgeOldTrash(days).then((purged) => {
-        if (purged > 0 && sidebarView === "trash") {
-          fetchTrash().then(setTrashNotes).catch(() => {});
-        }
-      }).catch((err) => console.error("Failed to purge trash:", err));
-    }
-  }
-
   // --- Refresh helpers ---
 
   async function refreshFolders() {
@@ -1465,51 +1446,6 @@ export function NotesPage() {
               )}
             </nav>
 
-            {/* Sidebar bottom bar */}
-            <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <SyncStatusButton
-                  status={syncStatusState}
-                  error={syncErrorState}
-                  onSync={manualSync}
-                />
-                <button
-                  onClick={handleViewTrash}
-                  className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                  title="Trash"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  {trashCount > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
-                      {trashCount}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowSettings(true)}
-                  className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                  title="Settings"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-                {user?.role === "admin" && (
-                  <button
-                    onClick={() => setShowAdmin(true)}
-                    className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                    title="Admin"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  </button>
-                )}
-              </div>
-              <button
-                onClick={logout}
-                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                title="Sign out"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-              </button>
-            </div>
           </DndContext>
         ) : (
           <>
@@ -1601,23 +1537,56 @@ export function NotesPage() {
               )}
             </nav>
 
-            {/* Retention setting */}
-            <div className="px-3 py-2 border-t border-border flex items-center gap-2">
-              <span className="text-[11px] text-muted-foreground">Auto-delete:</span>
-              <select
-                value={trashRetentionDays}
-                onChange={(e) => handleRetentionChange(Number(e.target.value))}
-                className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
-                style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
-                aria-label="Trash retention period"
-              >
-                {TRASH_RETENTION_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
           </>
         )}
+
+        {/* Sidebar bottom bar */}
+        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <SyncStatusButton
+              status={syncStatusState}
+              error={syncErrorState}
+              onSync={manualSync}
+            />
+            {sidebarView === "notes" && (
+              <button
+                onClick={handleViewTrash}
+                className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+                title="Trash"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                {trashCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
+                    {trashCount}
+                  </span>
+                )}
+              </button>
+            )}
+            <button
+              onClick={() => setShowSettings(true)}
+              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+              title="Settings"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            {user?.role === "admin" && (
+              <button
+                onClick={() => setShowAdmin(true)}
+                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+                title="Admin"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </button>
+            )}
+          </div>
+          <button
+            onClick={logout}
+            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+            title="Sign out"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
       </aside>
 
       <ResizeDivider
@@ -1838,7 +1807,9 @@ export function NotesPage() {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <p className="text-muted-foreground">
-              Select a note or create a new one
+              {sidebarView === "trash"
+                ? "Select a note to preview"
+                : "Select a note or create a new one"}
             </p>
           </div>
         )}
