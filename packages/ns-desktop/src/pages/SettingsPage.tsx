@@ -8,7 +8,7 @@ import {
   type TabSizeOption,
   type AccentColorPreset,
 } from "../hooks/useEditorSettings.ts";
-import type { AiSettings, CompletionStyle } from "../hooks/useAiSettings.ts";
+import type { AiSettings, CompletionStyle, AudioMode } from "../hooks/useAiSettings.ts";
 import { useAuth } from "../context/AuthContext.tsx";
 import { setupTotp, verifyTotpSetup, disableTotp, getMe } from "../api/auth.ts";
 
@@ -108,18 +108,26 @@ function RadioOption<T extends string | number>({
   );
 }
 
-const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch"; label: string; info: string }[] = [
+const AI_TOGGLE_SETTINGS: { key: "completions" | "summarize" | "tagSuggestions" | "rewrite" | "semanticSearch" | "audioNotes"; label: string; info: string }[] = [
   { key: "completions", label: "Inline completions", info: "AI suggests text as you type. Press Tab to accept, Escape to dismiss." },
   { key: "summarize", label: "Summarize", info: "Generate a short AI summary of your note, shown below the title." },
   { key: "tagSuggestions", label: "Auto-tag suggestions", info: "AI analyzes your note content and suggests relevant tags." },
   { key: "rewrite", label: "Select-and-rewrite", info: "Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." },
   { key: "semanticSearch", label: "Semantic search", info: "Search notes by meaning, not just exact keywords. Uses AI embeddings generated via the server." },
+  { key: "audioNotes", label: "Audio notes", info: "Record audio and transcribe it into a note using AI." },
 ];
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [
   { value: "continue", label: "Continue writing", info: "Predicts and continues your natural writing style." },
   { value: "markdown", label: "Markdown assist", info: "Suggests markdown formatting like headings, lists, and code blocks." },
   { value: "brief", label: "Brief", info: "Short, concise completions — a few words at a time." },
+];
+
+const AUDIO_MODE_OPTIONS: { value: AudioMode; label: string; info: string }[] = [
+  { value: "meeting", label: "Meeting notes", info: "Structures transcript into attendees, discussion points, decisions, and action items." },
+  { value: "lecture", label: "Lecture notes", info: "Organizes into key concepts, definitions, important points, and a summary." },
+  { value: "memo", label: "Memo", info: "Cleans up speech into a well-written memo. Fixes grammar and filler words." },
+  { value: "verbatim", label: "Verbatim", info: "Minimal processing — adds punctuation and paragraphs but keeps your exact words." },
 ];
 
 const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: string }[] = [
@@ -639,6 +647,25 @@ export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange,
                           ? `Indexing notes... (${embeddingStatus.totalWithEmbeddings} indexed${embeddingStatus.pendingCount > 0 ? `, ${embeddingStatus.pendingCount} pending` : ""})`
                           : `${embeddingStatus.totalWithEmbeddings} of ${embeddingStatus.totalWithEmbeddings + embeddingStatus.pendingCount} notes indexed`}
                       </span>
+                    </div>
+                  )}
+                  {key === "audioNotes" && aiSettings.audioNotes && aiSettings.masterAiEnabled && (
+                    <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
+                      {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel, info: modeInfo }) => (
+                        <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="audioMode"
+                            value={value}
+                            checked={aiSettings.audioMode === value}
+                            onChange={() => updateAiSetting("audioMode", value)}
+                            className="accent-primary"
+                            aria-label={modeLabel}
+                          />
+                          <span className="text-sm text-muted-foreground">{modeLabel}</span>
+                          <InfoIcon tooltip={modeInfo} />
+                        </label>
+                      ))}
                     </div>
                   )}
                 </div>

@@ -99,6 +99,8 @@
 
 - [x] File drag-and-drop import tab fix — `handleImportFiles` called `selectNote` instead of `openNoteAsTab`, so drag-imported notes appeared in sidebar but didn't open a tab; fixed to match `handleCreate` behavior
 
+- [x] Note timestamps in status bar — Created date and Modified date+time displayed in the toolbar status bar next to save status, separated by middle-dot (`·`) separators, with full date+time hover tooltips; `text-[11px] text-muted-foreground` styling matching save status
+
 ### Reliability
 
 - [x] [13 — Sync Hardening](features/13-sync-hardening.md) — SSE reconnection storm fix (refs pattern for stable callbacks, connect-once-on-mount), pre-connect JWT expiry check with proactive token refresh, notes/favorites sort persistence to localStorage with validation, case-insensitive title sort via raw SQL `ORDER BY LOWER("title")` with explicit column list, atomic sync push with `prisma.$transaction()` and LWW skip tracking, pull cursor accuracy using `MAX(updatedAt)` from returned data, SSE hub dead stream immediate cleanup and per-user connection limit (max 5), `updatedAt` indexes on Note and Folder, stale sync cursor cleanup, search SQL column alignment (`favoriteSortOrder`, `folderId`)

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { apiFetch, getAccessToken } from "../api/client.ts";
+import { apiFetch, getAccessToken, refreshAccessToken } from "../api/client.ts";
 import {
   readSyncQueue,
   removeSyncQueueEntries,
@@ -154,10 +154,26 @@ async function connectSse(): Promise<void> {
   // Disconnect any existing connection first
   disconnectSse();
 
-  const token = getAccessToken();
+  let token = getAccessToken();
   if (!token || !deviceId) {
     scheduleSseReconnect();
     return;
+  }
+
+  // Check if token is about to expire (within 60s) and refresh proactively
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    if (payload.exp && payload.exp * 1000 - Date.now() < 60_000) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        token = newToken;
+      } else {
+        scheduleSseReconnect();
+        return;
+      }
+    }
+  } catch {
+    // If token parsing fails, proceed with existing token
   }
 
   sseAbortController = new AbortController();

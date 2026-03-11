@@ -6,7 +6,7 @@ vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
 }));
 
-import { fetchCompletion, summarizeNote, suggestTags, rewriteText, requestEmbedding, requestQueryEmbedding } from "../api/ai.ts";
+import { fetchCompletion, summarizeNote, suggestTags, rewriteText, requestEmbedding, requestQueryEmbedding, transcribeAudio } from "../api/ai.ts";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -264,6 +264,57 @@ describe("AI API client", () => {
         method: "POST",
         body: JSON.stringify({ text: "search query", inputType: "query" }),
       });
+    });
+  });
+
+  describe("transcribeAudio", () => {
+    it("sends FormData and returns transcribe result", async () => {
+      const mockResult = {
+        title: "Meeting Notes",
+        content: "Discussion about Q4 goals.",
+        tags: ["meeting"],
+        note: { id: "note-1", title: "Meeting Notes" },
+      };
+
+      mockApiFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockResult),
+      });
+
+      const blob = new Blob(["audio-data"], { type: "audio/webm" });
+      const result = await transcribeAudio(blob, "meeting");
+
+      expect(result).toEqual(mockResult);
+      expect(mockApiFetch).toHaveBeenCalledWith("/ai/transcribe", {
+        method: "POST",
+        body: expect.any(FormData),
+      });
+
+      const formData = mockApiFetch.mock.calls[0][1].body as FormData;
+      expect(formData.get("mode")).toBe("meeting");
+      expect(formData.get("file")).toBeInstanceOf(File);
+    });
+
+    it("throws server message on error response", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ message: "Audio too short" }),
+      });
+
+      const blob = new Blob(["audio"], { type: "audio/webm" });
+      await expect(transcribeAudio(blob, "memo")).rejects.toThrow("Audio too short");
+    });
+
+    it("throws default message when server JSON parsing fails", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error("not json")),
+      });
+
+      const blob = new Blob(["audio"], { type: "audio/webm" });
+      await expect(transcribeAudio(blob, "verbatim")).rejects.toThrow("Transcribe failed: 500");
     });
   });
 });

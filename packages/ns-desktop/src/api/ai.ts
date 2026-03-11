@@ -1,5 +1,6 @@
 import { apiFetch } from "./client.ts";
-import type { CompletionStyle } from "../hooks/useAiSettings.ts";
+import type { CompletionStyle, AudioMode } from "../hooks/useAiSettings.ts";
+import type { Note } from "@derekentringer/ns-shared";
 
 export type RewriteAction =
   | "rewrite"
@@ -133,4 +134,38 @@ export async function requestQueryEmbedding(text: string): Promise<number[]> {
 
   const data = await response.json();
   return data.embedding;
+}
+
+export interface TranscribeResult {
+  title: string;
+  content: string;
+  tags: string[];
+  note: Note;
+}
+
+export async function transcribeAudio(
+  audioBlob: Blob,
+  mode: AudioMode,
+): Promise<TranscribeResult> {
+  const formData = new FormData();
+  formData.append("file", audioBlob, "recording.webm");
+  formData.append("mode", mode);
+
+  const response = await apiFetch("/ai/transcribe", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let message = `Transcribe failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data.message) message = data.message;
+    } catch {
+      // Use default message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
 }
