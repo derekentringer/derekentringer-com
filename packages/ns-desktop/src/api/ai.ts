@@ -1,6 +1,14 @@
 import { apiFetch } from "./client.ts";
 import type { CompletionStyle } from "../hooks/useAiSettings.ts";
 
+export type RewriteAction =
+  | "rewrite"
+  | "concise"
+  | "fix-grammar"
+  | "to-list"
+  | "expand"
+  | "summarize";
+
 export async function* fetchCompletion(
   context: string,
   signal: AbortSignal,
@@ -80,4 +88,21 @@ export async function suggestTags(noteId: string): Promise<string[]> {
 
   const data = await response.json();
   return data.tags;
+}
+
+export async function rewriteText(
+  text: string,
+  action: RewriteAction,
+): Promise<string> {
+  const response = await apiFetch("/ai/rewrite", {
+    method: "POST",
+    body: JSON.stringify({ text, action }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Rewrite failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.text;
 }

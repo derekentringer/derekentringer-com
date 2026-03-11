@@ -76,7 +76,8 @@ import { useResizable } from "../hooks/useResizable.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
 import { useAiSettings } from "../hooks/useAiSettings.ts";
 import { ghostTextExtension } from "../editor/ghostText.ts";
-import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi } from "../api/ai.ts";
+import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
+import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { SyncStatusButton } from "../components/SyncStatusButton.tsx";
 import {
@@ -1181,6 +1182,7 @@ export function NotesPage() {
   const aiExtensions = useMemo(() => {
     if (!aiSettings.masterAiEnabled) return [];
     return [
+      ...(aiSettings.rewrite ? [rewriteExtension(rewriteText)] : []),
       ...(aiSettings.completions
         ? [ghostTextExtension(
             (ctx, sig) => fetchCompletion(ctx, sig, aiSettings.completionStyle),
@@ -1188,7 +1190,7 @@ export function NotesPage() {
           )]
         : []),
     ];
-  }, [aiSettings.masterAiEnabled, aiSettings.completions, aiSettings.completionStyle, aiSettings.completionDebounceMs]);
+  }, [aiSettings.masterAiEnabled, aiSettings.rewrite, aiSettings.completions, aiSettings.completionStyle, aiSettings.completionDebounceMs]);
 
   function handleDrawerTabClick(tab: DrawerTab) {
     if (drawerOpen && drawerTab === tab) {
