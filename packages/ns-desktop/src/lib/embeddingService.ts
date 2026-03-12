@@ -1,5 +1,6 @@
 import Database from "@tauri-apps/plugin-sql";
 import { requestEmbedding } from "../api/ai.ts";
+import { DB_URI } from "./dbName.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -17,7 +18,7 @@ let dbInstance: Database | null = null;
 
 async function getDb(): Promise<Database> {
   if (!dbInstance) {
-    dbInstance = await Database.load("sqlite:notesync.db");
+    dbInstance = await Database.load(DB_URI);
   }
   return dbInstance;
 }

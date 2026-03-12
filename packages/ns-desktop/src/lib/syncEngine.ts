@@ -473,7 +473,8 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
 async function readLocalFolder(folderId: string): Promise<FolderSyncData | null> {
   // Import getDb dynamically to avoid circular deps at module level
   const { default: Database } = await import("@tauri-apps/plugin-sql");
-  const db = await Database.load("sqlite:notesync.db");
+  const { DB_URI } = await import("./dbName.ts");
+  const db = await Database.load(DB_URI);
   const rows = await db.select<{
     id: string;
     name: string;
