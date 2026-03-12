@@ -13,12 +13,13 @@ import type {
   NoteVersion,
   NoteVersionListResponse,
 } from "@derekentringer/ns-shared";
+import { DB_URI } from "./dbName.ts";
 
 let dbInstance: Database | null = null;
 
 async function getDb(): Promise<Database> {
   if (!dbInstance) {
-    dbInstance = await Database.load("sqlite:notesync.db");
+    dbInstance = await Database.load(DB_URI);
   }
   return dbInstance;
 }
