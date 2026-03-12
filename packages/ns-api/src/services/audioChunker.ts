@@ -10,15 +10,25 @@ const execFileAsync = promisify(execFile);
 
 export const MAX_CHUNK_SIZE = 24 * 1024 * 1024; // 24MB
 
-function parseDuration(stderr: string): number {
+function parseDuration(stderr: string): number | null {
   const match = stderr.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/);
-  if (!match) {
-    throw new Error("Could not parse audio duration from ffmpeg output");
-  }
+  if (!match) return null;
   const hours = parseInt(match[1], 10);
   const minutes = parseInt(match[2], 10);
   const seconds = parseInt(match[3], 10);
   const centiseconds = parseInt(match[4], 10);
+  return hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
+}
+
+function parseProgressTime(stderr: string): number | null {
+  // ffmpeg progress lines: "time=HH:MM:SS.cc" — take the last occurrence
+  const matches = [...stderr.matchAll(/time=(\d+):(\d+):(\d+)\.(\d+)/g)];
+  if (matches.length === 0) return null;
+  const last = matches[matches.length - 1];
+  const hours = parseInt(last[1], 10);
+  const minutes = parseInt(last[2], 10);
+  const seconds = parseInt(last[3], 10);
+  const centiseconds = parseInt(last[4], 10);
   return hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
 }
 
@@ -57,7 +67,29 @@ export async function splitAudioIfNeeded(
       stderr = execErr.stderr;
     }
 
-    const totalDuration = parseDuration(stderr);
+    let totalDuration = parseDuration(stderr);
+
+    // WebM from MediaRecorder often has "Duration: N/A" — decode fully to get duration
+    if (totalDuration === null) {
+      try {
+        const decodeResult = await execFileAsync(
+          ffmpegPath,
+          ["-i", inputPath, "-f", "null", "-"],
+          { timeout: 120_000 },
+        );
+        totalDuration = parseProgressTime(decodeResult.stderr);
+      } catch (err: unknown) {
+        const execErr = err as { stderr?: string };
+        if (execErr.stderr) {
+          totalDuration = parseProgressTime(execErr.stderr);
+        }
+      }
+    }
+
+    if (totalDuration === null || totalDuration <= 0) {
+      throw new Error("Could not determine audio duration from ffmpeg output");
+    }
+
     const segmentDuration = Math.floor(
       (MAX_CHUNK_SIZE / buffer.length) * totalDuration,
     );
