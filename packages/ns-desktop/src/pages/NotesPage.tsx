@@ -680,7 +680,7 @@ export function NotesPage() {
     };
   }, [title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
 
-  // --- Cmd+S to save, Cmd+Shift+D for focus mode ---
+  // --- Cmd+S to save, Cmd+Shift+D for focus mode, Cmd+W to close tab ---
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -700,10 +700,16 @@ export function NotesPage() {
           return !prev;
         });
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === "w") {
+        e.preventDefault();
+        if (selectedId) {
+          closeTab(selectedId);
+        }
+      }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, drawerOpen]);
+  }, [handleSave, drawerOpen, selectedId]);
 
   // Auto-refresh editor content when notes array updates (e.g. after sync)
   useEffect(() => {

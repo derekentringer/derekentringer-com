@@ -144,6 +144,7 @@ const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: 
   { shortcut: "Tab", macShortcut: "Tab", description: "Accept AI completion" },
   { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
   { shortcut: "Ctrl + Shift + D", macShortcut: "Cmd + Shift + D", description: "Toggle focus mode (hide panels)" },
+  { shortcut: "Ctrl + W", macShortcut: "Cmd + W", description: "Close active tab" },
 ];
 
 const AUTO_SAVE_OPTIONS: { value: number; label: string }[] = [
