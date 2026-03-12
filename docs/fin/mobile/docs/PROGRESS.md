@@ -70,6 +70,10 @@
 
 - [x] [08 — Multi-User Auth, TOTP 2FA & PIN Removal](features/08-multi-user-auth.md)
 
+### Auth Improvements
+
+- [x] [09 — Centralized TokenManager](features/09-centralized-token-manager.md) — Adopted shared `TokenManager` from `@derekentringer/shared/token` with mobile adapter using `expo-secure-store`, proactive token refresh via shared scheduler, simplified Axios interceptors delegating to TokenManager, removed manual refresh dedup and token expiry tracking, typed `AuthFailureReason` propagation to Zustand auth store, 14 new tests
+
 ## Status Key
 
 - `[ ]` Not Started

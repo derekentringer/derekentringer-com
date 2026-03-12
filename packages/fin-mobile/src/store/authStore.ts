@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { User } from "@derekentringer/shared";
-import { authApi, tokenStorage } from "@/services/api";
+import { authApi, tokenStorage, tokenManager } from "@/services/api";
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -29,18 +29,26 @@ const useAuthStore = create<AuthState & AuthActions>()((set) => ({
 
   initialize: async () => {
     try {
+      // Register auth failure callback to clear state on token revocation
+      tokenManager.setOnAuthFailure(() => {
+        set({ isAuthenticated: false, user: null });
+      });
+
       const accessToken = await tokenStorage.getAccessToken();
-      const expiry = await tokenStorage.getTokenExpiry();
 
       if (!accessToken) {
         set({ isLoading: false, isAuthenticated: false });
         return;
       }
 
-      // If token is expired, try to refresh
-      if (expiry && Date.now() > expiry) {
-        const result = await authApi.refresh();
-        if (!result) {
+      // Load persisted token into TokenManager's in-memory store
+      tokenManager.setAccessToken(accessToken);
+
+      // If token is expired or near-expiry, refresh
+      const msUntilExpiry = tokenManager.getMsUntilExpiry();
+      if (msUntilExpiry === null || msUntilExpiry <= 0) {
+        const newToken = await tokenManager.refreshAccessToken();
+        if (!newToken) {
           set({ isLoading: false, isAuthenticated: false });
           return;
         }

@@ -1,5 +1,6 @@
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
+import { createTokenManager } from "@derekentringer/shared/token";
 import type {
   LoginRequest,
   LoginResponse,
@@ -10,43 +11,45 @@ import type {
   TotpVerifySetupResponse,
   RegisterRequest,
 } from "@derekentringer/shared";
-
-export const STORAGE_KEYS = {
-  ACCESS_TOKEN: "fin_access_token",
-  REFRESH_TOKEN: "fin_refresh_token",
-  TOKEN_EXPIRY: "fin_token_expiry",
-} as const;
+import { createMobileTokenAdapter, STORAGE_KEYS } from "./mobileTokenAdapter";
 
 const API_BASE_URL = __DEV__
   ? "http://localhost:3002"
   : "https://fin-api.derekentringer.com";
 
+const adapter = createMobileTokenAdapter();
+
+export const tokenManager = createTokenManager({
+  adapter,
+  baseUrl: API_BASE_URL,
+  logger: __DEV__
+    ? { debug: console.debug, warn: console.warn, error: console.error }
+    : undefined,
+});
+
 export const tokenStorage = {
   async getAccessToken(): Promise<string | null> {
     return SecureStore.getItemAsync(STORAGE_KEYS.ACCESS_TOKEN);
   },
-  async setAccessToken(token: string): Promise<void> {
-    await SecureStore.setItemAsync(STORAGE_KEYS.ACCESS_TOKEN, token);
-  },
   async getRefreshToken(): Promise<string | null> {
     return SecureStore.getItemAsync(STORAGE_KEYS.REFRESH_TOKEN);
   },
-  async setRefreshToken(token: string): Promise<void> {
-    await SecureStore.setItemAsync(STORAGE_KEYS.REFRESH_TOKEN, token);
-  },
-  async getTokenExpiry(): Promise<number | null> {
-    const val = await SecureStore.getItemAsync(STORAGE_KEYS.TOKEN_EXPIRY);
-    return val ? Number(val) : null;
-  },
-  async setTokenExpiry(expiry: number): Promise<void> {
-    await SecureStore.setItemAsync(STORAGE_KEYS.TOKEN_EXPIRY, String(expiry));
+  async setTokens(accessToken: string, refreshToken?: string): Promise<void> {
+    const ops: Promise<void>[] = [
+      SecureStore.setItemAsync(STORAGE_KEYS.ACCESS_TOKEN, accessToken),
+    ];
+    if (refreshToken) {
+      ops.push(SecureStore.setItemAsync(STORAGE_KEYS.REFRESH_TOKEN, refreshToken));
+    }
+    await Promise.all(ops);
+    tokenManager.setAccessToken(accessToken);
   },
   async clearAll(): Promise<void> {
     await Promise.all([
       SecureStore.deleteItemAsync(STORAGE_KEYS.ACCESS_TOKEN),
       SecureStore.deleteItemAsync(STORAGE_KEYS.REFRESH_TOKEN),
-      SecureStore.deleteItemAsync(STORAGE_KEYS.TOKEN_EXPIRY),
     ]);
+    tokenManager.setAccessToken(null);
   },
 };
 
@@ -58,72 +61,16 @@ const api = axios.create({
   },
 });
 
-// Shared refresh lock to prevent concurrent refresh calls
-let refreshPromise: Promise<RefreshResponse | null> | null = null;
-
-async function refreshTokenSafely(): Promise<RefreshResponse | null> {
-  if (refreshPromise) return refreshPromise;
-
-  refreshPromise = (async () => {
-    try {
-      const refreshToken = await tokenStorage.getRefreshToken();
-      if (!refreshToken) return null;
-
-      const response = await axios.post<RefreshResponse>(
-        `${API_BASE_URL}/auth/refresh`,
-        { refreshToken },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "X-Client-Type": "mobile",
-          },
-        },
-      );
-
-      const data = response.data;
-      const expiry = Date.now() + data.expiresIn * 1000;
-
-      await Promise.all([
-        tokenStorage.setAccessToken(data.accessToken),
-        tokenStorage.setTokenExpiry(expiry),
-        ...(data.refreshToken
-          ? [tokenStorage.setRefreshToken(data.refreshToken)]
-          : []),
-      ]);
-
-      return data;
-    } catch {
-      await tokenStorage.clearAll();
-      return null;
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-
-  return refreshPromise;
-}
-
-// Request interceptor: attach Bearer token, proactive refresh if expired
+// Request interceptor: attach Bearer token from TokenManager
 api.interceptors.request.use(async (config) => {
-  let accessToken = await tokenStorage.getAccessToken();
-  const expiry = await tokenStorage.getTokenExpiry();
-
-  // Proactive refresh if token is expired or about to expire (30s buffer)
-  if (expiry && Date.now() > expiry - 30000) {
-    const result = await refreshTokenSafely();
-    if (result) {
-      accessToken = result.accessToken;
-    }
-  }
-
+  const accessToken = tokenManager.getAccessToken();
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
-
   return config;
 });
 
-// Response interceptor: retry on 401
+// Response interceptor: retry on 401 via TokenManager refresh
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -137,9 +84,9 @@ api.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
-      const result = await refreshTokenSafely();
-      if (result) {
-        originalRequest.headers.Authorization = `Bearer ${result.accessToken}`;
+      const newToken = await tokenManager.refreshAccessToken();
+      if (newToken) {
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);
       }
     }
@@ -158,21 +105,14 @@ export const authApi = {
 
     // Only store tokens if login is complete (no TOTP required)
     if (!data.requiresTotp) {
-      const expiry = Date.now() + data.expiresIn * 1000;
-      await Promise.all([
-        tokenStorage.setAccessToken(data.accessToken),
-        tokenStorage.setTokenExpiry(expiry),
-        ...(data.refreshToken
-          ? [tokenStorage.setRefreshToken(data.refreshToken)]
-          : []),
-      ]);
+      await tokenStorage.setTokens(data.accessToken, data.refreshToken);
     }
 
     return data;
   },
 
-  async refresh(): Promise<RefreshResponse | null> {
-    return refreshTokenSafely();
+  async refresh(): Promise<string | null> {
+    return tokenManager.refreshAccessToken();
   },
 
   async logout(): Promise<void> {
@@ -198,16 +138,7 @@ export const authApi = {
       code,
     });
     const data = response.data;
-    const expiry = Date.now() + data.expiresIn * 1000;
-
-    await Promise.all([
-      tokenStorage.setAccessToken(data.accessToken),
-      tokenStorage.setTokenExpiry(expiry),
-      ...(data.refreshToken
-        ? [tokenStorage.setRefreshToken(data.refreshToken)]
-        : []),
-    ]);
-
+    await tokenStorage.setTokens(data.accessToken, data.refreshToken);
     return data;
   },
 
@@ -251,16 +182,7 @@ export const authApi = {
     if (displayName) body.displayName = displayName;
     const response = await api.post<LoginResponse>("/auth/register", body);
     const data = response.data;
-    const expiry = Date.now() + data.expiresIn * 1000;
-
-    await Promise.all([
-      tokenStorage.setAccessToken(data.accessToken),
-      tokenStorage.setTokenExpiry(expiry),
-      ...(data.refreshToken
-        ? [tokenStorage.setRefreshToken(data.refreshToken)]
-        : []),
-    ]);
-
+    await tokenStorage.setTokens(data.accessToken, data.refreshToken);
     return data;
   },
 
