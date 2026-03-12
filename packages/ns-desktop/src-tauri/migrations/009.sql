@@ -1,0 +1,3 @@
+ALTER TABLE notes ADD COLUMN is_local_file INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE notes ADD COLUMN local_path TEXT;
+ALTER TABLE notes ADD COLUMN local_file_hash TEXT;

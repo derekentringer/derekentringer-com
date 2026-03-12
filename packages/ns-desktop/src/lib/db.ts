@@ -33,6 +33,9 @@ interface NoteRow {
   favorite: number;
   sort_order: number;
   favorite_sort_order: number;
+  is_local_file: number;
+  local_path: string | null;
+  local_file_hash: string | null;
   is_deleted: number;
   deleted_at: string | null;
   sync_status: string;
@@ -59,6 +62,7 @@ function rowToNote(row: NoteRow): Note {
     favorite: (row.favorite ?? 0) === 1,
     sortOrder: row.sort_order ?? 0,
     favoriteSortOrder: row.favorite_sort_order ?? 0,
+    isLocalFile: (row.is_local_file ?? 0) === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at ?? null,
@@ -212,6 +216,7 @@ export interface CreateNoteInput {
   title?: string;
   content?: string;
   folderId?: string;
+  isLocalFile?: boolean;
 }
 
 export async function createNote(data: CreateNoteInput): Promise<Note> {
@@ -222,10 +227,12 @@ export async function createNote(data: CreateNoteInput): Promise<Note> {
   const content = data.content ?? "";
   const folderId = data.folderId ?? null;
 
+  const isLocalFile = data.isLocalFile ? 1 : 0;
+
   await db.execute(
-    `INSERT INTO notes (id, title, content, folder_id, is_deleted, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, 0, $5, $5)`,
-    [id, title, content, folderId, now],
+    `INSERT INTO notes (id, title, content, folder_id, is_local_file, is_deleted, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 0, $6, $6)`,
+    [id, title, content, folderId, isLocalFile, now],
   );
 
   // Sync to FTS
@@ -252,6 +259,7 @@ export async function createNote(data: CreateNoteInput): Promise<Note> {
     favorite: false,
     sortOrder: 0,
     favoriteSortOrder: 0,
+    isLocalFile: data.isLocalFile ?? false,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
@@ -260,7 +268,7 @@ export async function createNote(data: CreateNoteInput): Promise<Note> {
 
 export async function updateNote(
   id: string,
-  data: Partial<Pick<Note, "title" | "content" | "tags" | "summary" | "favorite" | "sortOrder" | "folderId">>,
+  data: Partial<Pick<Note, "title" | "content" | "tags" | "summary" | "favorite" | "sortOrder" | "folderId" | "isLocalFile">>,
 ): Promise<Note> {
   const db = await getDb();
   const now = new Date().toISOString();
@@ -313,6 +321,11 @@ export async function updateNote(
   if (data.folderId !== undefined) {
     setClauses.push(`folder_id = $${paramIdx}`);
     params.push(data.folderId);
+    paramIdx++;
+  }
+  if (data.isLocalFile !== undefined) {
+    setClauses.push(`is_local_file = $${paramIdx}`);
+    params.push(data.isLocalFile ? 1 : 0);
     paramIdx++;
   }
 
@@ -1218,8 +1231,9 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
     await db.execute(
       `UPDATE notes SET title = $1, content = $2, folder_id = $3, tags = $4,
        summary = $5, favorite = $6, sort_order = $7, updated_at = $8,
-       deleted_at = $9, is_deleted = $10, favorite_sort_order = $11
-       WHERE id = $12`,
+       deleted_at = $9, is_deleted = $10, favorite_sort_order = $11,
+       is_local_file = $12
+       WHERE id = $13`,
       [
         note.title,
         note.content,
@@ -1232,14 +1246,15 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
         note.deletedAt,
         note.deletedAt ? 1 : 0,
         note.favoriteSortOrder,
+        note.isLocalFile ? 1 : 0,
         note.id,
       ],
     );
   } else {
     await db.execute(
       `INSERT INTO notes (id, title, content, folder_id, tags, summary, favorite, sort_order,
-       created_at, updated_at, deleted_at, is_deleted, favorite_sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+       created_at, updated_at, deleted_at, is_deleted, favorite_sort_order, is_local_file)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         note.id,
         note.title,
@@ -1254,6 +1269,7 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
         note.deletedAt,
         note.deletedAt ? 1 : 0,
         note.favoriteSortOrder,
+        note.isLocalFile ? 1 : 0,
       ],
     );
   }
@@ -1342,4 +1358,103 @@ export async function softDeleteFolderFromRemote(folderId: string): Promise<void
     "UPDATE folders SET deleted_at = $1, updated_at = $1 WHERE id = $2",
     [now, folderId],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Local File Support
+// ---------------------------------------------------------------------------
+
+/**
+ * Link a note to a local file on disk.
+ */
+export async function linkNoteToLocalFile(
+  noteId: string,
+  localPath: string,
+  localFileHash: string,
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE notes SET is_local_file = 1, local_path = $1, local_file_hash = $2, updated_at = $3 WHERE id = $4",
+    [localPath, localFileHash, now, noteId],
+  );
+  enqueueSyncAction("update", noteId, "note").catch(() => {});
+}
+
+/**
+ * Unlink a note from its local file (convert to cloud-only).
+ */
+export async function unlinkLocalFile(noteId: string): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE notes SET is_local_file = 0, local_path = NULL, local_file_hash = NULL, updated_at = $1 WHERE id = $2",
+    [now, noteId],
+  );
+  enqueueSyncAction("update", noteId, "note").catch(() => {});
+}
+
+/**
+ * Update the stored hash for a local file note.
+ */
+export async function updateLocalFileHash(
+  noteId: string,
+  hash: string,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE notes SET local_file_hash = $1 WHERE id = $2",
+    [hash, noteId],
+  );
+}
+
+/**
+ * Fetch all notes linked to local files.
+ */
+export async function fetchLocalFileNotes(): Promise<(Note & { localPath: string; localFileHash: string | null })[]> {
+  const db = await getDb();
+  const rows = await db.select<NoteRow[]>(
+    "SELECT * FROM notes WHERE is_local_file = 1 AND local_path IS NOT NULL AND is_deleted = 0",
+  );
+  return rows.map((row) => ({
+    ...rowToNote(row),
+    localPath: row.local_path!,
+    localFileHash: row.local_file_hash,
+  }));
+}
+
+/**
+ * Find a note by its local file path (for duplicate detection).
+ */
+export async function findNoteByLocalPath(path: string): Promise<Note | null> {
+  const db = await getDb();
+  const rows = await db.select<NoteRow[]>(
+    "SELECT * FROM notes WHERE local_path = $1 AND is_deleted = 0",
+    [path],
+  );
+  return rows.length > 0 ? rowToNote(rows[0]) : null;
+}
+
+/**
+ * Get the local_path for a note (desktop-only column).
+ */
+export async function getNoteLocalPath(noteId: string): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.select<{ local_path: string | null }[]>(
+    "SELECT local_path FROM notes WHERE id = $1",
+    [noteId],
+  );
+  return rows.length > 0 ? rows[0].local_path : null;
+}
+
+/**
+ * Get the local_file_hash for a note (desktop-only column).
+ */
+export async function getNoteLocalFileHash(noteId: string): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.select<{ local_file_hash: string | null }[]>(
+    "SELECT local_file_hash FROM notes WHERE id = $1",
+    [noteId],
+  );
+  return rows.length > 0 ? rows[0].local_file_hash : null;
 }

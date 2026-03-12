@@ -86,6 +86,10 @@
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)
 
+### Phase 10: Local File Support — Low Priority
+
+- [x] [15 — Local File Support](features/15-local-file-support.md) — Local file linking with bidirectional sync, import choice dialog (Import to NoteSync / Keep Local), three-write save (file + SQLite + sync), file watcher with write suppression + 30s poll backup, external change detection with dialog/auto-reload and hash dedup, missing file detection with red indicators (dot in note list, triangle on tab), local file diff view (unified/split), cross-device cloud_newer detection, delete choice dialog, unlink local file, web app indicator for local file notes, sync push rejection handling, folder unique index fix
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

@@ -77,6 +77,7 @@ const createNoteSchema = {
       folder: { type: "string" },
       folderId: { type: "string" },
       tags: { type: "array", items: { type: "string" } },
+      isLocalFile: { type: "boolean" },
     },
   },
 };
@@ -93,6 +94,7 @@ const updateNoteSchema = {
       tags: { type: "array", items: { type: "string" } },
       summary: { type: ["string", "null"] },
       favorite: { type: "boolean" },
+      isLocalFile: { type: "boolean" },
     },
   },
 };
@@ -1006,7 +1008,8 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         body.folderId === undefined &&
         body.tags === undefined &&
         body.summary === undefined &&
-        body.favorite === undefined
+        body.favorite === undefined &&
+        body.isLocalFile === undefined
       ) {
         return reply.status(400).send({
           statusCode: 400,

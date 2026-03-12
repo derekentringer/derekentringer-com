@@ -253,6 +253,7 @@ async function applyNoteChange(
         favorite: noteData.favorite,
         sortOrder: noteData.sortOrder,
         favoriteSortOrder: noteData.favoriteSortOrder,
+        isLocalFile: noteData.isLocalFile ?? false,
         deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
       },
     });
@@ -272,6 +273,7 @@ async function applyNoteChange(
         favorite: noteData.favorite ?? false,
         sortOrder: noteData.sortOrder ?? 0,
         favoriteSortOrder: noteData.favoriteSortOrder ?? 0,
+        isLocalFile: noteData.isLocalFile ?? false,
         deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
       },
     });

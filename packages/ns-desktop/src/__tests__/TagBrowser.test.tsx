@@ -62,7 +62,7 @@ describe("TagBrowser", () => {
       <TagBrowser {...defaultProps} tags={tags} activeTags={["work"]} />,
     );
 
-    expect(screen.getByText("Clear filter")).toBeInTheDocument();
+    expect(screen.getByText("clear filter")).toBeInTheDocument();
   });
 
   it("does not show 'Clear filter' when no tags are active", () => {

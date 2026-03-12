@@ -60,6 +60,7 @@ const sampleRow = {
   is_deleted: 0,
   deleted_at: null,
   sync_status: "pending",
+  is_local_file: 0,
   created_at: "2024-01-01T00:00:00.000Z",
   updated_at: "2024-01-02T00:00:00.000Z",
 };
@@ -88,6 +89,7 @@ describe("fetchNotes", () => {
       favorite: false,
       sortOrder: 1,
       favoriteSortOrder: 0,
+      isLocalFile: false,
       createdAt: "2024-01-01T00:00:00.000Z",
       updatedAt: "2024-01-02T00:00:00.000Z",
       deletedAt: null,

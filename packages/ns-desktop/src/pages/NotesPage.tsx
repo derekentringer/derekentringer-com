@@ -52,6 +52,13 @@ import {
   reorderFavoriteNotes,
   toggleFolderFavorite,
   upsertNoteFromRemote,
+  linkNoteToLocalFile,
+  unlinkLocalFile,
+  updateLocalFileHash,
+  fetchLocalFileNotes,
+  findNoteByLocalPath,
+  getNoteLocalPath,
+  enqueueSyncAction,
   type SearchMode,
 } from "../lib/db.ts";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
@@ -108,6 +115,30 @@ import {
   type ExportFormat,
 } from "../lib/importExport.ts";
 import { ImportButton } from "../components/ImportButton.tsx";
+import { ImportChoiceDialog } from "../components/ImportChoiceDialog.tsx";
+import { LocalFileDeleteDialog } from "../components/LocalFileDeleteDialog.tsx";
+import { ExternalChangeDialog } from "../components/ExternalChangeDialog.tsx";
+import { LocalFileDiffView } from "../components/LocalFileDiffView.tsx";
+import {
+  readLocalFile,
+  writeLocalFile,
+  computeContentHash,
+  fileExists,
+  getFileStat,
+  validateFileSize,
+  deleteLocalFile,
+  pickSaveLocation,
+  collectFilePaths,
+  isDirectory,
+  startWatching,
+  stopWatching,
+  stopAllWatchers,
+  reestablishWatchers,
+  startPollTimer,
+  stopPollTimer,
+  type LocalFileStatus,
+} from "../lib/localFileService.ts";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
@@ -138,6 +169,8 @@ export function NotesPage() {
   // Notes
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [previewTabId, setPreviewTabId] = useState<string | null>(null);
   const tabNoteCacheRef = useRef<Map<string, Note>>(new Map());
@@ -215,6 +248,8 @@ export function NotesPage() {
   const [confirmDeleteSummary, setConfirmDeleteSummary] = useState(false);
   const titleRef = useRef(title);
   titleRef.current = title;
+  const contentRef = useRef(content);
+  contentRef.current = content;
 
   // Note titles (for wiki-link autocomplete)
   const [noteTitles, setNoteTitles] = useState<NoteTitleEntry[]>([]);
@@ -239,10 +274,20 @@ export function NotesPage() {
   const [syncStatusState, setSyncStatusState] = useState<SyncStatus>("idle");
   const [syncErrorState, setSyncErrorState] = useState<string | null>(null);
 
+  // Local file support
+  const [localFileStatuses, setLocalFileStatuses] = useState<Map<string, LocalFileStatus>>(new Map());
+  const lastProcessedHashRef = useRef<Map<string, string>>(new Map());
+  const [importChoiceDialog, setImportChoiceDialog] = useState<{ files: FileList | File[]; paths?: string[]; fileNames: string[]; autoSelect: boolean; folderName?: string } | null>(null);
+  const [localFileDeleteDialog, setLocalFileDeleteDialog] = useState<{ noteId: string; noteTitle: string } | null>(null);
+  const [externalChangeDialog, setExternalChangeDialog] = useState<{ noteId: string; noteTitle: string; content: string; hash: string } | null>(null);
+  const [localFileDiffView, setLocalFileDiffView] = useState<{ noteId: string; noteTitle: string; cloudContent: string; localContent: string } | null>(null);
+
   // Refs to keep sync engine callbacks current (avoid stale closures)
   const refreshSidebarDataRef = useRef<() => void>(() => {});
   const loadFavoriteNotesRef = useRef<() => void>(() => {});
   const loadNoteTitlesRef = useRef<() => void>(() => {});
+  const reloadNotesRef = useRef<() => Promise<void>>(async () => {});
+  const closeDeletedNoteTabRef = useRef<(noteId: string) => void>(() => {});
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
@@ -332,10 +377,25 @@ export function NotesPage() {
         loadFavoriteNotesRef.current();
         loadNoteTitlesRef.current();
       },
+      onLocalFileCloudUpdate: (noteId) => {
+        setLocalFileStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(noteId, "cloud_newer");
+          return next;
+        });
+      },
+      onNoteRemoteDeleted: (noteId) => {
+        closeDeletedNoteTabRef.current(noteId);
+      },
     }).catch((err) => console.error("Failed to init sync engine:", err));
+
+    // Initialize local file watchers
+    initLocalFileWatchers();
 
     return () => {
       destroySyncEngine();
+      stopAllWatchers();
+      stopPollTimer();
     };
   }, []);
 
@@ -553,6 +613,38 @@ export function NotesPage() {
       reloadNotes();
       loadFavoriteNotes();
 
+      // Three-write save: also write to local file if linked
+      if (updated.isLocalFile) {
+        getNoteLocalPath(selectedId).then(async (localPath) => {
+          if (!localPath) return;
+          try {
+            const exists = await fileExists(localPath);
+            if (exists) {
+              const hash = await writeLocalFile(localPath, content);
+              lastProcessedHashRef.current.set(selectedId, hash);
+              await updateLocalFileHash(selectedId, hash);
+              setLocalFileStatuses((prev) => {
+                const next = new Map(prev);
+                next.set(selectedId, "synced");
+                return next;
+              });
+            } else {
+              setLocalFileStatuses((prev) => {
+                const next = new Map(prev);
+                next.set(selectedId, "missing");
+                return next;
+              });
+            }
+          } catch {
+            setLocalFileStatuses((prev) => {
+              const next = new Map(prev);
+              next.set(selectedId, "missing");
+              return next;
+            });
+          }
+        }).catch(() => {});
+      }
+
       // Fire-and-forget: sync wiki-links + refresh titles + capture version
       syncNoteLinks(selectedId, content).catch(() => {});
       captureVersion(selectedId, title, content, editorSettings.versionIntervalMinutes)
@@ -736,15 +828,17 @@ export function NotesPage() {
     return openTabs
       .map((id) => {
         const isPreview = id === previewTabId;
-        if (id === selectedId) {
-          return { id, title: title || "Untitled", isDirty: isDirtyValue, isPreview };
-        }
         const note = notes.find((n) => n.id === id) ?? tabNoteCacheRef.current.get(id);
+        const isLocalFile = note?.isLocalFile ?? false;
+        const localFileStatus = localFileStatuses.get(id);
+        if (id === selectedId) {
+          return { id, title: title || "Untitled", isDirty: isDirtyValue, isPreview, isLocalFile, localFileStatus };
+        }
         if (!note) return null;
-        return { id, title: note.title || "Untitled", isDirty: false, isPreview };
+        return { id, title: note.title || "Untitled", isDirty: false, isPreview, isLocalFile, localFileStatus };
       })
-      .filter((t): t is Tab => t !== null);
-  }, [openTabs, selectedId, title, isDirtyValue, notes, previewTabId]);
+      .filter((t) => t !== null) as Tab[];
+  }, [openTabs, selectedId, title, isDirtyValue, notes, previewTabId, localFileStatuses]);
 
   // --- CRUD handlers ---
 
@@ -1245,16 +1339,86 @@ export function NotesPage() {
   refreshSidebarDataRef.current = refreshSidebarData;
   loadFavoriteNotesRef.current = loadFavoriteNotes;
   loadNoteTitlesRef.current = loadNoteTitles;
+  reloadNotesRef.current = reloadNotes;
+  closeDeletedNoteTabRef.current = (noteId: string) => {
+    setOpenTabs((prev) => {
+      const filtered = prev.filter((id) => id !== noteId);
+      if (selectedIdRef.current === noteId) {
+        if (filtered.length > 0) {
+          const nextId = filtered[filtered.length - 1];
+          fetchNoteById(nextId).then((n) => { if (n) selectNote(n); }).catch(() => {});
+        } else {
+          setSelectedId(null);
+          setTitle("");
+          setContent("");
+          loadedTitleRef.current = "";
+          loadedContentRef.current = "";
+        }
+      }
+      return filtered;
+    });
+  };
 
   // --- File drag-and-drop import ---
 
-  async function handleImportFiles(files: FileList, autoSelect = false) {
+  async function handleImportFiles(files: FileList | File[], autoSelect = false) {
     const entries = parseFileList(files);
     if (entries.length === 0) {
       showError("No supported files found (.md, .txt, .markdown)");
       return;
     }
-    const targetFolderId = activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null;
+    // Show choice dialog
+    const fileNames = entries.map((e) => e.file.name);
+    setImportChoiceDialog({ files, fileNames, autoSelect });
+  }
+
+  async function handleImportPaths(paths: string[], autoSelect = false) {
+    // Detect if a single directory was dropped — capture its name for folder creation
+    let folderName: string | undefined;
+    if (paths.length === 1 && await isDirectory(paths[0])) {
+      folderName = paths[0].split("/").pop() || undefined;
+    }
+
+    const filePaths = await collectFilePaths(paths);
+    if (filePaths.length === 0) {
+      showError("No supported files found (.md, .txt, .markdown)");
+      return;
+    }
+    const fileNames = filePaths.map((p) => p.split("/").pop() || p);
+    // Create File objects from the paths so handleImportToNoteSync can read content
+    const files: File[] = [];
+    for (const fp of filePaths) {
+      try {
+        const content = await readLocalFile(fp);
+        const name = fp.split("/").pop() || "Untitled";
+        const file = new File([content], name, { type: "text/plain" });
+        // Attach the real path so handleKeepLocal can use it
+        Object.defineProperty(file, "path", { value: fp, writable: false });
+        files.push(file);
+      } catch {
+        // skip unreadable files
+      }
+    }
+    if (files.length === 0) {
+      showError("Could not read any of the dropped files");
+      return;
+    }
+    setImportChoiceDialog({ files, paths: filePaths, fileNames, autoSelect, folderName });
+  }
+
+  async function handleImportToNoteSync() {
+    if (!importChoiceDialog) return;
+    const { files, autoSelect, folderName } = importChoiceDialog;
+    setImportChoiceDialog(null);
+    const entries = parseFileList(files);
+    let targetFolderId = activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null;
+
+    // If a folder was dropped, create it and place notes inside
+    if (folderName) {
+      const folder = await createFolder(folderName, targetFolderId ?? undefined);
+      targetFolderId = folder.id;
+    }
+
     let lastCreatedNote: Note | null = null;
     const wrappedCreateNote = async (data: { title: string; content: string; folderId?: string }) => {
       const note = await createNote(data);
@@ -1279,6 +1443,104 @@ export function NotesPage() {
       showError(`Imported ${result.successCount}, failed ${result.failedCount}`);
     } else {
       setSuccessToast(`Imported ${result.successCount} note${result.successCount === 1 ? "" : "s"}`);
+      setTimeout(() => setSuccessToast(null), 3000);
+    }
+  }
+
+  async function handleKeepLocal() {
+    if (!importChoiceDialog) return;
+    const { files, paths, autoSelect, folderName } = importChoiceDialog;
+    setImportChoiceDialog(null);
+    let targetFolderId = activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null;
+
+    // If a folder was dropped, create it and place notes inside
+    if (folderName) {
+      const folder = await createFolder(folderName, targetFolderId ?? undefined);
+      targetFolderId = folder.id;
+    }
+
+    let successCount = 0;
+    let failedCount = 0;
+    let lastNote: Note | null = null;
+
+    // Build list of file paths to link — prefer paths from Tauri drag-drop
+    const filePaths: string[] = paths ?? [];
+    if (filePaths.length === 0) {
+      const entries = parseFileList(files);
+      for (const entry of entries) {
+        const fp = (entry.file as File & { path?: string }).path;
+        if (fp) filePaths.push(fp);
+      }
+    }
+
+    for (const filePath of filePaths) {
+      try {
+        const fileName = filePath.split("/").pop() || "Untitled";
+
+        // Check for duplicate — re-enqueue sync in case previous push was rejected
+        const existing = await findNoteByLocalPath(filePath);
+        if (existing) {
+          // Re-enqueue the note's folder (if any) and the note itself
+          if (existing.folderId) {
+            enqueueSyncAction("update", existing.folderId, "folder").catch(() => {});
+          }
+          enqueueSyncAction("update", existing.id, "note").catch(() => {});
+          const note = notes.find((n) => n.id === existing.id);
+          if (note) openNoteAsTab(note);
+          successCount++;
+          continue;
+        }
+
+        // Validate size
+        const fileStat = await getFileStat(filePath);
+        if (fileStat && !validateFileSize(fileStat.size)) {
+          showError(`File too large: ${fileName} (max 5MB)`);
+          failedCount++;
+          continue;
+        }
+
+        // Read file content
+        const fileContent = await readLocalFile(filePath);
+        const hash = await computeContentHash(fileContent);
+
+        // Create note
+        const titleFromName = fileName.replace(/\.(md|txt|markdown)$/i, "");
+        const note = await createNote({
+          title: titleFromName,
+          content: fileContent,
+          folderId: targetFolderId ?? undefined,
+          isLocalFile: true,
+        });
+
+        // Link to local file
+        await linkNoteToLocalFile(note.id, filePath, hash);
+        lastProcessedHashRef.current.set(note.id, hash);
+
+        // Start watching
+        await startWatching(note.id, filePath, handleExternalChange, handleFileDeleted);
+        setLocalFileStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(note.id, "synced");
+          return next;
+        });
+
+        lastNote = note;
+        successCount++;
+      } catch (err) {
+        console.error("Failed to link local file:", err);
+        failedCount++;
+      }
+    }
+
+    await refreshSidebarData();
+    if (autoSelect && lastNote) {
+      openNoteAsTab(lastNote);
+    }
+    notifyLocalChange();
+    if (failedCount > 0) {
+      showError(`Linked ${successCount}, failed ${failedCount}`);
+    } else if (successCount > 0) {
+      setSuccessToast(`Linked ${successCount} file${successCount === 1 ? "" : "s"}`);
       setTimeout(() => setSuccessToast(null), 3000);
     }
   }
@@ -1328,23 +1590,267 @@ export function NotesPage() {
     return undefined;
   }
 
+  // Drag-over visual feedback — Tauri handles the actual drop via onDragDropEvent
   function handleDragOver(e: React.DragEvent) {
-    if (!e.dataTransfer.types.includes("Files")) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setIsDragOver(true);
   }
 
   function handleDragLeave(e: React.DragEvent) {
-    if (mainRef.current?.contains(e.relatedTarget as Node)) return;
-    setIsDragOver(false);
+    e.preventDefault();
   }
 
-  function handleFileDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setIsDragOver(false);
-    if (e.dataTransfer.files.length > 0) {
-      handleImportFiles(e.dataTransfer.files, true);
+  // --- Local file handlers ---
+
+  async function initLocalFileWatchers() {
+    try {
+      const localNotes = await fetchLocalFileNotes();
+      if (localNotes.length === 0) return;
+
+      const results = await reestablishWatchers(
+        localNotes.map((n) => ({ id: n.id, localPath: n.localPath, localFileHash: n.localFileHash })),
+        handleExternalChange,
+        handleFileDeleted,
+      );
+
+      // Seed hash cache so watcher events from unchanged files are ignored
+      for (const n of localNotes) {
+        if (n.localFileHash) lastProcessedHashRef.current.set(n.id, n.localFileHash);
+      }
+
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        for (const r of results) {
+          next.set(r.noteId, r.status);
+        }
+        return next;
+      });
+
+      // Start poll backup
+      startPollTimer(
+        () => {
+          return localNotes
+            .filter((n) => localFileStatuses.get(n.id) !== "missing")
+            .map((n) => ({ noteId: n.id, path: n.localPath, hash: n.localFileHash }));
+        },
+        handleExternalChange,
+        handleFileDeleted,
+      );
+    } catch (err) {
+      console.error("Failed to init local file watchers:", err);
+    }
+  }
+
+  function handleExternalChange(noteId: string, newContent: string, newHash: string) {
+    // Dedup: ignore if hash matches the last processed hash for this note.
+    // This filters out our own writes (suppression window expired) and
+    // duplicate watcher events (macOS FSEvents fires multiple times).
+    const lastHash = lastProcessedHashRef.current.get(noteId);
+    if (lastHash && lastHash === newHash) return;
+    lastProcessedHashRef.current.set(noteId, newHash);
+
+    const currentSelectedId = selectedIdRef.current;
+    const bufferDirty = titleRef.current !== loadedTitleRef.current || contentRef.current !== loadedContentRef.current;
+
+    if (noteId === currentSelectedId && bufferDirty) {
+      // Dirty buffer — show dialog
+      setExternalChangeDialog({
+        noteId,
+        noteTitle: titleRef.current || "Untitled",
+        content: newContent,
+        hash: newHash,
+      });
+    } else if (noteId === currentSelectedId) {
+      // Clean buffer — silent reload
+      setContent(newContent);
+      loadedContentRef.current = newContent;
+      updateNote(noteId, { content: newContent }).then(() => reloadNotesRef.current()).catch(() => {});
+      updateLocalFileHash(noteId, newHash).catch(() => {});
+      captureVersion(noteId, titleRef.current, newContent, 0).catch(() => {});
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(noteId, "synced");
+        return next;
+      });
+    } else {
+      // Non-active tab — update in background and refresh notes list
+      updateNote(noteId, { content: newContent }).then(() => reloadNotesRef.current()).catch(() => {});
+      updateLocalFileHash(noteId, newHash).catch(() => {});
+      fetchNoteById(noteId).then((note) => {
+        if (note) captureVersion(noteId, note.title, newContent, 0).catch(() => {});
+      }).catch(() => {});
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(noteId, "synced");
+        return next;
+      });
+      setSuccessToast("File updated externally");
+      setTimeout(() => setSuccessToast(null), 3000);
+    }
+  }
+
+  function handleFileDeleted(noteId: string) {
+    setLocalFileStatuses((prev) => {
+      const next = new Map(prev);
+      next.set(noteId, "missing");
+      return next;
+    });
+    stopWatching(noteId);
+  }
+
+  async function handleSaveAsLocalFile(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    try {
+      const defaultName = `${note.title || "untitled"}.md`;
+      const savePath = await pickSaveLocation(defaultName);
+      if (!savePath) return;
+
+      const hash = await writeLocalFile(savePath, note.content);
+      await linkNoteToLocalFile(noteId, savePath, hash);
+      await updateNote(noteId, { isLocalFile: true });
+      await startWatching(noteId, savePath, handleExternalChange, handleFileDeleted);
+
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(noteId, "synced");
+        return next;
+      });
+      setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, isLocalFile: true } : n));
+      notifyLocalChange();
+      setSuccessToast("Linked to local file");
+      setTimeout(() => setSuccessToast(null), 3000);
+    } catch (err) {
+      console.error("Failed to save as local file:", err);
+      showError("Failed to save as local file");
+    }
+  }
+
+  async function handleUnlinkLocalFile(noteId: string) {
+    try {
+      await stopWatching(noteId);
+      await unlinkLocalFile(noteId);
+      await updateNote(noteId, { isLocalFile: false });
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.delete(noteId);
+        return next;
+      });
+      setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, isLocalFile: false } : n));
+      notifyLocalChange();
+      setSuccessToast("Unlinked from local file");
+      setTimeout(() => setSuccessToast(null), 3000);
+    } catch (err) {
+      console.error("Failed to unlink local file:", err);
+      showError("Failed to unlink local file");
+    }
+  }
+
+  async function handleSaveToFile(noteId: string) {
+    try {
+      const localPath = await getNoteLocalPath(noteId);
+      if (!localPath) return;
+      const note = notes.find((n) => n.id === noteId);
+      if (!note) return;
+      const hash = await writeLocalFile(localPath, note.content);
+      await updateLocalFileHash(noteId, hash);
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(noteId, "synced");
+        return next;
+      });
+      setSuccessToast("Saved to local file");
+      setTimeout(() => setSuccessToast(null), 3000);
+    } catch (err) {
+      console.error("Failed to save to file:", err);
+      showError("Failed to save to file");
+    }
+  }
+
+  async function handleUseLocalVersion(noteId: string) {
+    try {
+      const localPath = await getNoteLocalPath(noteId);
+      if (!localPath) return;
+      const fileContent = await readLocalFile(localPath);
+      const hash = await computeContentHash(fileContent);
+      const updated = await updateNote(noteId, { content: fileContent });
+      await updateLocalFileHash(noteId, hash);
+      setNotes((prev) => prev.map((n) => n.id === updated.id ? updated : n));
+      if (noteId === selectedId) {
+        setContent(fileContent);
+        loadedContentRef.current = fileContent;
+      }
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(noteId, "synced");
+        return next;
+      });
+      notifyLocalChange();
+    } catch (err) {
+      console.error("Failed to use local version:", err);
+      showError("Failed to use local version");
+    }
+  }
+
+  async function handleViewDiff(noteId: string) {
+    try {
+      const localPath = await getNoteLocalPath(noteId);
+      if (!localPath) return;
+      // Fetch fresh from DB to avoid stale notes array
+      const freshNote = await fetchNoteById(noteId);
+      if (!freshNote) return;
+      const localContent = await readLocalFile(localPath);
+      // If this is the selected note, use the editor content (may have unsaved edits)
+      const cloudContent = noteId === selectedIdRef.current ? contentRef.current : freshNote.content;
+      setLocalFileDiffView({
+        noteId,
+        noteTitle: freshNote.title || "Untitled",
+        cloudContent,
+        localContent,
+      });
+    } catch (err) {
+      console.error("Failed to view diff:", err);
+      showError("Failed to read local file for diff");
+    }
+  }
+
+  async function handleLocalFileDelete(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (!note) return;
+    if (note.isLocalFile) {
+      setLocalFileDeleteDialog({ noteId, noteTitle: note.title || "Untitled" });
+    } else {
+      handleDeleteNote(noteId);
+    }
+  }
+
+  async function handleDeleteFromNoteSync(noteId: string) {
+    setLocalFileDeleteDialog(null);
+    await stopWatching(noteId);
+    setLocalFileStatuses((prev) => {
+      const next = new Map(prev);
+      next.delete(noteId);
+      return next;
+    });
+    await handleDeleteNote(noteId);
+  }
+
+  async function handleDeleteCompletely(noteId: string) {
+    setLocalFileDeleteDialog(null);
+    try {
+      const localPath = await getNoteLocalPath(noteId);
+      await stopWatching(noteId);
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.delete(noteId);
+        return next;
+      });
+      await handleDeleteNote(noteId);
+      if (localPath) {
+        await deleteLocalFile(localPath);
+      }
+    } catch (err) {
+      console.error("Failed to delete file:", err);
+      showError("Note deleted but failed to remove local file");
     }
   }
 
@@ -1356,6 +1862,35 @@ export function NotesPage() {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
   }, []);
+
+  // Tauri native drag-drop — provides full filesystem paths
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    getCurrentWebview().onDragDropEvent((event) => {
+      if (cancelled) return;
+      if (event.payload.type === "enter") {
+        setIsDragOver(true);
+      } else if (event.payload.type === "leave") {
+        setIsDragOver(false);
+      } else if (event.payload.type === "drop") {
+        setIsDragOver(false);
+        const paths = event.payload.paths;
+        if (paths.length > 0) {
+          handleImportPaths(paths, true);
+        }
+      }
+    }).then((fn) => {
+      if (cancelled) { fn(); return; }
+      unlisten = fn;
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Filter notes by active tags ---
 
@@ -1787,11 +2322,17 @@ export function NotesPage() {
                     selectedId={selectedId}
                     onSelect={handleNoteSelect}
                     onDoubleClick={openNoteAsTab}
-                    onDeleteNote={handleDeleteNote}
+                    onDeleteNote={handleLocalFileDelete}
                     onExportNote={handleExportNote}
                     onToggleFavorite={handleToggleNoteFavorite}
                     searchResults={searchResults}
                     sortByManual={sortBy === "sortOrder"}
+                    localFileStatuses={localFileStatuses}
+                    onUnlinkLocalFile={handleUnlinkLocalFile}
+                    onSaveAsLocalFile={handleSaveAsLocalFile}
+                    onSaveToFile={handleSaveToFile}
+                    onUseLocalVersion={handleUseLocalVersion}
+                    onViewDiff={handleViewDiff}
                   />
                 )
               ) : filteredNotes.length === 0 ? (
@@ -1804,10 +2345,16 @@ export function NotesPage() {
                   selectedId={selectedId}
                   onSelect={handleNoteSelect}
                   onDoubleClick={openNoteAsTab}
-                  onDeleteNote={handleDeleteNote}
+                  onDeleteNote={handleLocalFileDelete}
                   onExportNote={handleExportNote}
                   onToggleFavorite={handleToggleNoteFavorite}
                   sortByManual={sortBy === "sortOrder"}
+                  localFileStatuses={localFileStatuses}
+                  onUnlinkLocalFile={handleUnlinkLocalFile}
+                  onSaveAsLocalFile={handleSaveAsLocalFile}
+                  onSaveToFile={handleSaveToFile}
+                  onUseLocalVersion={handleUseLocalVersion}
+                  onViewDiff={handleViewDiff}
                 />
               )}
             </nav>
@@ -1975,7 +2522,6 @@ export function NotesPage() {
         className="flex-1 flex min-w-0 relative"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={handleFileDrop}
       >
       {isDragOver && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg pointer-events-none">
@@ -2212,7 +2758,22 @@ export function NotesPage() {
               </div>
             )}
 
-            {selectedVersion ? (
+            {localFileDiffView ? (
+              <LocalFileDiffView
+                noteTitle={localFileDiffView.noteTitle}
+                cloudContent={localFileDiffView.cloudContent}
+                localContent={localFileDiffView.localContent}
+                onSaveToFile={() => {
+                  handleSaveToFile(localFileDiffView.noteId);
+                  setLocalFileDiffView(null);
+                }}
+                onUseLocal={() => {
+                  handleUseLocalVersion(localFileDiffView.noteId);
+                  setLocalFileDiffView(null);
+                }}
+                onClose={() => setLocalFileDiffView(null)}
+              />
+            ) : selectedVersion ? (
               <DiffView
                 version={selectedVersion}
                 currentTitle={title}
@@ -2404,6 +2965,67 @@ export function NotesPage() {
             />
           </div>
         </div>
+      )}
+
+      {/* Import choice dialog */}
+      {importChoiceDialog && (
+        <ImportChoiceDialog
+          fileNames={importChoiceDialog.fileNames}
+          onImportToNoteSync={handleImportToNoteSync}
+          onKeepLocal={handleKeepLocal}
+          onCancel={() => setImportChoiceDialog(null)}
+        />
+      )}
+
+      {/* Local file delete dialog */}
+      {localFileDeleteDialog && (
+        <LocalFileDeleteDialog
+          noteTitle={localFileDeleteDialog.noteTitle}
+          onDeleteFromNoteSync={() => handleDeleteFromNoteSync(localFileDeleteDialog.noteId)}
+          onDeleteCompletely={() => handleDeleteCompletely(localFileDeleteDialog.noteId)}
+          onCancel={() => setLocalFileDeleteDialog(null)}
+        />
+      )}
+
+      {/* External change dialog */}
+      {externalChangeDialog && (
+        <ExternalChangeDialog
+          noteTitle={externalChangeDialog.noteTitle}
+          onReload={() => {
+            const { noteId, noteTitle, content: newContent, hash } = externalChangeDialog;
+            setExternalChangeDialog(null);
+            if (noteId === selectedId) {
+              setContent(newContent);
+              loadedContentRef.current = newContent;
+            }
+            updateNote(noteId, { content: newContent }).catch(() => {});
+            updateLocalFileHash(noteId, hash).catch(() => {});
+            captureVersion(noteId, noteTitle, newContent, 0).catch(() => {});
+            setLocalFileStatuses((prev) => {
+              const next = new Map(prev);
+              next.set(noteId, "synced");
+              return next;
+            });
+          }}
+          onKeepMine={() => {
+            const { noteId } = externalChangeDialog;
+            setExternalChangeDialog(null);
+            // Write NoteSync content back to file
+            handleSaveToFile(noteId);
+          }}
+          onViewDiff={() => {
+            const { noteId, content: localContent } = externalChangeDialog;
+            setExternalChangeDialog(null);
+            const note = notes.find((n) => n.id === noteId);
+            setLocalFileDiffView({
+              noteId,
+              noteTitle: note?.title || "Untitled",
+              cloudContent: note?.content || "",
+              localContent,
+            });
+          }}
+          onCancel={() => setExternalChangeDialog(null)}
+        />
       )}
     </div>
   );

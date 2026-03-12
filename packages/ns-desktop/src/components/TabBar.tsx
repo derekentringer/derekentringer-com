@@ -11,6 +11,8 @@ export interface Tab {
   title: string;
   isDirty: boolean;
   isPreview: boolean;
+  isLocalFile?: boolean;
+  localFileStatus?: string;
 }
 
 interface TabBarProps {
@@ -72,6 +74,7 @@ function SortableTab({ tab, isActive, onSelectTab, onCloseTab, onPinTab }: Sorta
     >
       <span className={`truncate flex-1 text-left ${tab.isPreview ? "italic" : ""}`}>
         {tab.isDirty && <span className="text-primary mr-1">●</span>}
+        {tab.localFileStatus === "missing" && <span className="text-red-500 mr-1" title="Local file missing">▲</span>}
         {tab.title || "Untitled"}
       </span>
       <span
