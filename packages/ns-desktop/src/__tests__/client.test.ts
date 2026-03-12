@@ -20,9 +20,17 @@ const {
   setOnAuthFailure,
   apiFetch,
   refreshAccessToken,
+  tokenManager,
 } = await import("../api/client.ts");
 
 // ---------- Helpers ----------
+
+/** Build a JWT with a given `exp` (epoch seconds) for proactive-refresh tests */
+function makeJwt(exp: number): string {
+  const header = btoa(JSON.stringify({ alg: "HS256" }));
+  const payload = btoa(JSON.stringify({ sub: "u1", exp }));
+  return `${header}.${payload}.sig`;
+}
 
 const originalFetch = globalThis.fetch;
 let mockFetch: ReturnType<typeof vi.fn>;
@@ -42,6 +50,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  setAccessToken(null); // stops proactive timer
 });
 
 // ---------- doRefresh tests (via refreshAccessToken) ----------
@@ -107,13 +116,32 @@ describe("doRefresh", () => {
     expect(mockOnAuthFailure).not.toHaveBeenCalled();
   });
 
-  it("no stored refresh token calls onAuthFailure", async () => {
+  it("no stored refresh token (both reads null) calls onAuthFailure", async () => {
     mockGetSecureItem.mockResolvedValue(null);
 
     const result = await refreshAccessToken();
 
     expect(result).toBeNull();
     expect(mockOnAuthFailure).toHaveBeenCalledOnce();
+    // Two reads: initial + retry
+    expect(mockGetSecureItem).toHaveBeenCalledTimes(2);
+  });
+
+  it("transient Stronghold failure recovers on retry", async () => {
+    // First read returns null (vault glitch), retry succeeds
+    mockGetSecureItem
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce("stored-refresh-token");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ accessToken: "new-access", refreshToken: "new-refresh" }),
+    });
+
+    const result = await refreshAccessToken();
+
+    expect(result).toBe("new-access");
+    expect(mockOnAuthFailure).not.toHaveBeenCalled();
+    expect(mockGetSecureItem).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -181,5 +209,72 @@ describe("apiFetch", () => {
     expect(response.status).toBe(401);
     // Should NOT have called onAuthFailure (network error, not auth failure)
     expect(mockOnAuthFailure).not.toHaveBeenCalled();
+  });
+});
+
+// ---------- Proactive refresh tests ----------
+
+describe("proactive refresh", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refreshes when token is about to expire", async () => {
+    // Token expires in 90 seconds (within 2-min threshold)
+    const exp = Math.floor((Date.now() + 90_000) / 1000);
+    mockGetSecureItem.mockResolvedValue("stored-refresh-token");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ accessToken: "refreshed", refreshToken: "new-refresh" }),
+    });
+
+    setAccessToken(makeJwt(exp));
+
+    // Advance past the 60s check interval
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(getAccessToken()).toBe("refreshed");
+  });
+
+  it("does NOT refresh when token has plenty of time left", async () => {
+    // Token expires in 10 minutes (well above 2-min threshold)
+    const exp = Math.floor((Date.now() + 10 * 60_000) / 1000);
+    setAccessToken(makeJwt(exp));
+
+    // Advance past one check interval
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("stops timer when token is cleared", async () => {
+    const exp = Math.floor((Date.now() + 90_000) / 1000);
+    setAccessToken(makeJwt(exp));
+    // Clear — should stop the timer
+    setAccessToken(null);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    // No refresh attempts after clearing
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------- TokenManager instance ----------
+
+describe("tokenManager instance", () => {
+  it("exposes getMsUntilExpiry", () => {
+    const exp = Math.floor((Date.now() + 600_000) / 1000);
+    setAccessToken(makeJwt(exp));
+
+    const ms = tokenManager.getMsUntilExpiry();
+    expect(ms).not.toBeNull();
+    expect(ms!).toBeGreaterThan(598_000);
+    expect(ms!).toBeLessThanOrEqual(600_000);
   });
 });

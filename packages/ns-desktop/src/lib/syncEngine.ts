@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { apiFetch, getAccessToken, refreshAccessToken } from "../api/client.ts";
+import { apiFetch, getAccessToken, refreshAccessToken, tokenManager } from "../api/client.ts";
 import {
   readSyncQueue,
   removeSyncQueueEntries,
@@ -153,6 +153,8 @@ function disconnectSse() {
   }
 }
 
+const MIN_SSE_RECONNECT_MS = 30_000;
+
 function scheduleSseReconnect() {
   if (sseReconnectTimer) return;
   sseReconnectTimer = setTimeout(() => {
@@ -160,6 +162,18 @@ function scheduleSseReconnect() {
     if (navigator.onLine) connectSse();
   }, sseBackoffMs);
   sseBackoffMs = Math.min(sseBackoffMs * 2, 30_000);
+}
+
+/** Compute dynamic reconnect delay based on token expiry, with jitter */
+function computeSseRefreshDelay(): number {
+  const msUntilExpiry = tokenManager.getMsUntilExpiry();
+  // Reconnect 2 minutes before expiry, minimum 30 seconds
+  const baseMs = msUntilExpiry
+    ? Math.max(msUntilExpiry - 120_000, MIN_SSE_RECONNECT_MS)
+    : 13 * 60 * 1000;
+  // Add 10% jitter to avoid thundering herd
+  const jitter = Math.floor(Math.random() * baseMs * 0.1);
+  return baseMs + jitter;
 }
 
 async function connectSse(): Promise<void> {
@@ -173,19 +187,15 @@ async function connectSse(): Promise<void> {
   }
 
   // Check if token is about to expire (within 60s) and refresh proactively
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    if (payload.exp && payload.exp * 1000 - Date.now() < 60_000) {
-      const newToken = await refreshAccessToken();
-      if (newToken) {
-        token = newToken;
-      } else {
-        scheduleSseReconnect();
-        return;
-      }
+  const msUntilExpiry = tokenManager.getMsUntilExpiry();
+  if (msUntilExpiry !== null && msUntilExpiry < 60_000) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      token = newToken;
+    } else {
+      scheduleSseReconnect();
+      return;
     }
-  } catch {
-    // If token parsing fails, proceed with existing token
   }
 
   sseAbortController = new AbortController();
@@ -202,6 +212,21 @@ async function connectSse(): Promise<void> {
     );
 
     if (!response.ok || !response.body) {
+      // Distinguish auth errors from transient failures
+      if (response.status === 403) {
+        // Forbidden — stop retrying (permissions revoked)
+        return;
+      }
+      if (response.status === 401) {
+        // Try refresh and retry once
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          sseBackoffMs = 1000;
+          connectSse();
+          return;
+        }
+        return;
+      }
       scheduleSseReconnect();
       return;
     }
@@ -209,11 +234,11 @@ async function connectSse(): Promise<void> {
     // Reset backoff on successful connection
     sseBackoffMs = 1000;
 
-    // Schedule proactive reconnect before JWT expiry (13 min)
+    // Schedule proactive reconnect before JWT expiry (dynamic timer + jitter)
     sseRefreshTimer = setTimeout(() => {
       localController.abort();
       connectSse();
-    }, 13 * 60 * 1000);
+    }, computeSseRefreshDelay());
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

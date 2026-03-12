@@ -81,6 +81,10 @@
 - [ ] [16 — PWA Support](feature_planning/16-pwa-support.md)
 - [x] [17 — React Native Mobile App](feature_planning/17-react-native-mobile-app.md)
 
+### Auth Improvements
+
+- [x] [16 — Centralized TokenManager](features/16-centralized-token-manager.md) — Adopted shared `TokenManager` from `@derekentringer/shared/token` with web token adapter (cookie-based refresh), proactive token refresh (60s interval, 2min threshold), fixed network errors destroying sessions, added X-Requested-With CSRF header on refresh, typed `AuthFailureReason` propagation to AuthContext with `CustomEvent("auth:logout")`, dev-mode debug logger
+
 ## Status Key
 
 - `[ ]` Not Started

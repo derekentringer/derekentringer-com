@@ -6,6 +6,11 @@ import type { Note } from "@derekentringer/shared/ns";
 // Mock the real API
 vi.mock("../api/client.ts", () => ({
   apiFetch: vi.fn(),
+  tokenManager: {
+    setOnAuthFailure: vi.fn(),
+    getAccessToken: vi.fn().mockReturnValue(null),
+    getMsUntilExpiry: vi.fn().mockReturnValue(null),
+  },
 }));
 
 const mockApi = {

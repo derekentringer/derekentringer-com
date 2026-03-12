@@ -28,6 +28,10 @@
     "./crypto": {
       "types": "./src/crypto/index.ts",
       "default": "./dist/crypto/index.js"
+    },
+    "./token": {
+      "types": "./src/token/index.ts",
+      "default": "./dist/token/index.js"
     }
   },
   "scripts": {

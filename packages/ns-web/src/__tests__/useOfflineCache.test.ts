@@ -7,6 +7,11 @@ import type { Note } from "@derekentringer/shared/ns";
 // Mock api/notes.ts
 vi.mock("../api/client.ts", () => ({
   apiFetch: vi.fn(),
+  tokenManager: {
+    setOnAuthFailure: vi.fn(),
+    getAccessToken: vi.fn().mockReturnValue(null),
+    getMsUntilExpiry: vi.fn().mockReturnValue(null),
+  },
 }));
 
 const mockCreateNote = vi.fn();

@@ -27,6 +27,11 @@ vi.mock("../api/client.ts", () => ({
   setAccessToken: vi.fn(),
   getAccessToken: vi.fn(),
   setOnAuthFailure: vi.fn(),
+  tokenManager: {
+    setOnAuthFailure: vi.fn(),
+    getAccessToken: vi.fn().mockReturnValue(null),
+    getMsUntilExpiry: vi.fn().mockReturnValue(null),
+  },
 }));
 
 const mockNote = {
