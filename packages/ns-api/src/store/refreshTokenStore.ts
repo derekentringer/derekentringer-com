@@ -66,6 +66,22 @@ export async function revokeAllRefreshTokens(
   return result.count;
 }
 
+export async function deleteStaleRevokedTokens(
+  userId: string,
+  maxAgeMs: number,
+): Promise<number> {
+  const prisma = getPrisma();
+  const cutoff = new Date(Date.now() - maxAgeMs);
+  const result = await prisma.refreshToken.deleteMany({
+    where: {
+      userId,
+      revoked: true,
+      createdAt: { lt: cutoff },
+    },
+  });
+  return result.count;
+}
+
 export async function cleanupExpiredTokens(): Promise<number> {
   const prisma = getPrisma();
   const result = await prisma.refreshToken.deleteMany({

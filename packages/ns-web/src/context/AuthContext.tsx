@@ -14,7 +14,8 @@ import {
   logout as apiLogout,
   getMe,
 } from "../api/auth.ts";
-import { setOnAuthFailure } from "../api/client.ts";
+import { tokenManager } from "../api/client.ts";
+import type { AuthFailureReason } from "@derekentringer/shared/token";
 
 interface AuthState {
   user: User | null;
@@ -32,13 +33,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const clearAuth = useCallback(() => {
+  const clearAuth = useCallback((reason?: AuthFailureReason) => {
     setUser(null);
-    window.dispatchEvent(new Event("auth:logout"));
+    window.dispatchEvent(
+      new CustomEvent("auth:logout", { detail: { reason } }),
+    );
   }, []);
 
   useEffect(() => {
-    setOnAuthFailure(clearAuth);
+    tokenManager.setOnAuthFailure((reason) => clearAuth(reason));
 
     refreshSession()
       .then(async (result) => {

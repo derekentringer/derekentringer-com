@@ -53,14 +53,9 @@ export async function setSecureItem(key: string, value: string): Promise<void> {
     return;
   }
 
-  try {
-    const { store, stronghold } = await getStore();
-    await store.insert(key, Array.from(new TextEncoder().encode(value)));
-    await stronghold.save();
-  } catch {
-    // Fall back to localStorage if Stronghold fails
-    localStorage.setItem(key, value);
-  }
+  const { store, stronghold } = await getStore();
+  await store.insert(key, Array.from(new TextEncoder().encode(value)));
+  await stronghold.save();
 }
 
 export async function removeSecureItem(key: string): Promise<void> {
@@ -69,11 +64,7 @@ export async function removeSecureItem(key: string): Promise<void> {
     return;
   }
 
-  try {
-    const { store, stronghold } = await getStore();
-    await store.remove(key);
-    await stronghold.save();
-  } catch {
-    localStorage.removeItem(key);
-  }
+  const { store, stronghold } = await getStore();
+  await store.remove(key);
+  await stronghold.save();
 }

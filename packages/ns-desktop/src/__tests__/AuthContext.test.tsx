@@ -9,11 +9,15 @@ vi.mock("../api/auth.ts", () => ({
   getMe: vi.fn(),
 }));
 
+const mockSetOnAuthFailure = vi.fn();
 vi.mock("../api/client.ts", () => ({
   setOnAuthFailure: vi.fn(),
   setAccessToken: vi.fn(),
   setRefreshToken: vi.fn(),
   clearRefreshToken: vi.fn(),
+  tokenManager: {
+    setOnAuthFailure: (...args: unknown[]) => mockSetOnAuthFailure(...args),
+  },
 }));
 
 import {
@@ -23,7 +27,6 @@ import {
   logout as apiLogout,
   getMe,
 } from "../api/auth.ts";
-import { setOnAuthFailure } from "../api/client.ts";
 
 function TestConsumer() {
   const auth = useAuth();
@@ -174,7 +177,7 @@ describe("AuthContext", () => {
     );
 
     await waitFor(() => {
-      expect(setOnAuthFailure).toHaveBeenCalled();
+      expect(mockSetOnAuthFailure).toHaveBeenCalled();
     });
   });
 

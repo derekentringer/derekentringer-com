@@ -4,6 +4,11 @@ const mockApiFetch = vi.fn();
 
 vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
+  tokenManager: {
+    setOnAuthFailure: vi.fn(),
+    getAccessToken: vi.fn().mockReturnValue(null),
+    getMsUntilExpiry: vi.fn().mockReturnValue(null),
+  },
 }));
 
 import { fetchCompletion, askQuestion, summarizeNote, suggestTags, rewriteText, enableEmbeddings, disableEmbeddings, getEmbeddingStatus, transcribeAudio } from "../api/ai.ts";

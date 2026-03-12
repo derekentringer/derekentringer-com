@@ -6,9 +6,15 @@ vi.mock("uuid", () => ({ v4: vi.fn().mockReturnValue("mock-device-id") }));
 
 const mockApiFetch = vi.fn();
 const mockGetAccessToken = vi.fn().mockReturnValue("mock-token");
+const mockRefreshAccessToken = vi.fn().mockResolvedValue("mock-token");
+const mockGetMsUntilExpiry = vi.fn().mockReturnValue(10 * 60 * 1000);
 vi.mock("../api/client.ts", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
   getAccessToken: () => mockGetAccessToken(),
+  refreshAccessToken: () => mockRefreshAccessToken(),
+  tokenManager: {
+    getMsUntilExpiry: () => mockGetMsUntilExpiry(),
+  },
 }));
 
 const mockReadSyncQueue = vi.fn().mockResolvedValue([]);

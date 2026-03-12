@@ -113,6 +113,8 @@
 
 - [x] [13 — Sync Hardening](features/13-sync-hardening.md) — SSE reconnection storm fix (refs pattern for stable callbacks, connect-once-on-mount), pre-connect JWT expiry check with proactive token refresh, notes/favorites sort persistence to localStorage with validation, case-insensitive title sort via raw SQL `ORDER BY LOWER("title")` with explicit column list, atomic sync push with `prisma.$transaction()` and LWW skip tracking, pull cursor accuracy using `MAX(updatedAt)` from returned data, SSE hub dead stream immediate cleanup and per-user connection limit (max 5), `updatedAt` indexes on Note and Folder, stale sync cursor cleanup, search SQL column alignment (`favoriteSortOrder`, `folderId`)
 
+- [x] [15 — Centralized TokenManager](features/15-centralized-token-manager.md) — Shared `TokenManager` in `@derekentringer/shared/token` with factory function + platform-specific adapter pattern, proactive token refresh (60s interval, 2min threshold), JWT expiry parsing via shared `parseJwt.ts`, refresh promise deduplication, typed `AuthFailureReason` propagation to AuthContext, dynamic SSE reconnect timer from `tokenManager.getMsUntilExpiry()`, 10% jitter on reconnect delay, 401/403 distinction in SSE (refresh+retry vs stop), revoked token DB cleanup in ns-api refresh endpoint, `CustomEvent("auth:logout")` with reason detail, 37 new tests (shared + SSE)
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

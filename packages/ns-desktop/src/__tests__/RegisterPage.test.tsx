@@ -17,6 +17,11 @@ vi.mock("../api/client.ts", () => ({
   setAccessToken: vi.fn(),
   setRefreshToken: vi.fn(),
   clearRefreshToken: vi.fn(),
+  tokenManager: {
+    setOnAuthFailure: vi.fn(),
+    getAccessToken: vi.fn().mockReturnValue(null),
+    getMsUntilExpiry: vi.fn().mockReturnValue(null),
+  },
 }));
 
 import { register as apiRegister } from "../api/auth.ts";

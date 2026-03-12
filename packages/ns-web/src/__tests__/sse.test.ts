@@ -2,8 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the client module
 const mockGetAccessToken = vi.fn();
+const mockRefreshAccessToken = vi.fn();
+const mockGetMsUntilExpiry = vi.fn();
+
 vi.mock("../api/client.ts", () => ({
   getAccessToken: () => mockGetAccessToken(),
+  refreshAccessToken: () => mockRefreshAccessToken(),
+  tokenManager: {
+    getMsUntilExpiry: () => mockGetMsUntilExpiry(),
+  },
 }));
 
 import { connectSseStream } from "../api/sse.ts";
@@ -36,6 +43,8 @@ describe("SSE client (connectSseStream)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockGetAccessToken.mockReturnValue("test-token");
+    mockRefreshAccessToken.mockResolvedValue("refreshed-token");
+    mockGetMsUntilExpiry.mockReturnValue(10 * 60 * 1000); // 10 min by default
     originalFetch = globalThis.fetch;
     mockFetch = vi.fn();
     globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch;
@@ -104,7 +113,7 @@ describe("SSE client (connectSseStream)", () => {
   });
 
   it("calls onError and schedules reconnect on fetch failure", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, body: null });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500, body: null });
     // Second attempt succeeds
     const stream = createMockStream(["event: connected\ndata: {}\n\n"]);
     mockFetch.mockResolvedValueOnce({ ok: true, body: stream });
@@ -129,8 +138,8 @@ describe("SSE client (connectSseStream)", () => {
   it("uses exponential backoff on reconnect", async () => {
     // Fail twice, then succeed
     mockFetch
-      .mockResolvedValueOnce({ ok: false, body: null })
-      .mockResolvedValueOnce({ ok: false, body: null })
+      .mockResolvedValueOnce({ ok: false, status: 500, body: null })
+      .mockResolvedValueOnce({ ok: false, status: 500, body: null })
       .mockResolvedValueOnce({
         ok: true,
         body: createMockStream(["event: connected\ndata: {}\n\n"]),
@@ -154,7 +163,7 @@ describe("SSE client (connectSseStream)", () => {
   });
 
   it("does not reconnect after disconnect()", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, body: null });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500, body: null });
 
     const conn = connectSseStream(vi.fn());
 
@@ -218,7 +227,12 @@ describe("SSE client (connectSseStream)", () => {
     conn.disconnect();
   });
 
-  it("proactively reconnects after 13 minutes", async () => {
+  it("proactively reconnects based on dynamic token expiry timer", async () => {
+    // Token expires in 10 minutes → reconnect at ~8 min (10min - 2min threshold)
+    mockGetMsUntilExpiry.mockReturnValue(10 * 60 * 1000);
+    // Mock Math.random to return 0 for deterministic jitter
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+
     // Keep the stream open by not closing it immediately
     const resolveHolder: { fn: (() => void) | null } = { fn: null };
     const hangingStream = new ReadableStream<Uint8Array>({
@@ -243,17 +257,15 @@ describe("SSE client (connectSseStream)", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
-    // Advance to 13 minutes
-    await vi.advanceTimersByTimeAsync(13 * 60 * 1000);
-
-    // Allow the reconnect to process
+    // With 0 jitter: delay = max(10min - 2min, 30s) = 8 min = 480_000ms
+    await vi.advanceTimersByTimeAsync(480_000);
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
 
     conn.disconnect();
-    // Release the hanging read
     resolveHolder.fn?.();
+    randomSpy.mockRestore();
   });
 
   it("cleans up visibility listener on disconnect", async () => {
@@ -285,7 +297,7 @@ describe("SSE client (connectSseStream)", () => {
   });
 
   it("does not call onConnect on fetch failure", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, body: null });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500, body: null });
 
     const onConnect = vi.fn();
     const conn = connectSseStream(vi.fn(), vi.fn(), onConnect);
@@ -295,5 +307,82 @@ describe("SSE client (connectSseStream)", () => {
     expect(onConnect).not.toHaveBeenCalled();
 
     conn.disconnect();
+  });
+
+  it("stops retrying on 403 (forbidden)", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 403, body: null });
+
+    const onError = vi.fn();
+    const conn = connectSseStream(vi.fn(), onError);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Advance well past any reconnect timer — should NOT retry
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    conn.disconnect();
+  });
+
+  it("on 401, attempts refresh and retries", async () => {
+    mockRefreshAccessToken.mockResolvedValue("new-token");
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 401, body: null })
+      .mockResolvedValueOnce({
+        ok: true,
+        body: createMockStream(["event: connected\ndata: {}\n\n"]),
+      });
+
+    const conn = connectSseStream(vi.fn());
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Should have refreshed and retried
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    conn.disconnect();
+  });
+
+  it("adds jitter to reconnect timer", async () => {
+    mockGetMsUntilExpiry.mockReturnValue(10 * 60 * 1000); // 10 min
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.5);
+
+    const hangingStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("event: connected\ndata: {}\n\n"));
+      },
+      pull() {
+        return new Promise<void>(() => {});
+      },
+    });
+
+    mockFetch.mockResolvedValueOnce({ ok: true, body: hangingStream });
+
+    const conn = connectSseStream(vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+
+    // base = 8min = 480_000, jitter = floor(0.5 * 480_000 * 0.1) = floor(24_000) = 24_000
+    // total = 504_000
+
+    // At 480_000 (no jitter), should NOT have reconnected yet
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: createMockStream(["event: connected\ndata: {}\n\n"]),
+    });
+
+    await vi.advanceTimersByTimeAsync(480_000);
+    expect(mockFetch).toHaveBeenCalledTimes(1); // still only initial
+
+    // At 504_000 total, should reconnect
+    await vi.advanceTimersByTimeAsync(24_000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+
+    conn.disconnect();
+    randomSpy.mockRestore();
   });
 });

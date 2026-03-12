@@ -86,6 +86,10 @@
 
 - [x] [16 — Build & Distribution](features/16-build-and-distribution.md) — Environment-aware build scripts with `.env` / `.env.production` for local vs prod API switching, `tauri:build:prod` builds universal binary with prod URL baked in, `tauri:version-sync` reads latest git tag into `tauri.conf.json`
 
+### Reliability
+
+- [x] [17 — Centralized TokenManager](features/17-centralized-token-manager.md) — Shared `TokenManager` in `@derekentringer/shared/token` with desktop-specific Stronghold adapter (200ms vault retry, body-based refresh), removed localStorage security fallback in secureStorage.ts, auth:logout event dispatch on auth failure, dynamic SSE reconnect timer from `tokenManager.getMsUntilExpiry()`, 10% jitter on reconnect delay, 401/403 distinction in sync engine SSE, typed `AuthFailureReason` propagation to AuthContext with `CustomEvent`, dev-mode debug logger
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)

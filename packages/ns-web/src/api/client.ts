@@ -1,103 +1,44 @@
+import { createTokenManager, createApiFetch } from "@derekentringer/shared/token";
+import type { AuthFailureReason } from "@derekentringer/shared/token";
+import { createWebTokenAdapter } from "./webTokenAdapter.ts";
+
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3004";
 
-let accessToken: string | null = null;
-let onAuthFailure: (() => void) | null = null;
-let refreshPromise: Promise<boolean> | null = null;
+const adapter = createWebTokenAdapter();
+
+export const tokenManager = createTokenManager({
+  adapter,
+  baseUrl: BASE_URL,
+  logger: import.meta.env.DEV
+    ? { debug: console.debug, warn: console.warn, error: console.error }
+    : undefined,
+});
+
+const apiFetchInternal = createApiFetch(tokenManager, BASE_URL, {
+  credentials: "include",
+});
+
+// --- Backward-compatible API surface ---
 
 export function setAccessToken(token: string | null): void {
-  accessToken = token;
+  tokenManager.setAccessToken(token);
 }
 
 export function getAccessToken(): string | null {
-  return accessToken;
+  return tokenManager.getAccessToken();
 }
 
 export function setOnAuthFailure(callback: () => void): void {
-  onAuthFailure = callback;
+  tokenManager.setOnAuthFailure((_reason: AuthFailureReason) => callback());
 }
 
 export async function refreshAccessToken(): Promise<string | null> {
-  const ok = await doRefresh();
-  return ok ? accessToken : null;
-}
-
-async function doRefresh(): Promise<boolean> {
-  if (refreshPromise) {
-    return refreshPromise;
-  }
-
-  refreshPromise = (async () => {
-    try {
-      const refreshResponse = await fetch(`${BASE_URL}/auth/refresh`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "X-Requested-With": "XMLHttpRequest" },
-      });
-
-      if (refreshResponse.ok) {
-        const data = await refreshResponse.json();
-        accessToken = data.accessToken;
-        return true;
-      }
-
-      accessToken = null;
-      if (onAuthFailure) {
-        onAuthFailure();
-      }
-      return false;
-    } catch {
-      accessToken = null;
-      if (onAuthFailure) {
-        onAuthFailure();
-      }
-      return false;
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-
-  return refreshPromise;
+  return tokenManager.refreshAccessToken();
 }
 
 export async function apiFetch(
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
-  const headers = new Headers(options.headers);
-
-  if (accessToken) {
-    headers.set("Authorization", `Bearer ${accessToken}`);
-  }
-
-  if (options.body && !(options.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers,
-    credentials: "include",
-  });
-
-  if (response.status === 401 && accessToken) {
-    const refreshed = await doRefresh();
-
-    if (refreshed) {
-      headers.set("Authorization", `Bearer ${accessToken}`);
-
-      const retryResponse = await fetch(`${BASE_URL}${path}`, {
-        ...options,
-        headers,
-        credentials: "include",
-      });
-
-      if (retryResponse.status === 401 && onAuthFailure) {
-        onAuthFailure();
-      }
-
-      return retryResponse;
-    }
-  }
-
-  return response;
+  return apiFetchInternal(path, options);
 }

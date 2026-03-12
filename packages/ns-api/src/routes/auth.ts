@@ -8,6 +8,7 @@ import {
   lookupRefreshToken,
   revokeRefreshToken,
   revokeAllRefreshTokens,
+  deleteStaleRevokedTokens,
 } from "../store/refreshTokenStore.js";
 import {
   createPasswordResetToken,
@@ -212,6 +213,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
         }
 
         await revokeRefreshToken(token);
+
+        // Clean up revoked tokens older than 24 hours (opportunistic maintenance)
+        deleteStaleRevokedTokens(stored.userId, 24 * 60 * 60 * 1000).catch(() => {});
 
         const newRefreshToken = crypto.randomBytes(32).toString("hex");
         await storeRefreshToken(newRefreshToken, stored.userId);
