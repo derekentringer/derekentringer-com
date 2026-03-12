@@ -99,9 +99,15 @@ function SortableNoteItem({
             : "text-muted hover:bg-accent hover:text-foreground"
         }`}
       >
-        <span className="block truncate">
+        <span className="flex items-center truncate">
           {note.favorite && <span className="text-[10px] text-primary mr-1">★</span>}
-          {note.title || "Untitled"}
+          <span className="truncate">{note.title || "Untitled"}</span>
+          {note.isLocalFile && (
+            <span
+              className="inline-block w-1.5 h-1.5 rounded-full shrink-0 ml-1 bg-muted-foreground/50"
+              title="This note is linked to a local file"
+            />
+          )}
         </span>
         {note.headline && <SearchSnippet headline={note.headline} />}
       </button>

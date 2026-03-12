@@ -69,6 +69,7 @@ model Note {
   favorite           Boolean                      @default(false)
   sortOrder          Int                          @default(0)
   favoriteSortOrder  Int                          @default(0)
+  isLocalFile        Boolean                      @default(false)
   embedding          Unsupported("vector(512)")?
   embeddingUpdatedAt DateTime?
   createdAt          DateTime                     @default(now())

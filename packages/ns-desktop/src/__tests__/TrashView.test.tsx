@@ -26,6 +26,7 @@ const mockCreateNote = vi.fn().mockResolvedValue({
   favorite: false,
   sortOrder: 0,
   favoriteSortOrder: 0,
+  isLocalFile: false,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   deletedAt: null,
@@ -54,6 +55,47 @@ vi.mock("../lib/db.ts", () => ({
   initFts: (...args: unknown[]) => mockInitFts(...args),
   reorderNotes: vi.fn().mockResolvedValue(undefined),
   moveFolderParent: vi.fn().mockResolvedValue(undefined),
+  syncNoteLinks: vi.fn().mockResolvedValue(undefined),
+  listNoteTitles: vi.fn().mockResolvedValue([]),
+  captureVersion: vi.fn().mockResolvedValue(undefined),
+  restoreVersion: vi.fn().mockResolvedValue(undefined),
+  fetchFavoriteNotes: vi.fn().mockResolvedValue([]),
+  reorderFavoriteNotes: vi.fn().mockResolvedValue(undefined),
+  toggleFolderFavorite: vi.fn().mockResolvedValue(undefined),
+  upsertNoteFromRemote: vi.fn().mockResolvedValue(undefined),
+  linkNoteToLocalFile: vi.fn().mockResolvedValue(undefined),
+  unlinkLocalFile: vi.fn().mockResolvedValue(undefined),
+  updateLocalFileHash: vi.fn().mockResolvedValue(undefined),
+  fetchLocalFileNotes: vi.fn().mockResolvedValue([]),
+  findNoteByLocalPath: vi.fn().mockResolvedValue(null),
+  getNoteLocalPath: vi.fn().mockResolvedValue(null),
+  getNoteLocalFileHash: vi.fn().mockResolvedValue(null),
+}));
+
+// Mock localFileService
+vi.mock("../lib/localFileService.ts", () => ({
+  readLocalFile: vi.fn().mockResolvedValue(""),
+  writeLocalFile: vi.fn().mockResolvedValue("hash"),
+  computeContentHash: vi.fn().mockResolvedValue("hash"),
+  fileExists: vi.fn().mockResolvedValue(false),
+  getFileStat: vi.fn().mockResolvedValue(null),
+  validateFileSize: vi.fn().mockReturnValue(true),
+  deleteLocalFile: vi.fn().mockResolvedValue(undefined),
+  pickSaveLocation: vi.fn().mockResolvedValue(null),
+  startWatching: vi.fn().mockResolvedValue(undefined),
+  stopWatching: vi.fn(),
+  stopAllWatchers: vi.fn(),
+  reestablishWatchers: vi.fn().mockResolvedValue([]),
+  startPollTimer: vi.fn(),
+  stopPollTimer: vi.fn(),
+  collectFilePaths: vi.fn().mockResolvedValue([]),
+}));
+
+// Mock @tauri-apps/api/webview
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: vi.fn().mockResolvedValue(vi.fn()),
+  }),
 }));
 
 // Mock useEditorSettings
@@ -159,6 +201,7 @@ function makeTrashNote(overrides: Partial<Note> = {}): Note {
     favorite: false,
     sortOrder: 0,
     favoriteSortOrder: 0,
+    isLocalFile: false,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
     deletedAt: "2024-06-01T00:00:00.000Z",

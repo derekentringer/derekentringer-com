@@ -51,6 +51,12 @@ pub fn run() {
             sql: include_str!("../migrations/008.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "add local file support columns to notes",
+            sql: include_str!("../migrations/009.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -59,6 +65,8 @@ pub fn run() {
                 .add_migrations("sqlite:notesync.db", migrations)
                 .build(),
         )
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_stronghold::Builder::new(|_| "".into()).build())
         .setup(|app| {
             if cfg!(debug_assertions) {

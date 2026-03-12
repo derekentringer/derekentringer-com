@@ -10,6 +10,7 @@ export interface Note {
   favorite: boolean;
   sortOrder: number;
   favoriteSortOrder: number;
+  isLocalFile: boolean;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -31,6 +32,7 @@ export interface UpdateNoteRequest {
   tags?: string[];
   summary?: string | null;
   favorite?: boolean;
+  isLocalFile?: boolean;
 }
 
 export interface NoteListResponse {

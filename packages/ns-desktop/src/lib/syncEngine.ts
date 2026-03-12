@@ -10,7 +10,10 @@ import {
   upsertFolderFromRemote,
   softDeleteNoteFromRemote,
   softDeleteFolderFromRemote,
+  getNoteLocalPath,
+  getNoteLocalFileHash,
 } from "./db.ts";
+import { computeContentHash, fileExists } from "./localFileService.ts";
 import type {
   SyncChange,
   SyncPushRequest,
@@ -47,6 +50,7 @@ let backoffMs = 1000;
 let deviceId: string | null = null;
 let statusCallback: ((status: SyncStatus, error: string | null) => void) | null = null;
 let dataChangedCallback: (() => void) | null = null;
+let localFileCloudUpdateCallback: ((noteId: string) => void) | null = null;
 let sseAbortController: AbortController | null = null;
 let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let sseRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -74,11 +78,17 @@ async function getOrCreateDeviceId(): Promise<string> {
 export interface SyncEngineCallbacks {
   onStatusChange: (status: SyncStatus, error: string | null) => void;
   onDataChanged: () => void;
+  onLocalFileCloudUpdate?: (noteId: string) => void;
+  onNoteRemoteDeleted?: (noteId: string) => void;
 }
+
+let noteRemoteDeletedCallback: ((noteId: string) => void) | null = null;
 
 export async function initSyncEngine(callbacks: SyncEngineCallbacks): Promise<void> {
   statusCallback = callbacks.onStatusChange;
   dataChangedCallback = callbacks.onDataChanged;
+  localFileCloudUpdateCallback = callbacks.onLocalFileCloudUpdate ?? null;
+  noteRemoteDeletedCallback = callbacks.onNoteRemoteDeleted ?? null;
 
   await getOrCreateDeviceId();
 
@@ -122,6 +132,8 @@ export function destroySyncEngine(): void {
 
   statusCallback = null;
   dataChangedCallback = null;
+  localFileCloudUpdateCallback = null;
+  noteRemoteDeletedCallback = null;
   syncInProgress = false;
   deviceId = null;
   backoffMs = 1000;
@@ -332,6 +344,17 @@ async function pushChanges(id: string): Promise<void> {
     });
   }
 
+  // Sort: folder creates/updates before notes (FK dependency), note deletes before folder deletes
+  changes.sort((a, b) => {
+    const order = (c: SyncChange) => {
+      if (c.type === "folder" && c.action !== "delete") return 0;
+      if (c.type === "note") return 1;
+      if (c.type === "folder" && c.action === "delete") return 2;
+      return 1;
+    };
+    return order(a) - order(b);
+  });
+
   const payload: SyncPushRequest = { deviceId: id, changes };
 
   const response = await apiFetch("/sync/push", {
@@ -341,6 +364,14 @@ async function pushChanges(id: string): Promise<void> {
 
   if (!response.ok) {
     throw new Error(`Push failed: ${response.status}`);
+  }
+
+  const result: SyncPushResponse = await response.json();
+
+  // If any changes were rejected, keep queue entries for retry
+  if (result.rejected > 0) {
+    console.warn(`Sync push: ${result.applied} applied, ${result.rejected} rejected, ${result.skipped} skipped — retrying`);
+    throw new Error(`Push had ${result.rejected} rejected changes`);
   }
 
   // Remove all processed entries (not just deduped - remove all originals)
@@ -392,12 +423,33 @@ async function pullChanges(id: string): Promise<void> {
 async function applyNoteChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
     await softDeleteNoteFromRemote(change.id, change.timestamp);
+    noteRemoteDeletedCallback?.(change.id);
     return;
   }
 
   const noteData = change.data as Note | null;
   if (!noteData) return;
+
+  // Check if this is a local file note before upserting
+  const localPath = await getNoteLocalPath(change.id);
+  let localFileHash: string | null = null;
+  if (localPath && localFileCloudUpdateCallback) {
+    localFileHash = await getNoteLocalFileHash(change.id);
+  }
+
   await upsertNoteFromRemote(noteData);
+
+  // If the note has a local file link and content actually changed, notify UI
+  // Skip if the local file is missing — don't override "missing" status with "cloud_newer"
+  if (localPath && localFileCloudUpdateCallback && localFileHash) {
+    const localExists = await fileExists(localPath);
+    if (localExists) {
+      const incomingHash = await computeContentHash(noteData.content);
+      if (incomingHash !== localFileHash) {
+        localFileCloudUpdateCallback(change.id);
+      }
+    }
+  }
 
   // Queue embedding generation for synced notes
   if (semanticSearchEnabled && !noteData.deletedAt) {

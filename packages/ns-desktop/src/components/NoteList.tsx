@@ -7,6 +7,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { Note, NoteSearchResult } from "@derekentringer/ns-shared";
 import type { ExportFormat } from "../lib/importExport.ts";
+import type { LocalFileStatus } from "../lib/localFileService.ts";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 import { SearchSnippet } from "./SearchSnippet.tsx";
 
@@ -20,6 +21,12 @@ interface NoteListProps {
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
   searchResults?: NoteSearchResult[] | null;
   sortByManual: boolean;
+  localFileStatuses?: Map<string, LocalFileStatus>;
+  onUnlinkLocalFile?: (noteId: string) => void;
+  onSaveAsLocalFile?: (noteId: string) => void;
+  onSaveToFile?: (noteId: string) => void;
+  onUseLocalVersion?: (noteId: string) => void;
+  onViewDiff?: (noteId: string) => void;
 }
 
 interface ContextMenuState {
@@ -42,6 +49,35 @@ interface SortableNoteItemProps {
   onContextMenuClose: () => void;
   onDeleteClick: (noteId: string) => void;
   contextMenuRef: React.RefObject<HTMLDivElement | null>;
+  localFileStatus?: LocalFileStatus;
+  onUnlinkLocalFile?: (noteId: string) => void;
+  onSaveAsLocalFile?: (noteId: string) => void;
+  onSaveToFile?: (noteId: string) => void;
+  onUseLocalVersion?: (noteId: string) => void;
+  onViewDiff?: (noteId: string) => void;
+}
+
+function LocalFileIndicator({ status }: { status: LocalFileStatus }) {
+  const colorClass =
+    status === "synced"
+      ? "bg-green-500"
+      : status === "missing"
+        ? "bg-red-500"
+        : "bg-amber-500";
+  const title =
+    status === "synced"
+      ? "Local file in sync"
+      : status === "missing"
+        ? "Local file missing"
+        : status === "cloud_newer"
+          ? "Cloud version is newer"
+          : "File changed externally";
+  return (
+    <span
+      className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ml-1 ${colorClass}`}
+      title={title}
+    />
+  );
 }
 
 function SortableNoteItem({
@@ -58,6 +94,12 @@ function SortableNoteItem({
   onContextMenuClose,
   onDeleteClick,
   contextMenuRef,
+  localFileStatus,
+  onUnlinkLocalFile,
+  onSaveAsLocalFile,
+  onSaveToFile,
+  onUseLocalVersion,
+  onViewDiff,
 }: SortableNoteItemProps) {
   const {
     attributes,
@@ -102,9 +144,10 @@ function SortableNoteItem({
             : "text-muted hover:bg-accent hover:text-foreground"
         }`}
       >
-        <span className="block truncate">
+        <span className="flex items-center truncate">
           {note.favorite && <span className="text-[10px] text-primary mr-1">★</span>}
-          {note.title || "Untitled"}
+          <span className="truncate">{note.title || "Untitled"}</span>
+          {localFileStatus && <LocalFileIndicator status={localFileStatus} />}
         </span>
         {searchNote.headline && (
           <SearchSnippet headline={searchNote.headline} />
@@ -158,6 +201,61 @@ function SortableNoteItem({
               {note.favorite ? "Unfavorite" : "Favorite"}
             </button>
           )}
+          {!note.isLocalFile && onSaveAsLocalFile && (
+            <button
+              onClick={() => {
+                onSaveAsLocalFile(note.id);
+                onContextMenuClose();
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              Save As Local File
+            </button>
+          )}
+          {note.isLocalFile && onUnlinkLocalFile && (
+            <button
+              onClick={() => {
+                onUnlinkLocalFile(note.id);
+                onContextMenuClose();
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              Unlink Local File
+            </button>
+          )}
+          {note.isLocalFile && localFileStatus === "cloud_newer" && onSaveToFile && (
+            <button
+              onClick={() => {
+                onSaveToFile(note.id);
+                onContextMenuClose();
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              Save to File
+            </button>
+          )}
+          {note.isLocalFile && localFileStatus === "external_change" && onUseLocalVersion && (
+            <button
+              onClick={() => {
+                onUseLocalVersion(note.id);
+                onContextMenuClose();
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              Use Local Version
+            </button>
+          )}
+          {note.isLocalFile && (localFileStatus === "cloud_newer" || localFileStatus === "external_change") && onViewDiff && (
+            <button
+              onClick={() => {
+                onViewDiff(note.id);
+                onContextMenuClose();
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              View Diff
+            </button>
+          )}
           {onDeleteNote && (
             <button
               onClick={() => onDeleteClick(note.id)}
@@ -182,6 +280,12 @@ export function NoteList({
   onToggleFavorite,
   searchResults,
   sortByManual,
+  localFileStatuses,
+  onUnlinkLocalFile,
+  onSaveAsLocalFile,
+  onSaveToFile,
+  onUseLocalVersion,
+  onViewDiff,
 }: NoteListProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -229,6 +333,12 @@ export function NoteList({
             onContextMenuClose={() => setContextMenu(null)}
             onDeleteClick={handleDeleteClick}
             contextMenuRef={contextMenuRef}
+            localFileStatus={localFileStatuses?.get(note.id)}
+            onUnlinkLocalFile={onUnlinkLocalFile}
+            onSaveAsLocalFile={onSaveAsLocalFile}
+            onSaveToFile={onSaveToFile}
+            onUseLocalVersion={onUseLocalVersion}
+            onViewDiff={onViewDiff}
           />
         ))}
       </SortableContext>
