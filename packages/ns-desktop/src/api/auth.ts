@@ -30,7 +30,9 @@ export async function login(
     setAccessToken(data.accessToken);
   }
   if (data.refreshToken) {
-    await setRefreshToken(data.refreshToken);
+    setRefreshToken(data.refreshToken).catch((err) => {
+      console.error("Failed to store refresh token after login:", err);
+    });
   }
   return data;
 }
@@ -102,7 +104,9 @@ export async function register(
     setAccessToken(result.accessToken);
   }
   if (result.refreshToken) {
-    await setRefreshToken(result.refreshToken);
+    setRefreshToken(result.refreshToken).catch((err) => {
+      console.error("Failed to store refresh token after register:", err);
+    });
   }
   return result;
 }
@@ -183,7 +187,10 @@ export async function verifyTotp(
     setAccessToken(data.accessToken);
   }
   if (data.refreshToken) {
-    await setRefreshToken(data.refreshToken);
+    // Fire-and-forget: don't block login if keychain write fails
+    setRefreshToken(data.refreshToken).catch((err) => {
+      console.error("Failed to store refresh token after TOTP verify:", err);
+    });
   }
   return data;
 }
