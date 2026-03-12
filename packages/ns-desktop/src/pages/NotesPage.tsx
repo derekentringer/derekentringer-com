@@ -139,6 +139,8 @@ import {
   type LocalFileStatus,
 } from "../lib/localFileService.ts";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
@@ -1886,6 +1888,36 @@ export function NotesPage() {
         if (paths.length > 0) {
           handleImportPaths(paths, true);
         }
+      }
+    }).then((fn) => {
+      if (cancelled) { fn(); return; }
+      unlisten = fn;
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Open With" / file association — handle files opened via OS
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    // Cold launch: drain any files buffered before listener was ready
+    invoke<string[]>("get_opened_files").then((paths) => {
+      if (cancelled || paths.length === 0) return;
+      handleImportPaths(paths, true);
+    });
+
+    // Hot open: listen for files opened while app is running
+    listen<string[]>("open-files", (event) => {
+      if (cancelled) return;
+      // Drain buffer to prevent double-processing on remount
+      invoke<string[]>("get_opened_files").catch(() => {});
+      if (event.payload.length > 0) {
+        handleImportPaths(event.payload, true);
       }
     }).then((fn) => {
       if (cancelled) { fn(); return; }

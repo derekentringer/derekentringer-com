@@ -1,4 +1,10 @@
+use std::path::PathBuf;
+use std::sync::Mutex;
+use keyring::Entry;
+use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
+
+const KEYRING_SERVICE: &str = "com.derekentringer.notesync";
 
 fn get_migrations() -> Vec<Migration> {
     vec![
@@ -59,9 +65,51 @@ fn get_migrations() -> Vec<Migration> {
     ]
 }
 
+struct OpenedFiles(Mutex<Vec<String>>);
+
+fn urls_to_paths(urls: Vec<tauri::Url>) -> Vec<String> {
+    urls.into_iter()
+        .filter_map(|u: tauri::Url| u.to_file_path().ok())
+        .map(|p: PathBuf| p.to_string_lossy().into_owned())
+        .collect()
+}
+
+#[tauri::command]
+fn get_opened_files(state: tauri::State<'_, OpenedFiles>) -> Vec<String> {
+    let mut buf = state.0.lock().unwrap();
+    buf.drain(..).collect()
+}
+
+#[tauri::command]
+fn get_secure_item(key: String) -> Result<Option<String>, String> {
+    let entry = Entry::new(KEYRING_SERVICE, &key).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(pw) => Ok(Some(pw)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn set_secure_item(key: String, value: String) -> Result<(), String> {
+    let entry = Entry::new(KEYRING_SERVICE, &key).map_err(|e| e.to_string())?;
+    entry.set_password(&value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_secure_item(key: String) -> Result<(), String> {
+    let entry = Entry::new(KEYRING_SERVICE, &key).map_err(|e| e.to_string())?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
+        .manage(OpenedFiles(Mutex::new(Vec::new())))
+        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:notesync.db", get_migrations())
@@ -70,7 +118,6 @@ pub fn run() {
         )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_stronghold::Builder::new(|_| "".into()).build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -81,6 +128,21 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let RunEvent::Opened { urls } = event {
+            let paths = urls_to_paths(urls);
+            if paths.is_empty() {
+                return;
+            }
+            // Buffer for cold-launch (frontend may not be ready yet)
+            if let Some(state) = app_handle.try_state::<OpenedFiles>() {
+                state.0.lock().unwrap().extend(paths.clone());
+            }
+            // Emit for hot-open (frontend listener picks it up immediately)
+            let _ = app_handle.emit("open-files", &paths);
+        }
+    });
 }

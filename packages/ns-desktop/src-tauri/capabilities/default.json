@@ -10,7 +10,6 @@
     "sql:default",
     "sql:allow-execute",
     "sql:allow-select",
-    "stronghold:default",
     "fs:default",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
