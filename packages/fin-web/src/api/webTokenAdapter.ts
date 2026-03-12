@@ -1,4 +1,4 @@
-import type { TokenRefreshAdapter, RefreshResult, AuthFailureReason } from "@derekentringer/shared/token";
+import type { TokenRefreshAdapter, RefreshResult } from "@derekentringer/shared/token";
 
 export function createWebTokenAdapter(): TokenRefreshAdapter {
   return {
@@ -31,7 +31,7 @@ export function createWebTokenAdapter(): TokenRefreshAdapter {
       // No-op: refresh token managed by server via httpOnly cookie
     },
 
-    onAuthFailure(_reason: AuthFailureReason): void {
+    onAuthFailure(): void {
       // No-op: cookie cleared by server; AuthContext handles UI cleanup
     },
 

@@ -1,5 +1,4 @@
 import { createTokenManager, createApiFetch } from "@derekentringer/shared/token";
-import type { AuthFailureReason } from "@derekentringer/shared/token";
 import { createWebTokenAdapter } from "./webTokenAdapter.ts";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
@@ -29,7 +28,7 @@ export function getAccessToken(): string | null {
 }
 
 export function setOnAuthFailure(callback: () => void): void {
-  tokenManager.setOnAuthFailure((_reason: AuthFailureReason) => callback());
+  tokenManager.setOnAuthFailure(() => callback());
 }
 
 export async function apiFetch(
