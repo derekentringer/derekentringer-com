@@ -34,6 +34,8 @@ The settings page was built incrementally across several releases:
 - **Word wrap**: Toggle on/off
 - **Auto-save delay**: Select (500ms–5s)
 - **Tab size**: 2 or 4 spaces radio group
+- **Cursor style**: Line / Block / Underline radio group — controls CodeMirror cursor shape via `drawSelection()` extension and dynamic CSS in a dedicated cursor compartment
+- **Cursor blink**: Toggle on/off (default: on) — controls `cursorBlinkRate` (1200ms when on, 0 when off)
 - **Settings persisted in localStorage** under `"ns-editor-settings"`
 
 ### Trash (06)

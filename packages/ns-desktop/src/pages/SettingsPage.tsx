@@ -6,6 +6,7 @@ import {
   type ThemeMode,
   type ViewModeDefault,
   type TabSizeOption,
+  type CursorStyle,
   type AccentColorPreset,
 } from "../hooks/useEditorSettings.ts";
 import type { AiSettings, CompletionStyle, AudioMode } from "../hooks/useAiSettings.ts";
@@ -384,6 +385,24 @@ export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange,
                   <RadioOption name="tabSize" value={2 as TabSizeOption} currentValue={editorSettings.tabSize} label="2 spaces" onChange={(v) => updateEditorSetting("tabSize", v)} />
                   <RadioOption name="tabSize" value={4 as TabSizeOption} currentValue={editorSettings.tabSize} label="4 spaces" onChange={(v) => updateEditorSetting("tabSize", v)} />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-foreground mb-1 block">Cursor style</label>
+                <div className="flex gap-4" role="radiogroup" aria-label="Cursor style">
+                  <RadioOption name="cursorStyle" value={"line" as CursorStyle} currentValue={editorSettings.cursorStyle} label="Line" onChange={(v) => updateEditorSetting("cursorStyle", v)} />
+                  <RadioOption name="cursorStyle" value={"block" as CursorStyle} currentValue={editorSettings.cursorStyle} label="Block" onChange={(v) => updateEditorSetting("cursorStyle", v)} />
+                  <RadioOption name="cursorStyle" value={"underline" as CursorStyle} currentValue={editorSettings.cursorStyle} label="Underline" onChange={(v) => updateEditorSetting("cursorStyle", v)} />
+                </div>
+              </div>
+
+              <div className="divide-y divide-border">
+                <ToggleSwitch
+                  label="Cursor blink"
+                  checked={editorSettings.cursorBlink}
+                  onChange={(v) => updateEditorSetting("cursorBlink", v)}
+                  info="Animate the cursor with a blinking effect."
+                />
               </div>
             </div>
           </SectionCard>

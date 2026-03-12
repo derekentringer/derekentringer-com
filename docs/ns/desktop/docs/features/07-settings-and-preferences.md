@@ -40,6 +40,8 @@ Full-page settings view for NoteSync Desktop, ported from the ns-web SettingsPag
 - **Word wrap:** ToggleSwitch (on/off)
 - **Auto-save delay:** `<select>` dropdown (500ms, 1s, 1.5s, 2s, 3s, 5s)
 - **Tab size:** 2 spaces / 4 spaces radio group
+- **Cursor style:** Line / Block / Underline radio group — controls CodeMirror cursor shape via `drawSelection()` and dynamic CSS in a dedicated cursor compartment
+- **Cursor blink:** ToggleSwitch (on/off, default on) — controls `cursorBlinkRate` (1200ms when on, 0 when off)
 
 ### 3. Trash
 
