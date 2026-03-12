@@ -84,7 +84,7 @@ describe("TagBrowser", () => {
       />,
     );
 
-    expect(screen.getByText("Clear filter")).toBeInTheDocument();
+    expect(screen.getByText("clear filter")).toBeInTheDocument();
   });
 
   it("does not show clear filter button when no tags are active", () => {
@@ -98,6 +98,6 @@ describe("TagBrowser", () => {
       />,
     );
 
-    expect(screen.queryByText("Clear filter")).not.toBeInTheDocument();
+    expect(screen.queryByText("clear filter")).not.toBeInTheDocument();
   });
 });

@@ -139,4 +139,64 @@ describe("TabBar", () => {
     await userEvent.dblClick(screen.getByText("Preview Note"));
     expect(onPinTab).toHaveBeenCalledWith("1");
   });
+
+  // ---------------------------------------------------------------------------
+  // Missing file indicator tests
+  // ---------------------------------------------------------------------------
+
+  it("shows red triangle indicator when localFileStatus is 'missing'", () => {
+    const missingTabs: Tab[] = [
+      { id: "1", title: "Missing File", isDirty: false, isPreview: false, isLocalFile: true, localFileStatus: "missing" },
+    ];
+    render(
+      <DndWrapper>
+        <TabBar tabs={missingTabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />
+      </DndWrapper>,
+    );
+
+    const indicator = screen.getByTitle("Local file missing");
+    expect(indicator).toBeInTheDocument();
+    expect(indicator.textContent).toBe("▲");
+    expect(indicator.className).toContain("text-red-500");
+  });
+
+  it("does not show red triangle when localFileStatus is 'synced'", () => {
+    const syncedTabs: Tab[] = [
+      { id: "1", title: "Synced File", isDirty: false, isPreview: false, isLocalFile: true, localFileStatus: "synced" },
+    ];
+    render(
+      <DndWrapper>
+        <TabBar tabs={syncedTabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />
+      </DndWrapper>,
+    );
+
+    expect(screen.queryByTitle("Local file missing")).not.toBeInTheDocument();
+  });
+
+  it("does not show red triangle when no localFileStatus is set", () => {
+    const regularTabs: Tab[] = [
+      { id: "1", title: "Regular Note", isDirty: false, isPreview: false },
+    ];
+    render(
+      <DndWrapper>
+        <TabBar tabs={regularTabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />
+      </DndWrapper>,
+    );
+
+    expect(screen.queryByTitle("Local file missing")).not.toBeInTheDocument();
+  });
+
+  it("shows both dirty indicator and missing file indicator together", () => {
+    const dirtyMissingTabs: Tab[] = [
+      { id: "1", title: "Dirty Missing", isDirty: true, isPreview: false, isLocalFile: true, localFileStatus: "missing" },
+    ];
+    render(
+      <DndWrapper>
+        <TabBar tabs={dirtyMissingTabs} activeTabId="1" onSelectTab={vi.fn()} onCloseTab={vi.fn()} />
+      </DndWrapper>,
+    );
+
+    expect(screen.getByText("●")).toBeInTheDocument();
+    expect(screen.getByTitle("Local file missing")).toBeInTheDocument();
+  });
 });

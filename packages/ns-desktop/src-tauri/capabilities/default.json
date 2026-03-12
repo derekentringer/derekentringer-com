@@ -10,6 +10,22 @@
     "sql:default",
     "sql:allow-execute",
     "sql:allow-select",
-    "stronghold:default"
+    "stronghold:default",
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-exists",
+    "fs:allow-stat",
+    "fs:allow-remove",
+    "fs:allow-watch",
+    "fs:allow-read-dir",
+    "fs:allow-unwatch",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    {
+      "identifier": "fs:scope",
+      "allow": ["**"]
+    }
   ]
 }

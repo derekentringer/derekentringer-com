@@ -32,6 +32,7 @@ import {
   renameTagApi,
   deleteTagApi,
   fetchNoteTitles,
+  fetchNote,
   restoreVersion,
   fetchFavoriteNotes,
   reorderFavoriteNotes as apiReorderFavoriteNotes,
@@ -408,6 +409,7 @@ export function NotesPage() {
   const loadTrashRef = useRef(loadTrash);
   const debouncedSearchRef = useRef(debouncedSearch);
   const sidebarViewRef = useRef(sidebarView);
+  const closeDeletedNoteTabsRef = useRef<() => void>(() => {});
 
   useEffect(() => { loadNotesRef.current = loadNotes; }, [loadNotes]);
   useEffect(() => { loadFoldersRef.current = loadFolders; }, [loadFolders]);
@@ -416,6 +418,43 @@ export function NotesPage() {
   useEffect(() => { loadTrashRef.current = loadTrash; }, [loadTrash]);
   useEffect(() => { debouncedSearchRef.current = debouncedSearch; }, [debouncedSearch]);
   useEffect(() => { sidebarViewRef.current = sidebarView; }, [sidebarView]);
+
+  // Keep tab cleanup ref current — uses functional updaters to avoid stale closures
+  closeDeletedNoteTabsRef.current = () => {
+    // Read current tabs via functional updater to avoid stale closure
+    setOpenTabs((currentTabs) => {
+      if (currentTabs.length === 0) return currentTabs;
+      // Check every open tab via API — 404 means deleted
+      Promise.all(currentTabs.map((id) => fetchNote(id).then(() => null).catch(() => id)))
+        .then((results) => {
+          const deletedIds = results.filter((id): id is string => id !== null);
+          if (deletedIds.length === 0) return;
+          const deletedSet = new Set(deletedIds);
+          setOpenTabs((prev) => {
+            const filtered = prev.filter((id) => !deletedSet.has(id));
+            // Handle selected tab being deleted
+            setSelectedId((curSelectedId) => {
+              if (curSelectedId && deletedSet.has(curSelectedId)) {
+                if (filtered.length > 0) {
+                  const nextId = filtered[filtered.length - 1];
+                  fetchNote(nextId).then((n) => selectNote(n)).catch(() => {});
+                } else {
+                  setTitle("");
+                  setContent("");
+                  loadedTitleRef.current = "";
+                  loadedContentRef.current = "";
+                }
+                return filtered.length > 0 ? filtered[filtered.length - 1] : null;
+              }
+              return curSelectedId;
+            });
+            return filtered;
+          });
+        });
+      // Return unchanged — actual removal happens in the .then() above
+      return currentTabs;
+    });
+  };
 
   // Track sync status from online/offline state
   useEffect(() => {
@@ -445,7 +484,7 @@ export function NotesPage() {
           reloads.push(loadTrashRef.current());
         }
         Promise.all(reloads)
-          .then(() => { setSyncStatus("idle"); setSyncError(null); })
+          .then(() => { setSyncStatus("idle"); setSyncError(null); closeDeletedNoteTabsRef.current(); })
           .catch(() => { setSyncStatus("error"); setSyncError("Sync failed"); });
       }, 500);
     };
@@ -2173,6 +2212,14 @@ export function NotesPage() {
               showLineNumbers={showLineNumbers}
               onToggleLineNumbers={() => setShowLineNumbers((v) => !v)}
             />
+
+            {/* Local file indicator */}
+            {selectedId && notes.find((n) => n.id === selectedId)?.isLocalFile && (
+              <div className="px-4 py-1.5 bg-card/50 border-b border-border text-xs text-muted-foreground flex items-center gap-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
+                This note is linked to a local file on a desktop device
+              </div>
+            )}
 
             {/* Content */}
             <div className="flex-1 flex min-h-0">

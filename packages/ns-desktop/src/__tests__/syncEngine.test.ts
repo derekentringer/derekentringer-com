@@ -31,6 +31,7 @@ vi.mock("../lib/db.ts", () => ({
   upsertFolderFromRemote: (...args: unknown[]) => mockUpsertFolderFromRemote(...args),
   softDeleteNoteFromRemote: (...args: unknown[]) => mockSoftDeleteNoteFromRemote(...args),
   softDeleteFolderFromRemote: (...args: unknown[]) => mockSoftDeleteFolderFromRemote(...args),
+  getNoteLocalPath: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@tauri-apps/plugin-sql", () => ({
