@@ -33,6 +33,7 @@ vi.mock("@codemirror/view", () => {
     keymap: { of: () => [] },
     placeholder: () => [],
     lineNumbers: () => [],
+    drawSelection: () => [],
   };
 });
 

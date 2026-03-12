@@ -183,22 +183,22 @@ describe("SettingsPage", () => {
 
   it("master AI defaults to on", () => {
     renderSettingsPage();
-    // Master toggle + 8 individual + line numbers + word wrap = 11 switches
+    // Master toggle + 8 individual + line numbers + word wrap + cursor blink = 12 switches
     const switches = screen.getAllByRole("switch");
-    // Master AI toggle is the third switch (after line numbers and word wrap)
-    const masterSwitch = switches[2];
+    // Master AI toggle is the fourth switch (after line numbers, word wrap, cursor blink)
+    const masterSwitch = switches[3];
     expect(masterSwitch).toHaveAttribute("aria-checked", "true");
   });
 
   it("toggling master AI off disables individual toggles", async () => {
     renderSettingsPage();
     const switches = screen.getAllByRole("switch");
-    // Master is index 2
-    await userEvent.click(switches[2]);
-    expect(switches[2]).toHaveAttribute("aria-checked", "false");
+    // Master is index 3
+    await userEvent.click(switches[3]);
+    expect(switches[3]).toHaveAttribute("aria-checked", "false");
 
     // All AI toggles after master should be disabled
-    for (let i = 3; i <= 10; i++) {
+    for (let i = 4; i <= 11; i++) {
       expect(switches[i]).toBeDisabled();
     }
   });
@@ -206,10 +206,10 @@ describe("SettingsPage", () => {
   it("toggling an AI switch persists to localStorage", async () => {
     renderSettingsPage();
     const switches = screen.getAllByRole("switch");
-    // Inline completions is at index 3
-    await userEvent.click(switches[3]);
+    // Inline completions is at index 4
+    await userEvent.click(switches[4]);
 
-    expect(switches[3]).toHaveAttribute("aria-checked", "true");
+    expect(switches[4]).toHaveAttribute("aria-checked", "true");
 
     const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
     expect(stored.completions).toBe(true);
@@ -231,17 +231,17 @@ describe("SettingsPage", () => {
 
     renderSettingsPage();
     const switches = screen.getAllByRole("switch");
-    // Index 3 = completions, index 5 = summarize, index 6 = tagSuggestions
-    expect(switches[3]).toHaveAttribute("aria-checked", "true");  // completions
-    expect(switches[5]).toHaveAttribute("aria-checked", "false"); // summarize
-    expect(switches[6]).toHaveAttribute("aria-checked", "true");  // tagSuggestions
+    // Index 4 = completions, index 6 = summarize, index 7 = tagSuggestions
+    expect(switches[4]).toHaveAttribute("aria-checked", "true");  // completions
+    expect(switches[6]).toHaveAttribute("aria-checked", "false"); // summarize
+    expect(switches[7]).toHaveAttribute("aria-checked", "true");  // tagSuggestions
   });
 
   it("shows completion style radio group when completions enabled", async () => {
     renderSettingsPage();
     const switches = screen.getAllByRole("switch");
-    // Enable completions (index 3)
-    await userEvent.click(switches[3]);
+    // Enable completions (index 4)
+    await userEvent.click(switches[4]);
 
     expect(screen.getByRole("radiogroup", { name: "Completion style" })).toBeInTheDocument();
     // Note: "Continue writing" label exists both as a toggle and as a radio option
@@ -271,8 +271,8 @@ describe("SettingsPage", () => {
   it("Q&A toggle is disabled when semantic search is off", () => {
     renderSettingsPage();
     const switches = screen.getAllByRole("switch");
-    // Q&A assistant is the last AI toggle (index 10)
-    const qaSwitch = switches[10];
+    // Q&A assistant is the last AI toggle (index 11)
+    const qaSwitch = switches[11];
     expect(qaSwitch).toBeDisabled();
   });
 

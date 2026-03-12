@@ -26,6 +26,8 @@ describe("useEditorSettings", () => {
     expect(settings.editorFontSize).toBe(14);
     expect(settings.maxCachedNotes).toBe(100);
     expect(settings.accentColor).toBe("lime");
+    expect(settings.cursorStyle).toBe("line");
+    expect(settings.cursorBlink).toBe(true);
     expect(settings.versionIntervalMinutes).toBe(0);
   });
 
@@ -40,6 +42,8 @@ describe("useEditorSettings", () => {
       editorFontSize: 16,
       maxCachedNotes: 50,
       accentColor: "blue",
+      cursorStyle: "block",
+      cursorBlink: false,
       versionIntervalMinutes: 5,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
@@ -163,6 +167,71 @@ describe("useEditorSettings", () => {
     localStorage.setItem(STORAGE_KEY, "not-valid-json{{{");
     const { result } = renderHook(() => useEditorSettings());
     expect(result.current.settings.defaultViewMode).toBe("editor");
+  });
+
+  it("defaults cursorStyle to line", () => {
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.cursorStyle).toBe("line");
+  });
+
+  it("defaults cursorBlink to true", () => {
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.cursorBlink).toBe(true);
+  });
+
+  it("persists cursorStyle to localStorage", () => {
+    const { result } = renderHook(() => useEditorSettings());
+
+    act(() => {
+      result.current.updateSetting("cursorStyle", "underline");
+    });
+
+    expect(result.current.settings.cursorStyle).toBe("underline");
+
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(persisted.cursorStyle).toBe("underline");
+  });
+
+  it("persists cursorBlink to localStorage", () => {
+    const { result } = renderHook(() => useEditorSettings());
+
+    act(() => {
+      result.current.updateSetting("cursorBlink", false);
+    });
+
+    expect(result.current.settings.cursorBlink).toBe(false);
+
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(persisted.cursorBlink).toBe(false);
+  });
+
+  it("defaults invalid cursorStyle to line", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ cursorStyle: "beam" }),
+    );
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.cursorStyle).toBe("line");
+  });
+
+  it("defaults non-boolean cursorBlink to true", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ cursorBlink: "yes" }),
+    );
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.cursorBlink).toBe(true);
+  });
+
+  it("accepts all valid cursorStyle values", () => {
+    for (const style of ["line", "block", "underline"]) {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ cursorStyle: style }),
+      );
+      const { result } = renderHook(() => useEditorSettings());
+      expect(result.current.settings.cursorStyle).toBe(style);
+    }
   });
 });
 
