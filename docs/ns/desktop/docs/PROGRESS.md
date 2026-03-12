@@ -57,7 +57,7 @@
 
 ### Phase 5: Settings — Medium Priority
 
-- [x] [07 — Settings & Preferences](features/07-settings-and-preferences.md)
+- [x] [07 — Settings & Preferences](features/07-settings-and-preferences.md) — Theme (dark/light/system), accent color (11 presets), editor font size, default view mode, line numbers, word wrap, auto-save delay, tab size, cursor style (line/block/underline), cursor blink toggle, trash retention, version capture interval, 2FA (TOTP setup/disable), keyboard shortcuts reference
 
 ### Phase 6: Auth & Sync — Medium Priority
 

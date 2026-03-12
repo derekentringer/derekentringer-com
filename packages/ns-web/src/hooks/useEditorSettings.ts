@@ -3,6 +3,7 @@ import { useState, useCallback } from "react";
 export type ThemeMode = "dark" | "light" | "system";
 export type ViewModeDefault = "editor" | "split" | "preview";
 export type TabSizeOption = 2 | 4;
+export type CursorStyle = "line" | "block" | "underline";
 export type AccentColorPreset = "lime" | "blue" | "cyan" | "purple" | "orange" | "teal" | "pink" | "red" | "amber" | "black" | "white";
 
 export const ACCENT_PRESETS: Record<AccentColorPreset, { dark: string; light: string; darkHover: string; lightHover: string }> = {
@@ -35,6 +36,8 @@ export interface EditorSettings {
   editorFontSize: number;
   maxCachedNotes: number;
   accentColor: AccentColorPreset;
+  cursorStyle: CursorStyle;
+  cursorBlink: boolean;
 }
 
 const STORAGE_KEY = "ns-editor-settings";
@@ -42,6 +45,7 @@ const STORAGE_KEY = "ns-editor-settings";
 const VALID_VIEW_MODES: ViewModeDefault[] = ["editor", "split", "preview"];
 const VALID_THEMES: ThemeMode[] = ["dark", "light", "system"];
 const VALID_TAB_SIZES: TabSizeOption[] = [2, 4];
+const VALID_CURSOR_STYLES: CursorStyle[] = ["line", "block", "underline"];
 
 const DEFAULT_SETTINGS: EditorSettings = {
   defaultViewMode: "editor",
@@ -53,6 +57,8 @@ const DEFAULT_SETTINGS: EditorSettings = {
   editorFontSize: 14,
   maxCachedNotes: 100,
   accentColor: "lime",
+  cursorStyle: "line",
+  cursorBlink: true,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -84,6 +90,10 @@ function loadSettings(): EditorSettings {
       accentColor: VALID_ACCENT_COLORS.includes(parsed.accentColor)
         ? parsed.accentColor
         : "lime",
+      cursorStyle: VALID_CURSOR_STYLES.includes(parsed.cursorStyle)
+        ? parsed.cursorStyle
+        : "line",
+      cursorBlink: typeof parsed.cursorBlink === "boolean" ? parsed.cursorBlink : true,
     };
   } catch {
     return DEFAULT_SETTINGS;

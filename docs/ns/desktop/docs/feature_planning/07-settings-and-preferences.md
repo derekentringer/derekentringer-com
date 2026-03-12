@@ -23,6 +23,8 @@ Settings panel for theme, editor preferences, AI feature toggles, sync configura
   - Auto-save delay slider (default 500ms)
   - Markdown preview theme
   - Tab size (2 or 4 spaces)
+  - Cursor style: line / block / underline
+  - Cursor blink: on / off
 - **Keyboard shortcuts reference**:
   - Read-only reference panel listing all editor and app keyboard shortcuts
   - Grouped by category (editor, navigation, AI, etc.)

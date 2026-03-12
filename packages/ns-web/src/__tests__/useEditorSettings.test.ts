@@ -20,6 +20,8 @@ describe("useEditorSettings", () => {
       editorFontSize: 14,
       maxCachedNotes: 100,
       accentColor: "lime",
+      cursorStyle: "line",
+      cursorBlink: true,
     });
   });
 
@@ -36,6 +38,8 @@ describe("useEditorSettings", () => {
         editorFontSize: 16,
         maxCachedNotes: 200,
         accentColor: "blue",
+        cursorStyle: "block",
+        cursorBlink: false,
       }),
     );
 
@@ -51,6 +55,8 @@ describe("useEditorSettings", () => {
       editorFontSize: 16,
       maxCachedNotes: 200,
       accentColor: "blue",
+      cursorStyle: "block",
+      cursorBlink: false,
     });
   });
 
@@ -98,6 +104,8 @@ describe("useEditorSettings", () => {
       editorFontSize: 16,
       maxCachedNotes: 200,
       accentColor: "lime",
+      cursorStyle: "line",
+      cursorBlink: true,
     });
   });
 
@@ -116,6 +124,8 @@ describe("useEditorSettings", () => {
       editorFontSize: 14,
       maxCachedNotes: 100,
       accentColor: "lime",
+      cursorStyle: "line",
+      cursorBlink: true,
     });
   });
 
@@ -137,6 +147,8 @@ describe("useEditorSettings", () => {
       editorFontSize: 14,
       maxCachedNotes: 100,
       accentColor: "lime",
+      cursorStyle: "line",
+      cursorBlink: true,
     });
   });
 
@@ -226,5 +238,73 @@ describe("useEditorSettings", () => {
 
     const { result } = renderHook(() => useEditorSettings());
     expect(result.current.settings.accentColor).toBe("lime");
+  });
+
+  it("defaults cursorStyle to line", () => {
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.cursorStyle).toBe("line");
+  });
+
+  it("defaults cursorBlink to true", () => {
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.cursorBlink).toBe(true);
+  });
+
+  it("persists cursorStyle to localStorage", () => {
+    const { result } = renderHook(() => useEditorSettings());
+
+    act(() => {
+      result.current.updateSetting("cursorStyle", "block");
+    });
+
+    expect(result.current.settings.cursorStyle).toBe("block");
+
+    const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
+    expect(stored.cursorStyle).toBe("block");
+  });
+
+  it("persists cursorBlink to localStorage", () => {
+    const { result } = renderHook(() => useEditorSettings());
+
+    act(() => {
+      result.current.updateSetting("cursorBlink", false);
+    });
+
+    expect(result.current.settings.cursorBlink).toBe(false);
+
+    const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
+    expect(stored.cursorBlink).toBe(false);
+  });
+
+  it("defaults invalid cursorStyle to line", () => {
+    localStorage.setItem(
+      "ns-editor-settings",
+      JSON.stringify({ cursorStyle: "beam" }),
+    );
+
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.cursorStyle).toBe("line");
+  });
+
+  it("defaults non-boolean cursorBlink to true", () => {
+    localStorage.setItem(
+      "ns-editor-settings",
+      JSON.stringify({ cursorBlink: "yes" }),
+    );
+
+    const { result } = renderHook(() => useEditorSettings());
+    expect(result.current.settings.cursorBlink).toBe(true);
+  });
+
+  it("accepts valid cursorStyle values", () => {
+    for (const style of ["line", "block", "underline"]) {
+      localStorage.setItem(
+        "ns-editor-settings",
+        JSON.stringify({ cursorStyle: style }),
+      );
+
+      const { result } = renderHook(() => useEditorSettings());
+      expect(result.current.settings.cursorStyle).toBe(style);
+    }
   });
 });

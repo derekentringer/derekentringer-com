@@ -2807,6 +2807,8 @@ export function NotesPage() {
                       fontSize={editorSettings.editorFontSize}
                       theme={resolvedTheme}
                       accentColor={accentHex}
+                      cursorStyle={editorSettings.cursorStyle}
+                      cursorBlink={editorSettings.cursorBlink}
                       extensions={[wikiLinkExt, ...aiExtensions]}
                       className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                       style={viewMode === "split" ? { width: splitResize.size } : undefined}

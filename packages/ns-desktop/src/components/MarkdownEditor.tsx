@@ -5,7 +5,7 @@ import {
   forwardRef,
   type Ref,
 } from "react";
-import { EditorView, keymap, placeholder, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -43,6 +43,8 @@ interface MarkdownEditorProps {
   fontSize?: number;
   theme?: "dark" | "light";
   accentColor?: string;
+  cursorStyle?: "line" | "block" | "underline";
+  cursorBlink?: boolean;
 }
 
 function wrapSelection(view: EditorView, marker: string) {
@@ -77,9 +79,6 @@ function createDarkTheme(accent: string) {
       ".cm-content": {
         caretColor: accent,
         padding: "12px 0",
-      },
-      ".cm-cursor, .cm-dropCursor": {
-        borderLeftColor: accent,
       },
       "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
         backgroundColor: hexToRgba(accent, 0.15),
@@ -145,9 +144,6 @@ function createLightTheme(accent: string) {
         caretColor: accent,
         padding: "12px 0",
       },
-      ".cm-cursor, .cm-dropCursor": {
-        borderLeftColor: accent,
-      },
       "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
         backgroundColor: hexToRgba(accent, 0.15),
       },
@@ -199,6 +195,43 @@ function createLightHighlightStyle(accent: string) {
   ]);
 }
 
+function buildCursorExtensions(
+  style: "line" | "block" | "underline",
+  blink: boolean,
+  accent: string,
+): Extension[] {
+  const cursorTheme: Record<string, Record<string, string>> = {
+    ".cm-cursor, .cm-dropCursor": {},
+  };
+
+  if (style === "line") {
+    cursorTheme[".cm-cursor, .cm-dropCursor"] = {
+      borderLeftColor: accent,
+      borderLeftWidth: "2px",
+    };
+  } else if (style === "block") {
+    cursorTheme[".cm-cursor, .cm-dropCursor"] = {
+      borderLeftColor: "transparent",
+      borderLeftWidth: "0",
+      backgroundColor: hexToRgba(accent, 0.7),
+      width: "0.6em",
+    };
+  } else {
+    // underline
+    cursorTheme[".cm-cursor, .cm-dropCursor"] = {
+      borderLeftColor: "transparent",
+      borderLeftWidth: "0",
+      borderBottom: `2px solid ${accent}`,
+      width: "0.6em",
+    };
+  }
+
+  return [
+    drawSelection({ cursorBlinkRate: blink ? 1200 : 0 }),
+    EditorView.theme(cursorTheme),
+  ];
+}
+
 export const MarkdownEditor = forwardRef(function MarkdownEditor(
   props: MarkdownEditorProps,
   ref: Ref<MarkdownEditorHandle>,
@@ -209,7 +242,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     onSave,
     placeholder: placeholderText = "Start writing...",
     className,
-    style,
+    style: styleProp,
     showLineNumbers = false,
     readOnly = false,
     extensions: extraExtensions = [],
@@ -218,6 +251,8 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     fontSize,
     theme = "dark",
     accentColor,
+    cursorStyle = "line",
+    cursorBlink = true,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -228,6 +263,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const wordWrapCompartment = useRef(new Compartment());
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
+  const cursorCompartment = useRef(new Compartment());
 
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
@@ -269,6 +305,9 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             EditorState.tabSize.of(tabSize),
             indentUnit.of(" ".repeat(tabSize)),
           ]),
+          cursorCompartment.current.of(
+            buildCursorExtensions(cursorStyle, cursorBlink, accent),
+          ),
           history(),
           keymap.of([
             ...defaultKeymap,
@@ -379,8 +418,22 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     });
   }, [theme, accentColor]);
 
+  // Update cursor style / blink
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const isDark = theme === "dark";
+    const defaultAccent = isDark ? "#d4e157" : "#7c8a00";
+    const accent = accentColor || defaultAccent;
+    view.dispatch({
+      effects: cursorCompartment.current.reconfigure(
+        buildCursorExtensions(cursorStyle, cursorBlink, accent),
+      ),
+    });
+  }, [cursorStyle, cursorBlink, theme, accentColor]);
+
   const containerStyle: React.CSSProperties = {
-    ...style,
+    ...styleProp,
     ...(fontSize ? { fontSize: `${fontSize}px` } : {}),
   };
 
