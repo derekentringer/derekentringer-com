@@ -82,6 +82,10 @@
 - [x] Note timestamps in status bar — Created date and Modified date+time displayed in the toolbar status bar next to save status, separated by middle-dot (`·`) separators, with full date+time hover tooltips; `text-[11px] text-muted-foreground` styling matching save status
 - [x] [14 — Import Button + Export](features/14-import-export.md) — ImportButton component with file/folder picker in sidebar footer, export notes as .md/.txt/.pdf via right-click context menu, export folders as .zip with preserved structure, jszip + marked dependencies, 33 tests
 
+### Phase 11: Build & Distribution — Low Priority
+
+- [x] [16 — Build & Distribution](features/16-build-and-distribution.md) — Environment-aware build scripts with `.env` / `.env.production` for local vs prod API switching, `tauri:build:prod` builds universal binary with prod URL baked in, `tauri:version-sync` reads latest git tag into `tauri.conf.json`
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)
