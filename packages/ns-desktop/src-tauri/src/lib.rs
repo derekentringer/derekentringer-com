@@ -62,6 +62,12 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/009.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "add audio_mode column to notes",
+            sql: include_str!("../migrations/010.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -105,8 +111,24 @@ fn remove_secure_item(key: String) -> Result<(), String> {
     }
 }
 
+/// Force legacy (non-overlay) scrollbars so CSS ::-webkit-scrollbar styling
+/// is always respected. macOS overlay scrollbars bypass custom CSS on hover.
+#[cfg(target_os = "macos")]
+fn force_legacy_scrollbars() {
+    use objc2_foundation::{NSString, NSUserDefaults};
+    unsafe {
+        let defaults = NSUserDefaults::standardUserDefaults();
+        let key = NSString::from_str("AppleShowScrollBars");
+        let value = NSString::from_str("Always");
+        defaults.setObject_forKey(Some(&value), &key);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    force_legacy_scrollbars();
+
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
         .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item])

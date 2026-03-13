@@ -146,6 +146,7 @@ import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
+import { Dashboard } from "../components/Dashboard.tsx";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
@@ -266,6 +267,7 @@ export function NotesPage() {
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
+  const [dashboardKey, setDashboardKey] = useState(0);
 
   // File drag-and-drop import
   const [isDragOver, setIsDragOver] = useState(false);
@@ -312,6 +314,41 @@ export function NotesPage() {
   function showError(message: string) {
     setError(message);
     setTimeout(() => setError(null), 4000);
+  }
+
+  // --- Dashboard ---
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDashboardKey((k) => k + 1);
+    }
+  }, [selectedId]);
+
+  async function handleDashboardSelectNote(noteId: string) {
+    try {
+      const note = await fetchNoteById(noteId);
+      if (note) {
+        openNoteAsTab(note);
+      } else {
+        showError("Note not found");
+      }
+    } catch {
+      showError("Failed to open note");
+    }
+  }
+
+  function handleDashboardStartRecording() {
+    const recordBtn = document.querySelector<HTMLButtonElement>('[title^="Record audio"]');
+    if (recordBtn) {
+      recordBtn.click();
+    }
+  }
+
+  function handleDashboardImportFile() {
+    const importBtn = document.querySelector<HTMLButtonElement>('[title="Import"]');
+    if (importBtn) {
+      importBtn.click();
+    }
   }
 
   // --- Resizable panels ---
@@ -2257,7 +2294,7 @@ export function NotesPage() {
             onDragEnd={handleDragEnd}
           >
             {/* Favorites + Folder tree (resizable) */}
-            <div className="shrink-0 overflow-y-auto" style={{ height: folderResize.size }}>
+            <div className="shrink-0 overflow-y-auto overflow-x-hidden" style={{ height: folderResize.size }}>
               {(favoriteFolders.length > 0 || favoriteNotes.length > 0) && (
                 <FavoritesPanel
                   favoriteFolders={favoriteFolders}
@@ -2344,7 +2381,7 @@ export function NotesPage() {
             </div>
 
             {/* Note list */}
-            <nav className="flex-1 overflow-y-auto p-2" data-testid="note-list">
+            <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2" data-testid="note-list">
               {isLoading ? (
                 <div className="px-3 py-2 text-sm text-muted-foreground">
                   Loading...
@@ -2707,7 +2744,7 @@ export function NotesPage() {
             </div>
 
             {/* Title */}
-            <div className="border-b border-border">
+            <div className="border-b border-border overflow-hidden">
               <input
                 data-title-input
                 type="text"
@@ -2737,7 +2774,7 @@ export function NotesPage() {
 
             {/* Summary */}
             {selectedNote?.summary && (
-              <div className="relative px-4 py-2 text-sm text-muted-foreground border-b border-border italic pr-8">
+              <div className="relative px-4 py-2 text-sm text-muted-foreground border-b border-border italic pr-8 overflow-hidden">
                 {selectedNote.summary}
                 <button
                   onClick={() => setConfirmDeleteSummary(true)}
@@ -2874,14 +2911,21 @@ export function NotesPage() {
               </>
             )}
           </>
-        ) : (
+        ) : sidebarView === "trash" ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <p className="text-muted-foreground">
-              {sidebarView === "trash"
-                ? "Select a note to preview"
-                : "Select a note or create a new one"}
+              Select a note to preview
             </p>
           </div>
+        ) : (
+          <Dashboard
+            key={dashboardKey}
+            onSelectNote={handleDashboardSelectNote}
+            onCreateNote={handleCreate}
+            onStartRecording={handleDashboardStartRecording}
+            onImportFile={handleDashboardImportFile}
+            audioNotesEnabled={aiSettings.masterAiEnabled && aiSettings.audioNotes}
+          />
         )}
       </div>
 

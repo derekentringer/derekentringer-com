@@ -3,6 +3,25 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Note } from "@derekentringer/ns-shared";
 
+// Mock Tauri APIs (not available in jsdom)
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(vi.fn()),
+}));
+
+// Mock sync engine
+vi.mock("../lib/syncEngine.ts", () => ({
+  initSyncEngine: vi.fn().mockResolvedValue(undefined),
+  destroySyncEngine: vi.fn(),
+  notifyLocalChange: vi.fn(),
+  manualSync: vi.fn(),
+  setSyncSemanticSearchEnabled: vi.fn(),
+  getSyncStatus: vi.fn().mockReturnValue({ status: "idle", error: null }),
+}));
+
 // Mock db module
 const mockFetchNotes = vi.fn().mockResolvedValue([]);
 const mockFetchFolders = vi.fn().mockResolvedValue([]);
@@ -70,6 +89,8 @@ vi.mock("../lib/db.ts", () => ({
   findNoteByLocalPath: vi.fn().mockResolvedValue(null),
   getNoteLocalPath: vi.fn().mockResolvedValue(null),
   getNoteLocalFileHash: vi.fn().mockResolvedValue(null),
+  fetchRecentlyEditedNotes: vi.fn().mockResolvedValue([]),
+  fetchAudioNotes: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock localFileService
@@ -202,6 +223,7 @@ function makeTrashNote(overrides: Partial<Note> = {}): Note {
     sortOrder: 0,
     favoriteSortOrder: 0,
     isLocalFile: false,
+    audioMode: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
     deletedAt: "2024-06-01T00:00:00.000Z",

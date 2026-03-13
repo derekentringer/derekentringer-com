@@ -1,5 +1,5 @@
 import type { Note as PrismaNote, NoteVersion as PrismaNoteVersion } from "../generated/prisma/client.js";
-import type { Note, NoteSearchResult, NoteVersion } from "@derekentringer/shared/ns";
+import type { Note, NoteSearchResult, NoteVersion, AudioMode } from "@derekentringer/shared/ns";
 import type { User } from "@derekentringer/shared";
 
 export function toNote(row: PrismaNote): Note {
@@ -21,6 +21,7 @@ export function toNote(row: PrismaNote): Note {
     sortOrder: row.sortOrder,
     favoriteSortOrder: row.favoriteSortOrder,
     isLocalFile: row.isLocalFile,
+    audioMode: (row.audioMode as AudioMode) ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,

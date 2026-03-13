@@ -52,6 +52,7 @@ export async function createNote(
       folderId: data.folderId ?? null,
       tags: data.tags ?? [],
       sortOrder: nextSortOrder,
+      audioMode: data.audioMode ?? null,
     },
   });
 
@@ -94,7 +95,7 @@ interface FtsRow extends PrismaNote {
 }
 
 // Explicit column list for raw SQL queries (avoids issues with unsupported types like vector)
-const NOTE_COLUMNS = `"id", "userId", "title", "content", "folder", "folderId", "tags", "summary", "favorite", "sortOrder", "favoriteSortOrder", "createdAt", "updatedAt", "deletedAt"`;
+const NOTE_COLUMNS = `"id", "userId", "title", "content", "folder", "folderId", "tags", "summary", "favorite", "sortOrder", "favoriteSortOrder", "isLocalFile", "audioMode", "createdAt", "updatedAt", "deletedAt"`;
 
 export async function listNotes(
   userId: string,
@@ -988,4 +989,32 @@ export async function removeTag(userId: string, name: string): Promise<number> {
   );
 
   return toUpdate.length;
+}
+
+export async function getDashboardData(userId: string): Promise<{
+  recentlyEdited: PrismaNote[];
+  favorites: PrismaNote[];
+  audioNotes: PrismaNote[];
+}> {
+  const prisma = getPrisma();
+
+  const [recentlyEdited, favorites, audioNotes] = await Promise.all([
+    prisma.note.findMany({
+      where: { userId, deletedAt: null },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    }),
+    prisma.note.findMany({
+      where: { userId, favorite: true, deletedAt: null },
+      orderBy: { favoriteSortOrder: "asc" },
+      take: 10,
+    }),
+    prisma.note.findMany({
+      where: { userId, audioMode: { not: null }, deletedAt: null },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+    }),
+  ]);
+
+  return { recentlyEdited, favorites, audioNotes };
 }
