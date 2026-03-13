@@ -159,6 +159,36 @@ describe("MarkdownPreview", () => {
     });
   });
 
+  describe("Heading IDs (rehype-slug)", () => {
+    it("adds id attribute to h1", () => {
+      const { container } = render(
+        <MarkdownPreview content="# Hello World" />,
+      );
+      const h1 = container.querySelector("h1");
+      expect(h1).not.toBeNull();
+      expect(h1!.id).toBe("hello-world");
+    });
+
+    it("adds id attributes to multiple heading levels", () => {
+      const { container } = render(
+        <MarkdownPreview content={"# Title\n## Section\n### Sub"} />,
+      );
+      expect(container.querySelector("h1")!.id).toBe("title");
+      expect(container.querySelector("h2")!.id).toBe("section");
+      expect(container.querySelector("h3")!.id).toBe("sub");
+    });
+
+    it("generates incremented slugs for duplicate headings", () => {
+      const { container } = render(
+        <MarkdownPreview content={"## Intro\n## Intro\n## Intro"} />,
+      );
+      const headings = container.querySelectorAll("h2");
+      expect(headings[0].id).toBe("intro");
+      expect(headings[1].id).toBe("intro-1");
+      expect(headings[2].id).toBe("intro-2");
+    });
+  });
+
   describe("Syntax highlighting", () => {
     it("adds hljs class to code element in fenced code block with language hint", () => {
       const { container } = render(

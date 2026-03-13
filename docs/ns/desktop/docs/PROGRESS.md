@@ -100,6 +100,8 @@
 
 - [x] [21 — Mermaid Diagram Rendering](features/21-mermaid-diagram-rendering.md) — Fenced ` ```mermaid ` code blocks render as visual SVG diagrams via `mermaid.render()`, lazy-loaded (~2MB library only loads when a mermaid block is present), theme-aware (dark/light) with automatic re-render on theme change via MutationObserver + matchMedia, `MermaidDiagram` component with error fallback (raw code + error message), `CodeBlock` language detection delegates mermaid to renderer, `QAPanel` gains CodeBlock component for mermaid + copy button in AI answers, 4 new tests
 
+- [x] [22 — Table of Contents](features/22-table-of-contents.md) — TOC tab in right-side drawer showing document structure from markdown headings (h1–h6), click-to-scroll navigation via `rehype-slug` heading IDs + `github-slugger` matching slugs, `extractHeadings` utility skips fenced code blocks and strips inline formatting, `TocPanel` component with hierarchy indentation (`(level - minLevel) * 16 + 12` px), empty state for headingless notes, `CSS.escape()` safe selectors, real-time updates on content change, 21 new tests
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)
