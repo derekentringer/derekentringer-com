@@ -172,6 +172,40 @@
   padding: 0;
 }
 
+.code-block-wrapper {
+  position: relative;
+}
+
+.code-block-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--color-input);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-muted-foreground);
+  padding: 4px 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.code-block-wrapper:hover .code-block-copy {
+  opacity: 1;
+}
+
+.code-block-copy:hover {
+  color: var(--color-foreground);
+  border-color: var(--color-foreground);
+}
+
+.code-block-copy.copied {
+  color: #4ade80;
+  border-color: #4ade80;
+}
+
 .markdown-preview a {
   color: var(--color-primary);
   text-decoration: underline;

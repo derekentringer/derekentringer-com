@@ -68,4 +68,48 @@ describe("MarkdownPreview", () => {
     await user.click(checkboxes[0]);
     expect(onChange).toHaveBeenCalledWith("- [x] task one\n- [ ] task two");
   });
+
+  describe("CodeBlock copy button", () => {
+    function setupClipboardMock() {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      // Must be set AFTER userEvent.setup() which overrides navigator.clipboard
+      Object.defineProperty(navigator, "clipboard", {
+        get: () => ({ writeText }),
+        configurable: true,
+      });
+      return writeText;
+    }
+
+    it("renders a copy button for fenced code blocks", () => {
+      render(<MarkdownPreview content={"```\nconst x = 1;\n```"} />);
+      expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+    });
+
+    it("calls navigator.clipboard.writeText with the code text on click", async () => {
+      const user = userEvent.setup();
+      const writeText = setupClipboardMock();
+      render(<MarkdownPreview content={"```\nconst x = 1;\n```"} />);
+      await user.click(screen.getByRole("button", { name: "Copy code" }));
+      expect(writeText).toHaveBeenCalledWith("const x = 1;\n");
+    });
+
+    it("shows copied state after click", async () => {
+      const user = userEvent.setup();
+      setupClipboardMock();
+      render(<MarkdownPreview content={"```\ncode\n```"} />);
+      const btn = screen.getByRole("button", { name: "Copy code" });
+      await user.click(btn);
+      expect(screen.getByRole("button", { name: "Copied" })).toHaveClass("copied");
+    });
+
+    it("does not render a copy button for inline code", () => {
+      render(<MarkdownPreview content={"`inline code`"} />);
+      expect(screen.queryByRole("button", { name: "Copy code" })).not.toBeInTheDocument();
+    });
+
+    it("renders copy button even without onContentChange (trash view)", () => {
+      render(<MarkdownPreview content={"```\ncode\n```"} />);
+      expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+    });
+  });
 });
