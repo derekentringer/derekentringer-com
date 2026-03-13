@@ -43,6 +43,7 @@ Markdown-based note editor using CodeMirror 6 with syntax highlighting, auto-sav
 - `react-markdown` with `remark-gfm` for GitHub Flavored Markdown
 - Styled via `.markdown-preview` CSS classes in `global.css`
 - Headings, code blocks, blockquotes, tables, lists, links, horizontal rules, images, checkboxes
+- Interactive checkboxes: GFM task list checkboxes are clickable in preview and split modes; toggling updates the underlying markdown and triggers autosave; DOM-based index lookup for reliable identification; disabled in trash view; `onContentChange` prop with `toggleCheckbox` utility (`src/lib/toggleCheckbox.ts`)
 
 ### Editor Toolbar (`src/components/EditorToolbar.tsx`)
 
