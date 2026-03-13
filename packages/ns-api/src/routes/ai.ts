@@ -434,6 +434,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         title: structured.title,
         content: structured.content,
         tags: structured.tags,
+        audioMode: mode,
       });
 
       const note = toNote(noteRow);

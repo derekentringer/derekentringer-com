@@ -29,6 +29,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     sortOrder: 0,
     favoriteSortOrder: 0,
     isLocalFile: false,
+    audioMode: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-01-01T00:00:00.000Z",
     deletedAt: null,

@@ -71,6 +71,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import { connectSseStream } from "../api/sse.ts";
 import { ImportButton } from "../components/ImportButton.tsx";
+import { Dashboard } from "../components/Dashboard.tsx";
 import {
   parseFileList,
   importFiles,
@@ -240,6 +241,7 @@ export function NotesPage() {
   const focusModeDrawerRef = useRef(false);
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
+  const [dashboardKey, setDashboardKey] = useState(0);
   const qaResize = useResizable({
     direction: "vertical",
     initialSize: 350,
@@ -754,6 +756,36 @@ export function NotesPage() {
       loadNotes();
     } catch {
       showError("Failed to create note");
+    }
+  }
+
+  // Dashboard integration — reset key when returning to empty state
+  useEffect(() => {
+    if (!selectedId) {
+      setDashboardKey((k) => k + 1);
+    }
+  }, [selectedId]);
+
+  async function handleDashboardSelectNote(noteId: string) {
+    try {
+      const note = await fetchNote(noteId);
+      openNoteAsTab(note);
+    } catch {
+      showError("Failed to open note");
+    }
+  }
+
+  function handleDashboardStartRecording() {
+    const recordBtn = document.querySelector<HTMLButtonElement>('[title^="Record audio"]');
+    if (recordBtn) {
+      recordBtn.click();
+    }
+  }
+
+  function handleDashboardImportFile() {
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"][accept*=".md"]');
+    if (fileInput) {
+      fileInput.click();
     }
   }
 
@@ -2330,14 +2362,21 @@ export function NotesPage() {
               />
             </div>
           </>
-        ) : (
+        ) : sidebarView === "trash" ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <p className="text-muted-foreground">
-              {sidebarView === "trash"
-                ? "Select a note to preview"
-                : "Select a note or create a new one"}
+              Select a note to preview
             </p>
           </div>
+        ) : (
+          <Dashboard
+            key={dashboardKey}
+            onSelectNote={handleDashboardSelectNote}
+            onCreateNote={handleCreate}
+            onStartRecording={handleDashboardStartRecording}
+            onImportFile={handleDashboardImportFile}
+            audioNotesEnabled={settings.masterAiEnabled && settings.audioNotes}
+          />
         )}
         </div>
 

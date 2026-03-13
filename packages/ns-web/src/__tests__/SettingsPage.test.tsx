@@ -374,7 +374,9 @@ describe("SettingsPage", () => {
     mockGetVersionInterval.mockResolvedValue({ minutes: 5 });
     renderSettingsPage();
     const select = await screen.findByLabelText("Version capture interval");
-    expect((select as HTMLSelectElement).value).toBe("5");
+    await waitFor(() => {
+      expect((select as HTMLSelectElement).value).toBe("5");
+    });
   });
 
   it("changing version interval calls setVersionInterval", async () => {
