@@ -39,8 +39,11 @@ Replace the empty editor panel ("Select a note or create a new one") with a rich
 - Dashboard refreshes via key prop when returning to empty state
 
 ### Scrollbar Styling
-- Dashboard scroll sections use `dashboard-scroll` class with fade-in/fade-out scrollbar behavior via CSS `@property` animation
-- Scrollbar thumb fades from transparent to themed color on hover with 0.3s ease transition
+- Scrollbar thumb fades from transparent to themed color on hover with 0.3s ease transition via CSS `@property` animation
+
+### UI Polish
+- Tag browser container uses `transition-[max-height,opacity]` instead of `transition-all` to avoid hover jitter
+- `cursor-pointer` on suggested tag accept/dismiss buttons and tag suggestion dropdown buttons
 
 ## Files Changed
 

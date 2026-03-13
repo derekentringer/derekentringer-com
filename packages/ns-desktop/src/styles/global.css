@@ -44,13 +44,20 @@
     height: 100%;
   }
 
-  /* Themed scrollbars — fade in on hover via @property transition */
-  * {
-    --scroll-thumb-color: transparent;
+  /* Themed scrollbars — fade in on hover via @property transition.
+     Only target actual scrollable containers to avoid jitter on
+     non-scrollable elements (titles, tags, inputs, etc.). */
+  .overflow-y-auto,
+  .overflow-x-auto,
+  .overflow-auto,
+  .markdown-preview {
     transition: --scroll-thumb-color 0.3s ease;
   }
 
-  *:hover {
+  .overflow-y-auto:hover,
+  .overflow-x-auto:hover,
+  .overflow-auto:hover,
+  .markdown-preview:hover {
     --scroll-thumb-color: var(--color-border);
   }
 

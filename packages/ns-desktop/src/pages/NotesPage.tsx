@@ -2266,7 +2266,7 @@ export function NotesPage() {
             </div>
           </div>
           <div
-            className="overflow-y-auto overflow-x-hidden transition-all duration-200 ease-in-out"
+            className="overflow-y-auto overflow-x-hidden transition-[max-height,opacity] duration-200 ease-in-out"
             style={{
               maxHeight: searchFocused || activeTags.length > 0 || searchQuery ? "200px" : "0px",
               opacity: searchFocused || activeTags.length > 0 || searchQuery ? 1 : 0,

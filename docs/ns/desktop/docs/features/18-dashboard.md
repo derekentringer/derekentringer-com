@@ -38,7 +38,10 @@ Replace the empty editor panel ("Select a note or create a new one") with a rich
 - All scrollbars fade in/out on hover via CSS `@property --scroll-thumb-color` with `inherits: true` and 0.3s ease transition
 - macOS legacy scrollbar mode forced via Rust NSUserDefaults to prevent overlay scrollbar takeover
 - Removed `scrollbar-width`/`scrollbar-color` standard properties that conflict with `::-webkit-scrollbar`
+- Scrollbar fade scoped to scrollable containers only (`.overflow-y-auto`/`.overflow-x-auto`/`.overflow-auto`/`.markdown-preview`) instead of `*` to prevent jitter on non-scrollable elements
 - Sidebar panels use `overflow-x-hidden` to prevent horizontal scrolling
+- Tag browser container uses `transition-[max-height,opacity]` instead of `transition-all` to avoid hover jitter
+- `cursor-pointer` on tag suggestion dropdown buttons
 
 ### Dependencies
 - Added `objc2-foundation` v0.3 (macOS-only) for NSUserDefaults access
