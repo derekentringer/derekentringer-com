@@ -103,6 +103,8 @@
 
 - [x] [17 — Code Block Copy Button](features/17-code-block-copy-button.md) — Hover-reveal "Copy" button on fenced code blocks in markdown preview, copies code to clipboard via `navigator.clipboard.writeText()`, checkmark feedback for 2s, `CodeBlock` component as react-markdown `pre` override, refactored `markdownComponents` to always build (copy button works in trash view), inline SVG icons (clipboard + checkmark), CSS opacity transition on hover, 5 new tests
 
+- [x] [18 — Syntax Highlighting](features/18-syntax-highlighting.md) — Syntax highlighting in fenced code blocks via `rehype-highlight` + `highlight.js`, custom CSS theme with 6 token color variables (keyword/string/comment/number/function/variable), automatic dark/light theme support via CSS custom properties, applied to both MarkdownPreview and QAPanel components, inline code unaffected, 4 new tests
+
 ### Bug Fixes
 
 - [x] File drag-and-drop import tab fix — `handleImportFiles` called `selectNote` instead of `openNoteAsTab`, so drag-imported notes appeared in sidebar but didn't open a tab; fixed to match `handleCreate` behavior

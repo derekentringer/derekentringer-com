@@ -146,4 +146,44 @@ describe("MarkdownPreview", () => {
       expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
     });
   });
+
+  describe("Syntax highlighting", () => {
+    it("adds hljs class to code element in fenced code block with language hint", () => {
+      const { container } = render(
+        <MarkdownPreview content={"```js\nconst x = 1;\n```"} />,
+      );
+      const codeEl = container.querySelector("pre code");
+      expect(codeEl).not.toBeNull();
+      expect(codeEl!.className).toMatch(/hljs/);
+    });
+
+    it("produces hljs-keyword spans for keywords in highlighted code", () => {
+      const { container } = render(
+        <MarkdownPreview content={"```js\nconst x = 1;\n```"} />,
+      );
+      const keywordSpans = container.querySelectorAll(".hljs-keyword");
+      expect(keywordSpans.length).toBeGreaterThan(0);
+    });
+
+    it("does not add hljs classes to inline code", () => {
+      const { container } = render(
+        <MarkdownPreview content={"`const x = 1`"} />,
+      );
+      const inlineCode = container.querySelector("code");
+      expect(inlineCode).not.toBeNull();
+      expect(inlineCode!.className).not.toMatch(/hljs/);
+    });
+
+    it("copy button still works with syntax-highlighted code", async () => {
+      const user = userEvent.setup();
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        get: () => ({ writeText }),
+        configurable: true,
+      });
+      render(<MarkdownPreview content={"```js\nconst x = 1;\n```"} />);
+      await user.click(screen.getByRole("button", { name: "Copy code" }));
+      expect(writeText).toHaveBeenCalledWith("const x = 1;\n");
+    });
+  });
 });
