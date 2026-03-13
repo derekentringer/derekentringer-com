@@ -434,6 +434,51 @@
   margin-right: 0.5em;
 }
 
+/* Sortable table headers */
+.markdown-preview th.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.markdown-preview th.sortable-header:hover {
+  background-color: var(--color-muted);
+}
+.markdown-preview .sort-indicator {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: middle;
+  opacity: 0.3;
+}
+.markdown-preview th.sort-active .sort-indicator {
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+/* Editable table cells */
+.markdown-preview td.editable-cell {
+  cursor: default;
+}
+.markdown-preview td.editable-cell:hover {
+  outline: 1px solid var(--color-border);
+  outline-offset: -1px;
+}
+
+/* Cell edit input */
+.markdown-preview .cell-edit-input {
+  width: 100%;
+  min-width: 40px;
+  padding: 2px 4px;
+  margin: -3px -4px;
+  border: 2px solid var(--color-primary);
+  border-radius: 2px;
+  background: var(--color-input);
+  color: var(--color-foreground);
+  font-size: inherit;
+  font-family: inherit;
+  outline: none;
+  box-sizing: content-box;
+}
+
 /* Search highlight */
 .search-highlight mark {
   background-color: var(--color-primary);

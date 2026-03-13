@@ -223,6 +223,36 @@ describe("MarkdownPreview", () => {
     });
   });
 
+  describe("Interactive tables", () => {
+    const tableMd = "| Col A | Col B |\n| --- | --- |\n| 1 | 2 |";
+
+    it("renders interactive table when onContentChange is provided", () => {
+      const onChange = vi.fn();
+      render(<MarkdownPreview content={tableMd} onContentChange={onChange} />);
+      const th = screen.getByText("Col A").closest("th");
+      expect(th).toHaveClass("sortable-header");
+    });
+
+    it("renders static table when onContentChange is absent (trash view)", () => {
+      render(<MarkdownPreview content={tableMd} />);
+      const th = screen.getByText("Col A").closest("th");
+      expect(th).not.toHaveClass("sortable-header");
+    });
+
+    it("multiple tables in one document have correct indices", () => {
+      const onChange = vi.fn();
+      const multiTableMd =
+        "| A |\n| --- |\n| 1 |\n\n| B |\n| --- |\n| 2 |";
+      render(
+        <MarkdownPreview content={multiTableMd} onContentChange={onChange} />,
+      );
+      const headers = screen.getAllByRole("columnheader");
+      expect(headers).toHaveLength(2);
+      expect(headers[0]).toHaveClass("sortable-header");
+      expect(headers[1]).toHaveClass("sortable-header");
+    });
+  });
+
   describe("Syntax highlighting", () => {
     it("adds hljs class to code element in fenced code block with language hint", () => {
       const { container } = render(

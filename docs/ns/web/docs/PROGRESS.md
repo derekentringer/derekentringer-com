@@ -109,6 +109,8 @@
 
 - [x] [20 — Table of Contents](features/20-table-of-contents.md) — TOC tab in right-side drawer showing document structure from markdown headings (h1–h6), click-to-scroll navigation via `rehype-slug` heading IDs + `github-slugger` matching slugs, `extractHeadings` utility skips fenced code blocks and strips inline formatting, `TocPanel` component with hierarchy indentation (`(level - minLevel) * 16 + 12` px), empty state for headingless notes, `CSS.escape()` safe selectors, real-time updates on content change, 21 new tests
 
+- [x] [21 — Interactive Tables](features/21-interactive-tables.md) — GFM tables in markdown preview become sortable and editable when `onContentChange` is provided; click column header toggles asc ↔ desc sort (rewrites markdown rows via natural `localeCompare`), double-click cell enters inline edit mode with Enter/Escape/Tab navigation; `tableMarkdown.ts` utility (`findTables`, `parseRow`, `serializeTable`, `updateCell`, `sortTableByColumn`), `InteractiveTable` component with `SortIndicator` SVG arrows, stable component refs via `useRef` in MarkdownPreview preventing remount on content change, trash view tables remain static, 48 new tests
+
 ### Bug Fixes
 
 - [x] File drag-and-drop import tab fix — `handleImportFiles` called `selectNote` instead of `openNoteAsTab`, so drag-imported notes appeared in sidebar but didn't open a tab; fixed to match `handleCreate` behavior
