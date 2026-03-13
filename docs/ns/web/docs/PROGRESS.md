@@ -101,6 +101,8 @@
 
 - [x] Interactive markdown checkboxes — GFM task list checkboxes (`- [ ]` / `- [x]`) in preview and split modes are now clickable; toggling a checkbox updates the underlying markdown content and triggers autosave; DOM-based index lookup at click time for reliable checkbox identification across React re-renders; trash view checkboxes remain disabled (read-only); `toggleCheckbox` utility with full test coverage, MarkdownPreview `onContentChange` prop with 3 new component tests
 
+- [x] [17 — Code Block Copy Button](features/17-code-block-copy-button.md) — Hover-reveal "Copy" button on fenced code blocks in markdown preview, copies code to clipboard via `navigator.clipboard.writeText()`, checkmark feedback for 2s, `CodeBlock` component as react-markdown `pre` override, refactored `markdownComponents` to always build (copy button works in trash view), inline SVG icons (clipboard + checkmark), CSS opacity transition on hover, 5 new tests
+
 ### Bug Fixes
 
 - [x] File drag-and-drop import tab fix — `handleImportFiles` called `selectNote` instead of `openNoteAsTab`, so drag-imported notes appeared in sidebar but didn't open a tab; fixed to match `handleCreate` behavior
