@@ -94,7 +94,7 @@ export function TagInput({ tags, allTags, onChange }: TagInputProps) {
             {suggestions.map((s) => (
               <button
                 key={s}
-                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   addTag(s);

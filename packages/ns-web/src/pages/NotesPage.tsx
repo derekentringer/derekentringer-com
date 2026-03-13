@@ -1716,7 +1716,7 @@ export function NotesPage() {
                 )}
               </div>
               <div
-                className="overflow-y-auto overflow-x-hidden transition-all duration-200 ease-in-out"
+                className="overflow-y-auto overflow-x-hidden transition-[max-height,opacity] duration-200 ease-in-out"
                 style={{
                   maxHeight: searchFocused || activeTags.length > 0 || search ? "200px" : "0px",
                   opacity: searchFocused || activeTags.length > 0 || search ? 1 : 0,
@@ -2208,14 +2208,14 @@ export function NotesPage() {
                     {tag}
                     <button
                       onClick={() => handleAcceptTag(tag)}
-                      className="text-primary hover:text-primary-hover transition-colors"
+                      className="text-primary hover:text-primary-hover transition-colors cursor-pointer"
                       title="Accept tag"
                     >
                       +
                     </button>
                     <button
                       onClick={() => handleDismissTag(tag)}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
+                      className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
                       title="Dismiss"
                     >
                       ✕
