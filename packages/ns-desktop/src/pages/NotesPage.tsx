@@ -146,11 +146,12 @@ import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
+import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
-type DrawerTab = "assistant" | "history";
+type DrawerTab = "assistant" | "history" | "toc";
 
 const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
 
@@ -2013,6 +2014,15 @@ export function NotesPage() {
     }
   }, [aiSettings.qaAssistant]);
 
+  function handleTocHeadingClick(slug: string) {
+    const previewContainer = document.querySelector(".markdown-preview");
+    if (!previewContainer) return;
+    const heading = previewContainer.querySelector(`#${CSS.escape(slug)}`);
+    if (heading) {
+      heading.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   function handleDrawerTabClick(tab: DrawerTab) {
     if (drawerOpen && drawerTab === tab) {
       setDrawerOpen(false);
@@ -2973,6 +2983,29 @@ export function NotesPage() {
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </button>
           )}
+          {/* Table of Contents tab */}
+          {selectedId && sidebarView !== "trash" && (
+            <button
+              onClick={() => handleDrawerTabClick("toc")}
+              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors cursor-pointer ${
+                drawerOpen && drawerTab === "toc"
+                  ? "bg-primary text-primary-contrast"
+                  : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-muted"
+              }`}
+              title="Table of Contents"
+              aria-label="Table of Contents"
+              data-testid="drawer-tab-toc"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="8" y1="6" x2="21" y2="6" />
+                <line x1="8" y1="12" x2="21" y2="12" />
+                <line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
+              </svg>
+            </button>
+          )}
         </div>}
         <div className="h-full flex bg-card shadow-lg">
           <ResizeDivider
@@ -2990,6 +3023,8 @@ export function NotesPage() {
                 selectedVersionId={selectedVersion?.id}
                 refreshKey={versionRefreshKey}
               />
+            ) : drawerTab === "toc" && selectedId ? (
+              <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
             ) : null}
           </div>
         </div>

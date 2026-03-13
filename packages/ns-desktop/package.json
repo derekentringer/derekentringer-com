@@ -37,6 +37,7 @@
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-fs": "^2.0.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
+    "github-slugger": "^2.0.0",
     "highlight.js": "^11.11.1",
     "jszip": "^3.10.1",
     "marked": "^17.0.4",
@@ -45,6 +46,7 @@
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
+    "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.2.0",
     "uuid": "^13.0.0"
