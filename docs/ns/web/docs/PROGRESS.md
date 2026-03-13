@@ -99,6 +99,8 @@
 
 - [x] [14 — Sync Status Indicator](features/14-sync-status-indicator.md) — Replaced 2-state green/yellow dot `OnlineStatusIndicator` with interactive 4-state `SyncStatusButton` (idle/syncing/error/offline) matching desktop app, SSE `onConnect` callback for confirmed connection status, sync status state tracking with `Promise.all` reload, click-to-sync manual refresh, dimmed green idle icon (`text-green-600/50`), `pendingCount` tooltip enrichment for offline state, 10 new component tests + 2 SSE tests
 
+- [x] Interactive markdown checkboxes — GFM task list checkboxes (`- [ ]` / `- [x]`) in preview and split modes are now clickable; toggling a checkbox updates the underlying markdown content and triggers autosave; DOM-based index lookup at click time for reliable checkbox identification across React re-renders; trash view checkboxes remain disabled (read-only); `toggleCheckbox` utility with full test coverage, MarkdownPreview `onContentChange` prop with 3 new component tests
+
 ### Bug Fixes
 
 - [x] File drag-and-drop import tab fix — `handleImportFiles` called `selectNote` instead of `openNoteAsTab`, so drag-imported notes appeared in sidebar but didn't open a tab; fixed to match `handleCreate` behavior
