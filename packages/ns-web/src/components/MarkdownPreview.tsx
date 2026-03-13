@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
+import { CodeBlock } from "./CodeBlock.tsx";
 import { remarkWikiLink } from "../lib/remarkWikiLink.ts";
 import { toggleCheckbox } from "../lib/toggleCheckbox.ts";
 
@@ -29,9 +30,11 @@ export function MarkdownPreview({
   }, [wikiLinkTitleMap]);
 
   const markdownComponents = useMemo(() => {
-    if (!onContentChange) return undefined;
-    return {
-      input: ({ type, checked, ...props }: React.ComponentPropsWithoutRef<"input">) => {
+    const components: Record<string, React.ElementType> = {
+      pre: CodeBlock,
+    };
+    if (onContentChange) {
+      components.input = ({ type, checked, ...props }: React.ComponentPropsWithoutRef<"input">) => {
         if (type !== "checkbox") return <input type={type} checked={checked} {...props} />;
         return (
           <input
@@ -47,8 +50,9 @@ export function MarkdownPreview({
             className="cursor-pointer"
           />
         );
-      },
-    };
+      };
+    }
+    return components;
   }, [content, onContentChange]);
 
   const handleClick = useCallback(
