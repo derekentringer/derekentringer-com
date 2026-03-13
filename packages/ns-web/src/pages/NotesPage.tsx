@@ -2290,6 +2290,10 @@ export function NotesPage() {
                   className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
                   wikiLinkTitleMap={wikiLinkTitleMap}
                   onWikiLinkClick={handleWikiLinkClick}
+                  onContentChange={(newContent) => {
+                    setContent(newContent);
+                    if (newContent !== loadedContentRef.current) setIsDirty(true);
+                  }}
                 />
               )}
             </div>

@@ -92,6 +92,8 @@
 
 - [x] [18 — Dashboard](features/18-dashboard.md) — Rich dashboard replaces empty editor state when no note is selected, showing Quick Actions (New Note, New Recording, Import File), Resume Editing hero card, horizontal-scroll Favorites/Recently Edited/Audio Notes sections, `audioMode` field (SQLite migration 010 + db.ts + upsert), macOS legacy scrollbar mode via Rust NSUserDefaults (`objc2-foundation`), scrollbar fade animation via CSS `@property --scroll-thumb-color` scoped to scrollable containers only (`.overflow-y-auto`/`.overflow-x-auto`/`.overflow-auto`/`.markdown-preview`), sidebar `overflow-x-hidden`, title/summary `overflow-hidden` to prevent jitter, tag browser `transition-[max-height,opacity]` replacing `transition-all` to avoid hover jitter, `cursor-pointer` on tag suggestion buttons, 14 new tests
 
+- [x] Interactive markdown checkboxes — GFM task list checkboxes (`- [ ]` / `- [x]`) in preview and split modes are now clickable; toggling a checkbox updates the underlying markdown content and triggers autosave; DOM-based index lookup at click time for reliable checkbox identification across React re-renders; trash view checkboxes remain disabled (read-only); `toggleCheckbox` utility with full test coverage, MarkdownPreview `onContentChange` prop with 3 new component tests
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)

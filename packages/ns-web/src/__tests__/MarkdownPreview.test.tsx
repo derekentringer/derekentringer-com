@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MarkdownPreview } from "../components/MarkdownPreview.tsx";
 
 describe("MarkdownPreview", () => {
@@ -43,5 +44,28 @@ describe("MarkdownPreview", () => {
       <MarkdownPreview content="test" className="custom-class" />,
     );
     expect(container.firstChild).toHaveClass("custom-class");
+  });
+
+  it("renders checkboxes as disabled when onContentChange is not provided", () => {
+    render(<MarkdownPreview content="- [ ] task" />);
+    const checkbox = screen.getByRole("checkbox");
+    expect(checkbox).toBeDisabled();
+  });
+
+  it("renders checkboxes as enabled when onContentChange is provided", () => {
+    const onChange = vi.fn();
+    render(<MarkdownPreview content="- [ ] task" onContentChange={onChange} />);
+    const checkbox = screen.getByRole("checkbox");
+    expect(checkbox).not.toBeDisabled();
+  });
+
+  it("calls onContentChange with toggled content when checkbox is clicked", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const md = "- [ ] task one\n- [ ] task two";
+    render(<MarkdownPreview content={md} onContentChange={onChange} />);
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[0]);
+    expect(onChange).toHaveBeenCalledWith("- [x] task one\n- [ ] task two");
   });
 });

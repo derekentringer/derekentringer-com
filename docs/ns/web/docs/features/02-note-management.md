@@ -41,6 +41,7 @@ Full CRUD for notes in the web app with a sidebar list, search, and CodeMirror 6
 - **Markdown preview** (`src/components/MarkdownPreview.tsx`):
   - `react-markdown` + `remark-gfm` for rendered markdown
   - Styled headings, code blocks, links, tables, blockquotes, lists, task checkboxes
+  - Interactive checkboxes: GFM task list checkboxes are clickable in preview and split modes; toggling updates the underlying markdown and triggers autosave; DOM-based index lookup for reliable identification; disabled in trash view; `onContentChange` prop with `toggleCheckbox` utility (`src/lib/toggleCheckbox.ts`)
   - Available in split (50/50 side-by-side) or full-width preview mode
 - **Save**: manual save button with dirty state tracking, `Cmd/Ctrl+S` keyboard shortcut, "Saving..." / "Unsaved changes" / "Saved" status indicator
 - **Delete**: two-step confirmation flow (Delete → Confirm/Cancel), removes from list on success
