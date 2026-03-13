@@ -1,7 +1,14 @@
-import { vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { vi, describe, it, expect } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MarkdownPreview } from "../components/MarkdownPreview.tsx";
+
+vi.mock("mermaid", () => ({
+  default: {
+    initialize: vi.fn(),
+    render: vi.fn().mockResolvedValue({ svg: '<svg data-testid="mermaid-svg">diagram</svg>' }),
+  },
+}));
 
 describe("MarkdownPreview", () => {
   it("renders markdown content as HTML", () => {
@@ -144,6 +151,45 @@ describe("MarkdownPreview", () => {
     it("renders copy button even without onContentChange (trash view)", () => {
       render(<MarkdownPreview content={"```\ncode\n```"} />);
       expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+    });
+  });
+
+  describe("Mermaid diagrams", () => {
+    it("renders mermaid code block as a diagram", async () => {
+      const { container } = render(
+        <MarkdownPreview content={"```mermaid\ngraph LR\nA-->B\n```"} />,
+      );
+      await waitFor(() => {
+        expect(container.querySelector(".mermaid-diagram")).toBeInTheDocument();
+      });
+      expect(container.querySelector("pre code")).not.toBeInTheDocument();
+    });
+
+    it("does not render non-mermaid code blocks as diagrams", () => {
+      const { container } = render(
+        <MarkdownPreview content={"```js\nconst x = 1;\n```"} />,
+      );
+      expect(container.querySelector(".mermaid-diagram")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+    });
+
+    it("shows raw code and error message on render failure", async () => {
+      const mermaid = (await import("mermaid")).default;
+      vi.mocked(mermaid.render).mockRejectedValueOnce(new Error("Invalid syntax"));
+      const { container } = render(
+        <MarkdownPreview content={"```mermaid\ninvalid diagram\n```"} />,
+      );
+      await waitFor(() => {
+        expect(container.querySelector(".mermaid-error")).toBeInTheDocument();
+      });
+      expect(screen.getByText("Invalid syntax")).toBeInTheDocument();
+    });
+
+    it("does not render inline mermaid code as a diagram", () => {
+      const { container } = render(
+        <MarkdownPreview content={"`mermaid`"} />,
+      );
+      expect(container.querySelector(".mermaid-diagram")).not.toBeInTheDocument();
     });
   });
 
