@@ -90,6 +90,8 @@
 
 - [x] [17 — Centralized TokenManager](features/17-centralized-token-manager.md) — Shared `TokenManager` in `@derekentringer/shared/token` with desktop-specific Stronghold adapter (200ms vault retry, body-based refresh), removed localStorage security fallback in secureStorage.ts, auth:logout event dispatch on auth failure, dynamic SSE reconnect timer from `tokenManager.getMsUntilExpiry()`, 10% jitter on reconnect delay, 401/403 distinction in sync engine SSE, typed `AuthFailureReason` propagation to AuthContext with `CustomEvent`, dev-mode debug logger
 
+- [x] [18 — Dashboard](features/18-dashboard.md) — Rich dashboard replaces empty editor state when no note is selected, showing Quick Actions (New Note, New Recording, Import File), Resume Editing hero card, horizontal-scroll Favorites/Recently Edited/Audio Notes sections, `audioMode` field (SQLite migration 010 + db.ts + upsert), macOS legacy scrollbar mode via Rust NSUserDefaults (`objc2-foundation`), scrollbar fade animation via CSS `@property --scroll-thumb-color`, sidebar `overflow-x-hidden`, title/summary `overflow-hidden` to prevent jitter, 14 new tests
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)

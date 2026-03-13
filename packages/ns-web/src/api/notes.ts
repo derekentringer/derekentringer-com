@@ -408,6 +408,20 @@ export async function fetchVersion(
   return data.version;
 }
 
+export async function fetchDashboardData(): Promise<{
+  recentlyEdited: Note[];
+  favorites: Note[];
+  audioNotes: Note[];
+}> {
+  const response = await apiFetch("/notes/dashboard");
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch dashboard data: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function fetchFavoriteNotes(params?: {
   sortBy?: NoteSortField;
   sortOrder?: SortOrder;

@@ -72,6 +72,18 @@ describe("toNote", () => {
 
     expect(result.tags).toEqual([]);
   });
+
+  it("includes audioMode from row", () => {
+    const row = makePrismaNote({ audioMode: "meeting" });
+    const result = toNote(row as Parameters<typeof toNote>[0]);
+    expect(result.audioMode).toBe("meeting");
+  });
+
+  it("defaults audioMode to null when not set", () => {
+    const row = makePrismaNote({ audioMode: null });
+    const result = toNote(row as Parameters<typeof toNote>[0]);
+    expect(result.audioMode).toBeNull();
+  });
 });
 
 describe("toNoteSearchResult", () => {

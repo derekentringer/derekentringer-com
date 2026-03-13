@@ -245,6 +245,7 @@ describe("upsertNoteFromRemote", () => {
     sortOrder: 2,
     favoriteSortOrder: 0,
     isLocalFile: false,
+    audioMode: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-06-01T00:00:00.000Z",
     deletedAt: null,
@@ -276,6 +277,7 @@ describe("upsertNoteFromRemote", () => {
     expect(params[11]).toBe(0); // is_deleted (deletedAt is null)
     expect(params[12]).toBe(0); // favorite_sort_order
     expect(params[13]).toBe(0); // is_local_file
+    expect(params[14]).toBeNull(); // audio_mode
   });
 
   it("updates existing note when it already exists locally", async () => {
@@ -295,7 +297,8 @@ describe("upsertNoteFromRemote", () => {
     expect(params[2]).toBe("folder-1"); // folder_id
     expect(params[10]).toBe(0); // favorite_sort_order
     expect(params[11]).toBe(0); // is_local_file
-    expect(params[12]).toBe("remote-note-1"); // WHERE id
+    expect(params[12]).toBeNull(); // audio_mode
+    expect(params[13]).toBe("remote-note-1"); // WHERE id
   });
 
   it("calls ftsDelete instead of ftsUpdate when note is deleted", async () => {

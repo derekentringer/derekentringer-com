@@ -61,6 +61,7 @@ const sampleRow = {
   deleted_at: null,
   sync_status: "pending",
   is_local_file: 0,
+  audio_mode: null,
   created_at: "2024-01-01T00:00:00.000Z",
   updated_at: "2024-01-02T00:00:00.000Z",
 };
@@ -90,6 +91,7 @@ describe("fetchNotes", () => {
       sortOrder: 1,
       favoriteSortOrder: 0,
       isLocalFile: false,
+      audioMode: null,
       createdAt: "2024-01-01T00:00:00.000Z",
       updatedAt: "2024-01-02T00:00:00.000Z",
       deletedAt: null,

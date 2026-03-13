@@ -11,6 +11,7 @@ export interface Note {
   sortOrder: number;
   favoriteSortOrder: number;
   isLocalFile: boolean;
+  audioMode: AudioMode | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -22,6 +23,7 @@ export interface CreateNoteRequest {
   folder?: string;
   folderId?: string;
   tags?: string[];
+  audioMode?: AudioMode;
 }
 
 export interface UpdateNoteRequest {

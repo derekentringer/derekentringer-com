@@ -37,6 +37,7 @@ import {
   listTags,
   renameTag,
   removeTag,
+  getDashboardData,
 } from "../store/noteStore.js";
 
 const TEST_USER_ID = "user-1";
@@ -105,6 +106,7 @@ describe("noteStore", () => {
           folderId: null,
           tags: ["tag1"],
           sortOrder: 3,
+          audioMode: null,
         },
       });
     });
@@ -125,6 +127,7 @@ describe("noteStore", () => {
           folderId: null,
           tags: [],
           sortOrder: 0,
+          audioMode: null,
         },
       });
     });
@@ -985,6 +988,114 @@ describe("noteStore", () => {
 
       const countCall = mockPrisma.$queryRawUnsafe.mock.calls[0][0];
       expect(countCall).toContain("plainto_tsquery");
+    });
+  });
+
+  describe("getDashboardData", () => {
+    it("returns recentlyEdited, favorites, and audioNotes", async () => {
+      const now = new Date();
+      const mockNotes = [makeMockNoteRow({
+        id: "note-1",
+        title: "Test",
+        content: "",
+        folder: null,
+        folderId: null,
+        tags: [],
+        summary: null,
+        favorite: false,
+        sortOrder: 0,
+        favoriteSortOrder: 0,
+        isLocalFile: false,
+        audioMode: null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+        userId: TEST_USER_ID,
+        embeddingUpdatedAt: null,
+        embedding: null,
+      })];
+
+      mockPrisma.note.findMany
+        .mockResolvedValueOnce(mockNotes) // recentlyEdited
+        .mockResolvedValueOnce([]) // favorites
+        .mockResolvedValueOnce([]); // audioNotes
+
+      const result = await getDashboardData(TEST_USER_ID);
+
+      expect(result.recentlyEdited).toHaveLength(1);
+      expect(result.favorites).toHaveLength(0);
+      expect(result.audioNotes).toHaveLength(0);
+      expect(mockPrisma.note.findMany).toHaveBeenCalledTimes(3);
+    });
+
+    it("queries recentlyEdited with correct params", async () => {
+      mockPrisma.note.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+
+      await getDashboardData(TEST_USER_ID);
+
+      expect(mockPrisma.note.findMany).toHaveBeenNthCalledWith(1, {
+        where: { userId: TEST_USER_ID, deletedAt: null },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+      });
+    });
+
+    it("queries favorites with correct params", async () => {
+      mockPrisma.note.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+
+      await getDashboardData(TEST_USER_ID);
+
+      expect(mockPrisma.note.findMany).toHaveBeenNthCalledWith(2, {
+        where: { userId: TEST_USER_ID, favorite: true, deletedAt: null },
+        orderBy: { favoriteSortOrder: "asc" },
+        take: 10,
+      });
+    });
+
+    it("queries audioNotes with correct params", async () => {
+      mockPrisma.note.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+
+      await getDashboardData(TEST_USER_ID);
+
+      expect(mockPrisma.note.findMany).toHaveBeenNthCalledWith(3, {
+        where: { userId: TEST_USER_ID, audioMode: { not: null }, deletedAt: null },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+      });
+    });
+
+    it("returns populated lists when data exists", async () => {
+      const recentNotes = [
+        makeMockNoteRow({ id: "r1" }),
+        makeMockNoteRow({ id: "r2" }),
+      ];
+      const favNotes = [
+        makeMockNoteRow({ id: "f1", favorite: true }),
+      ];
+      const audioNotes = [
+        makeMockNoteRow({ id: "a1", audioMode: "meeting" }),
+        makeMockNoteRow({ id: "a2", audioMode: "voice_memo" }),
+      ];
+
+      mockPrisma.note.findMany
+        .mockResolvedValueOnce(recentNotes)
+        .mockResolvedValueOnce(favNotes)
+        .mockResolvedValueOnce(audioNotes);
+
+      const result = await getDashboardData(TEST_USER_ID);
+
+      expect(result.recentlyEdited).toHaveLength(2);
+      expect(result.favorites).toHaveLength(1);
+      expect(result.audioNotes).toHaveLength(2);
     });
   });
 });

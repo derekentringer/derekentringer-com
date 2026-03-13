@@ -109,6 +109,8 @@
 
 - [x] Local file indicator — Notes linked to local files on desktop show a muted file icon in the note list with "Linked to a local file" tooltip, and an info bar in the editor: "This note is linked to a local file on a desktop device"
 
+- [x] [16 — Dashboard](features/16-dashboard.md) — Rich dashboard replaces empty editor state when no note is selected, showing Quick Actions (New Note, New Recording, Import File), Resume Editing hero card, horizontal-scroll Favorites/Recently Edited/Audio Notes sections with `DashboardNoteCard` (default + hero variants), `DashboardSection` wrapper, `audioMode` field across full stack (shared types → Prisma → API → web), `GET /notes/dashboard` endpoint, scrollbar fade animation via CSS `@property --scroll-thumb-color` with `inherits: true` and 0.3s ease transition, 14 new tests
+
 ### Reliability
 
 - [x] [13 — Sync Hardening](features/13-sync-hardening.md) — SSE reconnection storm fix (refs pattern for stable callbacks, connect-once-on-mount), pre-connect JWT expiry check with proactive token refresh, notes/favorites sort persistence to localStorage with validation, case-insensitive title sort via raw SQL `ORDER BY LOWER("title")` with explicit column list, atomic sync push with `prisma.$transaction()` and LWW skip tracking, pull cursor accuracy using `MAX(updatedAt)` from returned data, SSE hub dead stream immediate cleanup and per-user connection limit (max 5), `updatedAt` indexes on Note and Folder, stale sync cursor cleanup, search SQL column alignment (`favoriteSortOrder`, `folderId`)

@@ -330,7 +330,7 @@ describe("NotesPage", () => {
 
       const trashButton = await screen.findByTitle("Trash");
       expect(trashButton).toBeInTheDocument();
-      expect(screen.getByText("3")).toBeInTheDocument();
+      expect(await screen.findByText("3")).toBeInTheDocument();
     });
 
     it("switches to trash view when trash button is clicked", async () => {

@@ -38,6 +38,7 @@ import {
   removeTag,
   listFavoriteNotes,
   toggleFolderFavorite,
+  getDashboardData,
 } from "../store/noteStore.js";
 import { getBacklinks, listNoteTitles } from "../store/linkStore.js";
 import {
@@ -191,6 +192,20 @@ const renameTagSchema = {
 
 export default async function noteRoutes(fastify: FastifyInstance) {
   fastify.addHook("onRequest", fastify.authenticate);
+
+  // GET /notes/dashboard — MUST be before /:id
+  fastify.get(
+    "/dashboard",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
+      const data = await getDashboardData(userId);
+      return reply.send({
+        recentlyEdited: data.recentlyEdited.map(toNote),
+        favorites: data.favorites.map(toNote),
+        audioNotes: data.audioNotes.map(toNote),
+      });
+    },
+  );
 
   // GET /notes/titles — MUST be before /:id
   fastify.get(
