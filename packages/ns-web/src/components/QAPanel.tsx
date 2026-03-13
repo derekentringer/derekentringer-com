@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { askQuestion, type AskQuestionEvent } from "../api/ai.ts";
 import type { QASource } from "@derekentringer/shared/ns";
+import { CodeBlock } from "./CodeBlock.tsx";
 
 const CITE_RE = /\[([^\]]+)\]/g;
 
@@ -161,7 +162,7 @@ export function QAPanel({ onSelectNote, isOpen }: QAPanelProps) {
                 {msg.content ? (
                   <>
                     <div className="text-sm text-foreground markdown-preview">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{stripCitations(msg.content)}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ pre: CodeBlock }}>{stripCitations(msg.content)}</ReactMarkdown>
                     </div>
                     {(() => {
                       const cited = extractCitations(msg.content);

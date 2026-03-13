@@ -105,6 +105,8 @@
 
 - [x] [18 — Syntax Highlighting](features/18-syntax-highlighting.md) — Syntax highlighting in fenced code blocks via `rehype-highlight` + `highlight.js`, custom CSS theme with 6 token color variables (keyword/string/comment/number/function/variable), automatic dark/light theme support via CSS custom properties, applied to both MarkdownPreview and QAPanel components, inline code unaffected, 4 new tests
 
+- [x] [19 — Mermaid Diagram Rendering](features/19-mermaid-diagram-rendering.md) — Fenced ` ```mermaid ` code blocks render as visual SVG diagrams via `mermaid.render()`, lazy-loaded (~2MB library only loads when a mermaid block is present), theme-aware (dark/light) with automatic re-render on theme change via MutationObserver + matchMedia, `MermaidDiagram` component with error fallback (raw code + error message), `CodeBlock` language detection delegates mermaid to renderer, `QAPanel` gains CodeBlock component for mermaid + copy button in AI answers, 4 new tests
+
 ### Bug Fixes
 
 - [x] File drag-and-drop import tab fix — `handleImportFiles` called `selectNote` instead of `openNoteAsTab`, so drag-imported notes appeared in sidebar but didn't open a tab; fixed to match `handleCreate` behavior

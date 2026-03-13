@@ -1,4 +1,21 @@
 import { useState } from "react";
+import { MermaidDiagram } from "./MermaidDiagram.tsx";
+
+function getLanguage(children: React.ReactNode): string | null {
+  if (
+    children &&
+    typeof children === "object" &&
+    "props" in children
+  ) {
+    const el = children as React.ReactElement<{ className?: string }>;
+    const className = el.props?.className;
+    if (typeof className === "string") {
+      const match = className.match(/language-(\w+)/);
+      return match ? match[1] : null;
+    }
+  }
+  return null;
+}
 
 function CopyIcon() {
   return (
@@ -30,6 +47,12 @@ function extractText(node: React.ReactNode): string {
 }
 
 export function CodeBlock({ children, ...props }: React.ComponentPropsWithoutRef<"pre">) {
+  const language = getLanguage(children);
+
+  if (language === "mermaid") {
+    return <MermaidDiagram code={extractText(children)} />;
+  }
+
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
