@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeSlug from "rehype-slug";
 import type { PluggableList } from "unified";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { remarkWikiLink } from "../lib/remarkWikiLink.ts";
@@ -76,7 +77,7 @@ export function MarkdownPreview({
       className={`markdown-preview ${className ?? ""}`}
       onClick={handleClick}
     >
-      <ReactMarkdown remarkPlugins={plugins} rehypePlugins={[rehypeHighlight]} components={markdownComponents}>{content}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={plugins} rehypePlugins={[rehypeSlug, rehypeHighlight]} components={markdownComponents}>{content}</ReactMarkdown>
     </div>
   );
 }
