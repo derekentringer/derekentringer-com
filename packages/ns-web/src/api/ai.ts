@@ -204,20 +204,40 @@ export interface TranscribeResult {
   note: Note;
 }
 
+const TRANSCRIBE_MAX_RETRIES = 2;
+const TRANSCRIBE_RETRY_DELAY_MS = 2000;
+const TRANSCRIBE_RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
 export async function transcribeAudio(
   audioBlob: Blob,
   mode: AudioMode,
 ): Promise<TranscribeResult> {
-  const formData = new FormData();
-  formData.append("file", audioBlob, "recording.webm");
-  formData.append("mode", mode);
+  let lastError: Error | undefined;
 
-  const response = await apiFetch("/ai/transcribe", {
-    method: "POST",
-    body: formData,
-  });
+  for (let attempt = 0; attempt <= TRANSCRIBE_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, TRANSCRIBE_RETRY_DELAY_MS * attempt));
+    }
 
-  if (!response.ok) {
+    const formData = new FormData();
+    formData.append("file", audioBlob, "recording.webm");
+    formData.append("mode", mode);
+
+    let response: Response;
+    try {
+      response = await apiFetch("/ai/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      continue;
+    }
+
+    if (response.ok) {
+      return response.json();
+    }
+
     let message = `Transcribe failed: ${response.status}`;
     try {
       const data = await response.json();
@@ -225,8 +245,13 @@ export async function transcribeAudio(
     } catch {
       // Use default message
     }
-    throw new Error(message);
+
+    if (!TRANSCRIBE_RETRYABLE_STATUSES.has(response.status)) {
+      throw new Error(message);
+    }
+
+    lastError = new Error(message);
   }
 
-  return response.json();
+  throw lastError ?? new Error("Transcription failed");
 }

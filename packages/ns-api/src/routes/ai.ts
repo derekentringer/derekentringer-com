@@ -418,7 +418,18 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const transcript = await transcribeAudioChunked(file.buffer, file.filename);
+      let transcript: string;
+      try {
+        transcript = await transcribeAudioChunked(file.buffer, file.filename);
+      } catch (err) {
+        request.log.error(err, "Whisper transcription failed");
+        const message = err instanceof Error ? err.message : "Transcription failed";
+        return reply.status(502).send({
+          statusCode: 502,
+          error: "Bad Gateway",
+          message,
+        });
+      }
 
       if (!transcript || transcript.trim().length === 0) {
         return reply.status(422).send({
@@ -428,7 +439,18 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const structured = await structureTranscript(transcript, mode);
+      let structured: { title: string; content: string; tags: string[] };
+      try {
+        structured = await structureTranscript(transcript, mode);
+      } catch (err) {
+        request.log.error(err, "Transcript structuring failed");
+        const message = err instanceof Error ? err.message : "Failed to structure transcript";
+        return reply.status(502).send({
+          statusCode: 502,
+          error: "Bad Gateway",
+          message,
+        });
+      }
 
       const noteRow = await createNote(userId, {
         title: structured.title,

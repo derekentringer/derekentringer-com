@@ -321,6 +321,91 @@ describe("AI API client", () => {
       const blob = new Blob(["audio"], { type: "audio/webm" });
       await expect(transcribeAudio(blob, "verbatim")).rejects.toThrow("Transcribe failed: 500");
     });
+
+    it("retries on 502 and succeeds", async () => {
+      vi.useFakeTimers();
+      const mockResult = {
+        title: "Retry Note",
+        content: "Retried",
+        tags: [],
+        note: { id: "note-1", title: "Retry Note" },
+      };
+      mockApiFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 502,
+          json: () => Promise.resolve({ message: "Bad Gateway" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(mockResult),
+        });
+
+      const blob = new Blob(["audio-data"], { type: "audio/webm" });
+      const promise = transcribeAudio(blob, "memo");
+      await vi.advanceTimersByTimeAsync(2000);
+      const result = await promise;
+
+      expect(result).toEqual(mockResult);
+      expect(mockApiFetch).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it("retries on network error and succeeds", async () => {
+      vi.useFakeTimers();
+      const mockResult = {
+        title: "Net Retry",
+        content: "OK",
+        tags: [],
+        note: { id: "note-1", title: "Net Retry" },
+      };
+      mockApiFetch
+        .mockRejectedValueOnce(new Error("fetch failed"))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(mockResult),
+        });
+
+      const blob = new Blob(["audio-data"], { type: "audio/webm" });
+      const promise = transcribeAudio(blob, "memo");
+      await vi.advanceTimersByTimeAsync(2000);
+      const result = await promise;
+
+      expect(result).toEqual(mockResult);
+      expect(mockApiFetch).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it("does not retry on 400 client error", async () => {
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: () => Promise.resolve({ message: "Bad Request" }),
+      });
+
+      const blob = new Blob(["audio-data"], { type: "audio/webm" });
+
+      await expect(transcribeAudio(blob, "memo")).rejects.toThrow("Bad Request");
+      expect(mockApiFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws after exhausting retries", async () => {
+      vi.useFakeTimers();
+      mockApiFetch.mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: () => Promise.resolve({ message: "Bad Gateway" }),
+      });
+
+      const blob = new Blob(["audio-data"], { type: "audio/webm" });
+      const promise = transcribeAudio(blob, "memo");
+      const assertion = expect(promise).rejects.toThrow("Bad Gateway");
+      await vi.advanceTimersByTimeAsync(10000);
+
+      await assertion;
+      expect(mockApiFetch).toHaveBeenCalledTimes(3);
+      vi.useRealTimers();
+    });
   });
 
   describe("askQuestion", () => {
