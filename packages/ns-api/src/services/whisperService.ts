@@ -19,6 +19,7 @@ export async function transcribeAudio(
       Authorization: `Bearer ${config.openaiApiKey}`,
     },
     body: formData,
+    signal: AbortSignal.timeout(120_000),
   });
 
   if (!response.ok) {
