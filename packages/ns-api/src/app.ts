@@ -35,7 +35,10 @@ export interface BuildAppOptions {
 
 export function buildApp(opts?: BuildAppOptions) {
   const config = loadConfig();
-  const app = Fastify({ logger: true });
+  const app = Fastify({
+    logger: true,
+    bodyLimit: 100 * 1024 * 1024, // 100 MB — matches @fastify/multipart fileSize limit
+  });
 
   const sseHub = createSseHub();
   app.decorate("sseHub", sseHub);
