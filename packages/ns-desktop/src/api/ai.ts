@@ -217,16 +217,10 @@ export async function transcribeAudio(
     formData.append("file", audioBlob, "recording.webm");
     formData.append("mode", mode);
 
-    let response: Response;
-    try {
-      response = await apiFetch("/ai/transcribe", {
-        method: "POST",
-        body: formData,
-      });
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-      continue;
-    }
+    const response = await apiFetch("/ai/transcribe", {
+      method: "POST",
+      body: formData,
+    });
 
     if (response.ok) {
       return response.json();

@@ -351,29 +351,13 @@ describe("AI API client", () => {
       vi.useRealTimers();
     });
 
-    it("retries on network error and succeeds", async () => {
-      vi.useFakeTimers();
-      const mockResult = {
-        title: "Net Retry",
-        content: "OK",
-        tags: [],
-        note: { id: "note-1", title: "Net Retry" },
-      };
-      mockApiFetch
-        .mockRejectedValueOnce(new Error("fetch failed"))
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(mockResult),
-        });
+    it("does not retry on network error", async () => {
+      mockApiFetch.mockRejectedValue(new Error("fetch failed"));
 
       const blob = new Blob(["audio-data"], { type: "audio/webm" });
-      const promise = transcribeAudio(blob, "memo");
-      await vi.advanceTimersByTimeAsync(2000);
-      const result = await promise;
 
-      expect(result).toEqual(mockResult);
-      expect(mockApiFetch).toHaveBeenCalledTimes(2);
-      vi.useRealTimers();
+      await expect(transcribeAudio(blob, "memo")).rejects.toThrow("fetch failed");
+      expect(mockApiFetch).toHaveBeenCalledTimes(1);
     });
 
     it("does not retry on 400 client error", async () => {
