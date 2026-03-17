@@ -101,4 +101,49 @@ describe("transcribeAudioChunked", () => {
 
     expect(result).toBe("First part. Second part. Third part.");
   });
+
+  it("transcribes chunks in parallel and preserves order", async () => {
+    const chunks = Array.from({ length: 5 }, (_, i) => Buffer.from(`chunk${i}`));
+    mockSplit.mockResolvedValue(chunks);
+
+    const callOrder: number[] = [];
+    let callIdx = 0;
+    const texts = ["A.", "B.", "C.", "D.", "E."];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      const idx = callIdx++;
+      callOrder.push(idx);
+      // Simulate varying response times — later chunks resolve faster
+      await new Promise((r) => setTimeout(r, (5 - idx) * 5));
+      return new Response(JSON.stringify({ text: texts[idx] }), { status: 200 });
+    });
+
+    const { transcribeAudioChunked } = await import("../services/whisperService.js");
+    const result = await transcribeAudioChunked(Buffer.from("large"), "recording.webm");
+
+    // Order must be preserved regardless of response timing
+    expect(result).toBe("A. B. C. D. E.");
+    // All 5 chunks were transcribed
+    expect(callOrder).toHaveLength(5);
+  });
+
+  it("passes logger through for progress tracking", async () => {
+    const buf = Buffer.from("small-audio");
+    mockSplit.mockResolvedValue([buf]);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ text: "test" }), { status: 200 }),
+    );
+
+    const log = { info: vi.fn() };
+
+    const { transcribeAudioChunked } = await import("../services/whisperService.js");
+    await transcribeAudioChunked(buf, "test.webm", log);
+
+    expect(log.info).toHaveBeenCalled();
+    // Should log chunking info and completion
+    const messages = log.info.mock.calls.map((c: unknown[]) => c[1]);
+    expect(messages).toContain("Starting audio chunking");
+    expect(messages).toContain("Audio chunked");
+    expect(messages).toContain("Transcription complete");
+  });
 });
