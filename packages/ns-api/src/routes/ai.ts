@@ -420,7 +420,11 @@ export default async function aiRoutes(fastify: FastifyInstance) {
 
       let transcript: string;
       try {
-        transcript = await transcribeAudioChunked(file.buffer, file.filename);
+        request.log.info(
+          { fileSize: file.buffer.length, mimetype: file.mimetype, mode },
+          "Starting transcription",
+        );
+        transcript = await transcribeAudioChunked(file.buffer, file.filename, request.log);
       } catch (err) {
         request.log.error(err, "Whisper transcription failed");
         const message = err instanceof Error ? err.message : "Transcription failed";
