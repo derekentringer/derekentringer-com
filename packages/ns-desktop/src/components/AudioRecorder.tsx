@@ -13,6 +13,20 @@ const MODE_LABELS: Record<AudioMode, string> = {
 const MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 const MAX_DURATION_MS = 2 * 60 * 60 * 1000; // 2 hours
 
+const PREFERRED_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/mp4",
+  "audio/ogg;codecs=opus",
+];
+
+function getSupportedMimeType(): string | undefined {
+  for (const type of PREFERRED_MIME_TYPES) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return undefined;
+}
+
 interface AudioRecorderProps {
   defaultMode: AudioMode;
   onNoteCreated: (note: Note) => void;
@@ -68,9 +82,10 @@ export function AudioRecorder({ defaultMode, onNoteCreated, onError }: AudioReco
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const recorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
-      });
+      const mimeType = getSupportedMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 
@@ -79,7 +94,8 @@ export function AudioRecorder({ defaultMode, onNoteCreated, onError }: AudioReco
       };
 
       recorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blobType = recorder.mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: blobType });
         cleanup();
         setState("processing");
 

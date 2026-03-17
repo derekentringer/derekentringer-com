@@ -219,8 +219,11 @@ export async function transcribeAudio(
       await new Promise((r) => setTimeout(r, TRANSCRIBE_RETRY_DELAY_MS * attempt));
     }
 
+    const ext = audioBlob.type.includes("mp4") ? "mp4"
+      : audioBlob.type.includes("ogg") ? "ogg"
+      : "webm";
     const formData = new FormData();
-    formData.append("file", audioBlob, "recording.webm");
+    formData.append("file", audioBlob, `recording.${ext}`);
     formData.append("mode", mode);
 
     const response = await apiFetch("/ai/transcribe", {
