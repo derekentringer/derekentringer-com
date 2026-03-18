@@ -139,40 +139,11 @@ Key architecture change from original plan: uses JSON text storage + pure JS cos
 
 ---
 
-## Release 10d: Audio Notes
+## Release 10d: Audio Notes ✅
 
-### Files to Create
+**Implemented.** See [features/10d-ai-audio-notes.md](../features/10d-ai-audio-notes.md) for full details.
 
-#### AudioRecorder Component (`packages/ns-desktop/src/components/AudioRecorder.tsx`) — NEW
-Copy from `packages/ns-web/src/components/AudioRecorder.tsx`:
-- `AudioRecorder({ defaultMode, onNoteCreated, onError })` — standalone component
-- Three states: idle (Record button + mode dropdown), recording (timer + Stop button), processing (spinner)
-- Browser `MediaRecorder` API with `audio/webm;codecs=opus`
-- Mode dropdown (Meeting, Lecture, Memo, Verbatim), closes on outside click
-- Recording timer (MM:SS), max 30 minutes auto-stop
-- Cleanup on unmount
-- Match web styling exactly
-
-### Files to Modify
-
-#### AI API Client (`packages/ns-desktop/src/api/ai.ts`)
-- Add `TranscribeResult` interface
-- Add `transcribeAudio(audioBlob, mode)` function
-
-#### SettingsPage (`packages/ns-desktop/src/pages/SettingsPage.tsx`)
-- Add "Audio notes" toggle (6th toggle)
-- Add audio mode radio group (Meeting, Lecture, Memo, Verbatim) — shown when audio notes enabled
-- Info tooltips on all mode options
-
-#### NotesPage (`packages/ns-desktop/src/pages/NotesPage.tsx`)
-- AudioRecorder shown in sidebar header next to "+" button (icon-only, matching web's 04e.1 layout)
-- `handleAudioNoteCreated(note)` — adds new note to list, selects it, reloads folders, syncs to server
-- Match web positioning and behavior exactly
-
-### Tests
-- `AudioRecorder.test.tsx` — renders Record button and mode dropdown, mode selection, button sizing (3+ tests)
-- `ai-api.test.ts` — add transcribeAudio tests (4+ tests)
-- `SettingsPage.test.tsx` — update toggle count, audio toggle and mode radio group
+Includes browser MediaRecorder for standard microphone recording and native macOS ScreenCaptureKit for meeting audio recording (system audio + microphone simultaneously on macOS 15.0+). Added `RecordingSource` type (`"microphone" | "meeting"`) to AI settings, recording source selector in AudioRecorder dropdown and Settings page, Rust `audio_capture.rs` module with `screencapturekit` + `hound` crates, three new Tauri commands (`check_meeting_recording_support`, `start_meeting_recording`, `stop_meeting_recording`), WAV extension support in `transcribeAudio`, and `NSScreenCaptureUsageDescription` entitlement.
 
 ---
 
@@ -262,7 +233,7 @@ Copy from `packages/ns-web/src/components/QAPanel.tsx`:
 | **Router** | `navigate()` for deep-links, URL sync | No router — no URL updates |
 | **Note type** | `NoteSearchResult` (from API) | `Note` (from local SQLite, synced) |
 | **Semantic search** | Server-side pgvector | Embeddings generated via ns-api Voyage AI, cached in SQLite as JSON text; pure JS cosine similarity; fully offline once cached |
-| **Audio recording** | `MediaRecorder` in browser | `MediaRecorder` in Tauri webview (same API) |
+| **Audio recording** | `MediaRecorder` in browser | `MediaRecorder` in Tauri webview (microphone mode) + native macOS ScreenCaptureKit (meeting mode — system audio + microphone) |
 | **Sync after AI create** | Offline queue handles it | Must push to sync engine after note creation |
 | **Admin AI toggle** | Admin page (separate) | Admin page already has AI global toggle |
 | **ConfirmDialog** | Created in 04e.1 | Already exists |
