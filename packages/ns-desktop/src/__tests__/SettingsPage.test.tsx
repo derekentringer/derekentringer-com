@@ -446,6 +446,37 @@ describe("SettingsPage", () => {
     expect(screen.queryByRole("radiogroup", { name: "Audio mode" })).not.toBeInTheDocument();
   });
 
+  it("shows recording source radios when audio notes enabled", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: true, audioNotes: true }),
+    );
+    renderSettingsPage();
+    expect(screen.getByRole("radiogroup", { name: "Recording source" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Microphone only")).toBeInTheDocument();
+    expect(screen.getByLabelText("Meeting mode")).toBeInTheDocument();
+  });
+
+  it("hides recording source radios when audio notes disabled", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: true, audioNotes: false }),
+    );
+    renderSettingsPage();
+    expect(screen.queryByRole("radiogroup", { name: "Recording source" })).not.toBeInTheDocument();
+  });
+
+  it("recording source selection persists to localStorage", async () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ masterAiEnabled: true, audioNotes: true, recordingSource: "microphone" }),
+    );
+    renderSettingsPage();
+    await userEvent.click(screen.getByLabelText("Meeting mode"));
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.recordingSource).toBe("meeting");
+  });
+
   it("renders AI assistant chat toggle", () => {
     renderSettingsPage();
     expect(screen.getByText("AI assistant chat")).toBeInTheDocument();
