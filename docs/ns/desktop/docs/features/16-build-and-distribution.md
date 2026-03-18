@@ -52,7 +52,17 @@ The version is baked into:
 - macOS "About" dialog
 - App metadata / `Info.plist`
 
-### 4. No Source Code Changes Needed
+### 4. High-Fidelity App Icons
+
+The `.icns` file includes all 10 required Apple iconset sizes from 16x16 up to 1024x1024 pixels, generated from the SVG vector source (`packages/ns-web/public/logo.svg`) via ImageMagick + Apple `iconutil`. The 1024x1024 variant (`ic10`) is critical for sharp display in the macOS app switcher, About window, and Applications folder on Retina displays. Icons are regenerated from SVG whenever the logo changes:
+
+```bash
+magick -background none -density 400 logo.svg -resize 1024x1024 master_1024.png
+# Generate all 10 sizes into icon.iconset/
+iconutil -c icns icon.iconset -o icon.icns
+```
+
+### 5. No Source Code Changes Needed
 
 The three files using `import.meta.env.VITE_API_URL || "http://localhost:3004"` already work correctly — when `VITE_API_URL` is set via env file or inline, the fallback is never reached.
 

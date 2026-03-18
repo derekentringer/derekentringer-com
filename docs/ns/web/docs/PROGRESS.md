@@ -129,6 +129,16 @@
 
 - [x] [15 — Centralized TokenManager](features/15-centralized-token-manager.md) — Shared `TokenManager` in `@derekentringer/shared/token` with factory function + platform-specific adapter pattern, proactive token refresh (60s interval, 2min threshold), JWT expiry parsing via shared `parseJwt.ts`, refresh promise deduplication, typed `AuthFailureReason` propagation to AuthContext, dynamic SSE reconnect timer from `tokenManager.getMsUntilExpiry()`, 10% jitter on reconnect delay, 401/403 distinction in SSE (refresh+retry vs stop), revoked token DB cleanup in ns-api refresh endpoint, `CustomEvent("auth:logout")` with reason detail, 37 new tests (shared + SSE)
 
+### Audio Recording Reliability
+
+- [x] Fastify bodyLimit fix — Increased Fastify `bodyLimit` from default 1 MiB to 100 MB to match `@fastify/multipart` fileSize limit; prevents Fastify from rejecting large audio uploads (e.g., 1.5-hour recordings) at the content type parser level before multipart streaming begins
+
+- [x] MediaRecorder MIME type detection — Replaced hardcoded `audio/webm;codecs=opus` with runtime `getSupportedMimeType()` that tries webm/opus, webm, mp4, ogg/opus in order and falls back to browser default; required for WebKit/WKWebView compatibility (Tauri desktop); dynamic file extension in `transcribeAudio` client based on blob MIME type
+
+- [x] Parallel Whisper transcription — `transcribeAudioChunked` now processes up to 3 chunks concurrently via `Promise.all` instead of sequentially; increased per-chunk Whisper timeout from 120s to 300s; added progress logging (file size, chunk count/sizes, batch progress, completion) throughout the pipeline; fixes 30-minute recording timeouts caused by sequential API calls exceeding Railway's proxy timeout
+
+- [x] Audio upload retry logic — `transcribeAudio` client retries up to 2 times with exponential backoff on 502/503/504 status codes; handles transient Whisper API failures gracefully
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)
