@@ -75,7 +75,7 @@ import {
 import { NoteList } from "../components/NoteList.tsx";
 import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
-import { FolderTree } from "../components/FolderTree.tsx";
+import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
 import { TagBrowser } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
@@ -273,7 +273,9 @@ export function NotesPage() {
   // File drag-and-drop import
   const [isDragOver, setIsDragOver] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
+  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
+  const folderDropdownRef = useRef<HTMLDivElement>(null);
 
   // Sync engine
   const [syncStatusState, setSyncStatusState] = useState<SyncStatus>("idle");
@@ -316,6 +318,19 @@ export function NotesPage() {
     setError(message);
     setTimeout(() => setError(null), 4000);
   }
+
+  // Close folder dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (folderDropdownRef.current && !folderDropdownRef.current.contains(e.target as Node)) {
+        setShowFolderDropdown(false);
+      }
+    }
+    if (showFolderDropdown) {
+      document.addEventListener("mousedown", handleClick);
+      return () => document.removeEventListener("mousedown", handleClick);
+    }
+  }, [showFolderDropdown]);
 
   // --- Dashboard ---
 
@@ -458,6 +473,8 @@ export function NotesPage() {
     collect(folders);
     return result;
   }, [folders]);
+
+  const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
   async function loadData() {
     try {
@@ -2754,8 +2771,52 @@ export function NotesPage() {
               )}
             </div>
 
-            {/* Title */}
-            <div className="border-b border-border overflow-hidden">
+            {/* Breadcrumb + Title */}
+            <div className="relative border-b border-border">
+              <div className="absolute left-1.5 bottom-1.5" ref={folderDropdownRef}>
+                <button
+                  onClick={() => setShowFolderDropdown((v) => !v)}
+                  className="w-8 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title={selectedNote?.folderId ? flatFolders.find((f) => f.id === selectedNote.folderId)?.displayName ?? "Unfiled" : "Unfiled"}
+                  aria-label="Note folder"
+                  data-testid="note-folder-select"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  </svg>
+                </button>
+                {showFolderDropdown && (
+                  <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-md shadow-lg py-1 z-50 min-w-[140px]">
+                    {[{ id: "", displayName: "Unfiled" }, ...flatFolders].map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={async () => {
+                          const folderId = f.id || null;
+                          setShowFolderDropdown(false);
+                          if (!selectedId) return;
+                          try {
+                            const updated = await updateNote(selectedId, { folderId });
+                            setNotes((prev) =>
+                              prev.map((n) => (n.id === updated.id ? updated : n)),
+                            );
+                            reloadNotes();
+                            refreshFolders();
+                          } catch {
+                            showError("Failed to move note");
+                          }
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-sm transition-colors cursor-pointer ${
+                          (selectedNote?.folderId ?? "") === f.id
+                            ? "text-foreground bg-accent"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                        }`}
+                      >
+                        {f.displayName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <input
                 data-title-input
                 type="text"
@@ -2781,6 +2842,11 @@ export function NotesPage() {
                 placeholder="Note title"
                 className="w-full px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
               />
+              <p className="pl-9 pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate">
+                {selectedNote?.folderId
+                  ? getFolderBreadcrumb(folders, selectedNote.folderId).map((f) => f.name).join(" / ")
+                  : "Unfiled"}
+              </p>
             </div>
 
             {/* Summary */}
