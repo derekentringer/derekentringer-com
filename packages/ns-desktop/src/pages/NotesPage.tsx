@@ -2211,6 +2211,7 @@ export function NotesPage() {
               {aiSettings.masterAiEnabled && aiSettings.audioNotes && (
                 <AudioRecorder
                   defaultMode={aiSettings.audioMode}
+                  recordingSource={aiSettings.recordingSource}
                   onNoteCreated={handleAudioNoteCreated}
                   onError={showError}
                 />

@@ -2,9 +2,11 @@ import { useState, useCallback } from "react";
 
 export type CompletionStyle = "continue" | "markdown" | "brief" | "paragraph" | "structure";
 export type AudioMode = "meeting" | "lecture" | "memo" | "verbatim";
+export type RecordingSource = "microphone" | "meeting";
 
 const VALID_COMPLETION_STYLES: CompletionStyle[] = ["continue", "markdown", "brief"];
 const VALID_AUDIO_MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
+const VALID_RECORDING_SOURCES: RecordingSource[] = ["microphone", "meeting"];
 
 export interface AiSettings {
   masterAiEnabled: boolean;
@@ -18,6 +20,7 @@ export interface AiSettings {
   semanticSearch: boolean;
   audioNotes: boolean;
   audioMode: AudioMode;
+  recordingSource: RecordingSource;
   qaAssistant: boolean;
 }
 
@@ -35,6 +38,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   semanticSearch: false,
   audioNotes: false,
   audioMode: "memo",
+  recordingSource: "microphone",
   qaAssistant: false,
 };
 
@@ -59,6 +63,7 @@ function loadSettings(): AiSettings {
       semanticSearch: typeof parsed.semanticSearch === "boolean" ? parsed.semanticSearch : false,
       audioNotes: typeof parsed.audioNotes === "boolean" ? parsed.audioNotes : false,
       audioMode: VALID_AUDIO_MODES.includes(parsed.audioMode) ? parsed.audioMode : "memo",
+      recordingSource: VALID_RECORDING_SOURCES.includes(parsed.recordingSource) ? parsed.recordingSource : "microphone",
       qaAssistant: typeof parsed.qaAssistant === "boolean" ? parsed.qaAssistant : false,
     };
   } catch {

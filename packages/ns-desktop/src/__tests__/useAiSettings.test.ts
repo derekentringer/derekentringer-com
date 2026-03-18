@@ -22,6 +22,7 @@ describe("useAiSettings", () => {
       semanticSearch: false,
       audioNotes: false,
       audioMode: "memo",
+      recordingSource: "microphone",
       qaAssistant: false,
     });
   });
@@ -40,6 +41,7 @@ describe("useAiSettings", () => {
         semanticSearch: true,
         audioNotes: true,
         audioMode: "lecture",
+        recordingSource: "meeting",
         qaAssistant: true,
       }),
     );
@@ -58,6 +60,7 @@ describe("useAiSettings", () => {
       semanticSearch: true,
       audioNotes: true,
       audioMode: "lecture",
+      recordingSource: "meeting",
       qaAssistant: true,
     });
   });
@@ -79,6 +82,7 @@ describe("useAiSettings", () => {
       semanticSearch: false,
       audioNotes: false,
       audioMode: "memo",
+      recordingSource: "microphone",
       qaAssistant: false,
     });
   });
@@ -94,6 +98,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings.completions).toBe(true);
     expect(result.current.settings.masterAiEnabled).toBe(true);
     expect(result.current.settings.completionStyle).toBe("continue");
+    expect(result.current.settings.recordingSource).toBe("microphone");
   });
 
   it("updateSetting persists changes to localStorage", () => {
@@ -124,6 +129,7 @@ describe("useAiSettings", () => {
         semanticSearch: true,
         audioNotes: false,
         audioMode: "memo",
+        recordingSource: "microphone",
         qaAssistant: false,
       }),
     );
@@ -168,6 +174,20 @@ describe("useAiSettings", () => {
     expect(result.current.settings.audioMode).toBe("memo");
   });
 
+  it("defaults invalid recordingSource to microphone", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({
+        audioNotes: true,
+        recordingSource: "invalid-source",
+      }),
+    );
+
+    const { result } = renderHook(() => useAiSettings());
+
+    expect(result.current.settings.recordingSource).toBe("microphone");
+  });
+
   it("clamps completionDebounceMs to valid range", () => {
     localStorage.setItem(
       "ns-ai-settings",
@@ -190,7 +210,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings.completionDebounceMs).toBe(1500);
   });
 
-  it("all 12 fields are present in defaults", () => {
+  it("all 13 fields are present in defaults", () => {
     const { result } = renderHook(() => useAiSettings());
 
     const keys = Object.keys(result.current.settings);
@@ -205,7 +225,21 @@ describe("useAiSettings", () => {
     expect(keys).toContain("semanticSearch");
     expect(keys).toContain("audioNotes");
     expect(keys).toContain("audioMode");
+    expect(keys).toContain("recordingSource");
     expect(keys).toContain("qaAssistant");
-    expect(keys.length).toBe(12);
+    expect(keys.length).toBe(13);
+  });
+
+  it("persists recordingSource changes", () => {
+    const { result } = renderHook(() => useAiSettings());
+
+    act(() => {
+      result.current.updateSetting("recordingSource", "meeting");
+    });
+
+    expect(result.current.settings.recordingSource).toBe("meeting");
+
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.recordingSource).toBe("meeting");
   });
 });

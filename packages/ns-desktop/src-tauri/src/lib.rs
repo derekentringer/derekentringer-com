@@ -4,6 +4,9 @@ use keyring::Entry;
 use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+#[cfg(target_os = "macos")]
+mod audio_capture;
+
 const KEYRING_SERVICE: &str = "com.derekentringer.notesync";
 
 fn get_migrations() -> Vec<Migration> {
@@ -111,6 +114,43 @@ fn remove_secure_item(key: String) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn check_meeting_recording_support() -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        audio_capture::check_support()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn start_meeting_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        audio_capture::start_recording(app_handle)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app_handle;
+        Err("Meeting recording is only supported on macOS".into())
+    }
+}
+
+#[tauri::command]
+fn stop_meeting_recording() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        audio_capture::stop_recording()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Meeting recording is only supported on macOS".into())
+    }
+}
+
 /// Force legacy (non-overlay) scrollbars so CSS ::-webkit-scrollbar styling
 /// is always respected. macOS overlay scrollbars bypass custom CSS on hover.
 #[cfg(target_os = "macos")]
@@ -131,7 +171,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
-        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item])
+        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:notesync.db", get_migrations())

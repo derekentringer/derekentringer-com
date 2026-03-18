@@ -9,7 +9,7 @@ import {
   type CursorStyle,
   type AccentColorPreset,
 } from "../hooks/useEditorSettings.ts";
-import type { AiSettings, CompletionStyle, AudioMode } from "../hooks/useAiSettings.ts";
+import type { AiSettings, CompletionStyle, AudioMode, RecordingSource } from "../hooks/useAiSettings.ts";
 import { useAuth } from "../context/AuthContext.tsx";
 import { setupTotp, verifyTotpSetup, disableTotp, getMe } from "../api/auth.ts";
 
@@ -131,6 +131,11 @@ const AUDIO_MODE_OPTIONS: { value: AudioMode; label: string; info: string }[] = 
   { value: "lecture", label: "Lecture notes", info: "Organizes into key concepts, definitions, important points, and a summary." },
   { value: "memo", label: "Memo", info: "Cleans up speech into a well-written memo. Fixes grammar and filler words." },
   { value: "verbatim", label: "Verbatim", info: "Minimal processing — adds punctuation and paragraphs but keeps your exact words." },
+];
+
+const RECORDING_SOURCE_OPTIONS: { value: RecordingSource; label: string; info: string }[] = [
+  { value: "microphone", label: "Microphone only", info: "Records from your microphone. Standard recording mode." },
+  { value: "meeting", label: "Meeting mode", info: "Captures system audio (meeting participants) + microphone (your voice). Requires macOS screen recording permission." },
 ];
 
 const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: string }[] = [
@@ -680,23 +685,44 @@ export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange,
                     </div>
                   )}
                   {key === "audioNotes" && aiSettings.audioNotes && aiSettings.masterAiEnabled && (
-                    <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
-                      {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel, info: modeInfo }) => (
-                        <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="audioMode"
-                            value={value}
-                            checked={aiSettings.audioMode === value}
-                            onChange={() => updateAiSetting("audioMode", value)}
-                            className="accent-primary"
-                            aria-label={modeLabel}
-                          />
-                          <span className="text-sm text-muted-foreground">{modeLabel}</span>
-                          <InfoIcon tooltip={modeInfo} />
-                        </label>
-                      ))}
-                    </div>
+                    <>
+                      <div className="pb-2 pl-1" role="radiogroup" aria-label="Recording source">
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider">Recording source</span>
+                        {RECORDING_SOURCE_OPTIONS.map(({ value, label: srcLabel, info: srcInfo }) => (
+                          <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="recordingSource"
+                              value={value}
+                              checked={aiSettings.recordingSource === value}
+                              onChange={() => updateAiSetting("recordingSource", value)}
+                              className="accent-primary"
+                              aria-label={srcLabel}
+                            />
+                            <span className="text-sm text-muted-foreground">{srcLabel}</span>
+                            <InfoIcon tooltip={srcInfo} />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
+                        <span className="text-xs text-muted-foreground uppercase tracking-wider">Transcription mode</span>
+                        {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel, info: modeInfo }) => (
+                          <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="audioMode"
+                              value={value}
+                              checked={aiSettings.audioMode === value}
+                              onChange={() => updateAiSetting("audioMode", value)}
+                              className="accent-primary"
+                              aria-label={modeLabel}
+                            />
+                            <span className="text-sm text-muted-foreground">{modeLabel}</span>
+                            <InfoIcon tooltip={modeInfo} />
+                          </label>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
               ))}
