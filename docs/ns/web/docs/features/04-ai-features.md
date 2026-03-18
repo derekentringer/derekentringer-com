@@ -345,6 +345,8 @@ Adds voice-to-notes: users record audio in the browser via `MediaRecorder`, uplo
 - Uploads audio as `multipart/form-data` via `FormData` + `Blob`
 - Returns plain text transcript
 - Auth via `Bearer ${config.openaiApiKey}`
+- 5-minute per-chunk timeout via `AbortSignal.timeout(300_000)`
+- `transcribeAudioChunked(audioBuffer, filename, log?)` — splits audio > 24MB via ffmpeg, transcribes chunks in parallel (up to 3 concurrent via `Promise.all`), preserves chunk order, optional Fastify logger for progress tracking
 
 #### AI Service (`packages/ns-api/src/services/aiService.ts`)
 - Added `AudioMode` type import from `@derekentringer/shared/ns`
@@ -355,7 +357,8 @@ Adds voice-to-notes: users record audio in the browser via `MediaRecorder`, uplo
 - Graceful fallback: returns raw transcript with "Audio Note" title on parse failure
 
 #### App (`packages/ns-api/src/app.ts`)
-- Registered `@fastify/multipart` plugin with `fileSize: 25MB`, `files: 1` limits
+- Registered `@fastify/multipart` plugin with `fileSize: 100MB`, `files: 1` limits
+- Fastify `bodyLimit: 100 * 1024 * 1024` (100 MB) — matches multipart fileSize limit; prevents Fastify's default 1 MiB bodyLimit from rejecting large audio uploads before multipart streaming
 
 #### Routes (`packages/ns-api/src/routes/ai.ts`)
 - `POST /ai/transcribe` — multipart/form-data; accepts `file` (audio blob) and `mode` (string) fields
@@ -375,14 +378,16 @@ Adds voice-to-notes: users record audio in the browser via `MediaRecorder`, uplo
 #### AI API Client (`packages/ns-web/src/api/ai.ts`)
 - Added `TranscribeResult` interface: `{ title, content, tags, note }`
 - Added `transcribeAudio(audioBlob, mode)` — uploads `FormData` to `/ai/transcribe`, returns `TranscribeResult`
+- Dynamic file extension based on blob MIME type (`mp4`/`ogg`/`webm`)
+- Retry logic: up to 2 retries with exponential backoff on 502/503/504 status codes
 - Parses error messages from JSON response on failure
 
 #### AudioRecorder Component (`packages/ns-web/src/components/AudioRecorder.tsx`) — NEW
 - `AudioRecorder({ defaultMode, onNoteCreated, onError })` — standalone component
 - Three states: idle (Record button + mode dropdown), recording (timer + Stop button), processing (spinner)
-- Browser `MediaRecorder` API with `audio/webm;codecs=opus`
+- Browser `MediaRecorder` API with runtime MIME type detection via `getSupportedMimeType()` — tries `audio/webm;codecs=opus`, `audio/webm`, `audio/mp4`, `audio/ogg;codecs=opus` in order, falls back to browser default if none supported (required for WebKit/WKWebView compatibility in Tauri desktop)
 - Mode dropdown with 4 options (Meeting, Lecture, Memo, Verbatim), closes on outside click
-- Recording timer display (MM:SS), max 30 minutes auto-stop
+- Recording timer display (MM:SS), max 2 hours auto-stop
 - Cleanup on unmount: stops tracks, clears timers
 - Graceful mic permission error handling (`NotAllowedError` → "Microphone permission denied")
 
