@@ -104,6 +104,18 @@
 
 - [x] [23 — Interactive Tables](features/23-interactive-tables.md) — GFM tables in markdown preview become sortable and editable when `onContentChange` is provided; click column header toggles asc ↔ desc sort (rewrites markdown rows via natural `localeCompare`), double-click cell enters inline edit mode with Enter/Escape/Tab navigation; `tableMarkdown.ts` utility (`findTables`, `parseRow`, `serializeTable`, `updateCell`, `sortTableByColumn`), `InteractiveTable` component with `SortIndicator` SVG arrows, stable component refs via `useRef` in MarkdownPreview preventing remount on content change, trash view tables remain static, 48 new tests
 
+### Audio Recording Reliability
+
+- [x] macOS microphone entitlement — Added `NSMicrophoneUsageDescription` to `src-tauri/Info.plist` for macOS `getUserMedia({ audio: true })` permission; without this key the microphone prompt never appears in WKWebView and recording throws `NotAllowedError`
+
+- [x] MediaRecorder MIME type detection — Replaced hardcoded `audio/webm;codecs=opus` with runtime `getSupportedMimeType()` that tries webm/opus, webm, mp4, ogg/opus in order; required for WebKit/WKWebView which doesn't support `audio/webm;codecs=opus`; dynamic file extension in `transcribeAudio` client based on blob MIME type
+
+- [x] Audio upload retry logic — `transcribeAudio` client retries up to 2 times with exponential backoff on 502/503/504 status codes; handles transient Whisper API failures gracefully
+
+### App Icon Fidelity
+
+- [x] High-fidelity app icons — Regenerated `.icns` from SVG vector source at 1024x1024 via ImageMagick + Apple `iconutil`; previous `.icns` was missing the `ic10` (1024x1024) variant, causing macOS to upscale from 512px in the app switcher, About window, and Applications folder; all 10 required iconset sizes (16–1024px @1x and @2x) now embedded
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)

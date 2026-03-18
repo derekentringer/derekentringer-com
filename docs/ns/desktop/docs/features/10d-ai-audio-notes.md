@@ -15,16 +15,24 @@ Added audio note recording and transcription to the NoteSync desktop app. Users 
 
 Ported from `ns-web/src/components/AudioRecorder.tsx`:
 - Three states: idle (Record button + mode dropdown), recording (timer + Stop button), processing (spinner)
-- Browser `MediaRecorder` API with `audio/webm;codecs=opus`
+- Browser `MediaRecorder` API with runtime MIME type detection via `getSupportedMimeType()` — tries `audio/webm;codecs=opus`, `audio/webm`, `audio/mp4`, `audio/ogg;codecs=opus` in order, falls back to browser default if none supported (required for WebKit/WKWebView in Tauri — WebKit doesn't support `audio/webm;codecs=opus`)
 - Mode dropdown (Meeting, Lecture, Memo, Verbatim) with outside-click dismissal
-- Recording timer (MM:SS format), max 30 minutes auto-stop
+- Recording timer (MM:SS format), max 2 hours auto-stop
 - Cleanup on unmount (stops recording, releases media stream)
 - Props: `defaultMode`, `onNoteCreated`, `onError`
+
+### macOS Microphone Entitlement (`src-tauri/Info.plist`) — NEW
+
+- Added `NSMicrophoneUsageDescription` key: "NoteSync needs microphone access to record audio notes."
+- Required by macOS for `getUserMedia({ audio: true })` in WKWebView — without this key, the microphone permission prompt never appears and the call throws `NotAllowedError`
+- Tauri v2 auto-merges custom `src-tauri/Info.plist` keys into the bundled app's `Contents/Info.plist`
 
 ### AI API Client (`src/api/ai.ts`) — MODIFIED
 
 - Added `TranscribeResult` interface: `{ title, content, tags, note }`
 - Added `transcribeAudio(audioBlob, mode)` — POST `/ai/transcribe` with FormData (file + mode), returns structured note data
+- Dynamic file extension based on blob MIME type (`mp4`/`ogg`/`webm`)
+- Retry logic: up to 2 retries with exponential backoff on 502/503/504 status codes
 - Error handling: extracts server error message from JSON response body
 
 ### Settings Page (`src/pages/SettingsPage.tsx`) — MODIFIED
@@ -59,8 +67,9 @@ Ported from `ns-web/src/components/AudioRecorder.tsx`:
 
 | File | Action |
 |------|--------|
-| `ns-desktop/src/components/AudioRecorder.tsx` | Created — recording component |
-| `ns-desktop/src/api/ai.ts` | Modified — TranscribeResult, transcribeAudio |
+| `ns-desktop/src/components/AudioRecorder.tsx` | Created — recording component with MIME type detection |
+| `ns-desktop/src/api/ai.ts` | Modified — TranscribeResult, transcribeAudio with retry logic |
+| `ns-desktop/src-tauri/Info.plist` | Created — NSMicrophoneUsageDescription for macOS microphone access |
 | `ns-desktop/src/pages/SettingsPage.tsx` | Modified — audio toggle, mode radio group |
 | `ns-desktop/src/pages/NotesPage.tsx` | Modified — AudioRecorder integration, timestamps |
 | `ns-desktop/src/components/EditorToolbar.tsx` | Modified — note timestamps in status bar |
