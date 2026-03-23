@@ -4,7 +4,7 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>NoteSync needs microphone access to record audio notes.</string>
-	<key>NSScreenCaptureUsageDescription</key>
-	<string>NoteSync needs screen recording access to capture meeting audio for transcription.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>NoteSync needs system audio recording access to capture meeting audio for transcription.</string>
 </dict>
 </plist>
