@@ -4,6 +4,7 @@ export interface Heading {
   level: number;
   text: string;
   slug: string;
+  lineNumber: number;
 }
 
 /**
@@ -18,7 +19,8 @@ export function extractHeadings(markdown: string): Heading[] {
   const lines = markdown.split("\n");
   let inCodeBlock = false;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (/^```/.test(line)) {
       inCodeBlock = !inCodeBlock;
       continue;
@@ -42,7 +44,7 @@ export function extractHeadings(markdown: string): Heading[] {
       .replace(/_(.+?)_/g, "$1")                  // italic alt
       .replace(/~~(.+?)~~/g, "$1");               // strikethrough
 
-    headings.push({ level, text, slug: slugger.slug(text) });
+    headings.push({ level, text, slug: slugger.slug(text), lineNumber: i + 1 });
   }
 
   return headings;

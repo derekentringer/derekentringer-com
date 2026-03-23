@@ -1590,12 +1590,19 @@ export function NotesPage() {
     }
   }, [settings.qaAssistant]);
 
-  function handleTocHeadingClick(slug: string) {
+  function handleTocHeadingClick(slug: string, lineNumber: number) {
+    // In preview/split mode, scroll the preview pane to the heading
     const previewContainer = document.querySelector(".markdown-preview");
-    if (!previewContainer) return;
-    const heading = previewContainer.querySelector(`#${CSS.escape(slug)}`);
-    if (heading) {
-      heading.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (previewContainer) {
+      const heading = previewContainer.querySelector(`#${CSS.escape(slug)}`);
+      if (heading) {
+        heading.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (viewMode !== "editor") return;
+      }
+    }
+    // In editor mode (or if preview heading not found), scroll the editor
+    if (editorRef.current && lineNumber > 0) {
+      editorRef.current.scrollToLine(lineNumber);
     }
   }
 
