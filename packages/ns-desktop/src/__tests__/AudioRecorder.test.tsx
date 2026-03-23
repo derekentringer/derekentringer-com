@@ -36,6 +36,7 @@ describe("AudioRecorder", () => {
       <AudioRecorder
         defaultMode="memo"
         recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
         onNoteCreated={vi.fn()}
         onError={vi.fn()}
       />,
@@ -48,6 +49,7 @@ describe("AudioRecorder", () => {
       <AudioRecorder
         defaultMode="memo"
         recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
         onNoteCreated={vi.fn()}
         onError={vi.fn()}
       />,
@@ -66,6 +68,7 @@ describe("AudioRecorder", () => {
       <AudioRecorder
         defaultMode="memo"
         recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
         onNoteCreated={vi.fn()}
         onError={vi.fn()}
       />,
@@ -87,6 +90,7 @@ describe("AudioRecorder", () => {
       <AudioRecorder
         defaultMode="memo"
         recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
         onNoteCreated={vi.fn()}
         onError={vi.fn()}
       />,
@@ -100,6 +104,7 @@ describe("AudioRecorder", () => {
       <AudioRecorder
         defaultMode="memo"
         recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
         onNoteCreated={vi.fn()}
         onError={vi.fn()}
       />,
@@ -123,6 +128,7 @@ describe("AudioRecorder", () => {
       <AudioRecorder
         defaultMode="memo"
         recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
         onNoteCreated={vi.fn()}
         onError={vi.fn()}
       />,
@@ -144,6 +150,7 @@ describe("AudioRecorder", () => {
       <AudioRecorder
         defaultMode="memo"
         recordingSource="meeting"
+        onRecordingSourceChange={vi.fn()}
         onNoteCreated={vi.fn()}
         onError={vi.fn()}
       />,
