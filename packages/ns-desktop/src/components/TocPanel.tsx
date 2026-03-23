@@ -3,7 +3,7 @@ import { extractHeadings } from "../lib/extractHeadings.ts";
 
 interface TocPanelProps {
   content: string;
-  onHeadingClick: (slug: string) => void;
+  onHeadingClick: (slug: string, lineNumber: number) => void;
 }
 
 export function TocPanel({ content, onHeadingClick }: TocPanelProps) {
@@ -30,7 +30,7 @@ export function TocPanel({ content, onHeadingClick }: TocPanelProps) {
         {headings.map((heading, i) => (
           <button
             key={`${heading.slug}-${i}`}
-            onClick={() => onHeadingClick(heading.slug)}
+            onClick={() => onHeadingClick(heading.slug, heading.lineNumber)}
             className="w-full text-left py-1.5 rounded-md text-sm text-foreground hover:bg-accent transition-colors cursor-pointer truncate"
             style={{ paddingLeft: (heading.level - minLevel) * 16 + 12 }}
             title={heading.text}

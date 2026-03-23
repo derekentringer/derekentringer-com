@@ -9,11 +9,11 @@
 
 Added audio note recording and transcription to the NoteSync desktop app. Users record audio via the browser MediaRecorder API in Tauri's webview, select a transcription mode (Meeting/Lecture/Memo/Verbatim), and the recording is sent to ns-api's Whisper + Claude pipeline for transcription and structuring into a markdown note. Also added note timestamps (created/modified) in the editor toolbar status bar.
 
-### Meeting Audio Recording (Core Audio Taps via cpal)
+### Meeting Audio Recording (Direct Core Audio HAL via coreaudio-rs)
 
-Added native meeting audio recording via Core Audio Taps using the `cpal` crate (macOS 14.2+). When "Meeting mode" is selected as the recording source, the app captures system audio (remote meeting participants via MS Teams, Zoom, etc.) via cpal's loopback feature (Core Audio Tap on the default output device) and microphone audio (user's voice) via a standard input stream, running as two concurrent cpal streams. At stop time, both buffers are converted to mono, the mic buffer is resampled to match the system audio sample rate if they differ, and the two are mixed by averaging. The result is written to a temporary WAV file and sent through the same transcription pipeline. A "Recording source" selector in both the AudioRecorder dropdown and Settings page lets users switch between "Microphone only" (browser MediaRecorder) and "Meeting mode" (native Core Audio Tap).
+Added native meeting audio recording via direct Core Audio HAL calls using `coreaudio-rs` + `objc2-core-audio` + `core-foundation` (macOS 14.2+). When "Meeting mode" is selected as the recording source, the app captures system audio (remote meeting participants via MS Teams, Zoom, etc.) via a Core Audio Process Tap on the default output device routed through an Aggregate Device, and microphone audio (user's voice) via a standard input AudioUnit — running as two independent AudioUnit streams. At stop time, both buffers are converted to mono, the mic buffer is resampled to match the system audio sample rate if they differ, and the two are mixed by averaging. The result is written to a temporary WAV file and sent through the same transcription pipeline. A "Recording source" selector in both the AudioRecorder dropdown and Settings page lets users switch between "Microphone only" (browser MediaRecorder) and "Meeting mode" (native Core Audio).
 
-This replaced an earlier ScreenCaptureKit implementation that broke on macOS Tahoe due to stricter TCC enforcement for the "Screen & System Audio Recording" category. Core Audio Taps fall under the less-intrusive "System Audio Recording Only" TCC category — no screen recording permission needed, no weekly re-confirmation prompts, and no app-restart-after-grant issues.
+This went through three iterations: (1) ScreenCaptureKit broke on macOS Tahoe due to stricter TCC enforcement; (2) `cpal` crate's loopback feature worked but triggered multiple permission dialogs (~12) because cpal internally makes many Core Audio HAL calls that each trigger TCC checks; (3) direct Core Audio HAL via `coreaudio-rs` gives full control over the HAL call sequence — permissions are pre-requested once each (microphone + system audio) before any AudioUnit setup, resulting in exactly 2 permission dialogs on first use. Core Audio Taps fall under the less-intrusive "System Audio Recording Only" TCC category — no screen recording permission needed, no weekly re-confirmation prompts, and no app-restart-after-grant issues.
 
 ## What Was Implemented
 
@@ -38,15 +38,19 @@ Ported from `ns-web/src/components/AudioRecorder.tsx`:
 
 ### Rust Audio Capture Module (`src-tauri/src/audio_capture.rs`) — NEW
 
-Native macOS Core Audio Tap integration via `cpal` crate (loopback capture):
-- `request_microphone_permission()` — pre-requests microphone permission via `AVCaptureDevice.authorizationStatusForMediaType:` and `requestAccessForMediaType:completionHandler:` using raw `objc2::msg_send!` with `block2::RcBlock`; blocks via `mpsc::channel` until user responds; called before any cpal operations to ensure a single macOS permission dialog instead of one per cpal audio operation
+Native macOS Core Audio HAL integration via `coreaudio-rs` (AudioUnit) + `objc2-core-audio` (Process Tap) + `core-foundation` (CFDictionary):
+- `request_microphone_permission()` — pre-requests microphone permission via `AVCaptureDevice.authorizationStatusForMediaType:` and `requestAccessForMediaType:completionHandler:` using raw `objc2::msg_send!` with `block2::RcBlock`; blocks via `mpsc::channel` until user responds; called before any AudioUnit operations to ensure a single macOS permission dialog
 - `request_system_audio_permission()` — pre-requests system audio recording permission by creating a minimal `CATapDescription` via `initStereoGlobalTapButExcludeProcesses:` with empty `NSArray`, calls `AudioHardwareCreateProcessTap` to trigger macOS "System Audio Recording" TCC dialog, retries every 1s up to 30 times until permission is granted, then destroys the tap
 - `check_support()` — checks macOS version >= 14.2 via `NSProcessInfo.operatingSystemVersion` (Core Audio Taps API minimum)
-- `start_recording(app_handle)` — calls both permission pre-requests upfront, then opens two concurrent cpal input streams: (1) microphone via `default_input_device().build_input_stream()`, (2) system audio loopback via `default_output_device().build_input_stream()` (Core Audio Tap); both collect f32 PCM samples in separate `Arc<Mutex<Vec<f32>>>` buffers with their native sample rates and channel counts; spawns timer thread emitting `"meeting-recording-tick"` events via `app_handle.emit()`
-- `stop_recording()` — drops both streams, converts to mono (`to_mono`), resamples mic to system sample rate if different (`resample` with linear interpolation), mixes by averaging (`mix`), writes WAV via `hound::WavWriter` (16-bit signed int, system audio sample rate, mono), returns temp file path
-- Helper functions: `to_mono()`, `resample()`, `mix()`
+- `create_process_tap()` — creates a `CATapDescription` for global stereo tap, calls `AudioHardwareCreateProcessTap` with retry loop; returns the tap device ID
+- `create_aggregate_device(tap_id)` — builds a `CFDictionary` via `core-foundation` crate describing an aggregate device with the tap as a sub-device, calls `AudioHardwareCreateAggregateDevice` via raw FFI; returns the aggregate device ID
+- `setup_input_audio_unit(device_id)` — uses `coreaudio::audio_unit::macos_helpers::audio_unit_from_device_id()` to create a properly configured input AudioUnit, sets stream format to interleaved f32, registers an input callback that appends samples to an `Arc<Mutex<Vec<f32>>>` buffer
+- `start_recording(app_handle)` — sequential setup: (1) mic permission pre-request, (2) 500ms delay, (3) mic AudioUnit via `default_input_device`, (4) system audio process tap, (5) aggregate device from tap, (6) system AudioUnit on aggregate device, (7) timer thread emitting `"meeting-recording-tick"` events
+- `stop_recording()` — stops both AudioUnits, destroys aggregate device + process tap via `AudioHardwareDestroyAggregateDevice`/`AudioHardwareDestroyProcessTap`, converts to mono (`to_mono`), resamples mic to system sample rate if different (`resample` with linear interpolation), mixes by averaging (`mix`), writes WAV via `hound::WavWriter` (16-bit signed int, system audio sample rate, mono), returns temp file path
+- Helper functions: `to_mono()`, `resample()`, `mix()`, `get_device_sample_rate()`, `get_device_channels()`
+- Raw FFI declarations for `AudioHardwareCreateAggregateDevice` and `AudioHardwareDestroyAggregateDevice` to avoid `objc2-core-foundation` dependency
 - Static `RECORDING: Mutex<Option<RecordingState>>` for state management
-- `unsafe impl Send for RecordingState` — cpal::Stream uses thread-safe Core Audio objects
+- `unsafe impl Send for RecordingState` — AudioUnit uses thread-safe Core Audio objects
 
 ### Tauri Commands (`src-tauri/src/lib.rs`) — MODIFIED
 
@@ -110,12 +114,13 @@ Swift runtime rpath linker flags removed — no longer needed after migrating fr
 
 Under `[target.'cfg(target_os = "macos")'.dependencies]`:
 - `objc2 = "0.6"` — Rust bindings for Objective-C runtime (AVCaptureDevice permission API, AnyThread trait for CATapDescription)
-- `objc2-foundation = "0.3"` — Foundation framework bindings with `NSUserDefaults`, `NSString`, `NSProcessInfo`, `NSArray`, `NSValue` features (OS version detection, tap description parameters)
-- `objc2-core-audio = "0.3"` — Core Audio HAL bindings with `AudioHardware` feature (`AudioHardwareCreateProcessTap`, `AudioHardwareDestroyProcessTap`, `CATapDescription` for permission pre-request)
-- `cpal = "0.17"` — Cross-platform audio I/O; v0.17.3 includes native macOS loopback via Core Audio Taps
+- `objc2-foundation = "0.3"` — Foundation framework bindings with `NSUserDefaults`, `NSString`, `NSProcessInfo`, `NSArray`, `NSValue`, `NSUUID` features (OS version detection, tap description parameters)
+- `objc2-core-audio = "0.3"` — Core Audio HAL bindings with `AudioHardware` feature (`AudioHardwareCreateProcessTap`, `AudioHardwareDestroyProcessTap`, `CATapDescription` for permission pre-request and tap creation)
+- `coreaudio-rs = "0.14"` — Rust wrapper for Core Audio AudioUnit API with `audio_unit` + `core_audio` features; `macos_helpers::audio_unit_from_device_id()` creates properly configured input AudioUnits
+- `core-foundation = "0.10"` — Core Foundation bindings for building `CFDictionary` aggregate device descriptions passed to `AudioHardwareCreateAggregateDevice`
 - `hound = "3.5"` — WAV file writer (PCM samples → .wav)
 - `block2 = "0.6"` — Objective-C block support for `AVCaptureDevice.requestAccessForMediaType:completionHandler:` callback
-- Removed: `screencapturekit = "1.5"` (replaced by cpal)
+- Removed: `screencapturekit = "1.5"` (replaced by cpal, then by direct Core Audio HAL via coreaudio-rs)
 
 ## Tests
 
@@ -132,8 +137,8 @@ Under `[target.'cfg(target_os = "macos")'.dependencies]`:
 | File | Action |
 |------|--------|
 | `ns-desktop/src-tauri/build.rs` | Modified — removed Swift runtime rpath linker flags (cpal is pure Rust) |
-| `ns-desktop/src-tauri/Cargo.toml` | Modified — replaced screencapturekit with cpal + hound deps |
-| `ns-desktop/src-tauri/src/audio_capture.rs` | Modified — rewritten from ScreenCaptureKit to cpal Core Audio Tap |
+| `ns-desktop/src-tauri/Cargo.toml` | Modified — replaced screencapturekit with coreaudio-rs + core-foundation + hound deps |
+| `ns-desktop/src-tauri/src/audio_capture.rs` | Modified — rewritten from ScreenCaptureKit to direct Core Audio HAL via coreaudio-rs |
 | `ns-desktop/src-tauri/src/lib.rs` | Modified — 3 new Tauri commands |
 | `ns-desktop/src-tauri/Info.plist` | Modified — NSMicrophoneUsageDescription + NSAudioCaptureUsageDescription |
 | `ns-desktop/src/components/AudioRecorder.tsx` | Modified — added meeting mode via Tauri invoke |
@@ -151,4 +156,4 @@ Under `[target.'cfg(target_os = "macos")'.dependencies]`:
 
 - [10a — AI Features: Foundation](10a-ai-features-foundation.md) — uses AI settings hook and API client
 - ns-api `/ai/transcribe` endpoint — already implemented (Whisper + Claude pipeline)
-- macOS 14.2+ — required for Core Audio Taps API (cpal loopback capture); meeting mode gracefully hidden on older macOS and non-macOS platforms
+- macOS 14.2+ — required for Core Audio Taps API (Process Tap + Aggregate Device); meeting mode gracefully hidden on older macOS and non-macOS platforms

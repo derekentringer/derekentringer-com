@@ -27,7 +27,7 @@ describe("TocPanel", () => {
     const onClick = vi.fn();
     render(<TocPanel content="## My Section" onHeadingClick={onClick} />);
     await user.click(screen.getByText("My Section"));
-    expect(onClick).toHaveBeenCalledWith("my-section");
+    expect(onClick).toHaveBeenCalledWith("my-section", 1);
   });
 
   it("indents nested headings relative to the minimum level", () => {

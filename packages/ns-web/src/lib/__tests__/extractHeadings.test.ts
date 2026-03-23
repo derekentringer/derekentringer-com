@@ -13,7 +13,7 @@ describe("extractHeadings", () => {
   it("extracts a single heading", () => {
     const result = extractHeadings("# Hello World");
     expect(result).toEqual([
-      { level: 1, text: "Hello World", slug: "hello-world" },
+      { level: 1, text: "Hello World", slug: "hello-world", lineNumber: 1 },
     ]);
   });
 
@@ -21,10 +21,10 @@ describe("extractHeadings", () => {
     const md = "# Title\n## Section\n### Subsection\n#### Deep";
     const result = extractHeadings(md);
     expect(result).toHaveLength(4);
-    expect(result[0]).toEqual({ level: 1, text: "Title", slug: "title" });
-    expect(result[1]).toEqual({ level: 2, text: "Section", slug: "section" });
-    expect(result[2]).toEqual({ level: 3, text: "Subsection", slug: "subsection" });
-    expect(result[3]).toEqual({ level: 4, text: "Deep", slug: "deep" });
+    expect(result[0]).toEqual({ level: 1, text: "Title", slug: "title", lineNumber: 1 });
+    expect(result[1]).toEqual({ level: 2, text: "Section", slug: "section", lineNumber: 2 });
+    expect(result[2]).toEqual({ level: 3, text: "Subsection", slug: "subsection", lineNumber: 3 });
+    expect(result[3]).toEqual({ level: 4, text: "Deep", slug: "deep", lineNumber: 4 });
   });
 
   it("skips headings inside fenced code blocks", () => {
@@ -78,7 +78,16 @@ describe("extractHeadings", () => {
   it("handles h6 headings", () => {
     const result = extractHeadings("###### H6 Heading");
     expect(result).toEqual([
-      { level: 6, text: "H6 Heading", slug: "h6-heading" },
+      { level: 6, text: "H6 Heading", slug: "h6-heading", lineNumber: 1 },
     ]);
+  });
+
+  it("tracks correct line numbers with mixed content", () => {
+    const md = "Some text\n# First\nParagraph\n\n## Second\n```\n# Not heading\n```\n### Third";
+    const result = extractHeadings(md);
+    expect(result).toHaveLength(3);
+    expect(result[0].lineNumber).toBe(2);
+    expect(result[1].lineNumber).toBe(5);
+    expect(result[2].lineNumber).toBe(9);
   });
 });

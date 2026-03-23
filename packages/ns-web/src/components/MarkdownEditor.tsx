@@ -26,6 +26,7 @@ export interface MarkdownEditorHandle {
   focus: () => void;
   insertBold: () => void;
   insertItalic: () => void;
+  scrollToLine: (line: number) => void;
 }
 
 interface MarkdownEditorProps {
@@ -275,6 +276,15 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     },
     insertItalic: () => {
       if (viewRef.current) wrapSelection(viewRef.current, "*");
+    },
+    scrollToLine: (line: number) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const lineInfo = view.state.doc.line(Math.min(line, view.state.doc.lines));
+      view.dispatch({
+        selection: { anchor: lineInfo.from },
+        effects: EditorView.scrollIntoView(lineInfo.from, { y: "start" }),
+      });
     },
   }));
 
