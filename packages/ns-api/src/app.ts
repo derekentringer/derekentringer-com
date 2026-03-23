@@ -37,7 +37,7 @@ export function buildApp(opts?: BuildAppOptions) {
   const config = loadConfig();
   const app = Fastify({
     logger: true,
-    bodyLimit: 100 * 1024 * 1024, // 100 MB — matches @fastify/multipart fileSize limit
+    bodyLimit: 500 * 1024 * 1024, // 500 MB — supports long meeting recordings (16kHz WAV ~1.9 MB/min)
   });
 
   const sseHub = createSseHub();
@@ -70,7 +70,7 @@ export function buildApp(opts?: BuildAppOptions) {
         request.url.startsWith("/sync/events"),
     });
   }
-  app.register(multipart, { limits: { fileSize: 100 * 1024 * 1024, files: 1 } });
+  app.register(multipart, { limits: { fileSize: 500 * 1024 * 1024, files: 1 } });
   app.register(authPlugin, {
     jwtSecret: config.jwtSecret,
   });
