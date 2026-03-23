@@ -144,6 +144,8 @@ fn spawn_writer_thread(
 }
 
 /// Stream-mix two raw PCM temp files into a single WAV, processing in 1-second chunks.
+/// Output is always 16kHz mono 16-bit — Whisper works at 16kHz internally so no quality loss,
+/// and the smaller file size (~1.9 MB/min vs ~5.6 MB/min at 48kHz) enables longer recordings.
 fn mix_to_wav(
     sys_path: &PathBuf,
     sys_rate: u32,
@@ -152,7 +154,7 @@ fn mix_to_wav(
     mic_rate: u32,
     mic_channels: u16,
 ) -> Result<String, String> {
-    let output_rate = sys_rate;
+    let output_rate: u32 = 16000; // Whisper's native rate — no quality loss
 
     let temp_dir = std::env::temp_dir();
     let timestamp = std::time::SystemTime::now()
@@ -180,8 +182,11 @@ fn mix_to_wav(
     let sys_chunk_size = sys_rate as usize * sys_channels as usize;
     let mic_chunk_size = mic_rate as usize * mic_channels as usize;
 
-    let needs_resample = mic_rate != output_rate;
-    let mut resampler = ChunkResampler::new(mic_rate, output_rate);
+    // Both streams may need resampling to 16kHz
+    let mut sys_resampler = ChunkResampler::new(sys_rate, output_rate);
+    let mut mic_resampler = ChunkResampler::new(mic_rate, output_rate);
+    let sys_needs_resample = sys_rate != output_rate;
+    let mic_needs_resample = mic_rate != output_rate;
 
     let mut total_samples: u64 = 0;
 
@@ -193,10 +198,16 @@ fn mix_to_wav(
             break;
         }
 
-        let sys_mono = to_mono(&sys_raw, sys_channels);
+        let sys_mono_raw = to_mono(&sys_raw, sys_channels);
+        let sys_mono = if sys_needs_resample && !sys_mono_raw.is_empty() {
+            sys_resampler.process(&sys_mono_raw)
+        } else {
+            sys_mono_raw
+        };
+
         let mic_mono_raw = to_mono(&mic_raw, mic_channels);
-        let mic_mono = if needs_resample && !mic_mono_raw.is_empty() {
-            resampler.process(&mic_mono_raw)
+        let mic_mono = if mic_needs_resample && !mic_mono_raw.is_empty() {
+            mic_resampler.process(&mic_mono_raw)
         } else {
             mic_mono_raw
         };

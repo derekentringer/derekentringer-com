@@ -11,7 +11,7 @@ const MODE_LABELS: Record<AudioMode, string> = {
 };
 
 const MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
-const MAX_DURATION_MS = 2 * 60 * 60 * 1000; // 2 hours
+const MAX_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 const PREFERRED_MIME_TYPES = [
   "audio/webm;codecs=opus",
