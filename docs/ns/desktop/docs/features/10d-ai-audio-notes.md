@@ -29,7 +29,8 @@ Ported from `ns-web/src/components/AudioRecorder.tsx`:
 - `recordingSource` prop controls recording backend: `"microphone"` uses browser MediaRecorder, `"meeting"` uses native Tauri commands
 - On mount, checks meeting recording support via `invoke("check_meeting_recording_support")` — returns `true` on macOS 15.0+
 - Meeting recording flow: `invoke("start_meeting_recording")` → listen for `"meeting-recording-tick"` events (1s timer) → `invoke("stop_meeting_recording")` returns WAV file path → `readFile()` via `@tauri-apps/plugin-fs` → create Blob → `transcribeAudio(blob, mode)`
-- Dropdown shows "Source" section (Microphone only / Meeting mode) when `meetingSupported` is true
+- `onRecordingSourceChange` prop callback updates `recordingSource` AI setting via `updateAiSetting`; persists to localStorage
+- Dropdown shows "Source" section (Microphone only / Meeting mode) as clickable buttons when `meetingSupported` is true
 - Meeting mode shows monitor/display icon vs microphone icon in record button
 - Button title includes source indicator: "Record audio (Memo — Meeting)"
 
@@ -95,6 +96,12 @@ Three new Tauri commands with cross-platform stubs:
 - Full date+time hover tooltips
 - `text-[11px] text-muted-foreground` styling matching save status
 
+### Build Script (`src-tauri/build.rs`) — MODIFIED
+
+Added Swift runtime rpath linker flags (macOS only) so `libswiftCore.dylib` is found at launch — required by the `screencapturekit` crate's Swift interop:
+- `-Wl,-rpath,/usr/lib/swift` — system Swift runtime
+- `-Wl,-rpath,@executable_path/../Frameworks` — bundled frameworks
+
 ### Rust Dependencies (`src-tauri/Cargo.toml`) — MODIFIED
 
 Added under `[target.'cfg(target_os = "macos")'.dependencies]`:
@@ -116,6 +123,7 @@ Added under `[target.'cfg(target_os = "macos")'.dependencies]`:
 
 | File | Action |
 |------|--------|
+| `ns-desktop/src-tauri/build.rs` | Modified — Swift runtime rpath linker flags |
 | `ns-desktop/src-tauri/Cargo.toml` | Modified — added screencapturekit + hound deps |
 | `ns-desktop/src-tauri/src/audio_capture.rs` | Created — ScreenCaptureKit recording module |
 | `ns-desktop/src-tauri/src/lib.rs` | Modified — 3 new Tauri commands |

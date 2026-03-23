@@ -116,6 +116,10 @@
 
 - [x] High-fidelity app icons — Regenerated `.icns` from SVG vector source at 1024x1024 via ImageMagick + Apple `iconutil`; previous `.icns` was missing the `ic10` (1024x1024) variant, causing macOS to upscale from 512px in the app switcher, About window, and Applications folder; all 10 required iconset sizes (16–1024px @1x and @2x) now embedded
 
+- [x] Icon padding for macOS task switcher — Artwork resized to 824x824 centered on 1024x1024 canvas (~100px transparent padding per side, Apple's 13/16 rule); all icon formats regenerated (`.icns`, `.ico`, all PNGs); forced 8-bit/color RGBA (`PNG32`) depth — ImageMagick's default 16-bit depth caused `tao` (Tauri's windowing library) to panic during `did_finish_launching` because the `image` crate doesn't handle 16-bit PNGs for window icons
+
+- [x] Recording source selector fix — AudioRecorder dropdown source items (`Microphone only` / `Meeting mode`) were `<div>` elements with no click handler; changed to `<button>` elements with `onRecordingSourceChange` callback wired to `updateAiSetting("recordingSource", src)` in NotesPage; users can now switch recording source from the dropdown
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)
