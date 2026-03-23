@@ -143,7 +143,7 @@ Key architecture change from original plan: uses JSON text storage + pure JS cos
 
 **Implemented.** See [features/10d-ai-audio-notes.md](../features/10d-ai-audio-notes.md) for full details.
 
-Includes browser MediaRecorder for standard microphone recording and native macOS ScreenCaptureKit for meeting audio recording (system audio + microphone simultaneously on macOS 15.0+). Added `RecordingSource` type (`"microphone" | "meeting"`) to AI settings, recording source selector in AudioRecorder dropdown and Settings page, Rust `audio_capture.rs` module with `screencapturekit` + `hound` crates, three new Tauri commands (`check_meeting_recording_support`, `start_meeting_recording`, `stop_meeting_recording`), WAV extension support in `transcribeAudio`, and `NSScreenCaptureUsageDescription` entitlement.
+Includes browser MediaRecorder for standard microphone recording and native macOS Core Audio Taps via `cpal` crate for meeting audio recording (system audio + microphone simultaneously on macOS 14.2+). Added `RecordingSource` type (`"microphone" | "meeting"`) to AI settings, recording source selector in AudioRecorder dropdown and Settings page, Rust `audio_capture.rs` module with `cpal` + `hound` + `objc2` + `objc2-core-audio` + `block2` crates, permission pre-request functions for both microphone (AVCaptureDevice) and system audio (AudioHardwareCreateProcessTap), three new Tauri commands (`check_meeting_recording_support`, `start_meeting_recording`, `stop_meeting_recording`), WAV extension support in `transcribeAudio`, and `NSAudioCaptureUsageDescription` entitlement.
 
 ---
 
@@ -233,7 +233,7 @@ Copy from `packages/ns-web/src/components/QAPanel.tsx`:
 | **Router** | `navigate()` for deep-links, URL sync | No router — no URL updates |
 | **Note type** | `NoteSearchResult` (from API) | `Note` (from local SQLite, synced) |
 | **Semantic search** | Server-side pgvector | Embeddings generated via ns-api Voyage AI, cached in SQLite as JSON text; pure JS cosine similarity; fully offline once cached |
-| **Audio recording** | `MediaRecorder` in browser | `MediaRecorder` in Tauri webview (microphone mode) + native macOS ScreenCaptureKit (meeting mode — system audio + microphone) |
+| **Audio recording** | `MediaRecorder` in browser | `MediaRecorder` in Tauri webview (microphone mode) + native macOS Core Audio Taps via cpal (meeting mode — system audio + microphone, macOS 14.2+) |
 | **Sync after AI create** | Offline queue handles it | Must push to sync engine after note creation |
 | **Admin AI toggle** | Admin page (separate) | Admin page already has AI global toggle |
 | **ConfirmDialog** | Created in 04e.1 | Already exists |
