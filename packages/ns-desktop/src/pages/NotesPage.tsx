@@ -2229,6 +2229,7 @@ export function NotesPage() {
                 <AudioRecorder
                   defaultMode={aiSettings.audioMode}
                   recordingSource={aiSettings.recordingSource}
+                  onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
                   onNoteCreated={handleAudioNoteCreated}
                   onError={showError}
                 />

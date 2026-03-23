@@ -38,13 +38,14 @@ function getSupportedMimeType(): string | undefined {
 interface AudioRecorderProps {
   defaultMode: AudioMode;
   recordingSource: RecordingSource;
+  onRecordingSourceChange: (source: RecordingSource) => void;
   onNoteCreated: (note: Note) => void;
   onError: (message: string) => void;
 }
 
 type RecorderState = "idle" | "recording" | "processing";
 
-export function AudioRecorder({ defaultMode, recordingSource, onNoteCreated, onError }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, recordingSource, onRecordingSourceChange, onNoteCreated, onError }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -308,8 +309,11 @@ export function AudioRecorder({ defaultMode, recordingSource, onNoteCreated, onE
             <>
               <div className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wider">Source</div>
               {(["microphone", "meeting"] as RecordingSource[]).map((src) => (
-                <div
+                <button
                   key={src}
+                  onClick={() => {
+                    onRecordingSourceChange(src);
+                  }}
                   className={`w-full text-left px-3 py-1.5 text-sm transition-colors cursor-pointer ${
                     src === recordingSource
                       ? "text-foreground bg-accent"
@@ -321,7 +325,7 @@ export function AudioRecorder({ defaultMode, recordingSource, onNoteCreated, onE
                   {src === recordingSource && (
                     <span className="ml-1 text-xs">✓</span>
                   )}
-                </div>
+                </button>
               ))}
               <div className="border-t border-border my-1" />
             </>
