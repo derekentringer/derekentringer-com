@@ -292,6 +292,54 @@ fn request_microphone_permission() -> Result<(), String> {
     }
 }
 
+/// Pre-request system audio recording permission by creating a minimal process tap.
+/// This triggers the macOS "System Audio Recording" TCC dialog on first use.
+/// Once granted, the tap is destroyed — the real tap is created later in start_recording.
+fn request_system_audio_permission() -> Result<(), String> {
+    use objc2_core_audio::*;
+    use objc2_foundation::{NSArray, NSNumber};
+
+    // Create a minimal global stereo tap (no specific device) just to trigger the permission dialog
+    let empty_processes: objc2::rc::Retained<NSArray<NSNumber>> = NSArray::new();
+    let tap_desc = unsafe {
+        CATapDescription::initStereoGlobalTapButExcludeProcesses(
+            CATapDescription::alloc(),
+            &empty_processes,
+        )
+    };
+
+    for attempt in 0..30 {
+        let mut tap_id: AudioObjectID = 0;
+        let status =
+            unsafe { AudioHardwareCreateProcessTap(Some(&tap_desc), &mut tap_id as *mut _) };
+
+        if status == 0 {
+            // Permission granted — destroy the minimal tap immediately
+            unsafe {
+                AudioHardwareDestroyProcessTap(tap_id);
+            }
+            if attempt > 0 {
+                log::info!("System audio permission granted after {attempt} retries");
+            }
+            return Ok(());
+        }
+
+        if attempt == 0 {
+            log::info!(
+                "System audio permission not yet granted (status={status}), \
+                 waiting for user to allow..."
+            );
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+
+    Err(
+        "System Audio Recording permission not granted. Please allow in \
+         System Settings > Privacy & Security and try again."
+            .into(),
+    )
+}
+
 /// Get the nominal sample rate of a Core Audio device.
 fn get_device_sample_rate(device_id: u32) -> Result<f64, String> {
     use objc2_core_audio::*;
@@ -588,12 +636,17 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     let system_temp_path = temp_dir.join(format!("notesync_sys_{timestamp}.pcm"));
     let mic_temp_path = temp_dir.join(format!("notesync_mic_{timestamp}.pcm"));
 
-    // Step 1: Request microphone permission (triggers 1 dialog on first use)
+    // Step 1: Pre-request ALL permissions before any HAL operations.
+    // This ensures exactly 2 dialogs on first use, 0 on subsequent uses.
     request_microphone_permission()?;
     log::info!("Microphone permission granted");
     thread::sleep(Duration::from_millis(500));
 
-    // Step 2: Set up microphone capture with disk streaming
+    request_system_audio_permission()?;
+    log::info!("System audio permission granted");
+    thread::sleep(Duration::from_millis(500));
+
+    // Step 2: Set up microphone capture with disk streaming (no dialog — permission already granted)
     let mic_device_id = coreaudio::audio_unit::macos_helpers::get_default_device_id(true)
         .ok_or("No default input device found")?;
     let mic_sample_rate = get_device_sample_rate(mic_device_id)?;
@@ -614,7 +667,7 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
         mic_channels
     );
 
-    // Step 3: Create system audio tap (triggers 1 dialog on first use)
+    // Step 3: Create system audio tap (no dialog — permission already pre-requested)
     let output_device_id = coreaudio::audio_unit::macos_helpers::get_default_device_id(false)
         .ok_or("No default output device found")?;
     let output_device_uid = {

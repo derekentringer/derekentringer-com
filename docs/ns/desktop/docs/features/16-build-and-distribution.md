@@ -32,7 +32,7 @@ The root `.gitignore` already handles `.env` and `.env.*` with `!.env.example`, 
 | Script | Command | Purpose |
 |--------|---------|---------|
 | `tauri:build:local` | `tauri build` | Alias for `tauri build`, loads `.env` (localhost) |
-| `tauri:build:prod` | `npm run tauri:version-sync && VITE_API_URL=... tauri build --target universal-apple-darwin` | Syncs version from git tag, inline env var override bakes in prod URL, builds universal binary (ARM + Intel) |
+| `tauri:build:prod` | `npm run tauri:version-sync && APPLE_SIGNING_IDENTITY=- VITE_API_URL=... tauri build --target universal-apple-darwin` | Syncs version from git tag, ad-hoc code signs for TCC permission persistence, inline env var override bakes in prod URL, builds universal binary (ARM + Intel) |
 | `vite:build:prod` | `vite build --mode production` | Vite-only build loading `.env.production` |
 | `tauri:version-sync` | `node -e "..."` | Reads latest git tag, writes version to `tauri.conf.json` |
 
@@ -62,7 +62,11 @@ magick -background none -density 400 logo.svg -resize 1024x1024 master_1024.png
 iconutil -c icns icon.iconset -o icon.icns
 ```
 
-### 5. No Source Code Changes Needed
+### 5. Ad-Hoc Code Signing
+
+The `tauri:build:prod` script sets `APPLE_SIGNING_IDENTITY=-` to enable ad-hoc code signing. This gives the app a stable `CDHash` identity that macOS TCC uses to persist permission grants (microphone, system audio recording). Without signing, TCC has no stable identity and may re-prompt on every use. Ad-hoc signing requires no Apple Developer account. The signing step appears in the build output as `Signing with identity "-"`.
+
+### 6. No Source Code Changes Needed
 
 The three files using `import.meta.env.VITE_API_URL || "http://localhost:3004"` already work correctly — when `VITE_API_URL` is set via env file or inline, the fallback is never reached.
 
