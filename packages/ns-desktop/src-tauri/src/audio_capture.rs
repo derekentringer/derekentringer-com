@@ -260,6 +260,8 @@ fn request_microphone_permission() -> Result<(), String> {
     let status: isize =
         unsafe { objc2::msg_send![cls, authorizationStatusForMediaType: &*media_type] };
 
+    log::info!("Microphone authorization status: {} (0=notDetermined, 1=restricted, 2=denied, 3=authorized)", status);
+
     match status {
         3 => Ok(()),
         1 => Err("Microphone access is restricted on this device.".into()),
