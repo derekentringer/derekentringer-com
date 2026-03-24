@@ -35,6 +35,7 @@ Background sync engine keeping local SQLite in sync with central PostgreSQL via 
 - Callback refs pattern (`refreshSidebarDataRef`, `loadFavoriteNotesRef`, `loadNoteTitlesRef`) to avoid stale closures — sync engine's `onDataChanged` reads from refs
 - `reloadNotes` converted from plain function to `useCallback([activeFolder, sortBy, sortOrder])`
 - `handleSave` deps updated to include `reloadNotes`, `loadFavoriteNotes`, `loadNoteTitles`
+- Optimistic note save: `selectNote()` and `closeTab()` fire-and-forget saves now optimistically update the `notes` array and `tabNoteCacheRef` before the async DB write, preventing stale content when switching back; `handleSave()` also updates `tabNoteCacheRef` after save
 
 ### Sort Preferences
 

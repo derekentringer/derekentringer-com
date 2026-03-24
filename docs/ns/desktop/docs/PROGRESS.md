@@ -122,6 +122,10 @@
 
 - [x] System audio permission pre-request — Added `request_system_audio_permission()` function that creates a minimal global stereo tap via `CATapDescription::initStereoGlobalTapButExcludeProcesses:` just to trigger the macOS "System Audio Recording" TCC dialog, then destroys the tap. Called in `start_recording()` before any AudioUnit setup, alongside the existing `request_microphone_permission()`. Ensures exactly 2 clean permission dialogs on first use (mic + system audio) before any HAL operations begin.
 
+### Note Save Reliability
+
+- [x] Optimistic note save on tab/note switch — Fire-and-forget saves in `selectNote()` and `closeTab()` now optimistically update the `notes` array and `tabNoteCacheRef` before the async DB write. Previously, switching away from a dirty note saved to DB but left the in-memory `notes` array and tab cache with stale content; switching back would load the old version from the stale array. `handleSave()` also now updates `tabNoteCacheRef` after save so tab switching always has fresh data. Same fix applied to ns-web for parity.
+
 ### App Icon Fidelity
 
 - [x] High-fidelity app icons — Regenerated `.icns` from SVG vector source at 1024x1024 via ImageMagick + Apple `iconutil`; previous `.icns` was missing the `ic10` (1024x1024) variant, causing macOS to upscale from 512px in the app switcher, About window, and Applications folder; all 10 required iconset sizes (16–1024px @1x and @2x) now embedded

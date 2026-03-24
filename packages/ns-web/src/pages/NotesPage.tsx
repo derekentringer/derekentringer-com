@@ -613,8 +613,18 @@ export function NotesPage() {
 
   function selectNote(note: Note) {
     if (isDirty && selectedId) {
+      // Optimistically update notes array + tab cache so switching back shows saved content
+      const savedId = selectedId;
+      const savedTitle = title;
+      const savedContent = content;
+      setNotes((prev) => prev.map((n) => n.id === savedId ? { ...n, title: savedTitle, content: savedContent } : n));
+      setFavoriteNotes((prev) => prev.map((n) => n.id === savedId ? { ...n, title: savedTitle, content: savedContent } : n));
+      const cached = tabNoteCacheRef.current.get(savedId);
+      if (cached) {
+        tabNoteCacheRef.current.set(savedId, { ...cached, title: savedTitle, content: savedContent });
+      }
       // Fire-and-forget save of current note before switching
-      updateNote(selectedId, { title, content }).catch(() => {
+      updateNote(savedId, { title: savedTitle, content: savedContent }).catch(() => {
         showError("Failed to save changes to previous note");
       });
     }
@@ -695,6 +705,9 @@ export function NotesPage() {
 
     // If closing the active tab and it's dirty, fire-and-forget save
     if (noteId === selectedId && isDirty) {
+      // Optimistically update notes array so reopening the note shows saved content
+      setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, title, content } : n));
+      setFavoriteNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, title, content } : n));
       updateNote(noteId, { title, content }).catch(() => {
         showError("Failed to save changes");
       });
@@ -802,6 +815,7 @@ export function NotesPage() {
       setFavoriteNotes((prev) =>
         prev.map((n) => (n.id === updated.id ? { ...n, title: updated.title, content: updated.content } : n)),
       );
+      tabNoteCacheRef.current.set(updated.id, updated);
       loadedTitleRef.current = title;
       loadedContentRef.current = content;
       setIsDirty(false);
