@@ -126,6 +126,8 @@
 
 - [x] Optimistic note save on tab/note switch — Fire-and-forget saves in `selectNote()` and `closeTab()` now optimistically update the `notes` array and `tabNoteCacheRef` before the async DB write. Previously, switching away from a dirty note saved to DB but left the in-memory `notes` array and tab cache with stale content; switching back would load the old version from the stale array. `handleSave()` also now updates `tabNoteCacheRef` after save so tab switching always has fresh data. Same fix applied to ns-web for parity.
 
+- [x] Stale reloadNotes race condition fix — Added monotonic request counter (`reloadNotesCounterRef`) to `reloadNotes()` / `loadNotes()` so only the latest async fetch applies `setNotes()`. Previously, a `reloadNotes()` started before a save (e.g. from sync callback or periodic refresh) could complete after the save and replace the `notes` array with stale data; the auto-refresh effect would then see `contentChanged && !isDirty()` and overwrite the editor with old content. The counter ensures stale results are silently discarded. Same fix applied to ns-web for parity.
+
 ### App Icon Fidelity
 
 - [x] High-fidelity app icons — Regenerated `.icns` from SVG vector source at 1024x1024 via ImageMagick + Apple `iconutil`; previous `.icns` was missing the `ic10` (1024x1024) variant, causing macOS to upscale from 512px in the app switcher, About window, and Applications folder; all 10 required iconset sizes (16–1024px @1x and @2x) now embedded

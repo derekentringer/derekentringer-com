@@ -302,6 +302,7 @@ export function NotesPage() {
 
   const loadNotes = useCallback(
     async (searchQuery?: string) => {
+      const requestId = ++loadNotesCounterRef.current;
       try {
         const folderIdParam =
           !searchQuery && activeFolder && activeFolder !== "__unfiled__"
@@ -315,6 +316,9 @@ export function NotesPage() {
           sortBy,
           sortOrder,
         });
+        // Only apply if this is still the latest request — prevents a stale fetch
+        // (started before a save) from overwriting the notes array with old data
+        if (requestId !== loadNotesCounterRef.current) return;
         let filtered = result.notes;
         // Client-side filter for "unfiled" (notes with no folder) — skip during search
         if (!searchQuery && activeFolder === "__unfiled__") {
@@ -413,6 +417,10 @@ export function NotesPage() {
   const debouncedSearchRef = useRef(debouncedSearch);
   const sidebarViewRef = useRef(sidebarView);
   const closeDeletedNoteTabsRef = useRef<() => void>(() => {});
+
+  // Counter to discard stale loadNotes() results (prevents race where a pre-save
+  // fetch completes after save and overwrites the editor with old content)
+  const loadNotesCounterRef = useRef(0);
 
   useEffect(() => { loadNotesRef.current = loadNotes; }, [loadNotes]);
   useEffect(() => { loadFoldersRef.current = loadFolders; }, [loadFolders]);

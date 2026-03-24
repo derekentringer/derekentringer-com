@@ -296,6 +296,10 @@ export function NotesPage() {
   const reloadNotesRef = useRef<() => Promise<void>>(async () => {});
   const closeDeletedNoteTabRef = useRef<(noteId: string) => void>(() => {});
 
+  // Counter to discard stale reloadNotes() results (prevents race where a pre-save
+  // fetch completes after save and overwrites the editor with old content)
+  const reloadNotesCounterRef = useRef(0);
+
   const dndSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 },
@@ -515,13 +519,18 @@ export function NotesPage() {
   // --- Reload notes when folder/sort changes ---
 
   const reloadNotes = useCallback(async () => {
+    const requestId = ++reloadNotesCounterRef.current;
     try {
       const result = await fetchNotes({
         folderId: activeFolder === "__unfiled__" ? null : activeFolder === null ? undefined : activeFolder,
         sortBy,
         sortOrder,
       });
-      setNotes(result);
+      // Only apply if this is still the latest request — prevents a stale fetch
+      // (started before a save) from overwriting the notes array with old data
+      if (requestId === reloadNotesCounterRef.current) {
+        setNotes(result);
+      }
     } catch (err) {
       console.error("Failed to reload notes:", err);
     }
