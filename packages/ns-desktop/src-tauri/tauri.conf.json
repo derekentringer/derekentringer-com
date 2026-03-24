@@ -46,6 +46,12 @@
         "mimeType": "text/plain",
         "description": "Text Document"
       }
-    ]
+    ],
+    "macOS": {
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "NoteSync needs microphone access to record audio notes.",
+        "NSAudioCaptureUsageDescription": "NoteSync needs system audio recording access to capture meeting audio for transcription."
+      }
+    }
   }
 }
