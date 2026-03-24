@@ -2426,13 +2426,7 @@ export function NotesPage() {
       </main>
 
       {/* Sliding drawer with tabbed content */}
-      <div
-        className="fixed top-0 right-0 h-full z-10 overflow-visible transition-transform duration-300 ease-in-out"
-        style={{
-          width: qaResize.size,
-          transform: qaOpen ? "translateX(0)" : `translateX(${qaResize.size}px)`,
-        }}
-      >
+      <div className="relative h-full shrink-0 overflow-visible">
         {/* Tab buttons on left edge, above backlinks panel */}
         {!focusMode && <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
           {/* AI Assistant tab */}
@@ -2493,25 +2487,30 @@ export function NotesPage() {
             </button>
           )}
         </div>}
-        <div className="h-full flex bg-card shadow-lg">
-          <ResizeDivider
-            direction="vertical"
-            isDragging={qaResize.isDragging}
-            onPointerDown={qaResize.onPointerDown}
-          />
-          <div className="flex-1 min-w-0 h-full">
-            {drawerTab === "assistant" && settings.masterAiEnabled && settings.qaAssistant ? (
-              <QAPanel onSelectNote={handleQaSelectNote} isOpen={qaOpen} />
-            ) : drawerTab === "history" && selectedId ? (
-              <VersionHistoryPanel
-                noteId={selectedId}
-                onSelectVersion={setSelectedVersion}
-                selectedVersionId={selectedVersion?.id}
-                refreshKey={versionRefreshKey}
-              />
-            ) : drawerTab === "toc" && selectedId ? (
-              <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
-            ) : null}
+        <div
+          className={`h-full overflow-hidden ${qaResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
+          style={{ width: qaOpen ? qaResize.size : 0 }}
+        >
+          <div className="h-full flex bg-card shadow-lg" style={{ width: qaResize.size }}>
+            <ResizeDivider
+              direction="vertical"
+              isDragging={qaResize.isDragging}
+              onPointerDown={qaResize.onPointerDown}
+            />
+            <div className="flex-1 min-w-0 h-full">
+              {drawerTab === "assistant" && settings.masterAiEnabled && settings.qaAssistant ? (
+                <QAPanel onSelectNote={handleQaSelectNote} isOpen={qaOpen} />
+              ) : drawerTab === "history" && selectedId ? (
+                <VersionHistoryPanel
+                  noteId={selectedId}
+                  onSelectVersion={setSelectedVersion}
+                  selectedVersionId={selectedVersion?.id}
+                  refreshKey={versionRefreshKey}
+                />
+              ) : drawerTab === "toc" && selectedId ? (
+                <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
