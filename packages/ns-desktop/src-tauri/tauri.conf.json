@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "NoteSync",
-  "version": "1.93.18",
+  "version": "1.93.19",
   "identifier": "com.derekentringer.notesync",
   "build": {
     "frontendDist": "../dist",
@@ -48,7 +48,8 @@
       }
     ],
     "macOS": {
-      "infoPlist": "Info.plist"
+      "infoPlist": "Info.plist",
+      "entitlements": "NoteSync.entitlements"
     }
   }
 }
