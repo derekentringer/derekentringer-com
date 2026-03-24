@@ -61,13 +61,15 @@ packages/
 ### NoteSync Desktop (`packages/ns-desktop/`)
 
 - Tauri v2 desktop app wrapping the NoteSync web frontend
-- `src-tauri/tauri.conf.json` — Tauri config (bundle ID: `com.derekentringer.notesync`, `bundle.macOS.infoPlist` points to `Info.plist` for TCC permission keys)
+- `src-tauri/tauri.conf.json` — Tauri config (bundle ID: `com.derekentringer.notesync`, `bundle.macOS.infoPlist` points to `Info.plist`, `bundle.macOS.entitlements` points to `NoteSync.entitlements`)
 - `src-tauri/Info.plist` — Custom plist merged into built app by Tauri v2 bundler (`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`); must be referenced as a path string in `tauri.conf.json`, not an inline object
+- `src-tauri/NoteSync.entitlements` — macOS entitlements (`com.apple.security.device.audio-input`); required for TCC microphone prompt with hardened runtime + ad-hoc signing
 - `src-tauri/src/audio_capture.rs` — Native audio recording (microphone + system audio via CoreAudio process tap)
 - UI/UX must match `ns-web` — desktop components mirror web components
 - **Build (prod signed)**: `npm run tauri:build:prod` — syncs git tag version, clears WebKit cache, builds universal macOS binary with ad-hoc signing and `VITE_API_URL=https://ns-api.derekentringer.com`
 - **Build output**: `src-tauri/target/universal-apple-darwin/release/bundle/macos/NoteSync.app`
 - **Dev**: `npm run dev` (Tauri dev mode on port 3006)
+- **macOS permissions**: Hardened runtime requires `com.apple.security.device.audio-input` entitlement for TCC microphone prompt. Without it, macOS silently denies without prompting.
 - **Reset macOS permissions**: `tccutil reset Microphone com.derekentringer.notesync` and `tccutil reset ScreenCapture com.derekentringer.notesync`
 
 ### Web (`packages/web/`)
