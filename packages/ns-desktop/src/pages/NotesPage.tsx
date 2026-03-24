@@ -619,7 +619,16 @@ export function NotesPage() {
 
   function selectNote(note: Note) {
     if (sidebarView !== "trash" && isDirty() && selectedId) {
-      updateNote(selectedId, { title, content }).catch((err) =>
+      // Optimistically update notes array + tab cache so switching back shows saved content
+      const savedId = selectedId;
+      const savedTitle = title;
+      const savedContent = content;
+      setNotes((prev) => prev.map((n) => n.id === savedId ? { ...n, title: savedTitle, content: savedContent } : n));
+      const cached = tabNoteCacheRef.current.get(savedId);
+      if (cached) {
+        tabNoteCacheRef.current.set(savedId, { ...cached, title: savedTitle, content: savedContent });
+      }
+      updateNote(savedId, { title: savedTitle, content: savedContent }).catch((err) =>
         console.error("Failed to save previous note:", err),
       );
     }
@@ -658,6 +667,7 @@ export function NotesPage() {
       setNotes((prev) =>
         prev.map((n) => (n.id === updated.id ? updated : n)),
       );
+      tabNoteCacheRef.current.set(updated.id, updated);
       loadedTitleRef.current = title;
       loadedContentRef.current = content;
       setSaveGeneration((g) => g + 1);
@@ -843,6 +853,8 @@ export function NotesPage() {
 
     // If closing the active tab and it's dirty, fire-and-forget save
     if (noteId === selectedId && isDirty()) {
+      // Optimistically update notes array so reopening the note shows saved content
+      setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, title, content } : n));
       updateNote(noteId, { title, content }).catch((err) =>
         console.error("Failed to save changes:", err),
       );
