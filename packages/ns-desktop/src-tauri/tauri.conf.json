@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "NoteSync",
-  "version": "1.93.17",
+  "version": "1.93.18",
   "identifier": "com.derekentringer.notesync",
   "build": {
     "frontendDist": "../dist",
@@ -48,10 +48,7 @@
       }
     ],
     "macOS": {
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "NoteSync needs microphone access to record audio notes.",
-        "NSAudioCaptureUsageDescription": "NoteSync needs system audio recording access to capture meeting audio for transcription."
-      }
+      "infoPlist": "Info.plist"
     }
   }
 }
