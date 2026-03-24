@@ -61,8 +61,8 @@ packages/
 ### NoteSync Desktop (`packages/ns-desktop/`)
 
 - Tauri v2 desktop app wrapping the NoteSync web frontend
-- `src-tauri/tauri.conf.json` — Tauri config (bundle ID: `com.derekentringer.notesync`, macOS `infoPlist` with `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription` for TCC permissions)
-- `src-tauri/Info.plist` — Standalone plist (reference only; Tauri v2 uses `bundle.macOS.infoPlist` in `tauri.conf.json` to merge keys into the built app)
+- `src-tauri/tauri.conf.json` — Tauri config (bundle ID: `com.derekentringer.notesync`, `bundle.macOS.infoPlist` points to `Info.plist` for TCC permission keys)
+- `src-tauri/Info.plist` — Custom plist merged into built app by Tauri v2 bundler (`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`); must be referenced as a path string in `tauri.conf.json`, not an inline object
 - `src-tauri/src/audio_capture.rs` — Native audio recording (microphone + system audio via CoreAudio process tap)
 - UI/UX must match `ns-web` — desktop components mirror web components
 - **Build (prod signed)**: `npm run tauri:build:prod` — syncs git tag version, clears WebKit cache, builds universal macOS binary with ad-hoc signing and `VITE_API_URL=https://ns-api.derekentringer.com`
