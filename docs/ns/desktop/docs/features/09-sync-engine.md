@@ -36,6 +36,7 @@ Background sync engine keeping local SQLite in sync with central PostgreSQL via 
 - `reloadNotes` converted from plain function to `useCallback([activeFolder, sortBy, sortOrder])`
 - `handleSave` deps updated to include `reloadNotes`, `loadFavoriteNotes`, `loadNoteTitles`
 - Optimistic note save: `selectNote()` and `closeTab()` fire-and-forget saves now optimistically update the `notes` array and `tabNoteCacheRef` before the async DB write, preventing stale content when switching back; `handleSave()` also updates `tabNoteCacheRef` after save
+- Stale fetch guard: `reloadNotes()` uses a monotonic request counter (`reloadNotesCounterRef`) — only the latest async fetch applies `setNotes()`; prevents a pre-save fetch from completing after a save and overwriting the editor with old content via the auto-refresh effect
 
 ### Sort Preferences
 
