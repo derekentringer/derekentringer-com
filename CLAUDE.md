@@ -54,8 +54,21 @@ packages/
   ns-web/       — React + Vite SPA (NoteSync note-taking app)
   ns-api/       — Fastify API server (NoteSync backend)
   shared/       — Shared TypeScript types and utilities
+  ns-desktop/   — Tauri v2 desktop app (NoteSync for macOS)
   fin-mobile/   — React Native app (deferred to Phase 6)
 ```
+
+### NoteSync Desktop (`packages/ns-desktop/`)
+
+- Tauri v2 desktop app wrapping the NoteSync web frontend
+- `src-tauri/tauri.conf.json` — Tauri config (bundle ID: `com.derekentringer.notesync`, macOS `infoPlist` with `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription` for TCC permissions)
+- `src-tauri/Info.plist` — Standalone plist (reference only; Tauri v2 uses `bundle.macOS.infoPlist` in `tauri.conf.json` to merge keys into the built app)
+- `src-tauri/src/audio_capture.rs` — Native audio recording (microphone + system audio via CoreAudio process tap)
+- UI/UX must match `ns-web` — desktop components mirror web components
+- **Build (prod signed)**: `npm run tauri:build:prod` — syncs git tag version, clears WebKit cache, builds universal macOS binary with ad-hoc signing and `VITE_API_URL=https://ns-api.derekentringer.com`
+- **Build output**: `src-tauri/target/universal-apple-darwin/release/bundle/macos/NoteSync.app`
+- **Dev**: `npm run dev` (Tauri dev mode on port 3006)
+- **Reset macOS permissions**: `tccutil reset Microphone com.derekentringer.notesync` and `tccutil reset ScreenCapture com.derekentringer.notesync`
 
 ### Web (`packages/web/`)
 
