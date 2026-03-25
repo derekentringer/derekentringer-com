@@ -86,6 +86,12 @@ export function QAPanel({ onSelectNote, isOpen }: QAPanelProps) {
           if (event.sources) {
             updated[updated.length - 1] = { ...last, sources: event.sources };
           }
+          if (event.error) {
+            updated[updated.length - 1] = {
+              ...last,
+              content: event.error,
+            };
+          }
           if (event.text) {
             updated[updated.length - 1] = {
               ...last,
@@ -112,6 +118,18 @@ export function QAPanel({ onSelectNote, isOpen }: QAPanelProps) {
     } finally {
       setIsStreaming(false);
       abortRef.current = null;
+      // If stream ended with no content, show fallback
+      setMessages((prev) => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last?.role === "assistant" && !last.content) {
+          updated[updated.length - 1] = {
+            ...last,
+            content: "Something went wrong. Please try again.",
+          };
+        }
+        return updated;
+      });
     }
   }
 

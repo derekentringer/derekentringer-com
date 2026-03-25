@@ -246,6 +246,9 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         } catch (error) {
           if (!abortController.signal.aborted) {
             request.log.error(error, "AI ask error");
+            passthrough.write(
+              `data: ${JSON.stringify({ error: "Something went wrong. Please try again." })}\n\n`,
+            );
           }
         }
         passthrough.write("data: [DONE]\n\n");
@@ -503,7 +506,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       required: ["text", "inputType"],
       additionalProperties: false,
       properties: {
-        text: { type: "string", minLength: 1, maxLength: 10000 },
+        text: { type: "string", minLength: 1, maxLength: 50000 },
         inputType: { type: "string", enum: ["document", "query"] },
       },
     },
