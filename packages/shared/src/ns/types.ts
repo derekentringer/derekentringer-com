@@ -23,6 +23,7 @@ export type {
   SyncPullRequest,
   SyncPullResponse,
   SyncPushResponse,
+  SyncRejection,
   FolderSyncData,
   AiCompleteRequest,
   AiSummarizeRequest,

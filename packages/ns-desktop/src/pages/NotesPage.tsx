@@ -20,6 +20,7 @@ import type {
   SortOrder,
   NoteTitleEntry,
   NoteVersion,
+  SyncRejection,
 } from "@derekentringer/ns-shared";
 import {
   fetchNotes,
@@ -89,6 +90,7 @@ import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteT
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { SyncStatusButton } from "../components/SyncStatusButton.tsx";
+import { SyncIssuesDialog } from "../components/SyncIssuesDialog.tsx";
 import {
   initSyncEngine,
   destroySyncEngine,
@@ -280,6 +282,11 @@ export function NotesPage() {
   // Sync engine
   const [syncStatusState, setSyncStatusState] = useState<SyncStatus>("idle");
   const [syncErrorState, setSyncErrorState] = useState<string | null>(null);
+  const [syncRejections, setSyncRejections] = useState<SyncRejection[]>([]);
+  const [syncRejectionNames, setSyncRejectionNames] = useState<Map<string, string>>(new Map());
+  const [showSyncIssuesDialog, setShowSyncIssuesDialog] = useState(false);
+  const forcePushRef = useRef<(changeIds: string[]) => Promise<void>>(async () => {});
+  const discardRef = useRef<(changeIds: string[]) => Promise<void>>(async () => {});
 
   // Local file support
   const [localFileStatuses, setLocalFileStatuses] = useState<Map<string, LocalFileStatus>>(new Map());
@@ -445,6 +452,24 @@ export function NotesPage() {
       },
       onNoteRemoteDeleted: (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
+      },
+      onSyncRejections: async (rejections, forcePush, discard) => {
+        // Resolve entity names from local DB
+        const names = new Map<string, string>();
+        for (const r of rejections) {
+          if (r.changeType === "note") {
+            try {
+              const note = await fetchNoteById(r.changeId);
+              if (note) names.set(r.changeId, note.title);
+            } catch { /* use ID as fallback */ }
+          } else {
+            names.set(r.changeId, r.changeId);
+          }
+        }
+        setSyncRejections(rejections);
+        setSyncRejectionNames(names);
+        forcePushRef.current = forcePush;
+        discardRef.current = discard;
       },
     }).catch((err) => console.error("Failed to init sync engine:", err));
 
@@ -2592,6 +2617,8 @@ export function NotesPage() {
               status={syncStatusState}
               error={syncErrorState}
               onSync={manualSync}
+              hasRejections={syncRejections.length > 0}
+              onViewIssues={() => setShowSyncIssuesDialog(true)}
             />
             {sidebarView === "notes" && (
               <>
@@ -3240,6 +3267,21 @@ export function NotesPage() {
             });
           }}
           onCancel={() => setExternalChangeDialog(null)}
+        />
+      )}
+      {showSyncIssuesDialog && syncRejections.length > 0 && (
+        <SyncIssuesDialog
+          rejections={syncRejections}
+          entityNames={syncRejectionNames}
+          onForcePush={async (ids) => {
+            await forcePushRef.current(ids);
+            setSyncRejections((prev) => prev.filter((r) => !ids.includes(r.changeId)));
+          }}
+          onDiscard={async (ids) => {
+            await discardRef.current(ids);
+            setSyncRejections((prev) => prev.filter((r) => !ids.includes(r.changeId)));
+          }}
+          onClose={() => setShowSyncIssuesDialog(false)}
         />
       )}
     </div>

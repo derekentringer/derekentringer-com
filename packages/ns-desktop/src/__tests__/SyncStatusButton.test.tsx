@@ -67,4 +67,51 @@ describe("SyncStatusButton", () => {
     const svg = button.querySelector("svg");
     expect(svg).toHaveClass("animate-spin");
   });
+
+  it("calls onViewIssues instead of onSync when error + hasRejections", () => {
+    const onSync = vi.fn();
+    const onViewIssues = vi.fn();
+    render(
+      <SyncStatusButton
+        status="error"
+        error="Push had 2 rejected changes"
+        onSync={onSync}
+        hasRejections={true}
+        onViewIssues={onViewIssues}
+      />,
+    );
+    const button = screen.getByRole("button");
+    fireEvent.click(button);
+    expect(onViewIssues).toHaveBeenCalledTimes(1);
+    expect(onSync).not.toHaveBeenCalled();
+  });
+
+  it("shows rejection-aware title when hasRejections", () => {
+    render(
+      <SyncStatusButton
+        status="error"
+        error="Push had 2 rejected changes"
+        onSync={vi.fn()}
+        hasRejections={true}
+        onViewIssues={vi.fn()}
+      />,
+    );
+    const button = screen.getByRole("button");
+    expect(button).toHaveAttribute("title", "Sync issues — click to view");
+  });
+
+  it("calls onSync when error but no rejections", () => {
+    const onSync = vi.fn();
+    render(
+      <SyncStatusButton
+        status="error"
+        error="Network error"
+        onSync={onSync}
+        hasRejections={false}
+      />,
+    );
+    const button = screen.getByRole("button");
+    fireEvent.click(button);
+    expect(onSync).toHaveBeenCalledTimes(1);
+  });
 });
