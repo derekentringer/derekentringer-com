@@ -65,6 +65,52 @@ describe("whisperService", () => {
       "Whisper API error (401): Unauthorized",
     );
   });
+
+  it("retries on 502 and succeeds on second attempt", async () => {
+    const mockFetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("Bad Gateway", { status: 502 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ text: "Retry worked" }), { status: 200 }));
+
+    const { transcribeAudio } = await import("../services/whisperService.js");
+    const result = await transcribeAudio(Buffer.from("data"), "test.webm");
+
+    expect(result).toBe("Retry worked");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries on 503 and 504", async () => {
+    const mockFetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("Service Unavailable", { status: 503 }))
+      .mockResolvedValueOnce(new Response("Gateway Timeout", { status: 504 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ text: "OK" }), { status: 200 }));
+
+    const { transcribeAudio } = await import("../services/whisperService.js");
+    const result = await transcribeAudio(Buffer.from("data"), "test.webm");
+
+    expect(result).toBe("OK");
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws after exhausting retries on 502", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockImplementation(async () => new Response("Bad Gateway", { status: 502 }));
+
+    const { transcribeAudio } = await import("../services/whisperService.js");
+
+    await expect(transcribeAudio(Buffer.from("data"), "test.webm")).rejects.toThrow(
+      "Whisper API error (502): Bad Gateway",
+    );
+  });
+
+  it("does not retry on non-retryable errors like 401", async () => {
+    const mockFetch = vi.spyOn(globalThis, "fetch")
+      .mockImplementation(async () => new Response("Unauthorized", { status: 401 }));
+
+    const { transcribeAudio } = await import("../services/whisperService.js");
+
+    await expect(transcribeAudio(Buffer.from("data"), "test.webm")).rejects.toThrow();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("transcribeAudioChunked", () => {

@@ -4,33 +4,52 @@ import { splitAudioIfNeeded } from "./audioChunker.js";
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
 const WHISPER_TIMEOUT_MS = 300_000; // 5 minutes per chunk
 const MAX_PARALLEL_CHUNKS = 3;
+const MAX_RETRIES = 2;
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 export async function transcribeAudio(
   audioBuffer: Buffer,
   filename: string,
 ): Promise<string> {
   const config = loadConfig();
+  let lastError: Error | undefined;
 
-  const formData = new FormData();
-  formData.append("file", new Blob([new Uint8Array(audioBuffer)]), filename);
-  formData.append("model", "whisper-1");
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await sleep(1000 * attempt);
+    }
 
-  const response = await fetch(WHISPER_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.openaiApiKey}`,
-    },
-    body: formData,
-    signal: AbortSignal.timeout(WHISPER_TIMEOUT_MS),
-  });
+    const formData = new FormData();
+    formData.append("file", new Blob([new Uint8Array(audioBuffer)]), filename);
+    formData.append("model", "whisper-1");
 
-  if (!response.ok) {
+    const response = await fetch(WHISPER_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.openaiApiKey}`,
+      },
+      body: formData,
+      signal: AbortSignal.timeout(WHISPER_TIMEOUT_MS),
+    });
+
+    if (response.ok) {
+      const result = (await response.json()) as { text: string };
+      return result.text;
+    }
+
     const body = await response.text();
-    throw new Error(`Whisper API error (${response.status}): ${body}`);
+    lastError = new Error(`Whisper API error (${response.status}): ${body}`);
+
+    if (!RETRYABLE_STATUSES.has(response.status)) {
+      throw lastError;
+    }
   }
 
-  const result = (await response.json()) as { text: string };
-  return result.text;
+  throw lastError ?? new Error("Whisper API error");
 }
 
 export async function transcribeAudioChunked(

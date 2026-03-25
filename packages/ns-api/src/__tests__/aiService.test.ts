@@ -25,6 +25,7 @@ import {
   suggestTags,
   rewriteText,
   answerQuestion,
+  structureTranscript,
   resetClient,
 } from "../services/aiService.js";
 
@@ -503,6 +504,117 @@ describe("aiService", () => {
       }
 
       expect(chunks).toEqual(["First"]);
+    });
+  });
+
+  describe("structureTranscript", () => {
+    it("returns structured transcript on success", async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: "text", text: '{"title":"Meeting Notes","content":"## Summary\\nDiscussed X","tags":["meeting"]}' }],
+      });
+
+      const result = await structureTranscript("we discussed X", "meeting");
+
+      expect(result).toEqual({
+        title: "Meeting Notes",
+        content: "## Summary\nDiscussed X",
+        tags: ["meeting"],
+      });
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          temperature: 0.3,
+        }),
+      );
+    });
+
+    it("retries on 502 and succeeds on second attempt", async () => {
+      mockCreate
+        .mockRejectedValueOnce(Object.assign(new Error("Bad Gateway"), { status: 502 }))
+        .mockResolvedValueOnce({
+          content: [{ type: "text", text: '{"title":"Notes","content":"Content","tags":[]}' }],
+        });
+
+      const result = await structureTranscript("transcript", "meeting");
+
+      expect(result).toEqual({ title: "Notes", content: "Content", tags: [] });
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries on 503 and 504", async () => {
+      mockCreate
+        .mockRejectedValueOnce(Object.assign(new Error("Service Unavailable"), { status: 503 }))
+        .mockRejectedValueOnce(Object.assign(new Error("Gateway Timeout"), { status: 504 }))
+        .mockResolvedValueOnce({
+          content: [{ type: "text", text: '{"title":"OK","content":"Done","tags":["test"]}' }],
+        });
+
+      const result = await structureTranscript("transcript", "lecture");
+
+      expect(result).toEqual({ title: "OK", content: "Done", tags: ["test"] });
+      expect(mockCreate).toHaveBeenCalledTimes(3);
+    });
+
+    it("retries on 529 (overloaded)", async () => {
+      mockCreate
+        .mockRejectedValueOnce(Object.assign(new Error("Overloaded"), { status: 529 }))
+        .mockResolvedValueOnce({
+          content: [{ type: "text", text: '{"title":"Result","content":"Text","tags":[]}' }],
+        });
+
+      const result = await structureTranscript("transcript", "memo");
+
+      expect(result).toEqual({ title: "Result", content: "Text", tags: [] });
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws after exhausting retries on 502", async () => {
+      mockCreate.mockRejectedValue(Object.assign(new Error("Bad Gateway"), { status: 502 }));
+
+      await expect(structureTranscript("transcript", "meeting")).rejects.toThrow("Bad Gateway");
+      expect(mockCreate).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+    });
+
+    it("does not retry on non-retryable errors like 400", async () => {
+      mockCreate.mockRejectedValue(Object.assign(new Error("Bad Request"), { status: 400 }));
+
+      await expect(structureTranscript("transcript", "meeting")).rejects.toThrow("Bad Request");
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to raw transcript on invalid JSON response", async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: "text", text: "not valid json" }],
+      });
+
+      const result = await structureTranscript("raw transcript", "verbatim");
+
+      expect(result).toEqual({ title: "Audio Note", content: "raw transcript", tags: [] });
+    });
+
+    it("uses correct system prompt per mode", async () => {
+      const modePromptPairs: [string, string][] = [
+        ["meeting", "meeting notes assistant"],
+        ["lecture", "lecture notes assistant"],
+        ["memo", "note-taking assistant"],
+        ["verbatim", "transcription assistant"],
+      ];
+
+      for (const [mode, promptSnippet] of modePromptPairs) {
+        mockCreate.mockClear();
+        mockCreate.mockResolvedValue({
+          content: [{ type: "text", text: '{"title":"T","content":"C","tags":[]}' }],
+        });
+
+        await structureTranscript("test", mode as "meeting" | "lecture" | "memo" | "verbatim");
+
+        expect(mockCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            system: expect.stringContaining(promptSnippet),
+          }),
+        );
+      }
     });
   });
 });
