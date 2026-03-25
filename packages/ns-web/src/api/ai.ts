@@ -66,6 +66,7 @@ export async function* fetchCompletion(
 export interface AskQuestionEvent {
   sources?: QASource[];
   text?: string;
+  error?: string;
 }
 
 export async function* askQuestion(

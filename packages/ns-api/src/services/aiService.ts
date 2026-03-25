@@ -127,35 +127,53 @@ export async function suggestTags(
   existingTags: string[],
 ): Promise<string[]> {
   const anthropic = getClient();
+  let lastError: unknown;
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 100,
-    temperature: 0.3,
-    system: `You are a tagging assistant. Given a note's title and content, suggest 3-6 relevant tags. Prefer reusing existing tags when they fit, but always create new tags when the content covers topics not represented by existing tags. Existing tags in the system: ${JSON.stringify(existingTags)}. Return a JSON array of lowercase tag strings, e.g. ["tag1", "tag2"]. Output only the JSON array, nothing else.`,
-    messages: [
-      {
-        role: "user",
-        content: `Title: ${title}\n\nContent:\n${content}`,
-      },
-    ],
-  });
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
 
-  const block = response.content[0];
-  if (block.type === "text") {
-    const raw = block.text.trim();
-    // Strip markdown code fences if present
-    const cleaned = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "").trim();
     try {
-      const parsed = JSON.parse(cleaned);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((t): t is string => typeof t === "string");
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 100,
+        temperature: 0.3,
+        system: `You are a tagging assistant. Given a note's title and content, suggest 3-6 relevant tags. Prefer reusing existing tags when they fit, but always create new tags when the content covers topics not represented by existing tags. Existing tags in the system: ${JSON.stringify(existingTags)}. Return a JSON array of lowercase tag strings, e.g. ["tag1", "tag2"]. Output only the JSON array, nothing else.`,
+        messages: [
+          {
+            role: "user",
+            content: `Title: ${title}\n\nContent:\n${content}`,
+          },
+        ],
+      });
+
+      const block = response.content[0];
+      if (block.type === "text") {
+        const raw = block.text.trim();
+        // Strip markdown code fences if present
+        const cleaned = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/, "").trim();
+        try {
+          const parsed = JSON.parse(cleaned);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((t): t is string => typeof t === "string");
+          }
+        } catch {
+          // If parsing fails, return empty array
+        }
       }
-    } catch {
-      // If parsing fails, return empty array
+      return [];
+    } catch (err: unknown) {
+      lastError = err;
+      const status = (err as { status?: number })?.status;
+      if (status && RETRYABLE_STATUSES.includes(status)) {
+        continue;
+      }
+      throw err;
     }
   }
-  return [];
+
+  throw lastError;
 }
 
 export async function rewriteText(
@@ -190,8 +208,8 @@ const TRANSCRIPT_PROMPTS: Record<AudioMode, string> = {
     "You are a transcription assistant. Minimally process the transcript: fix obvious errors, add punctuation and paragraph breaks, but keep the content as close to the original as possible. Output a JSON object with keys: title (brief title), content (cleaned transcription), tags (relevant tags array).",
 };
 
-const STRUCTURE_MAX_RETRIES = 2;
-const STRUCTURE_RETRYABLE_STATUSES = [502, 503, 504, 529];
+const MAX_RETRIES = 2;
+const RETRYABLE_STATUSES = [502, 503, 504, 529];
 
 export async function structureTranscript(
   transcript: string,
@@ -200,7 +218,7 @@ export async function structureTranscript(
   const anthropic = getClient();
   let lastError: unknown;
 
-  for (let attempt = 0; attempt <= STRUCTURE_MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
       await new Promise((r) => setTimeout(r, 1000 * attempt));
     }
@@ -241,7 +259,7 @@ export async function structureTranscript(
       lastError = err;
       // Retry on transient API errors (502, 503, 504, 529 overloaded)
       const status = (err as { status?: number })?.status;
-      if (status && STRUCTURE_RETRYABLE_STATUSES.includes(status)) {
+      if (status && RETRYABLE_STATUSES.includes(status)) {
         continue;
       }
       throw err;
@@ -268,30 +286,50 @@ export async function* answerQuestion(
     .map((n) => `## ${n.title}\n${n.content}`)
     .join("\n\n---\n\n");
 
-  const stream = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1000,
-    temperature: 0.3,
-    stream: true,
-    system:
-      "You are a Q&A assistant. Answer the user's question based ONLY on the provided notes. Cite sources by title in [brackets]. If the notes don't contain relevant information, say so.",
-    messages: [
-      {
-        role: "user",
-        content: `Notes:\n\n${contextBlock}\n\nQuestion: ${question}`,
-      },
-    ],
-  });
+  let lastError: unknown;
 
-  for await (const event of stream) {
-    if (signal?.aborted) return;
-    if (
-      event.type === "content_block_delta" &&
-      event.delta.type === "text_delta"
-    ) {
-      yield event.delta.text;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+
+    try {
+      const stream = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        temperature: 0.3,
+        stream: true,
+        system:
+          "You are a Q&A assistant. Answer the user's question based ONLY on the provided notes. Cite sources by title in [brackets]. If the notes don't contain relevant information, say so.",
+        messages: [
+          {
+            role: "user",
+            content: `Notes:\n\n${contextBlock}\n\nQuestion: ${question}`,
+          },
+        ],
+      });
+
+      for await (const event of stream) {
+        if (signal?.aborted) return;
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          yield event.delta.text;
+        }
+      }
+      return; // Stream completed successfully
+    } catch (err: unknown) {
+      lastError = err;
+      const status = (err as { status?: number })?.status;
+      if (status && RETRYABLE_STATUSES.includes(status)) {
+        continue;
+      }
+      throw err;
     }
   }
+
+  throw lastError;
 }
 
 /** Reset client (for testing only) */
