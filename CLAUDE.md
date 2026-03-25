@@ -163,6 +163,8 @@ packages/
 - `src/routes/health.ts` — `GET /health` endpoint
 - `GET /robots.txt` — Blocks all crawlers (blanket `Disallow: /`)
 - `src/config.ts` — App config with secret enforcement
+- `src/services/whisperService.ts` — OpenAI Whisper transcription with retry on 502/503/504 (up to 2 retries with backoff); chunked transcription for large audio files
+- `src/services/aiService.ts` — Anthropic Claude AI (completions, summaries, tags, rewrite, Q&A); `structureTranscript` retries on 502/503/504/529 (up to 2 retries with backoff)
 - Multi-user auth with database-backed users (registration, login, password reset, TOTP 2FA, WebAuthn passkeys)
 - Production domain: `ns-api.derekentringer.com`
 - **Database**: Separate PostgreSQL instance via Prisma ORM (v7)
