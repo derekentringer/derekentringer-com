@@ -190,43 +190,65 @@ const TRANSCRIPT_PROMPTS: Record<AudioMode, string> = {
     "You are a transcription assistant. Minimally process the transcript: fix obvious errors, add punctuation and paragraph breaks, but keep the content as close to the original as possible. Output a JSON object with keys: title (brief title), content (cleaned transcription), tags (relevant tags array).",
 };
 
+const STRUCTURE_MAX_RETRIES = 2;
+const STRUCTURE_RETRYABLE_STATUSES = [502, 503, 504, 529];
+
 export async function structureTranscript(
   transcript: string,
   mode: AudioMode,
 ): Promise<{ title: string; content: string; tags: string[] }> {
   const anthropic = getClient();
+  let lastError: unknown;
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 2000,
-    temperature: 0.3,
-    system: TRANSCRIPT_PROMPTS[mode],
-    messages: [{ role: "user", content: transcript }],
-  });
+  for (let attempt = 0; attempt <= STRUCTURE_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
 
-  const block = response.content[0];
-  if (block.type === "text") {
     try {
-      // Strip markdown code fences if present (```json ... ```)
-      let jsonText = block.text.trim();
-      const fenceMatch = jsonText.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
-      if (fenceMatch) {
-        jsonText = fenceMatch[1].trim();
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2000,
+        temperature: 0.3,
+        system: TRANSCRIPT_PROMPTS[mode],
+        messages: [{ role: "user", content: transcript }],
+      });
+
+      const block = response.content[0];
+      if (block.type === "text") {
+        try {
+          // Strip markdown code fences if present (```json ... ```)
+          let jsonText = block.text.trim();
+          const fenceMatch = jsonText.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+          if (fenceMatch) {
+            jsonText = fenceMatch[1].trim();
+          }
+          const parsed = JSON.parse(jsonText);
+          return {
+            title: typeof parsed.title === "string" ? parsed.title : "Audio Note",
+            content: typeof parsed.content === "string" ? parsed.content : transcript,
+            tags: Array.isArray(parsed.tags)
+              ? parsed.tags.filter((t: unknown): t is string => typeof t === "string")
+              : [],
+          };
+        } catch {
+          return { title: "Audio Note", content: transcript, tags: [] };
+        }
       }
-      const parsed = JSON.parse(jsonText);
-      return {
-        title: typeof parsed.title === "string" ? parsed.title : "Audio Note",
-        content: typeof parsed.content === "string" ? parsed.content : transcript,
-        tags: Array.isArray(parsed.tags)
-          ? parsed.tags.filter((t: unknown): t is string => typeof t === "string")
-          : [],
-      };
-    } catch {
+
       return { title: "Audio Note", content: transcript, tags: [] };
+    } catch (err: unknown) {
+      lastError = err;
+      // Retry on transient API errors (502, 503, 504, 529 overloaded)
+      const status = (err as { status?: number })?.status;
+      if (status && STRUCTURE_RETRYABLE_STATUSES.includes(status)) {
+        continue;
+      }
+      throw err;
     }
   }
 
-  return { title: "Audio Note", content: transcript, tags: [] };
+  throw lastError;
 }
 
 export interface NoteContext {
