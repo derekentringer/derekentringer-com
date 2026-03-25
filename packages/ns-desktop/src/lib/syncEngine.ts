@@ -16,6 +16,7 @@ import {
 import { computeContentHash, fileExists } from "./localFileService.ts";
 import type {
   SyncChange,
+  SyncRejection,
   SyncPushRequest,
   SyncPullRequest,
   SyncPullResponse,
@@ -80,15 +81,22 @@ export interface SyncEngineCallbacks {
   onDataChanged: () => void;
   onLocalFileCloudUpdate?: (noteId: string) => void;
   onNoteRemoteDeleted?: (noteId: string) => void;
+  onSyncRejections?: (
+    rejections: SyncRejection[],
+    forcePush: (changeIds: string[]) => Promise<void>,
+    discard: (changeIds: string[]) => Promise<void>,
+  ) => void;
 }
 
 let noteRemoteDeletedCallback: ((noteId: string) => void) | null = null;
+let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
 
 export async function initSyncEngine(callbacks: SyncEngineCallbacks): Promise<void> {
   statusCallback = callbacks.onStatusChange;
   dataChangedCallback = callbacks.onDataChanged;
   localFileCloudUpdateCallback = callbacks.onLocalFileCloudUpdate ?? null;
   noteRemoteDeletedCallback = callbacks.onNoteRemoteDeleted ?? null;
+  syncRejectionsCallback = callbacks.onSyncRejections ?? null;
 
   await getOrCreateDeviceId();
 
@@ -134,6 +142,7 @@ export function destroySyncEngine(): void {
   dataChangedCallback = null;
   localFileCloudUpdateCallback = null;
   noteRemoteDeletedCallback = null;
+  syncRejectionsCallback = null;
   syncInProgress = false;
   deviceId = null;
   backoffMs = 1000;
@@ -393,7 +402,33 @@ async function pushChanges(id: string): Promise<void> {
 
   const result: SyncPushResponse = await response.json();
 
-  // If any changes were rejected, keep queue entries for retry
+  // If server returned rejection details, notify UI and only remove applied entries
+  if (result.rejections && result.rejections.length > 0) {
+    const rejectedIds = new Set(result.rejections.map((r) => r.changeId));
+
+    // Remove only applied entries from queue (keep rejected ones)
+    const appliedEntryIds = entries
+      .filter((e) => !rejectedIds.has(e.entity_id))
+      .map((e) => e.id);
+    if (appliedEntryIds.length > 0) {
+      await removeSyncQueueEntries(appliedEntryIds);
+    }
+
+    console.warn(`Sync push: ${result.applied} applied, ${result.rejected} rejected, ${result.skipped} skipped`);
+
+    // Notify UI with rejection details + action closures
+    syncRejectionsCallback?.(
+      result.rejections,
+      (changeIds: string[]) => forcePushChanges(id, changeIds),
+      (changeIds: string[]) => discardChanges(id, changeIds),
+    );
+
+    // Set error status but don't throw (avoids backoff retry loop)
+    setStatus("error", `Push had ${result.rejections.length} rejected change(s)`);
+    return;
+  }
+
+  // If any were rejected without details (legacy), throw to retry
   if (result.rejected > 0) {
     console.warn(`Sync push: ${result.applied} applied, ${result.rejected} rejected, ${result.skipped} skipped — retrying`);
     throw new Error(`Push had ${result.rejected} rejected changes`);
@@ -401,6 +436,83 @@ async function pushChanges(id: string): Promise<void> {
 
   // Remove all processed entries (not just deduped - remove all originals)
   await removeSyncQueueEntries(entries.map((e) => e.id));
+}
+
+export async function forcePushChanges(deviceIdOverride: string, changeIds: string[]): Promise<void> {
+  const id = deviceIdOverride || (await getOrCreateDeviceId());
+  const entries = await readSyncQueue(BATCH_LIMIT);
+  const targetEntries = entries.filter((e) => changeIds.includes(e.entity_id));
+  if (targetEntries.length === 0) return;
+
+  // Deduplicate
+  const deduped = new Map<string, typeof entries[0]>();
+  for (const entry of targetEntries) {
+    const key = `${entry.entity_type}:${entry.entity_id}`;
+    deduped.set(key, entry);
+  }
+
+  const changes: SyncChange[] = [];
+  for (const entry of deduped.values()) {
+    const [, action] = entry.action.split(":");
+    const entityType = entry.entity_type as "note" | "folder";
+
+    let data: Note | FolderSyncData | null = null;
+    if (action !== "delete" && entityType === "note") {
+      const note = await fetchNoteById(entry.entity_id);
+      if (note) data = note;
+    } else if (action !== "delete" && entityType === "folder") {
+      data = await readLocalFolder(entry.entity_id);
+    }
+
+    changes.push({
+      id: entry.entity_id,
+      type: entityType,
+      action: action as "create" | "update" | "delete",
+      data,
+      timestamp: entry.created_at,
+      force: true,
+    });
+  }
+
+  const payload: SyncPushRequest = { deviceId: id, changes };
+  const response = await apiFetch("/sync/push", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Force push failed: ${response.status}`);
+  }
+
+  const result: SyncPushResponse = await response.json();
+
+  // Remove applied entries from queue
+  const rejectedIds = new Set((result.rejections ?? []).map((r) => r.changeId));
+  const appliedEntryIds = targetEntries
+    .filter((e) => !rejectedIds.has(e.entity_id))
+    .map((e) => e.id);
+  if (appliedEntryIds.length > 0) {
+    await removeSyncQueueEntries(appliedEntryIds);
+  }
+
+  if (result.applied > 0) {
+    dataChangedCallback?.();
+  }
+}
+
+export async function discardChanges(deviceIdOverride: string, changeIds: string[]): Promise<void> {
+  const id = deviceIdOverride || (await getOrCreateDeviceId());
+  const entries = await readSyncQueue(BATCH_LIMIT);
+  const targetEntryIds = entries
+    .filter((e) => changeIds.includes(e.entity_id))
+    .map((e) => e.id);
+
+  if (targetEntryIds.length > 0) {
+    await removeSyncQueueEntries(targetEntryIds);
+  }
+
+  // Pull latest server state to overwrite local data
+  await pullChanges(id);
 }
 
 async function pullChanges(id: string): Promise<void> {

@@ -114,6 +114,15 @@ export interface SyncChange {
   action: "create" | "update" | "delete";
   data: Note | FolderSyncData | null;
   timestamp: string;
+  force?: boolean;
+}
+
+export interface SyncRejection {
+  changeId: string;
+  changeType: "note" | "folder";
+  changeAction: "create" | "update" | "delete";
+  reason: "fk_constraint" | "unique_constraint" | "not_found" | "timestamp_conflict" | "unknown";
+  message: string;
 }
 
 export interface SyncCursor {
@@ -142,6 +151,7 @@ export interface SyncPushResponse {
   rejected: number;
   skipped: number;
   cursor: SyncCursor;
+  rejections?: SyncRejection[];
 }
 
 export interface AiCompleteRequest {

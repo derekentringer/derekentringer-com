@@ -466,6 +466,208 @@ describe("Sync routes", () => {
       expect(body.cursor.deviceId).toBe("device-1");
       expect(body.cursor.lastSyncedAt).toBeDefined();
     });
+
+    it("returns rejection details with timestamp_conflict reason", async () => {
+      // Server note has updatedAt of Jan 5, client timestamp is Jan 3 -> server wins
+      mockPrisma.note.findUnique.mockResolvedValue(
+        makeMockNoteRow({ updatedAt: new Date("2024-01-05") }),
+      );
+      mockPrisma.syncCursor.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/sync/push",
+        headers: authHeader(),
+        payload: {
+          deviceId: "device-1",
+          changes: [
+            {
+              id: "note-1",
+              type: "note",
+              action: "update",
+              data: {
+                id: "note-1",
+                title: "Stale Update",
+                content: "Content",
+                folder: null,
+                folderId: null,
+                folderPath: null,
+                tags: [],
+                summary: null,
+                favorite: false,
+                sortOrder: 0,
+                favoriteSortOrder: 0,
+                createdAt: "2024-01-01T00:00:00.000Z",
+                updatedAt: "2024-01-03T00:00:00.000Z",
+                deletedAt: null,
+              },
+              timestamp: "2024-01-03T00:00:00.000Z",
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.skipped).toBe(1);
+      expect(body.rejections).toBeDefined();
+      expect(body.rejections).toHaveLength(1);
+      expect(body.rejections[0].changeId).toBe("note-1");
+      expect(body.rejections[0].reason).toBe("timestamp_conflict");
+      expect(body.rejections[0].changeType).toBe("note");
+    });
+
+    it("applies update with force flag despite older timestamp", async () => {
+      // Server note has updatedAt of Jan 5, client timestamp is Jan 3
+      // But force=true should bypass timestamp check
+      mockPrisma.note.findUnique.mockResolvedValue(
+        makeMockNoteRow({ updatedAt: new Date("2024-01-05") }),
+      );
+      mockPrisma.note.update.mockResolvedValue(makeMockNoteRow({ title: "Force Updated" }));
+      mockPrisma.syncCursor.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/sync/push",
+        headers: authHeader(),
+        payload: {
+          deviceId: "device-1",
+          changes: [
+            {
+              id: "note-1",
+              type: "note",
+              action: "update",
+              force: true,
+              data: {
+                id: "note-1",
+                title: "Force Updated",
+                content: "Content",
+                folder: null,
+                folderId: null,
+                folderPath: null,
+                tags: [],
+                summary: null,
+                favorite: false,
+                sortOrder: 0,
+                favoriteSortOrder: 0,
+                createdAt: "2024-01-01T00:00:00.000Z",
+                updatedAt: "2024-01-03T00:00:00.000Z",
+                deletedAt: null,
+              },
+              timestamp: "2024-01-03T00:00:00.000Z",
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.applied).toBe(1);
+      expect(body.skipped).toBe(0);
+      expect(body.rejections).toBeUndefined();
+      expect(mockPrisma.note.update).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns FK constraint rejection detail on Prisma P2003 error", async () => {
+      mockPrisma.note.findUnique.mockResolvedValue(null);
+      const fkError = Object.assign(new Error("FK constraint failed"), { code: "P2003" });
+      mockPrisma.note.create.mockRejectedValue(fkError);
+      mockPrisma.syncCursor.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/sync/push",
+        headers: authHeader(),
+        payload: {
+          deviceId: "device-1",
+          changes: [
+            {
+              id: "note-1",
+              type: "note",
+              action: "create",
+              data: {
+                id: "note-1",
+                title: "Test",
+                content: "Content",
+                folder: null,
+                folderId: "nonexistent-folder",
+                folderPath: null,
+                tags: [],
+                summary: null,
+                favorite: false,
+                sortOrder: 0,
+                favoriteSortOrder: 0,
+                createdAt: "2024-01-01T00:00:00.000Z",
+                updatedAt: "2024-01-02T00:00:00.000Z",
+                deletedAt: null,
+              },
+              timestamp: "2024-01-02T00:00:00.000Z",
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.rejected).toBe(1);
+      expect(body.rejections).toHaveLength(1);
+      expect(body.rejections[0].reason).toBe("fk_constraint");
+      expect(body.rejections[0].changeId).toBe("note-1");
+    });
+
+    it("force push retries with folderId=null on FK violation", async () => {
+      mockPrisma.note.findUnique.mockResolvedValue(null);
+      const fkError = Object.assign(new Error("FK constraint"), { code: "P2003" });
+      // First create fails with FK, second (with null folderId) succeeds
+      mockPrisma.note.create
+        .mockRejectedValueOnce(fkError)
+        .mockResolvedValueOnce(makeMockNoteRow({ folderId: null }));
+      mockPrisma.syncCursor.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/sync/push",
+        headers: authHeader(),
+        payload: {
+          deviceId: "device-1",
+          changes: [
+            {
+              id: "note-1",
+              type: "note",
+              action: "create",
+              force: true,
+              data: {
+                id: "note-1",
+                title: "Test",
+                content: "Content",
+                folder: "Missing Folder",
+                folderId: "nonexistent-folder",
+                folderPath: null,
+                tags: [],
+                summary: null,
+                favorite: false,
+                sortOrder: 0,
+                favoriteSortOrder: 0,
+                createdAt: "2024-01-01T00:00:00.000Z",
+                updatedAt: "2024-01-02T00:00:00.000Z",
+                deletedAt: null,
+              },
+              timestamp: "2024-01-02T00:00:00.000Z",
+            },
+          ],
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.applied).toBe(1);
+      expect(body.rejected).toBe(0);
+      // Should have been called twice: first with original folderId, then with null
+      expect(mockPrisma.note.create).toHaveBeenCalledTimes(2);
+      const secondCall = mockPrisma.note.create.mock.calls[1][0];
+      expect(secondCall.data.folderId).toBeNull();
+      expect(secondCall.data.folder).toBeNull();
+    });
   });
 
   // --- POST /sync/pull ---

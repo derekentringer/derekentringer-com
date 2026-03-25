@@ -52,6 +52,8 @@ const {
   destroySyncEngine,
   notifyLocalChange,
   manualSync,
+  forcePushChanges,
+  discardChanges,
 } = await import("../lib/syncEngine.ts");
 
 // ---------- Helpers ----------
@@ -72,7 +74,7 @@ function makePullResponse(
   };
 }
 
-function makePushResponse(applied = 1, rejected = 0) {
+function makePushResponse(applied = 1, rejected = 0, rejections?: Array<{ changeId: string; changeType: string; changeAction: string; reason: string; message: string }>) {
   return {
     ok: true,
     json: () =>
@@ -80,6 +82,7 @@ function makePushResponse(applied = 1, rejected = 0) {
         applied,
         rejected,
         cursor: { deviceId: "mock-device-id", lastSyncedAt: "2024-06-01T00:00:00.000Z" },
+        ...(rejections ? { rejections } : {}),
       }),
   };
 }
@@ -678,5 +681,175 @@ describe("syncEngine", () => {
     // fetch should NOT have been called (neither for sync nor SSE)
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mockApiFetch).not.toHaveBeenCalled();
+  });
+
+  // ---------- Rejection callback tests ----------
+
+  // 21
+  it("calls onSyncRejections when server returns rejections", async () => {
+    mockGetSyncMeta.mockResolvedValue(null);
+    mockReadSyncQueue.mockResolvedValue([
+      {
+        id: 1,
+        entity_type: "note",
+        entity_id: "note-1",
+        action: "local:update",
+        created_at: "2024-06-01T00:00:00.000Z",
+      },
+    ]);
+    mockFetchNoteById.mockResolvedValue({
+      id: "note-1",
+      title: "Test",
+      content: "",
+      tags: [],
+      favorite: false,
+      createdAt: "2024-06-01T00:00:00.000Z",
+      updatedAt: "2024-06-01T00:00:00.000Z",
+    });
+
+    const rejections = [
+      {
+        changeId: "note-1",
+        changeType: "note",
+        changeAction: "update",
+        reason: "timestamp_conflict",
+        message: "Server has a newer version",
+      },
+    ];
+    mockApiFetch
+      .mockResolvedValueOnce(makePushResponse(0, 0, rejections))
+      .mockResolvedValueOnce(makePullResponse());
+
+    const onSyncRejections = vi.fn();
+    const onStatusChange = vi.fn();
+    const onDataChanged = vi.fn();
+    await initSyncEngine({ onStatusChange, onDataChanged, onSyncRejections });
+    await flushPromises();
+
+    expect(onSyncRejections).toHaveBeenCalledTimes(1);
+    expect(onSyncRejections).toHaveBeenCalledWith(
+      rejections,
+      expect.any(Function),
+      expect.any(Function),
+    );
+    // Should set error status without throwing (no backoff retry)
+    expect(onStatusChange).toHaveBeenCalledWith("error", expect.stringContaining("rejected"));
+  });
+
+  // 22
+  it("removes only applied entries when there are rejections", async () => {
+    mockGetSyncMeta.mockResolvedValue(null);
+    mockReadSyncQueue.mockResolvedValue([
+      {
+        id: 1,
+        entity_type: "note",
+        entity_id: "note-1",
+        action: "local:update",
+        created_at: "2024-06-01T00:00:00.000Z",
+      },
+      {
+        id: 2,
+        entity_type: "note",
+        entity_id: "note-2",
+        action: "local:create",
+        created_at: "2024-06-01T00:00:00.000Z",
+      },
+    ]);
+    mockFetchNoteById.mockResolvedValue({
+      id: "note-1",
+      title: "Test",
+      content: "",
+      tags: [],
+      favorite: false,
+      createdAt: "2024-06-01T00:00:00.000Z",
+      updatedAt: "2024-06-01T00:00:00.000Z",
+    });
+
+    const rejections = [
+      {
+        changeId: "note-1",
+        changeType: "note",
+        changeAction: "update",
+        reason: "fk_constraint",
+        message: "FK error",
+      },
+    ];
+    mockApiFetch
+      .mockResolvedValueOnce(makePushResponse(1, 1, rejections))
+      .mockResolvedValueOnce(makePullResponse());
+
+    const onSyncRejections = vi.fn();
+    await initSyncEngine({
+      onStatusChange: vi.fn(),
+      onDataChanged: vi.fn(),
+      onSyncRejections,
+    });
+    await flushPromises();
+
+    // Only note-2 (id=2) should be removed; note-1 (id=1) is rejected
+    expect(mockRemoveSyncQueueEntries).toHaveBeenCalledWith([2]);
+  });
+
+  // 23
+  it("forcePushChanges sends changes with force flag", async () => {
+    mockReadSyncQueue.mockResolvedValue([
+      {
+        id: 1,
+        entity_type: "note",
+        entity_id: "note-1",
+        action: "local:update",
+        created_at: "2024-06-01T00:00:00.000Z",
+      },
+    ]);
+    mockFetchNoteById.mockResolvedValue({
+      id: "note-1",
+      title: "Test",
+      content: "",
+      tags: [],
+      favorite: false,
+      createdAt: "2024-06-01T00:00:00.000Z",
+      updatedAt: "2024-06-01T00:00:00.000Z",
+    });
+    mockApiFetch.mockResolvedValue(makePushResponse(1, 0));
+
+    await forcePushChanges("mock-device-id", ["note-1"]);
+    await flushPromises();
+
+    const pushCall = mockApiFetch.mock.calls.find(
+      (call: unknown[]) => call[0] === "/sync/push",
+    );
+    expect(pushCall).toBeDefined();
+    const body = JSON.parse(pushCall![1].body);
+    expect(body.changes[0].force).toBe(true);
+    expect(mockRemoveSyncQueueEntries).toHaveBeenCalledWith([1]);
+  });
+
+  // 24
+  it("discardChanges removes entries and pulls latest", async () => {
+    mockReadSyncQueue.mockResolvedValue([
+      {
+        id: 5,
+        entity_type: "note",
+        entity_id: "note-1",
+        action: "local:update",
+        created_at: "2024-06-01T00:00:00.000Z",
+      },
+      {
+        id: 6,
+        entity_type: "note",
+        entity_id: "note-2",
+        action: "local:create",
+        created_at: "2024-06-01T00:00:00.000Z",
+      },
+    ]);
+    mockApiFetch.mockResolvedValue(makePullResponse());
+
+    await discardChanges("mock-device-id", ["note-1"]);
+    await flushPromises();
+
+    // Should remove only the discarded entry
+    expect(mockRemoveSyncQueueEntries).toHaveBeenCalledWith([5]);
+    // Should pull latest
+    expect(mockApiFetch).toHaveBeenCalledWith("/sync/pull", expect.objectContaining({ method: "POST" }));
   });
 });
