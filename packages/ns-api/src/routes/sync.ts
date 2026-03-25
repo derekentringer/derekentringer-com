@@ -6,6 +6,7 @@ import type {
   SyncPullRequest,
   SyncPullResponse,
   SyncPushResponse,
+  SyncRejection,
   Note,
   FolderSyncData,
 } from "@derekentringer/shared/ns";
@@ -57,21 +58,40 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     let applied = 0;
     let rejected = 0;
     let skipped = 0;
+    const rejections: SyncRejection[] = [];
 
     await prisma.$transaction(async (tx) => {
       for (const change of changes) {
         try {
           if (change.type === "note") {
-            const wasApplied = await applyNoteChange(tx, userId, change);
-            if (wasApplied) {
+            const result = await applyNoteChange(tx, userId, change);
+            if (result === "applied") {
               applied++;
+            } else if (result === "timestamp_conflict") {
+              skipped++;
+              rejections.push({
+                changeId: change.id,
+                changeType: "note",
+                changeAction: change.action,
+                reason: "timestamp_conflict",
+                message: "Server has a newer version of this note",
+              });
             } else {
               skipped++;
             }
           } else if (change.type === "folder") {
-            const wasApplied = await applyFolderChange(tx, userId, change);
-            if (wasApplied) {
+            const result = await applyFolderChange(tx, userId, change);
+            if (result === "applied") {
               applied++;
+            } else if (result === "timestamp_conflict") {
+              skipped++;
+              rejections.push({
+                changeId: change.id,
+                changeType: "folder",
+                changeAction: change.action,
+                reason: "timestamp_conflict",
+                message: "Server has a newer version of this folder",
+              });
             } else {
               skipped++;
             }
@@ -80,6 +100,8 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
           }
         } catch (err) {
           rejected++;
+          const rejection = classifyPrismaError(err, change);
+          rejections.push(rejection);
           request.log.warn({ err, changeId: change.id }, "Sync change rejected");
         }
       }
@@ -93,6 +115,7 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
       rejected,
       skipped,
       cursor: { deviceId, lastSyncedAt: now.toISOString() },
+      ...(rejections.length > 0 ? { rejections } : {}),
     };
 
     if (applied > 0) {
@@ -210,11 +233,13 @@ function determineFolderAction(
   return "update";
 }
 
+type ApplyResult = "applied" | "skipped" | "timestamp_conflict";
+
 async function applyNoteChange(
   prisma: PrismaLike,
   userId: string,
   change: SyncChange,
-): Promise<boolean> {
+): Promise<ApplyResult> {
   const noteData = change.data as Note | null;
 
   if (change.action === "delete") {
@@ -225,59 +250,100 @@ async function applyNoteChange(
         where: { id: change.id },
         data: { deletedAt: new Date(change.timestamp), favorite: false },
       });
-      return true;
+      return "applied";
     }
-    return false;
+    return "skipped";
   }
 
-  if (!noteData) return false;
+  if (!noteData) return "skipped";
 
   // Last-write-wins: only apply if client timestamp >= server updatedAt
   const existing = await prisma.note.findUnique({ where: { id: change.id } });
 
   if (existing) {
-    if (existing.userId !== userId) return false;
+    if (existing.userId !== userId) return "skipped";
 
     const clientTime = new Date(change.timestamp);
-    if (clientTime < existing.updatedAt) return false; // server wins
+    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
 
-    await prisma.note.update({
-      where: { id: change.id },
-      data: {
-        title: noteData.title,
-        content: noteData.content,
-        folder: noteData.folder,
-        folderId: noteData.folderId,
-        tags: noteData.tags,
-        summary: noteData.summary,
-        favorite: noteData.favorite,
-        sortOrder: noteData.sortOrder,
-        favoriteSortOrder: noteData.favoriteSortOrder,
-        isLocalFile: noteData.isLocalFile ?? false,
-        deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
-      },
-    });
-    return true;
+    const noteUpdateData: Record<string, unknown> = {
+      title: noteData.title,
+      content: noteData.content,
+      folder: noteData.folder,
+      folderId: noteData.folderId,
+      tags: noteData.tags,
+      summary: noteData.summary,
+      favorite: noteData.favorite,
+      sortOrder: noteData.sortOrder,
+      favoriteSortOrder: noteData.favoriteSortOrder,
+      isLocalFile: noteData.isLocalFile ?? false,
+      deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
+    };
+
+    try {
+      await prisma.note.update({
+        where: { id: change.id },
+        data: noteUpdateData,
+      });
+    } catch (err: unknown) {
+      // On FK violation during force push, retry with folderId: null
+      if (change.force && isPrismaError(err, "P2003")) {
+        noteUpdateData.folderId = null;
+        noteUpdateData.folder = null;
+        await prisma.note.update({
+          where: { id: change.id },
+          data: noteUpdateData,
+        });
+      } else {
+        throw err;
+      }
+    }
+    return "applied";
   } else {
     // Create new note
-    await prisma.note.create({
-      data: {
-        id: change.id,
-        userId,
-        title: noteData.title,
-        content: noteData.content ?? "",
-        folder: noteData.folder,
-        folderId: noteData.folderId,
-        tags: noteData.tags ?? [],
-        summary: noteData.summary,
-        favorite: noteData.favorite ?? false,
-        sortOrder: noteData.sortOrder ?? 0,
-        favoriteSortOrder: noteData.favoriteSortOrder ?? 0,
-        isLocalFile: noteData.isLocalFile ?? false,
-        deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
-      },
-    });
-    return true;
+    try {
+      await prisma.note.create({
+        data: {
+          id: change.id,
+          userId,
+          title: noteData.title,
+          content: noteData.content ?? "",
+          folder: noteData.folder,
+          folderId: noteData.folderId,
+          tags: noteData.tags ?? [],
+          summary: noteData.summary,
+          favorite: noteData.favorite ?? false,
+          sortOrder: noteData.sortOrder ?? 0,
+          favoriteSortOrder: noteData.favoriteSortOrder ?? 0,
+          isLocalFile: noteData.isLocalFile ?? false,
+          deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
+        },
+      });
+    } catch (err: unknown) {
+      // On FK violation during force push, retry with folderId: null
+      if (change.force && isPrismaError(err, "P2003")) {
+        await prisma.note.create({
+          data: {
+            id: change.id,
+            userId,
+            title: noteData.title,
+            content: noteData.content ?? "",
+            folder: null,
+            folderId: null,
+            tags: noteData.tags ?? [],
+            summary: noteData.summary,
+            favorite: noteData.favorite ?? false,
+            sortOrder: noteData.sortOrder ?? 0,
+            favoriteSortOrder: noteData.favoriteSortOrder ?? 0,
+            isLocalFile: noteData.isLocalFile ?? false,
+            deletedAt: noteData.deletedAt ? new Date(noteData.deletedAt) : null,
+          },
+        });
+      } else {
+        throw err;
+      }
+    }
+    return "applied";
   }
 }
 
@@ -285,7 +351,7 @@ async function applyFolderChange(
   prisma: PrismaLike,
   userId: string,
   change: SyncChange,
-): Promise<boolean> {
+): Promise<ApplyResult> {
   const folderData = change.data as FolderSyncData | null;
 
   if (change.action === "delete") {
@@ -295,46 +361,118 @@ async function applyFolderChange(
         where: { id: change.id },
         data: { deletedAt: new Date(change.timestamp) },
       });
-      return true;
+      return "applied";
     }
-    return false;
+    return "skipped";
   }
 
-  if (!folderData) return false;
+  if (!folderData) return "skipped";
 
   const existing = await prisma.folder.findUnique({ where: { id: change.id } });
 
   if (existing) {
-    if (existing.userId !== userId) return false;
+    if (existing.userId !== userId) return "skipped";
 
     const clientTime = new Date(change.timestamp);
-    if (clientTime < existing.updatedAt) return false;
+    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
 
-    await prisma.folder.update({
-      where: { id: change.id },
-      data: {
-        name: folderData.name,
-        parentId: folderData.parentId,
-        sortOrder: folderData.sortOrder,
-        favorite: folderData.favorite,
-        deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
-      },
-    });
-    return true;
+    const folderUpdateData: Record<string, unknown> = {
+      name: folderData.name,
+      parentId: folderData.parentId,
+      sortOrder: folderData.sortOrder,
+      favorite: folderData.favorite,
+      deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
+    };
+
+    try {
+      await prisma.folder.update({
+        where: { id: change.id },
+        data: folderUpdateData,
+      });
+    } catch (err: unknown) {
+      if (change.force && isPrismaError(err, "P2003")) {
+        folderUpdateData.parentId = null;
+        await prisma.folder.update({
+          where: { id: change.id },
+          data: folderUpdateData,
+        });
+      } else {
+        throw err;
+      }
+    }
+    return "applied";
   } else {
-    await prisma.folder.create({
-      data: {
-        id: change.id,
-        userId,
-        name: folderData.name,
-        parentId: folderData.parentId,
-        sortOrder: folderData.sortOrder ?? 0,
-        favorite: folderData.favorite ?? false,
-        deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
-      },
-    });
-    return true;
+    try {
+      await prisma.folder.create({
+        data: {
+          id: change.id,
+          userId,
+          name: folderData.name,
+          parentId: folderData.parentId,
+          sortOrder: folderData.sortOrder ?? 0,
+          favorite: folderData.favorite ?? false,
+          deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
+        },
+      });
+    } catch (err: unknown) {
+      if (change.force && isPrismaError(err, "P2003")) {
+        await prisma.folder.create({
+          data: {
+            id: change.id,
+            userId,
+            name: folderData.name,
+            parentId: null,
+            sortOrder: folderData.sortOrder ?? 0,
+            favorite: folderData.favorite ?? false,
+            deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
+          },
+        });
+      } else {
+        throw err;
+      }
+    }
+    return "applied";
   }
+}
+
+function isPrismaError(err: unknown, code: string): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code: string }).code === code
+  );
+}
+
+function classifyPrismaError(err: unknown, change: SyncChange): SyncRejection {
+  let reason: SyncRejection["reason"] = "unknown";
+  let message = "An unknown error occurred";
+
+  if (typeof err === "object" && err !== null && "code" in err) {
+    const code = (err as { code: string }).code;
+    if (code === "P2003") {
+      reason = "fk_constraint";
+      message = "Referenced record (folder or parent) does not exist";
+    } else if (code === "P2002") {
+      reason = "unique_constraint";
+      message = "A record with this identifier already exists";
+    } else if (code === "P2025") {
+      reason = "not_found";
+      message = "Record not found";
+    }
+  }
+
+  if (reason === "unknown" && err instanceof Error) {
+    message = err.message;
+  }
+
+  return {
+    changeId: change.id,
+    changeType: change.type,
+    changeAction: change.action,
+    reason,
+    message,
+  };
 }
 
 export default syncRoutes;

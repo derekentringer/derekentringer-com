@@ -65,6 +65,9 @@ packages/
 - `src-tauri/Info.plist` — Custom plist merged into built app by Tauri v2 bundler (`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`); must be referenced as a path string in `tauri.conf.json`, not an inline object
 - `src-tauri/NoteSync.entitlements` — macOS entitlements (`com.apple.security.device.audio-input`); required for TCC microphone prompt with hardened runtime + ad-hoc signing
 - `src-tauri/src/audio_capture.rs` — Native audio recording (microphone + system audio via CoreAudio process tap)
+- `src/lib/syncEngine.ts` — Offline-first sync engine with SSE, push/pull, exponential backoff; `onSyncRejections` callback surfaces per-change rejection details with `forcePushChanges()` and `discardChanges()` action closures
+- `src/components/SyncIssuesDialog.tsx` — Dialog for resolving rejected sync changes (per-item + bulk Force Push / Discard)
+- `src/components/SyncStatusButton.tsx` — Sync status icon; shows rejection-aware click behavior when `hasRejections` is true
 - UI/UX must match `ns-web` — desktop components mirror web components
 - **Build (prod signed)**: `npm run tauri:build:prod` — syncs git tag version, clears WebKit cache, builds universal macOS binary with ad-hoc signing and `VITE_API_URL=https://ns-api.derekentringer.com`
 - **Build output**: `src-tauri/target/universal-apple-darwin/release/bundle/macos/NoteSync.app`
@@ -156,6 +159,7 @@ packages/
 - `src/index.ts` — Server entry, port 3004
 - `src/app.ts` — App factory with CORS, helmet, rate-limit, cookie, auth plugins
 - `src/routes/auth.ts` — Login, refresh, logout endpoints
+- `src/routes/sync.ts` — Sync push/pull/SSE endpoints; push returns per-change `SyncRejection` details (FK, unique, not_found, timestamp_conflict); `force` flag on `SyncChange` bypasses timestamp checks and retries FK violations with null foreign key
 - `src/routes/health.ts` — `GET /health` endpoint
 - `GET /robots.txt` — Blocks all crawlers (blanket `Disallow: /`)
 - `src/config.ts` — App config with secret enforcement

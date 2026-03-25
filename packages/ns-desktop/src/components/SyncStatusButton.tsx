@@ -4,9 +4,11 @@ interface SyncStatusButtonProps {
   status: SyncStatus;
   error: string | null;
   onSync: () => void;
+  hasRejections?: boolean;
+  onViewIssues?: () => void;
 }
 
-export function SyncStatusButton({ status, error, onSync }: SyncStatusButtonProps) {
+export function SyncStatusButton({ status, error, onSync, hasRejections, onViewIssues }: SyncStatusButtonProps) {
   const isDisabled = status === "offline";
 
   const title =
@@ -16,11 +18,21 @@ export function SyncStatusButton({ status, error, onSync }: SyncStatusButtonProp
         ? "Syncing..."
         : status === "offline"
           ? "Offline"
-          : error ?? "Sync error";
+          : hasRejections
+            ? "Sync issues — click to view"
+            : error ?? "Sync error";
+
+  function handleClick() {
+    if (status === "error" && hasRejections && onViewIssues) {
+      onViewIssues();
+    } else {
+      onSync();
+    }
+  }
 
   return (
     <button
-      onClick={onSync}
+      onClick={handleClick}
       disabled={isDisabled}
       className={`flex items-center justify-center w-7 h-7 rounded transition-colors cursor-pointer ${
         status === "error"
