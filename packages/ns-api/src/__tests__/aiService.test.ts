@@ -617,4 +617,82 @@ describe("aiService", () => {
       }
     });
   });
+
+  describe("suggestTags retry", () => {
+    it("retries on 529 and succeeds", async () => {
+      mockCreate
+        .mockRejectedValueOnce(Object.assign(new Error("Overloaded"), { status: 529 }))
+        .mockResolvedValueOnce({
+          content: [{ type: "text", text: '["tag1", "tag2"]' }],
+        });
+
+      const result = await suggestTags("Title", "Content", []);
+
+      expect(result).toEqual(["tag1", "tag2"]);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws after exhausting retries", async () => {
+      mockCreate.mockRejectedValue(Object.assign(new Error("Overloaded"), { status: 529 }));
+
+      await expect(suggestTags("Title", "Content", [])).rejects.toThrow("Overloaded");
+      expect(mockCreate).toHaveBeenCalledTimes(3);
+    });
+
+    it("does not retry on non-retryable errors", async () => {
+      mockCreate.mockRejectedValue(Object.assign(new Error("Bad Request"), { status: 400 }));
+
+      await expect(suggestTags("Title", "Content", [])).rejects.toThrow("Bad Request");
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("answerQuestion retry", () => {
+    it("retries on 529 and succeeds", async () => {
+      mockCreate
+        .mockRejectedValueOnce(Object.assign(new Error("Overloaded"), { status: 529 }))
+        .mockResolvedValueOnce({
+          [Symbol.asyncIterator]: async function* () {
+            yield { type: "content_block_delta", delta: { type: "text_delta", text: "Answer" } };
+          },
+        });
+
+      const chunks: string[] = [];
+      for await (const chunk of answerQuestion("question", [
+        { id: "1", title: "Note", content: "Content" },
+      ])) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toEqual(["Answer"]);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws after exhausting retries", async () => {
+      mockCreate.mockRejectedValue(Object.assign(new Error("Overloaded"), { status: 529 }));
+
+      const chunks: string[] = [];
+      await expect(async () => {
+        for await (const chunk of answerQuestion("question", [
+          { id: "1", title: "Note", content: "Content" },
+        ])) {
+          chunks.push(chunk);
+        }
+      }).rejects.toThrow("Overloaded");
+      expect(mockCreate).toHaveBeenCalledTimes(3);
+    });
+
+    it("does not retry on non-retryable errors", async () => {
+      mockCreate.mockRejectedValue(Object.assign(new Error("Bad Request"), { status: 400 }));
+
+      await expect(async () => {
+        for await (const _chunk of answerQuestion("question", [
+          { id: "1", title: "Note", content: "Content" },
+        ])) {
+          // consume
+        }
+      }).rejects.toThrow("Bad Request");
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+  });
 });
