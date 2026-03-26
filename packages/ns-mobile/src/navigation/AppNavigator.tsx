@@ -7,15 +7,18 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import useAuthStore from "@/store/authStore";
 import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
+import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { NotesScreen } from "@/screens/NotesScreen";
 import { SearchScreen } from "@/screens/SearchScreen";
 import { AiScreen } from "@/screens/AiScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { useThemeColors } from "@/theme/colors";
 import { colors } from "@/theme";
+import type { DashboardStackParamList } from "./types";
 
 const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
+const DashboardStack = createNativeStackNavigator<DashboardStackParamList>();
 
 function AuthNavigator() {
   return (
@@ -25,14 +28,38 @@ function AuthNavigator() {
   );
 }
 
+function DashboardNavigator() {
+  const themeColors = useThemeColors();
+
+  return (
+    <DashboardStack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: themeColors.background },
+        headerTintColor: themeColors.foreground,
+        headerShadowVisible: false,
+      }}
+    >
+      <DashboardStack.Screen
+        name="DashboardHome"
+        component={DashboardScreen}
+        options={{ title: "Dashboard" }}
+      />
+      <DashboardStack.Screen
+        name="NoteDetail"
+        component={NoteDetailScreen}
+        options={{ title: "" }}
+      />
+    </DashboardStack.Navigator>
+  );
+}
+
 function MainTabNavigator() {
   const themeColors = useThemeColors();
 
   return (
     <MainTab.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: themeColors.background },
-        headerTintColor: themeColors.foreground,
+        headerShown: false,
         tabBarStyle: { backgroundColor: themeColors.background, borderTopColor: themeColors.border },
         tabBarActiveTintColor: themeColors.primary,
         tabBarInactiveTintColor: themeColors.tabInactive,
@@ -40,7 +67,7 @@ function MainTabNavigator() {
     >
       <MainTab.Screen
         name="Dashboard"
-        component={DashboardScreen}
+        component={DashboardNavigator}
         options={{
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="view-dashboard" color={color} size={size} />
@@ -51,6 +78,7 @@ function MainTabNavigator() {
         name="Notes"
         component={NotesScreen}
         options={{
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="note-text" color={color} size={size} />
           ),
@@ -60,6 +88,9 @@ function MainTabNavigator() {
         name="Search"
         component={SearchScreen}
         options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.foreground,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="magnify" color={color} size={size} />
           ),
@@ -69,6 +100,9 @@ function MainTabNavigator() {
         name="AI"
         component={AiScreen}
         options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.foreground,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="robot" color={color} size={size} />
           ),
@@ -78,6 +112,9 @@ function MainTabNavigator() {
         name="Settings"
         component={SettingsScreen}
         options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: themeColors.background },
+          headerTintColor: themeColors.foreground,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="cog" color={color} size={size} />
           ),

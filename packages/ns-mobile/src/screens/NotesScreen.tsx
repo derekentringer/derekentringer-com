@@ -1,34 +1,33 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import type { NotesStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
-import { spacing } from "@/theme";
+import { NoteListScreen } from "./NoteListScreen";
+import { NoteDetailScreen } from "./NoteDetailScreen";
+
+const Stack = createNativeStackNavigator<NotesStackParamList>();
 
 export function NotesScreen() {
   const themeColors = useThemeColors();
 
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <Text style={[styles.text, { color: themeColors.foreground }]}>Notes</Text>
-      <Text style={[styles.subtitle, { color: themeColors.muted }]}>
-        Coming soon
-      </Text>
-    </View>
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: themeColors.background },
+        headerTintColor: themeColors.foreground,
+        headerShadowVisible: false,
+      }}
+    >
+      <Stack.Screen
+        name="NotesList"
+        component={NoteListScreen}
+        options={{ title: "Notes" }}
+      />
+      <Stack.Screen
+        name="NoteDetail"
+        component={NoteDetailScreen}
+        options={{ title: "" }}
+      />
+    </Stack.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: spacing.md,
-  },
-  text: {
-    fontSize: 20,
-    fontWeight: "600",
-  },
-  subtitle: {
-    fontSize: 14,
-    marginTop: spacing.sm,
-  },
-});

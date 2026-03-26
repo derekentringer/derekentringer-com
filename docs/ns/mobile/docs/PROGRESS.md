@@ -43,7 +43,7 @@
 
 ### Phase 1: Notes Core — High Priority
 
-- [ ] [01 — Note List & Viewer](feature_planning/01-note-list-and-viewer.md)
+- [x] [01 — Note List & Viewer](features/01-note-list-and-viewer.md)
 - [ ] [02 — Note Editor](feature_planning/02-note-editor.md)
 
 ### Phase 2: Organization & Sync — High Priority
