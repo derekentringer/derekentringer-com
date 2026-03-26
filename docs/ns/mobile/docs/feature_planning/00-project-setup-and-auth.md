@@ -1,6 +1,6 @@
 # 00 — Project Setup & Auth
 
-**Status:** Not Started
+**Status:** Complete (v1.93.26) — see [features/00-project-setup-and-auth.md](../features/00-project-setup-and-auth.md)
 **Phase:** 0 — Setup
 **Priority:** High
 
