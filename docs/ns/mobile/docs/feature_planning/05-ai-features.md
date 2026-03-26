@@ -42,9 +42,17 @@ AI-powered features on mobile: smart tagging, summarization, semantic search, Q&
   - Tap a citation to navigate to the source note
   - Chat history persists within the session
   - Requires network connection
+- **Completion styles**:
+  - Continue (default): continue the user's text naturally
+  - Markdown: suggest markdown formatting (tables, code blocks, etc.)
+  - Brief: complete with just a few words
+  - Paragraph: write the next full paragraph
+  - Structure: suggest document outline with headings
 - **AI settings**:
   - All features disabled by default
   - Per-feature toggles in Settings tab
+  - Completion style selector (continue, markdown, brief, paragraph, structure)
+  - Audio mode selector (meeting, lecture, memo, verbatim)
   - Daily request limit
 
 ## Technical Considerations
