@@ -2281,6 +2281,7 @@ export function NotesPage() {
               {aiSettings.masterAiEnabled && aiSettings.audioNotes && (
                 <AudioRecorder
                   defaultMode={aiSettings.audioMode}
+                  folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
                   recordingSource={aiSettings.recordingSource}
                   onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
                   onNoteCreated={handleAudioNoteCreated}

@@ -37,6 +37,7 @@ function getSupportedMimeType(): string | undefined {
 
 interface AudioRecorderProps {
   defaultMode: AudioMode;
+  folderId?: string;
   recordingSource: RecordingSource;
   onRecordingSourceChange: (source: RecordingSource) => void;
   onNoteCreated: (note: Note) => void;
@@ -45,7 +46,7 @@ interface AudioRecorderProps {
 
 type RecorderState = "idle" | "recording" | "processing";
 
-export function AudioRecorder({ defaultMode, recordingSource, onRecordingSourceChange, onNoteCreated, onError }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecordingSourceChange, onNoteCreated, onError }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -143,7 +144,7 @@ export function AudioRecorder({ defaultMode, recordingSource, onRecordingSourceC
       const blob = new Blob([data], { type: "audio/wav" });
 
       try {
-        const result = await transcribeAudio(blob, mode);
+        const result = await transcribeAudio(blob, mode, folderId);
         onNoteCreated(result.note);
       } catch (err) {
         onError(err instanceof Error ? err.message : "Transcription failed");
@@ -182,7 +183,7 @@ export function AudioRecorder({ defaultMode, recordingSource, onRecordingSourceC
         setState("processing");
 
         try {
-          const result = await transcribeAudio(blob, mode);
+          const result = await transcribeAudio(blob, mode, folderId);
           onNoteCreated(result.note);
         } catch (err) {
           onError(err instanceof Error ? err.message : "Transcription failed");
