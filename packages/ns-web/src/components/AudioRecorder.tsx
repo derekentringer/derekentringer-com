@@ -29,13 +29,14 @@ function getSupportedMimeType(): string | undefined {
 
 interface AudioRecorderProps {
   defaultMode: AudioMode;
+  folderId?: string;
   onNoteCreated: (note: Note) => void;
   onError: (message: string) => void;
 }
 
 type RecorderState = "idle" | "recording" | "processing";
 
-export function AudioRecorder({ defaultMode, onNoteCreated, onError }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -100,7 +101,7 @@ export function AudioRecorder({ defaultMode, onNoteCreated, onError }: AudioReco
         setState("processing");
 
         try {
-          const result = await transcribeAudio(blob, mode);
+          const result = await transcribeAudio(blob, mode, folderId);
           onNoteCreated(result.note);
         } catch (err) {
           onError(err instanceof Error ? err.message : "Transcription failed");

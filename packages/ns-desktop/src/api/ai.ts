@@ -206,6 +206,7 @@ const TRANSCRIBE_RETRYABLE_STATUSES = new Set([502, 503, 504]);
 export async function transcribeAudio(
   audioBlob: Blob,
   mode: AudioMode,
+  folderId?: string,
 ): Promise<TranscribeResult> {
   let lastError: Error | undefined;
 
@@ -221,6 +222,7 @@ export async function transcribeAudio(
     const formData = new FormData();
     formData.append("file", audioBlob, `recording.${ext}`);
     formData.append("mode", mode);
+    if (folderId) formData.append("folderId", folderId);
 
     const response = await apiFetch("/ai/transcribe", {
       method: "POST",
