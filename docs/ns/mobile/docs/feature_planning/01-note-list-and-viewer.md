@@ -1,6 +1,6 @@
 # 01 — Note List & Viewer
 
-**Status:** Not Started
+**Status:** Complete (moved to [features/01-note-list-and-viewer.md](../features/01-note-list-and-viewer.md))
 **Phase:** 1 — Notes Core
 **Priority:** High
 
