@@ -17,8 +17,9 @@ Background sync engine for mobile, keeping the local SQLite database in sync wit
 - **Sync protocol** (same as desktop):
   - **Push first**: send local changes from `sync_queue` to `POST /sync/push`
   - **Then pull**: fetch remote changes via `GET /sync/pull?since={lastSyncedAt}`
-  - Apply remote changes to local SQLite
+  - Apply remote changes to local SQLite (notes and folders)
   - Update `lastSyncedAt` in `sync_meta`
+  - Sync includes: notes, folders, favorites, tags, summaries, sort orders
 - **Conflict resolution**:
   - Last-write-wins based on `updatedAt` timestamp
   - Same logic as desktop
@@ -36,10 +37,16 @@ Background sync engine for mobile, keeping the local SQLite database in sync wit
 - **Initial sync**:
   - First launch: pull all notes from API into local SQLite
   - Progress indicator during initial sync ("Syncing notes... X/Y")
+- **Sync rejection handling**:
+  - Server returns per-change rejection details when push changes fail (FK constraint, unique constraint, not found, timestamp conflict)
+  - Show rejected changes in a bottom sheet with per-item "Force Push" and "Discard" actions
+  - Force push: re-sends with `force: true` flag to bypass timestamp checks
+  - Discard: removes failed entries from queue and pulls latest server state
 - **Sync status**:
   - Per-note sync indicator (synced / pending / modified)
   - Global sync status: "All synced" / "X changes pending"
   - Last synced timestamp
+  - Rejection count badge when sync issues exist
 
 ## Technical Considerations
 

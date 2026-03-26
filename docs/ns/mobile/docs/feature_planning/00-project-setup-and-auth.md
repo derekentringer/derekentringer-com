@@ -29,8 +29,14 @@ Set up the Expo + React Native mobile app with authentication, secure token stor
       title TEXT NOT NULL,
       content TEXT NOT NULL,
       folder TEXT,
+      folderId TEXT,
+      folderPath TEXT,
       tags TEXT,
       summary TEXT,
+      favorite INTEGER DEFAULT 0,
+      sortOrder INTEGER DEFAULT 0,
+      favoriteSortOrder INTEGER DEFAULT 0,
+      audioMode TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       deletedAt TEXT,
@@ -38,9 +44,30 @@ Set up the Expo + React Native mobile app with authentication, secure token stor
       remoteId TEXT
     );
 
+    CREATE TABLE folders (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      parentId TEXT,
+      sortOrder INTEGER DEFAULT 0,
+      favorite INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      deletedAt TEXT
+    );
+
+    CREATE TABLE note_versions (
+      id TEXT PRIMARY KEY,
+      noteId TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      origin TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    );
+
     CREATE TABLE sync_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      noteId TEXT NOT NULL,
+      entityId TEXT NOT NULL,
+      entityType TEXT NOT NULL DEFAULT 'note',
       action TEXT NOT NULL,
       payload TEXT NOT NULL,
       createdAt TEXT NOT NULL
@@ -53,6 +80,7 @@ Set up the Expo + React Native mobile app with authentication, secure token stor
     ```
 - **Authentication**:
   - Login screen: username + password
+  - TOTP 2FA support: if user has 2FA enabled, show TOTP code input after credentials are verified; `POST /auth/login` returns `requiresTOTP: true` → second step sends TOTP code
   - `POST /auth/login` with `X-Client-Type: mobile` header
   - Store access token, refresh token, and expiry in expo-secure-store
   - Proactive token refresh (30-second buffer before expiry, matching fin mobile)
@@ -65,7 +93,7 @@ Set up the Expo + React Native mobile app with authentication, secure token stor
   - Request interceptor: add Bearer token, proactive refresh if expired
   - Response interceptor: on 401, attempt refresh, retry request
 - **Navigation shell**:
-  - Bottom tabs: Notes, Search, AI, Settings
+  - Bottom tabs: Dashboard, Notes, Search, AI, Settings
   - Native stack for note detail/editor screens
   - Auth-gated navigation (login screen vs. main app)
 
@@ -85,5 +113,5 @@ None — this is the first feature for mobile.
 ## Open Questions
 
 - Should the mobile app share any React components with desktop/web, or keep them fully separate?
-- Bottom tab layout: Notes, Search, AI, Settings — or different grouping?
+- Bottom tab layout: Dashboard, Notes, Search, AI, Settings — or different grouping?
 - Should the app support biometric auth (fingerprint/face) as an alternative to username/password?

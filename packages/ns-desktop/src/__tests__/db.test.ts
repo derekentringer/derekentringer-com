@@ -114,13 +114,30 @@ describe("fetchNotes", () => {
     expect(notes).toEqual([]);
   });
 
-  it("filters by folder ID", async () => {
-    mockSelect.mockResolvedValue([]);
+  it("filters by folder ID including descendants", async () => {
+    // First call: collectDescendantFolderIds returns no children
+    // Second call: the actual notes query
+    mockSelect
+      .mockResolvedValueOnce([]) // no descendant folders
+      .mockResolvedValueOnce([]); // notes result
     await fetchNotes({ folderId: "folder-1" });
 
     expect(mockSelect).toHaveBeenCalledWith(
-      expect.stringContaining("folder_id = $1"),
+      expect.stringContaining("folder_id IN ($1)"),
       ["folder-1"],
+    );
+  });
+
+  it("filters by folder ID with descendant folders", async () => {
+    mockSelect
+      .mockResolvedValueOnce([{ id: "child-1" }]) // first level children
+      .mockResolvedValueOnce([]) // child-1's children (none)
+      .mockResolvedValueOnce([]); // notes result
+    await fetchNotes({ folderId: "folder-1" });
+
+    expect(mockSelect).toHaveBeenCalledWith(
+      expect.stringContaining("folder_id IN ($1, $2)"),
+      ["folder-1", "child-1"],
     );
   });
 

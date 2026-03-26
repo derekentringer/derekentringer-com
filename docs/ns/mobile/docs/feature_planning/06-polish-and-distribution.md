@@ -29,12 +29,17 @@ Final polish, app icon, splash screen, push notifications (Android only), and EA
     | DELETE | `/devices/:token` | Yes | Unregister device token |
 
 - **Settings screen**:
-  - Theme (dark mode only initially; future: light/system)
+  - Theme toggle: dark / light / system (matches web/desktop)
   - Editor preferences (font size, toolbar customization)
-  - AI toggles (per-feature, daily limit)
+  - AI toggles (per-feature: completions, auto-tagging, summarization, Q&A assistant, audio notes)
+  - AI completion style selector (continue, markdown, brief, paragraph, structure)
+  - AI audio mode selector (meeting, lecture, memo, verbatim)
+  - Semantic search toggle (requires network)
   - Sync settings (interval, manual sync, last synced)
   - Push notification preferences
-  - Account (logout)
+  - Version history settings (auto-save interval)
+  - Two-factor authentication management (enable/disable TOTP 2FA, view backup codes)
+  - Account (change password, logout)
   - About (version, links)
 - **Haptic feedback**:
   - On note delete, sync complete, AI result received
