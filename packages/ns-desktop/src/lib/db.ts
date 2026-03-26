@@ -182,9 +182,13 @@ export async function fetchNotes(options?: FetchNotesOptions): Promise<Note[]> {
     if (options.folderId === null) {
       whereClauses.push("folder_id IS NULL");
     } else {
-      whereClauses.push(`folder_id = $${paramIdx}`);
-      params.push(options.folderId);
-      paramIdx++;
+      // Include notes in the selected folder and all descendant folders
+      const descendantIds = await collectDescendantFolderIds(options.folderId);
+      const allIds = [options.folderId, ...descendantIds];
+      const placeholders = allIds.map((_, i) => `$${paramIdx + i}`).join(", ");
+      whereClauses.push(`folder_id IN (${placeholders})`);
+      params.push(...allIds);
+      paramIdx += allIds.length;
     }
   }
 
