@@ -81,6 +81,7 @@ export type SearchMode = "keyword" | "semantic" | "hybrid";
 export interface ListNotesFilter {
   folder?: string;
   folderId?: string;
+  folderIds?: string[];
   search?: string;
   searchMode?: SearchMode;
   tags?: string[];
@@ -108,6 +109,11 @@ export async function listNotes(
   const sortBy = filter?.sortBy ?? "updatedAt";
   const sortOrder = filter?.sortOrder ?? "desc";
 
+  // Resolve folder + all descendant folders so clicking a parent shows nested notes
+  if (filter?.folderId && !filter.folderIds) {
+    filter = { ...filter, folderIds: await getSelfAndDescendantIds(filter.folderId) };
+  }
+
   // Use raw SQL for search
   if (filter?.search) {
     const mode = filter.searchMode ?? "keyword";
@@ -126,8 +132,8 @@ export async function listNotes(
   // Standard Prisma query (no search)
   const where: Record<string, unknown> = { userId, deletedAt: null };
 
-  if (filter?.folderId) {
-    where.folderId = filter.folderId;
+  if (filter?.folderIds && filter.folderIds.length > 0) {
+    where.folderId = { in: filter.folderIds };
   } else if (filter?.folder) {
     where.folder = filter.folder;
   }
@@ -143,9 +149,9 @@ export async function listNotes(
     let paramIdx = 2;
     let whereClause = `"userId" = $1 AND "deletedAt" IS NULL`;
 
-    if (filter?.folderId) {
-      whereClause += ` AND "folderId" = $${paramIdx}`;
-      params.push(filter.folderId);
+    if (filter?.folderIds && filter.folderIds.length > 0) {
+      whereClause += ` AND "folderId" = ANY($${paramIdx})`;
+      params.push(filter.folderIds);
       paramIdx++;
     } else if (filter?.folder) {
       whereClause += ` AND "folder" = $${paramIdx}`;
@@ -192,9 +198,9 @@ function buildFilterClause(
   const params: unknown[] = [];
   let idx = startIdx;
 
-  if (filter.folderId) {
-    clause += ` AND "folderId" = $${idx}`;
-    params.push(filter.folderId);
+  if (filter.folderIds && filter.folderIds.length > 0) {
+    clause += ` AND "folderId" = ANY($${idx})`;
+    params.push(filter.folderIds);
     idx++;
   } else if (filter.folder) {
     clause += ` AND "folder" = $${idx}`;

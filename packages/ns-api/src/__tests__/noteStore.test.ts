@@ -715,7 +715,9 @@ describe("noteStore", () => {
   });
 
   describe("listNotes with folderId", () => {
-    it("filters by folderId (direct notes only)", async () => {
+    it("filters by folderId including descendant folders", async () => {
+      // Mock getDescendantIds to return child folders
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([{ id: "f2" }, { id: "f3" }]);
       mockPrisma.note.findMany.mockResolvedValue([]);
       mockPrisma.note.count.mockResolvedValue(0);
 
@@ -723,7 +725,22 @@ describe("noteStore", () => {
 
       expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId: TEST_USER_ID, deletedAt: null, folderId: "f1" },
+          where: { userId: TEST_USER_ID, deletedAt: null, folderId: { in: ["f1", "f2", "f3"] } },
+        }),
+      );
+    });
+
+    it("filters by folderId with no descendants", async () => {
+      // Mock getDescendantIds to return no children
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+      mockPrisma.note.findMany.mockResolvedValue([]);
+      mockPrisma.note.count.mockResolvedValue(0);
+
+      await listNotes(TEST_USER_ID, { folderId: "f1" });
+
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: TEST_USER_ID, deletedAt: null, folderId: { in: ["f1"] } },
         }),
       );
     });

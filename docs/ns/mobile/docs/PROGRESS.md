@@ -17,6 +17,7 @@
 | Bottom Sheet | @gorhom/bottom-sheet v5 | AI actions, note options |
 | Haptics | expo-haptics | Tactile feedback on interactions |
 | Push | expo-notifications + FCM | Android only (iOS excluded — requires paid Apple Developer account) |
+| Audio | expo-av | Audio recording for voice-to-note transcription |
 | AI | Anthropic Claude API (via ns-api) | Tagging, summarization, semantic search, Q&A, writing assistance via toolbar |
 | Build | EAS Build | APK for Android sideload, ad-hoc IPA for iOS |
 | Monorepo | Turborepo (existing) | `packages/ns-mobile` in `derekentringer-com` monorepo |
@@ -32,7 +33,7 @@
 - **Push notifications Android-only** — iOS requires paid Apple Developer account for APNs
 - **Android-focused testing** — both platforms built, but Android is the primary testing target
 - **Mobile auth via request body** — `X-Client-Type: mobile` header triggers body-based refresh token delivery (same as fin mobile)
-- **Dark mode only** — matches fin mobile pattern initially; light mode as future enhancement
+- **Dark and light theme** — theme toggle in settings, matches web/desktop
 
 ## Phases
 
@@ -50,9 +51,10 @@
 - [ ] [03 — Search & Organization](feature_planning/03-search-and-organization.md)
 - [ ] [04 — Sync Engine](feature_planning/04-sync-engine.md)
 
-### Phase 3: AI — Medium Priority
+### Phase 3: AI & Audio — Medium Priority
 
 - [ ] [05 — AI Features](feature_planning/05-ai-features.md)
+- [ ] [07 — Audio Recording & Transcription](feature_planning/07-audio-recording.md)
 
 ### Phase 4: Polish — Low Priority
 
@@ -60,12 +62,9 @@
 
 ## Extension Ideas (Future)
 
-- Note linking / backlinks
 - Quick capture widget (home screen widget for Android)
 - Share sheet integration (share text from other apps into NoteSync)
-- Voice-to-note (speech-to-text → markdown)
 - Handwriting input via stylus
-- Light mode theme option
 
 ## Status Key
 
