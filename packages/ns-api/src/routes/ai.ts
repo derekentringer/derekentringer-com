@@ -372,6 +372,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       const userId = request.user.sub;
       let file;
       let mode: AudioMode = "memo";
+      let folderId: string | undefined;
 
       try {
         const parts = request.parts();
@@ -381,6 +382,9 @@ export default async function aiRoutes(fastify: FastifyInstance) {
             if (VALID_MODES.includes(val as AudioMode)) {
               mode = val as AudioMode;
             }
+          } else if (part.type === "field" && part.fieldname === "folderId") {
+            const val = (part.value as string) || "";
+            if (val) folderId = val;
           } else if (part.type === "file" && part.fieldname === "file") {
             file = {
               buffer: await part.toBuffer(),
@@ -464,6 +468,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         content: structured.content,
         tags: structured.tags,
         audioMode: mode,
+        folderId,
       });
 
       const note = toNote(noteRow);

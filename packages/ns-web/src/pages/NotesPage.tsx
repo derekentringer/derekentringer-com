@@ -1691,6 +1691,7 @@ export function NotesPage() {
               {settings.masterAiEnabled && settings.audioNotes && (
                 <AudioRecorder
                   defaultMode={settings.audioMode}
+                  folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
                   onNoteCreated={handleAudioNoteCreated}
                   onError={showError}
                 />
