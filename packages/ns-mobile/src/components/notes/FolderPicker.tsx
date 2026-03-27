@@ -1,10 +1,19 @@
-import React, { useCallback, useMemo } from "react";
-import { View, Text, Pressable, FlatList, Alert, StyleSheet } from "react-native";
+import React, { useCallback, useMemo, useState, useRef, useEffect } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  FlatList,
+  Alert,
+  Modal,
+  TextInput,
+  StyleSheet,
+} from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import type { FolderInfo } from "@derekentringer/ns-shared";
-import { useThemeColors } from "@/theme/colors";
+import { useThemeColors, type ThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import {
   useCreateFolder,
@@ -27,6 +36,20 @@ interface FlatFolder {
   isSystem?: boolean;
 }
 
+interface PromptState {
+  visible: boolean;
+  title: string;
+  message: string;
+  defaultValue: string;
+  onSubmit: (value: string) => void;
+}
+
+interface ActionMenuState {
+  visible: boolean;
+  title: string;
+  item: FlatFolder | null;
+}
+
 function flattenFolderTree(
   folders: FolderInfo[],
   depth = 0,
@@ -46,6 +69,234 @@ function flattenFolderTree(
   return result;
 }
 
+function PromptDialog({
+  prompt,
+  onClose,
+  themeColors,
+}: {
+  prompt: PromptState;
+  onClose: () => void;
+  themeColors: ThemeColors;
+}) {
+  const [value, setValue] = useState(prompt.defaultValue);
+  const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    setValue(prompt.defaultValue);
+    if (prompt.visible) {
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [prompt.visible, prompt.defaultValue]);
+
+  const handleSubmit = () => {
+    if (value.trim()) {
+      prompt.onSubmit(value.trim());
+      onClose();
+    }
+  };
+
+  return (
+    <Modal
+      visible={prompt.visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={promptStyles.backdrop} onPress={onClose}>
+        <Pressable
+          style={[promptStyles.dialog, { backgroundColor: themeColors.card }]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <Text style={[promptStyles.title, { color: themeColors.foreground }]}>
+            {prompt.title}
+          </Text>
+          <Text style={[promptStyles.message, { color: themeColors.muted }]}>
+            {prompt.message}
+          </Text>
+          <TextInput
+            ref={inputRef}
+            style={[
+              promptStyles.input,
+              {
+                color: themeColors.foreground,
+                backgroundColor: themeColors.input,
+                borderColor: themeColors.border,
+              },
+            ]}
+            value={value}
+            onChangeText={setValue}
+            onSubmitEditing={handleSubmit}
+            returnKeyType="done"
+            autoFocus
+            selectTextOnFocus
+            placeholderTextColor={themeColors.muted}
+          />
+          <View style={promptStyles.buttons}>
+            <Pressable
+              style={[promptStyles.button, { backgroundColor: themeColors.border }]}
+              onPress={onClose}
+            >
+              <Text style={[promptStyles.buttonText, { color: themeColors.foreground }]}>
+                Cancel
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[promptStyles.button, { backgroundColor: themeColors.primary }]}
+              onPress={handleSubmit}
+            >
+              <Text style={[promptStyles.buttonText, { color: themeColors.background }]}>
+                OK
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const promptStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.lg,
+  },
+  dialog: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: "600",
+    marginBottom: spacing.xs,
+  },
+  message: {
+    fontSize: 13,
+    marginBottom: spacing.sm,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    fontSize: 15,
+    marginBottom: spacing.md,
+  },
+  buttons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+  },
+  button: {
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  buttonText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+});
+
+function ActionMenuDialog({
+  menu,
+  onClose,
+  onRename,
+  onDelete,
+  themeColors,
+}: {
+  menu: ActionMenuState;
+  onClose: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  themeColors: ThemeColors;
+}) {
+  return (
+    <Modal
+      visible={menu.visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={promptStyles.backdrop} onPress={onClose}>
+        <Pressable
+          style={[promptStyles.dialog, { backgroundColor: themeColors.card }]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <Text style={[promptStyles.title, { color: themeColors.foreground }]}>
+            {menu.title}
+          </Text>
+          <View style={actionMenuStyles.buttons}>
+            <View style={actionMenuStyles.leftButtons}>
+              <Pressable
+                style={[promptStyles.button, { backgroundColor: themeColors.primary }]}
+                onPress={() => {
+                  onClose();
+                  onRename();
+                }}
+              >
+                <Text style={[promptStyles.buttonText, { color: themeColors.background }]}>
+                  Rename
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[promptStyles.button, { backgroundColor: themeColors.destructive }]}
+                onPress={() => {
+                  onClose();
+                  onDelete();
+                }}
+              >
+                <Text style={[promptStyles.buttonText, { color: "#fff" }]}>
+                  Delete
+                </Text>
+              </Pressable>
+            </View>
+            <Pressable
+              style={[promptStyles.button, { backgroundColor: themeColors.border }]}
+              onPress={onClose}
+            >
+              <Text style={[promptStyles.buttonText, { color: themeColors.foreground }]}>
+                Cancel
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const actionMenuStyles = StyleSheet.create({
+  buttons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: spacing.md,
+  },
+  leftButtons: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+});
+
+const INITIAL_PROMPT: PromptState = {
+  visible: false,
+  title: "",
+  message: "",
+  defaultValue: "",
+  onSubmit: () => {},
+};
+
+const INITIAL_ACTION_MENU: ActionMenuState = {
+  visible: false,
+  title: "",
+  item: null,
+};
+
 export function FolderPicker({
   bottomSheetRef,
   folders,
@@ -56,6 +307,16 @@ export function FolderPicker({
   const createFolder = useCreateFolder();
   const renameFolder = useRenameFolder();
   const deleteFolder = useDeleteFolder();
+  const [prompt, setPrompt] = useState<PromptState>(INITIAL_PROMPT);
+  const [actionMenu, setActionMenu] = useState<ActionMenuState>(INITIAL_ACTION_MENU);
+
+  const closePrompt = useCallback(() => {
+    setPrompt(INITIAL_PROMPT);
+  }, []);
+
+  const closeActionMenu = useCallback(() => {
+    setActionMenu(INITIAL_ACTION_MENU);
+  }, []);
 
   const flatFolders = useMemo(() => {
     const allNotes: FlatFolder = {
@@ -84,94 +345,87 @@ export function FolderPicker({
   );
 
   const handleCreateFolder = useCallback(() => {
-    Alert.prompt("New Folder", "Enter folder name:", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Create",
-        onPress: (name?: string) => {
-          if (name?.trim()) {
-            createFolder.mutate(
-              { name: name.trim() },
-              {
-                onSuccess: () => {
-                  Haptics.notificationAsync(
-                    Haptics.NotificationFeedbackType.Success,
-                  );
-                },
-              },
-            );
-          }
-        },
+    setPrompt({
+      visible: true,
+      title: "New Folder",
+      message: "Enter folder name:",
+      defaultValue: "",
+      onSubmit: (name: string) => {
+        createFolder.mutate(
+          { name },
+          {
+            onSuccess: () => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            },
+          },
+        );
       },
-    ]);
+    });
   }, [createFolder]);
 
   const handleLongPress = useCallback(
     (item: FlatFolder) => {
       if (item.isSystem || !item.id) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setActionMenu({ visible: true, title: item.name, item });
+    },
+    [],
+  );
 
-      Alert.alert(item.name, undefined, [
-        {
-          text: "Rename",
-          onPress: () => {
-            Alert.prompt("Rename Folder", "Enter new name:", [
-              { text: "Cancel", style: "cancel" },
-              {
-                text: "Rename",
-                onPress: (newName?: string) => {
-                  if (newName?.trim() && item.id) {
-                    renameFolder.mutate(
-                      { folderId: item.id, newName: newName.trim() },
-                      {
-                        onSuccess: () => {
-                          Haptics.notificationAsync(
-                            Haptics.NotificationFeedbackType.Success,
-                          );
-                        },
-                      },
-                    );
-                  }
-                },
+  const handleRenameFromMenu = useCallback(() => {
+    const item = actionMenu.item;
+    if (!item?.id) return;
+    setPrompt({
+      visible: true,
+      title: "Rename Folder",
+      message: "Enter new name:",
+      defaultValue: item.name,
+      onSubmit: (newName: string) => {
+        if (item.id) {
+          renameFolder.mutate(
+            { folderId: item.id, newName },
+            {
+              onSuccess: () => {
+                Haptics.notificationAsync(
+                  Haptics.NotificationFeedbackType.Success,
+                );
               },
-            ], "plain-text", item.name);
-          },
-        },
+            },
+          );
+        }
+      },
+    });
+  }, [actionMenu.item, renameFolder]);
+
+  const handleDeleteFromMenu = useCallback(() => {
+    const item = actionMenu.item;
+    if (!item?.id) return;
+    Alert.alert(
+      "Delete Folder",
+      `Delete "${item.name}"? Notes will be moved to the parent folder.`,
+      [
+        { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            Alert.alert(
-              "Delete Folder",
-              `Delete "${item.name}"? Notes will be moved to the parent folder.`,
-              [
-                { text: "Cancel", style: "cancel" },
+            if (item.id) {
+              deleteFolder.mutate(
+                { folderId: item.id, mode: "move-up" },
                 {
-                  text: "Delete",
-                  style: "destructive",
-                  onPress: () => {
-                    if (item.id) {
-                      deleteFolder.mutate(
-                        { folderId: item.id, mode: "move-up" },
-                        {
-                          onSuccess: () => {
-                            Haptics.notificationAsync(
-                              Haptics.NotificationFeedbackType.Success,
-                            );
-                          },
-                        },
-                      );
-                    }
+                  onSuccess: () => {
+                    Haptics.notificationAsync(
+                      Haptics.NotificationFeedbackType.Success,
+                    );
                   },
                 },
-              ],
-            );
+              );
+            }
           },
         },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    },
-    [renameFolder, deleteFolder],
-  );
+      ],
+    );
+  }, [actionMenu.item, deleteFolder]);
 
   const renderItem = useCallback(
     ({ item }: { item: FlatFolder }) => {
@@ -227,40 +481,54 @@ export function FolderPicker({
   );
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
-      snapPoints={["50%", "80%"]}
-      backgroundStyle={{ backgroundColor: themeColors.background }}
-      handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
-    >
-      <BottomSheetView style={styles.content}>
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: themeColors.foreground }]}>
-            Folder
-          </Text>
-          <Pressable
-            style={[styles.newFolderButton, { backgroundColor: `${themeColors.primary}1A` }]}
-            onPress={handleCreateFolder}
-            accessibilityRole="button"
-            accessibilityLabel="Create new folder"
-          >
-            <MaterialCommunityIcons
-              name="folder-plus-outline"
-              size={16}
-              color={themeColors.primary}
-            />
-            <Text style={[styles.newFolderText, { color: themeColors.primary }]}>
-              New Folder
+    <>
+      <BottomSheetModal
+        ref={bottomSheetRef}
+        snapPoints={["50%", "80%"]}
+        backgroundStyle={{ backgroundColor: themeColors.background }}
+        handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
+      >
+        <BottomSheetView style={styles.content}>
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: themeColors.foreground }]}>
+              Folder
             </Text>
-          </Pressable>
-        </View>
-        <FlatList
-          data={flatFolders}
-          keyExtractor={(item) => item.id ?? "all"}
-          renderItem={renderItem}
-        />
-      </BottomSheetView>
-    </BottomSheetModal>
+            <Pressable
+              style={[styles.newFolderButton, { backgroundColor: `${themeColors.primary}1A` }]}
+              onPress={handleCreateFolder}
+              accessibilityRole="button"
+              accessibilityLabel="Create new folder"
+            >
+              <MaterialCommunityIcons
+                name="folder-plus-outline"
+                size={16}
+                color={themeColors.primary}
+              />
+              <Text style={[styles.newFolderText, { color: themeColors.primary }]}>
+                New Folder
+              </Text>
+            </Pressable>
+          </View>
+          <FlatList
+            data={flatFolders}
+            keyExtractor={(item) => item.id ?? "all"}
+            renderItem={renderItem}
+          />
+        </BottomSheetView>
+      </BottomSheetModal>
+      <PromptDialog
+        prompt={prompt}
+        onClose={closePrompt}
+        themeColors={themeColors}
+      />
+      <ActionMenuDialog
+        menu={actionMenu}
+        onClose={closeActionMenu}
+        onRename={handleRenameFromMenu}
+        onDelete={handleDeleteFromMenu}
+        themeColors={themeColors}
+      />
+    </>
   );
 }
 
