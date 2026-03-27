@@ -325,6 +325,16 @@ export function NoteListScreen({ navigation }: Props) {
         />
       )}
 
+      {/* FAB */}
+      <Pressable
+        style={[styles.fab, { backgroundColor: themeColors.primary }]}
+        onPress={() => navigation.navigate("NoteEditor", {})}
+        accessibilityRole="button"
+        accessibilityLabel="Create new note"
+      >
+        <MaterialCommunityIcons name="plus" size={28} color="#000" />
+      </Pressable>
+
       {/* Bottom sheets */}
       <FolderPicker
         bottomSheetRef={folderSheetRef}
@@ -429,5 +439,20 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingVertical: spacing.md,
+  },
+  fab: {
+    position: "absolute",
+    right: spacing.md,
+    bottom: spacing.md,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
 });

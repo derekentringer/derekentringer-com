@@ -1,24 +1,25 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useEffect, useState } from "react";
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   Alert,
-  Share,
   RefreshControl,
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import * as Clipboard from "expo-clipboard";
 import Markdown from "react-native-markdown-display";
 import * as Haptics from "expo-haptics";
+import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { NotesStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
-import { relativeTime } from "@/lib/time";
+import { formatCreatedDate, formatModifiedDate } from "@/lib/time";
 import {
   useNote,
   useDeleteNote,
@@ -30,6 +31,8 @@ import { BacklinksSection } from "@/components/notes/BacklinksSection";
 import { VersionHistorySheet } from "@/components/notes/VersionHistorySheet";
 import { ErrorCard } from "@/components/common/ErrorCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
+import { useFolders } from "@/hooks/useFolders";
+import { findFolderName } from "@/lib/folders";
 
 type Props = NativeStackScreenProps<NotesStackParamList, "NoteDetail">;
 
@@ -43,12 +46,24 @@ export function NoteDetailScreen({ route, navigation }: Props) {
     data: versionsData,
     isLoading: isLoadingVersions,
   } = useVersions(noteId);
+  const { data: foldersData } = useFolders();
+
+  const resolvedFolderName =
+    findFolderName(foldersData?.folders ?? [], note?.folderId) || note?.folder || null;
 
   const deleteNote = useDeleteNote();
   const toggleFavorite = useToggleFavorite();
   const restoreVersion = useRestoreVersion();
 
   const versionSheetRef = useRef<BottomSheetModal>(null);
+  const [showOverflow, setShowOverflow] = useState(false);
+
+  // Refetch when screen regains focus (e.g. returning from editor)
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
 
   const handleToggleFavorite = useCallback(async () => {
     if (!note) return;
@@ -77,13 +92,11 @@ export function NoteDetailScreen({ route, navigation }: Props) {
     );
   }, [noteId, deleteNote, navigation]);
 
-  const handleShare = useCallback(async () => {
-    if (!note) return;
-    await Share.share({
-      title: note.title,
-      message: `${note.title}\n\n${note.content}`,
-    });
-  }, [note]);
+  const handleCopyLink = useCallback(async () => {
+    const url = `https://ns.derekentringer.com/notes/${noteId}`;
+    await Clipboard.setStringAsync(url);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [noteId]);
 
   const handleRefresh = useCallback(async () => {
     await refetch();
@@ -105,6 +118,64 @@ export function NoteDetailScreen({ route, navigation }: Props) {
     },
     [noteId, restoreVersion],
   );
+
+  // Header actions
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={styles.headerRight}>
+          <Pressable
+            onPress={() => navigation.navigate("NoteEditor", { noteId })}
+            style={styles.headerButton}
+            accessibilityRole="button"
+            accessibilityLabel="Edit note"
+          >
+            <MaterialCommunityIcons
+              name="pencil-outline"
+              size={22}
+              color={themeColors.foreground}
+            />
+          </Pressable>
+          <Pressable
+            onPress={handleToggleFavorite}
+            style={styles.headerButton}
+            accessibilityRole="button"
+            accessibilityLabel={note?.favorite ? "Remove from favorites" : "Add to favorites"}
+          >
+            <MaterialCommunityIcons
+              name={note?.favorite ? "star" : "star-outline"}
+              size={22}
+              color={note?.favorite ? themeColors.primary : themeColors.foreground}
+            />
+          </Pressable>
+          <Pressable
+            onPress={handleCopyLink}
+            style={styles.headerButton}
+            accessibilityRole="button"
+            accessibilityLabel="Copy link"
+          >
+            <MaterialCommunityIcons
+              name="link-variant"
+              size={22}
+              color={themeColors.foreground}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => setShowOverflow((p) => !p)}
+            style={styles.headerButton}
+            accessibilityRole="button"
+            accessibilityLabel="More options"
+          >
+            <MaterialCommunityIcons
+              name="dots-vertical"
+              size={22}
+              color={themeColors.foreground}
+            />
+          </Pressable>
+        </View>
+      ),
+    });
+  }, [navigation, noteId, note?.favorite, themeColors, handleToggleFavorite, handleCopyLink]);
 
   const mdStyles = React.useMemo(
     () => ({
@@ -196,117 +267,53 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: themeColors.foreground }]}>
-            {note.title || "Untitled"}
+        {/* Status line */}
+        <Text style={[styles.statusLine, { color: themeColors.muted }]}>
+          Saved · Created {formatCreatedDate(note.createdAt)} · Modified {formatModifiedDate(note.updatedAt)}
+        </Text>
+
+        {/* Title */}
+        <Text style={[styles.title, { color: themeColors.foreground }]}>
+          {note.title || "Untitled"}
+        </Text>
+
+        {/* Folder */}
+        <View
+          style={[
+            styles.folderBadge,
+            { backgroundColor: themeColors.border },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="folder-outline"
+            size={12}
+            color={themeColors.muted}
+          />
+          <Text style={[styles.folderText, { color: themeColors.muted }]}>
+            {resolvedFolderName || "No folder"}
           </Text>
-
-          {/* Action row */}
-          <View style={styles.actions}>
-            <Pressable
-              onPress={handleToggleFavorite}
-              style={styles.actionButton}
-              accessibilityRole="button"
-              accessibilityLabel={
-                note.favorite ? "Remove from favorites" : "Add to favorites"
-              }
-            >
-              <MaterialCommunityIcons
-                name={note.favorite ? "star" : "star-outline"}
-                size={22}
-                color={
-                  note.favorite ? themeColors.primary : themeColors.muted
-                }
-              />
-            </Pressable>
-
-            <Pressable
-              onPress={handleShare}
-              style={styles.actionButton}
-              accessibilityRole="button"
-              accessibilityLabel="Share note"
-            >
-              <MaterialCommunityIcons
-                name="share-variant-outline"
-                size={20}
-                color={themeColors.muted}
-              />
-            </Pressable>
-
-            <Pressable
-              onPress={() => versionSheetRef.current?.present()}
-              style={styles.actionButton}
-              accessibilityRole="button"
-              accessibilityLabel="Version history"
-            >
-              <MaterialCommunityIcons
-                name="history"
-                size={20}
-                color={themeColors.muted}
-              />
-            </Pressable>
-
-            <Pressable
-              onPress={handleDelete}
-              style={styles.actionButton}
-              accessibilityRole="button"
-              accessibilityLabel="Delete note"
-            >
-              <MaterialCommunityIcons
-                name="trash-can-outline"
-                size={20}
-                color={themeColors.destructive}
-              />
-            </Pressable>
-          </View>
         </View>
 
-        {/* Meta */}
-        <View style={styles.meta}>
-          {note.folder ? (
-            <View
-              style={[
-                styles.folderBadge,
-                { backgroundColor: themeColors.border },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="folder-outline"
-                size={12}
-                color={themeColors.muted}
-              />
-              <Text style={[styles.folderText, { color: themeColors.muted }]}>
-                {note.folder}
-              </Text>
-            </View>
-          ) : null}
-
-          {note.tags.length > 0 ? (
-            <View style={styles.tags}>
-              {note.tags.map((tag) => (
-                <View
-                  key={tag}
-                  style={[
-                    styles.tagChip,
-                    { backgroundColor: `${themeColors.primary}1A` },
-                  ]}
+        {/* Tags */}
+        {note.tags.length > 0 ? (
+          <View style={styles.tags}>
+            {note.tags.map((tag) => (
+              <View
+                key={tag}
+                style={[
+                  styles.tagChip,
+                  { backgroundColor: `${themeColors.primary}1A` },
+                ]}
+              >
+                <Text
+                  style={[styles.tagText, { color: themeColors.primary }]}
                 >
-                  <Text
-                    style={[styles.tagText, { color: themeColors.primary }]}
-                  >
-                    {tag}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-
-          <Text style={[styles.dateText, { color: themeColors.muted }]}>
-            Created {relativeTime(note.createdAt)} · Updated{" "}
-            {relativeTime(note.updatedAt)}
-          </Text>
-        </View>
+                  {tag}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {/* Content */}
         <View style={styles.content}>
@@ -329,6 +336,43 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           </View>
         ) : null}
       </ScrollView>
+
+      {/* Overflow menu */}
+      {showOverflow ? (
+        <Pressable
+          style={styles.overflowBackdrop}
+          onPress={() => setShowOverflow(false)}
+        >
+          <View style={[styles.overflowMenu, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
+            <Pressable
+              style={styles.overflowItem}
+              onPress={() => {
+                setShowOverflow(false);
+                versionSheetRef.current?.present();
+              }}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="history" size={20} color={themeColors.foreground} />
+              <Text style={[styles.overflowText, { color: themeColors.foreground }]}>
+                Version History
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.overflowItem}
+              onPress={() => {
+                setShowOverflow(false);
+                handleDelete();
+              }}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="trash-can-outline" size={20} color={themeColors.destructive} />
+              <Text style={[styles.overflowText, { color: themeColors.destructive }]}>
+                Delete Note
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      ) : null}
 
       {/* Version history sheet */}
       <VersionHistorySheet
@@ -353,7 +397,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     paddingBottom: spacing.xl,
   },
-  header: {
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  headerButton: {
+    padding: spacing.xs,
+  },
+  statusLine: {
+    fontSize: 11,
     marginBottom: spacing.sm,
   },
   title: {
@@ -361,17 +414,34 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: spacing.sm,
   },
-  actions: {
+  overflowBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+  },
+  overflowMenu: {
+    position: "absolute",
+    top: 4,
+    right: spacing.md,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: 4,
+    minWidth: 180,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 11,
+  },
+  overflowItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    gap: spacing.sm,
   },
-  actionButton: {
-    padding: spacing.xs,
-  },
-  meta: {
-    marginBottom: spacing.md,
-    gap: spacing.xs,
+  overflowText: {
+    fontSize: 15,
   },
   folderBadge: {
     flexDirection: "row",
@@ -381,6 +451,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     gap: 4,
+    marginBottom: spacing.xs,
   },
   folderText: {
     fontSize: 12,
@@ -389,6 +460,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
+    marginBottom: spacing.md,
   },
   tagChip: {
     borderRadius: 10,
@@ -398,10 +470,6 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 12,
     fontWeight: "500",
-  },
-  dateText: {
-    fontSize: 12,
-    marginTop: 4,
   },
   content: {
     minHeight: 200,

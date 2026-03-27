@@ -4,6 +4,7 @@ import type { NotesStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { NoteListScreen } from "./NoteListScreen";
 import { NoteDetailScreen } from "./NoteDetailScreen";
+import { NoteEditorScreen } from "./NoteEditorScreen";
 
 const Stack = createNativeStackNavigator<NotesStackParamList>();
 
@@ -27,6 +28,11 @@ export function NotesScreen() {
         name="NoteDetail"
         component={NoteDetailScreen}
         options={{ title: "" }}
+      />
+      <Stack.Screen
+        name="NoteEditor"
+        component={NoteEditorScreen}
+        options={{ title: "Editor" }}
       />
     </Stack.Navigator>
   );
