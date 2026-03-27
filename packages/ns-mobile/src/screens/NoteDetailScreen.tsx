@@ -460,7 +460,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
-    marginBottom: spacing.md,
   },
   tagChip: {
     borderRadius: 10,
@@ -472,6 +471,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   content: {
+    marginTop: spacing.md,
     minHeight: 200,
   },
   emptyContent: {

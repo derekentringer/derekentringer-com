@@ -1,67 +1,37 @@
 # 03 — Search & Organization
 
-**Status:** Not Started
+**Status:** Complete — See [features/03-search-and-organization.md](../features/03-search-and-organization.md)
 **Phase:** 2 — Organization & Sync
 **Priority:** High
+**Completed:** v1.93.29
 
 ## Summary
 
-Full-text search across all notes using SQLite FTS5 (local, offline-capable), plus folder and tag browsing with sort/filter options.
+This feature has been implemented. See the [completed feature doc](../features/03-search-and-organization.md) for full details.
 
-## Requirements
+### What Was Delivered
 
-- **Search**:
-  - Search bar at the top of the Notes tab
-  - Full-text search via SQLite FTS5 (same setup as desktop)
-  - Real-time results as you type (debounced, 200ms)
-  - Results show: note title, folder badge, matching content snippet with highlighted terms
-  - Search includes title, content, and tags
-  - Search works fully offline (queries local SQLite)
-- **Folder browsing**:
-  - Folder list with note counts
-  - Tap a folder to see its notes
-  - Nested folders displayed with indentation
-  - "All Notes" and "Unfiled" sections
-  - Long-press folder for options: rename, delete, move
-- **Tag browsing**:
-  - Tag cloud or tag list with note counts
-  - Tap a tag to filter notes
-  - Multi-tag filtering
-- **Sort & filter**:
-  - Sort by: title (A-Z, Z-A), created date, modified date
-  - Sort control in the header bar
-  - Filter chips for active folder/tag filters; tap to remove
-- **Trash**:
-  - "Trash" section accessible from navigation
-  - List of soft-deleted notes
-  - Swipe to restore or permanently delete
-  - "Empty Trash" option
+1. **Removed Search tab** — reduced to 4 bottom tabs (Dashboard, Notes, AI, Settings)
+2. **Trash management** — accessible from Settings; view trashed notes, restore, permanent delete, empty trash with swipe actions
+3. **Folder management** — create, rename, delete folders from the FolderPicker via long-press and action buttons
 
-## Technical Considerations
+### What Was Deferred
 
-- FTS5 setup (same as desktop):
-  ```sql
-  CREATE VIRTUAL TABLE notes_fts USING fts5(
-    title, content, tags,
-    content='notes',
-    content_rowid='rowid'
-  );
-  ```
-- FTS5 triggers to keep index in sync with `notes` table
-- FTS5 `snippet()` or `highlight()` for search result excerpts
-- All search is local (SQLite) — no API call needed; works offline
-- When online, semantic search results (from API) can supplement FTS5 results
-- expo-sqlite supports FTS5 out of the box
-- Debounce search input to avoid excessive queries on each keystroke
-- FlatList with section headers for folder grouping
+- **FTS5 local search** — deferred to Feature 04 (Sync Engine) since it requires local SQLite data
+- **Tag browsing** — deferred; API-based tag filtering already works in the Notes tab
+- **Semantic search** — deferred to Feature 05 (AI Features)
 
-## Dependencies
+## Original Requirements
 
-- [00 — Project Setup & Auth](00-project-setup-and-auth.md) — needs SQLite database
-- [01 — Note List & Viewer](01-note-list-and-viewer.md) — search results navigate to note viewer
+- **Search**: Full-text search via SQLite FTS5 → **Deferred to Feature 04**
+- **Folder browsing**: Folder list, nested folders, counts → **Already in Feature 01**
+- **Tag browsing**: Tag cloud/list, multi-tag filtering → **Deferred**
+- **Sort & filter**: Sort by title/created/modified → **Already in Feature 01**
+- **Trash**: Soft-deleted notes, restore, permanent delete, empty → **Complete**
+- **Folder management**: Create, rename, delete from mobile → **Complete**
 
-## Open Questions
+## Open Questions (Resolved)
 
-- Should search also hit the API for semantic results when online, or keep it purely local FTS5?
-- Folder management (create, rename, delete) — on mobile, or only from desktop/web?
-- Should recent searches be saved for quick re-access?
+- ~~Should search also hit the API for semantic results when online?~~ → API search already works; local FTS5 will supplement in Feature 04
+- ~~Folder management on mobile, or only from desktop/web?~~ → Added to mobile in FolderPicker
+- ~~Should recent searches be saved?~~ → Deferred

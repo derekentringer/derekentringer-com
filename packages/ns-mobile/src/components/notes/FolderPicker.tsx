@@ -1,10 +1,16 @@
 import React, { useCallback, useMemo } from "react";
-import { View, Text, Pressable, FlatList, StyleSheet } from "react-native";
+import { View, Text, Pressable, FlatList, Alert, StyleSheet } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import * as Haptics from "expo-haptics";
 import type { FolderInfo } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
+import {
+  useCreateFolder,
+  useRenameFolder,
+  useDeleteFolder,
+} from "@/hooks/useFolders";
 
 interface FolderPickerProps {
   bottomSheetRef: React.RefObject<BottomSheetModal | null>;
@@ -18,6 +24,7 @@ interface FlatFolder {
   name: string;
   depth: number;
   count: number;
+  isSystem?: boolean;
 }
 
 function flattenFolderTree(
@@ -46,6 +53,9 @@ export function FolderPicker({
   onSelect,
 }: FolderPickerProps) {
   const themeColors = useThemeColors();
+  const createFolder = useCreateFolder();
+  const renameFolder = useRenameFolder();
+  const deleteFolder = useDeleteFolder();
 
   const flatFolders = useMemo(() => {
     const allNotes: FlatFolder = {
@@ -53,12 +63,14 @@ export function FolderPicker({
       name: "All Notes",
       depth: 0,
       count: 0,
+      isSystem: true,
     };
     const unfiled: FlatFolder = {
       id: "unfiled",
       name: "Unfiled",
       depth: 0,
       count: 0,
+      isSystem: true,
     };
     return [allNotes, unfiled, ...flattenFolderTree(folders)];
   }, [folders]);
@@ -69,6 +81,96 @@ export function FolderPicker({
       bottomSheetRef.current?.dismiss();
     },
     [onSelect, bottomSheetRef],
+  );
+
+  const handleCreateFolder = useCallback(() => {
+    Alert.prompt("New Folder", "Enter folder name:", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Create",
+        onPress: (name?: string) => {
+          if (name?.trim()) {
+            createFolder.mutate(
+              { name: name.trim() },
+              {
+                onSuccess: () => {
+                  Haptics.notificationAsync(
+                    Haptics.NotificationFeedbackType.Success,
+                  );
+                },
+              },
+            );
+          }
+        },
+      },
+    ]);
+  }, [createFolder]);
+
+  const handleLongPress = useCallback(
+    (item: FlatFolder) => {
+      if (item.isSystem || !item.id) return;
+
+      Alert.alert(item.name, undefined, [
+        {
+          text: "Rename",
+          onPress: () => {
+            Alert.prompt("Rename Folder", "Enter new name:", [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Rename",
+                onPress: (newName?: string) => {
+                  if (newName?.trim() && item.id) {
+                    renameFolder.mutate(
+                      { folderId: item.id, newName: newName.trim() },
+                      {
+                        onSuccess: () => {
+                          Haptics.notificationAsync(
+                            Haptics.NotificationFeedbackType.Success,
+                          );
+                        },
+                      },
+                    );
+                  }
+                },
+              },
+            ], "plain-text", item.name);
+          },
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Delete Folder",
+              `Delete "${item.name}"? Notes will be moved to the parent folder.`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Delete",
+                  style: "destructive",
+                  onPress: () => {
+                    if (item.id) {
+                      deleteFolder.mutate(
+                        { folderId: item.id, mode: "move-up" },
+                        {
+                          onSuccess: () => {
+                            Haptics.notificationAsync(
+                              Haptics.NotificationFeedbackType.Success,
+                            );
+                          },
+                        },
+                      );
+                    }
+                  },
+                },
+              ],
+            );
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [renameFolder, deleteFolder],
   );
 
   const renderItem = useCallback(
@@ -85,6 +187,7 @@ export function FolderPicker({
             isSelected && { backgroundColor: `${themeColors.primary}1A` },
           ]}
           onPress={() => handleSelect(item.id)}
+          onLongPress={() => handleLongPress(item)}
           accessibilityRole="button"
         >
           <MaterialCommunityIcons
@@ -120,7 +223,7 @@ export function FolderPicker({
         </Pressable>
       );
     },
-    [selectedFolderId, themeColors, handleSelect],
+    [selectedFolderId, themeColors, handleSelect, handleLongPress],
   );
 
   return (
@@ -131,9 +234,26 @@ export function FolderPicker({
       handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
     >
       <BottomSheetView style={styles.content}>
-        <Text style={[styles.title, { color: themeColors.foreground }]}>
-          Folder
-        </Text>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: themeColors.foreground }]}>
+            Folder
+          </Text>
+          <Pressable
+            style={[styles.newFolderButton, { backgroundColor: `${themeColors.primary}1A` }]}
+            onPress={handleCreateFolder}
+            accessibilityRole="button"
+            accessibilityLabel="Create new folder"
+          >
+            <MaterialCommunityIcons
+              name="folder-plus-outline"
+              size={16}
+              color={themeColors.primary}
+            />
+            <Text style={[styles.newFolderText, { color: themeColors.primary }]}>
+              New Folder
+            </Text>
+          </Pressable>
+        </View>
         <FlatList
           data={flatFolders}
           keyExtractor={(item) => item.id ?? "all"}
@@ -149,11 +269,28 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingBottom: spacing.lg,
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
   title: {
     fontSize: 17,
     fontWeight: "600",
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
+  },
+  newFolderButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  newFolderText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   row: {
     flexDirection: "row",

@@ -126,3 +126,34 @@ export async function fetchTags(): Promise<{
   }>("/notes/tags");
   return data;
 }
+
+export async function fetchTrash(params?: {
+  page?: number;
+  pageSize?: number;
+}): Promise<NoteListResponse> {
+  const queryParams: Record<string, string> = {};
+  if (params?.page !== undefined) queryParams.page = String(params.page);
+  if (params?.pageSize !== undefined)
+    queryParams.pageSize = String(params.pageSize);
+
+  const { data } = await api.get<NoteListResponse>("/notes/trash", {
+    params: queryParams,
+  });
+  return data;
+}
+
+export async function restoreNote(id: string): Promise<Note> {
+  const { data } = await api.patch<{ note: Note }>(`/notes/${id}/restore`);
+  return data.note;
+}
+
+export async function permanentDeleteNote(id: string): Promise<void> {
+  await api.delete(`/notes/${id}/permanent`);
+}
+
+export async function emptyTrash(ids?: string[]): Promise<{ deleted: number }> {
+  const { data } = await api.delete<{ deleted: number }>("/notes/trash", {
+    data: ids ? { ids } : undefined,
+  });
+  return data;
+}
