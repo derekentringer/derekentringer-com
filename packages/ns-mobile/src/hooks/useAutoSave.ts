@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { CreateNoteRequest, UpdateNoteRequest } from "@derekentringer/ns-shared";
-import { useCreateNote, useUpdateNote } from "@/hooks/useNotes";
+import { createNoteLocal, updateNoteLocal } from "@/lib/noteStore";
+import { notifyLocalChange } from "@/lib/syncEngine";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface AutoSaveState {
   isSaving: boolean;
@@ -21,12 +23,10 @@ export function useAutoSave({ noteId, onCreated, delay = 500 }: UseAutoSaveOptio
     error: null,
   });
 
+  const queryClient = useQueryClient();
   const currentNoteId = useRef(noteId);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<CreateNoteRequest | UpdateNoteRequest | null>(null);
-
-  const createNote = useCreateNote();
-  const updateNote = useUpdateNote();
 
   useEffect(() => {
     currentNoteId.current = noteId;
@@ -46,15 +46,15 @@ export function useAutoSave({ noteId, onCreated, delay = 500 }: UseAutoSaveOptio
 
     try {
       if (currentNoteId.current) {
-        await updateNote.mutateAsync({
-          id: currentNoteId.current,
-          data: data as UpdateNoteRequest,
-        });
+        await updateNoteLocal(currentNoteId.current, data as UpdateNoteRequest);
       } else {
-        const created = await createNote.mutateAsync(data as CreateNoteRequest);
+        const created = await createNoteLocal(data as CreateNoteRequest);
         currentNoteId.current = created.id;
         onCreated?.(created.id);
       }
+      notifyLocalChange();
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setState({ isSaving: false, isSaved: true, error: null });
     } catch (err) {
       setState({
@@ -63,7 +63,7 @@ export function useAutoSave({ noteId, onCreated, delay = 500 }: UseAutoSaveOptio
         error: err instanceof Error ? err.message : "Save failed",
       });
     }
-  }, [createNote, updateNote, onCreated]);
+  }, [onCreated, queryClient]);
 
   const save = useCallback(
     (data: CreateNoteRequest | UpdateNoteRequest) => {

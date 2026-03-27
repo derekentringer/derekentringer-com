@@ -1,15 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  fetchFolders,
-  createFolder,
-  renameFolder,
-  deleteFolder,
-} from "@/api/folders";
+  getFolders,
+  createFolderLocal,
+  renameFolderLocal,
+  deleteFolderLocal,
+} from "@/lib/noteStore";
+import { notifyLocalChange } from "@/lib/syncEngine";
 
 export function useFolders() {
   return useQuery({
     queryKey: ["folders"],
-    queryFn: fetchFolders,
+    queryFn: async () => {
+      const folders = await getFolders();
+      return { folders };
+    },
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -18,9 +22,10 @@ export function useCreateFolder() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ name, parentId }: { name: string; parentId?: string }) =>
-      createFolder(name, parentId),
+      createFolderLocal(name, parentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
+      notifyLocalChange();
     },
   });
 }
@@ -34,9 +39,10 @@ export function useRenameFolder() {
     }: {
       folderId: string;
       newName: string;
-    }) => renameFolder(folderId, newName),
+    }) => renameFolderLocal(folderId, newName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
+      notifyLocalChange();
     },
   });
 }
@@ -50,10 +56,11 @@ export function useDeleteFolder() {
     }: {
       folderId: string;
       mode?: "move-up" | "recursive";
-    }) => deleteFolder(folderId, mode),
+    }) => deleteFolderLocal(folderId, mode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
       queryClient.invalidateQueries({ queryKey: ["notes"] });
+      notifyLocalChange();
     },
   });
 }

@@ -1,9 +1,11 @@
 const mockExecAsync = jest.fn().mockResolvedValue(undefined);
+const mockGetFirstAsync = jest.fn().mockResolvedValue(null);
+const mockRunAsync = jest.fn().mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
 const mockOpenDatabaseAsync = jest.fn().mockResolvedValue({
   execAsync: mockExecAsync,
-  getFirstAsync: jest.fn().mockResolvedValue(null),
+  getFirstAsync: mockGetFirstAsync,
   getAllAsync: jest.fn().mockResolvedValue([]),
-  runAsync: jest.fn().mockResolvedValue({ changes: 0, lastInsertRowId: 0 }),
+  runAsync: mockRunAsync,
 });
 
 jest.mock("expo-sqlite", () => ({
@@ -36,7 +38,8 @@ describe("database", () => {
     const { initDatabase } = require("../lib/database");
     await initDatabase();
 
-    expect(mockExecAsync).toHaveBeenCalledTimes(1);
+    // First call is base tables, second is FTS5 migration
+    expect(mockExecAsync).toHaveBeenCalled();
     const sql = mockExecAsync.mock.calls[0][0] as string;
 
     // Verify all tables are created
@@ -94,5 +97,53 @@ describe("database", () => {
     expect(sql).toContain("id INTEGER PRIMARY KEY AUTOINCREMENT");
     expect(sql).toContain("entity_type TEXT NOT NULL");
     expect(sql).toContain("action TEXT NOT NULL");
+  });
+
+  describe("schema versioning", () => {
+    it("runs FTS5 migration when schema_version is missing", async () => {
+      // No schema_version in sync_meta
+      mockGetFirstAsync.mockResolvedValue(null);
+
+      jest.doMock("expo-sqlite", () => ({
+        openDatabaseAsync: mockOpenDatabaseAsync,
+      }));
+      const { initDatabase } = require("../lib/database");
+      await initDatabase();
+
+      // Should have created FTS5 tables
+      const allExecCalls = mockExecAsync.mock.calls.map((c: any[]) => c[0]) as string[];
+      const ftsSql = allExecCalls.find((sql: string) => sql.includes("notes_fts"));
+      expect(ftsSql).toBeDefined();
+      expect(ftsSql).toContain("CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5");
+      expect(ftsSql).toContain("CREATE TABLE IF NOT EXISTS fts_map");
+    });
+
+    it("sets schema_version to 2 after migration", async () => {
+      mockGetFirstAsync.mockResolvedValue(null);
+
+      jest.doMock("expo-sqlite", () => ({
+        openDatabaseAsync: mockOpenDatabaseAsync,
+      }));
+      const { initDatabase } = require("../lib/database");
+      await initDatabase();
+
+      expect(mockRunAsync).toHaveBeenCalledWith(
+        "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('schema_version', ?)",
+        ["2"],
+      );
+    });
+
+    it("skips migration when schema_version is already 2", async () => {
+      mockGetFirstAsync.mockResolvedValue({ value: "2" });
+
+      jest.doMock("expo-sqlite", () => ({
+        openDatabaseAsync: mockOpenDatabaseAsync,
+      }));
+      const { initDatabase } = require("../lib/database");
+      await initDatabase();
+
+      // Should have only 1 execAsync call (base tables), no FTS migration
+      expect(mockExecAsync).toHaveBeenCalledTimes(1);
+    });
   });
 });

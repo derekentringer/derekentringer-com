@@ -1,28 +1,19 @@
 import {
-  useInfiniteQuery,
-  useMutation,
   useQuery,
+  useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+import { getAllNotes, restoreNoteLocal } from "@/lib/noteStore";
 import {
-  fetchTrash,
-  restoreNote,
   permanentDeleteNote,
   emptyTrash,
 } from "@/api/notes";
-
-const TRASH_PAGE_SIZE = 50;
+import { notifyLocalChange } from "@/lib/syncEngine";
 
 export function useTrash() {
-  return useInfiniteQuery({
+  return useQuery({
     queryKey: ["trash"],
-    queryFn: ({ pageParam = 1 }) =>
-      fetchTrash({ page: pageParam, pageSize: TRASH_PAGE_SIZE }),
-    initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) => {
-      const loaded = allPages.reduce((sum, p) => sum + p.notes.length, 0);
-      return loaded < lastPage.total ? allPages.length + 1 : undefined;
-    },
+    queryFn: () => getAllNotes({ deletedOnly: true }),
   });
 }
 
@@ -30,8 +21,8 @@ export function useTrashCount() {
   return useQuery({
     queryKey: ["trash", "count"],
     queryFn: async () => {
-      const data = await fetchTrash({ page: 1, pageSize: 1 });
-      return data.total;
+      const notes = await getAllNotes({ deletedOnly: true });
+      return notes.length;
     },
     staleTime: 60 * 1000,
   });
@@ -40,16 +31,18 @@ export function useTrashCount() {
 export function useRestoreNote() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id }: { id: string }) => restoreNote(id),
+    mutationFn: ({ id }: { id: string }) => restoreNoteLocal(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["trash"] });
       queryClient.invalidateQueries({ queryKey: ["notes"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["folders"] });
+      notifyLocalChange();
     },
   });
 }
 
+// Permanent delete stays API-only (server-side operation)
 export function usePermanentDeleteNote() {
   const queryClient = useQueryClient();
   return useMutation({

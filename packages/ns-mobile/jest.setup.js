@@ -1,3 +1,17 @@
+// Mock expo-crypto
+jest.mock("expo-crypto", () => ({
+  randomUUID: jest.fn(() => "mock-uuid-" + Math.random().toString(36).slice(2, 10)),
+}));
+
+// Mock @react-native-community/netinfo
+jest.mock("@react-native-community/netinfo", () => ({
+  addEventListener: jest.fn(() => jest.fn()),
+  fetch: jest.fn().mockResolvedValue({
+    isConnected: true,
+    isInternetReachable: true,
+  }),
+}));
+
 // Mock expo-secure-store
 jest.mock("expo-secure-store", () => ({
   getItemAsync: jest.fn().mockResolvedValue(null),

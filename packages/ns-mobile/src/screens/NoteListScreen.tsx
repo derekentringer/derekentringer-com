@@ -4,7 +4,6 @@ import {
   TextInput,
   FlatList,
   RefreshControl,
-  ActivityIndicator,
   Pressable,
   Text,
   StyleSheet,
@@ -18,6 +17,7 @@ import type { NotesStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useNotes, useToggleFavorite } from "@/hooks/useNotes";
+import { manualSync } from "@/lib/syncEngine";
 import { useFolders } from "@/hooks/useFolders";
 import { useTags } from "@/hooks/useTags";
 import { NoteListItem } from "@/components/notes/NoteListItem";
@@ -58,10 +58,7 @@ export function NoteListScreen({ navigation }: Props) {
   );
 
   const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
+    data: notes = [],
     isLoading,
     isError,
     refetch,
@@ -72,11 +69,6 @@ export function NoteListScreen({ navigation }: Props) {
   const { data: tagsData } = useTags();
   const toggleFavorite = useToggleFavorite();
 
-  const notes = useMemo(
-    () => data?.pages.flatMap((p) => p.notes) ?? [],
-    [data],
-  );
-
   const handleSearchChange = useCallback((text: string) => {
     setSearch(text);
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -86,15 +78,10 @@ export function NoteListScreen({ navigation }: Props) {
   }, []);
 
   const handleRefresh = useCallback(async () => {
+    manualSync();
     await refetch();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [refetch]);
-
-  const handleEndReached = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleNotePress = useCallback(
     (noteId: string) => {
@@ -117,17 +104,6 @@ export function NoteListScreen({ navigation }: Props) {
     ),
     [handleNotePress],
   );
-
-  const renderFooter = useCallback(() => {
-    if (!isFetchingNextPage) return null;
-    return (
-      <ActivityIndicator
-        style={styles.footer}
-        size="small"
-        color={themeColors.primary}
-      />
-    );
-  }, [isFetchingNextPage, themeColors]);
 
   const hasActiveFilters = !!folderId || selectedTags.length > 0;
 
@@ -311,12 +287,9 @@ export function NoteListScreen({ navigation }: Props) {
           data={notes}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={renderFooter}
           refreshControl={
             <RefreshControl
-              refreshing={isRefetching && !isFetchingNextPage}
+              refreshing={isRefetching}
               onRefresh={handleRefresh}
               tintColor={themeColors.primary}
             />
@@ -436,9 +409,6 @@ const styles = StyleSheet.create({
   },
   skeletonItem: {
     marginBottom: spacing.sm,
-  },
-  footer: {
-    paddingVertical: spacing.md,
   },
   fab: {
     position: "absolute",
