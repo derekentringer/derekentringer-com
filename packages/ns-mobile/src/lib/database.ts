@@ -8,9 +8,12 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   return db;
 }
 
+const CURRENT_SCHEMA_VERSION = 2;
+
 export async function initDatabase(): Promise<void> {
   const database = await getDatabase();
 
+  // v1: base tables
   await database.execAsync(`
     CREATE TABLE IF NOT EXISTS notes (
       id TEXT PRIMARY KEY,
@@ -66,4 +69,63 @@ export async function initDatabase(): Promise<void> {
       value TEXT
     );
   `);
+
+  // Run migrations
+  const version = await getSchemaVersion(database);
+  if (version < 2) {
+    await migrateToV2(database);
+  }
+}
+
+async function getSchemaVersion(database: SQLite.SQLiteDatabase): Promise<number> {
+  const row = await database.getFirstAsync<{ value: string | null }>(
+    "SELECT value FROM sync_meta WHERE key = 'schema_version'",
+  );
+  return row?.value ? parseInt(row.value, 10) : 1;
+}
+
+async function setSchemaVersion(database: SQLite.SQLiteDatabase, version: number): Promise<void> {
+  await database.runAsync(
+    "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('schema_version', ?)",
+    [String(version)],
+  );
+}
+
+async function migrateToV2(database: SQLite.SQLiteDatabase): Promise<void> {
+  // FTS5 virtual table for full-text search
+  await database.execAsync(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+      title,
+      content,
+      tags,
+      content=''
+    );
+
+    CREATE TABLE IF NOT EXISTS fts_map (
+      note_id TEXT PRIMARY KEY,
+      fts_rowid INTEGER NOT NULL
+    );
+  `);
+
+  await setSchemaVersion(database, 2);
+}
+
+export async function resetDatabase(): Promise<void> {
+  const database = await getDatabase();
+  await database.execAsync(`
+    DELETE FROM notes;
+    DELETE FROM folders;
+    DELETE FROM note_versions;
+    DELETE FROM sync_queue;
+    DELETE FROM sync_meta;
+  `);
+  // Drop FTS tables if they exist
+  try {
+    await database.execAsync(`
+      DROP TABLE IF EXISTS fts_map;
+      DROP TABLE IF EXISTS notes_fts;
+    `);
+  } catch {
+    // FTS tables may not exist yet
+  }
 }

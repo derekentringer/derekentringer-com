@@ -49,7 +49,7 @@
 ### Phase 2: Organization & Sync — High Priority
 
 - [x] [03 — Search & Organization](features/03-search-and-organization.md)
-- [ ] [04 — Sync Engine](feature_planning/04-sync-engine.md)
+- [x] [04 — Sync Engine](features/04-sync-engine.md)
 
 ### Phase 3: AI & Audio — Medium Priority
 

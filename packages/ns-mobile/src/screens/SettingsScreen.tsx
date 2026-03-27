@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,12 +8,18 @@ import {
   Alert,
 } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SettingsStackParamList } from "@/navigation/types";
 import useAuthStore from "@/store/authStore";
+import useSyncStore from "@/store/syncStore";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useTrashCount } from "@/hooks/useTrash";
+import { manualSync } from "@/lib/syncEngine";
+import { getSyncQueueCount } from "@/lib/noteStore";
+import { SyncIssuesSheet } from "@/components/sync/SyncIssuesSheet";
+import { useQuery } from "@tanstack/react-query";
 
 type Props = NativeStackScreenProps<SettingsStackParamList, "SettingsHome">;
 
@@ -22,6 +28,16 @@ export function SettingsScreen({ navigation }: Props) {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const { data: trashCount } = useTrashCount();
+  const syncStatus = useSyncStore((s) => s.status);
+  const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
+  const rejections = useSyncStore((s) => s.rejections);
+  const syncIssuesRef = useRef<BottomSheetModal>(null);
+
+  const { data: pendingCount = 0 } = useQuery({
+    queryKey: ["syncQueueCount"],
+    queryFn: getSyncQueueCount,
+    refetchInterval: 10_000,
+  });
 
   const handleLogout = () => {
     Alert.alert("Log Out", "Are you sure you want to log out?", [
@@ -40,6 +56,24 @@ export function SettingsScreen({ navigation }: Props) {
     ]);
   };
 
+  const handleSyncNow = useCallback(() => {
+    manualSync();
+  }, []);
+
+  const formatLastSynced = () => {
+    if (!lastSyncedAt) return "Never";
+    const date = new Date(lastSyncedAt);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 60) return "Just now";
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    return date.toLocaleDateString();
+  };
+
   const styles = makeStyles(themeColors);
 
   return (
@@ -50,6 +84,99 @@ export function SettingsScreen({ navigation }: Props) {
           <Text style={styles.label}>Email</Text>
           <Text style={styles.value}>{user?.email ?? "—"}</Text>
         </View>
+      </View>
+
+      {/* Sync section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Sync</Text>
+        <View style={styles.card}>
+          <View style={styles.syncRow}>
+            <Text style={styles.syncLabel}>Status</Text>
+            <View style={styles.syncValueRow}>
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor:
+                      syncStatus === "idle"
+                        ? "#4ade80"
+                        : syncStatus === "syncing"
+                          ? themeColors.primary
+                          : syncStatus === "offline"
+                            ? themeColors.muted
+                            : themeColors.destructive,
+                  },
+                ]}
+              />
+              <Text style={styles.syncValue}>
+                {syncStatus === "idle"
+                  ? "Up to date"
+                  : syncStatus === "syncing"
+                    ? "Syncing..."
+                    : syncStatus === "offline"
+                      ? "Offline"
+                      : "Error"}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.syncRow}>
+            <Text style={styles.syncLabel}>Last synced</Text>
+            <Text style={styles.syncValue}>{formatLastSynced()}</Text>
+          </View>
+          {pendingCount > 0 ? (
+            <View style={styles.syncRow}>
+              <Text style={styles.syncLabel}>Pending changes</Text>
+              <Text style={[styles.syncValue, { color: themeColors.primary }]}>{pendingCount}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <Pressable
+          style={[styles.menuRow, { marginTop: spacing.sm }]}
+          onPress={handleSyncNow}
+          accessibilityRole="button"
+          accessibilityLabel="Sync now"
+        >
+          <MaterialCommunityIcons
+            name="cloud-sync"
+            size={20}
+            color={themeColors.foreground}
+          />
+          <Text style={styles.menuRowText}>Sync Now</Text>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={themeColors.muted}
+          />
+        </Pressable>
+
+        {rejections.length > 0 ? (
+          <Pressable
+            style={[styles.menuRow, { marginTop: spacing.sm }]}
+            onPress={() => syncIssuesRef.current?.present()}
+            accessibilityRole="button"
+            accessibilityLabel="View sync issues"
+          >
+            <MaterialCommunityIcons
+              name="cloud-alert"
+              size={20}
+              color={themeColors.destructive}
+            />
+            <Text style={styles.menuRowText}>Sync Issues</Text>
+            <View style={styles.menuRowRight}>
+              <View
+                style={[styles.badge, { backgroundColor: themeColors.destructive }]}
+              >
+                <Text style={styles.badgeText}>{rejections.length}</Text>
+              </View>
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={20}
+                color={themeColors.muted}
+              />
+            </View>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.section}>
@@ -93,6 +220,8 @@ export function SettingsScreen({ navigation }: Props) {
       >
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>
+
+      <SyncIssuesSheet bottomSheetRef={syncIssuesRef} />
     </View>
   );
 }
@@ -130,6 +259,30 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
     value: {
       color: themeColors.foreground,
       fontSize: 16,
+    },
+    syncRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: 4,
+    },
+    syncLabel: {
+      color: themeColors.muted,
+      fontSize: 14,
+    },
+    syncValueRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    syncValue: {
+      color: themeColors.foreground,
+      fontSize: 14,
+    },
+    statusDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
     },
     menuRow: {
       flexDirection: "row",

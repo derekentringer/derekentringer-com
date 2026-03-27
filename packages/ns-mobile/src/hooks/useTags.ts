@@ -1,10 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchTags } from "@/api/notes";
+import { getTagsLocal } from "@/lib/noteStore";
 
 export function useTags() {
   return useQuery({
     queryKey: ["tags"],
-    queryFn: fetchTags,
+    queryFn: async () => {
+      const tags = await getTagsLocal();
+      return { tags };
+    },
     staleTime: 5 * 60 * 1000,
   });
 }
