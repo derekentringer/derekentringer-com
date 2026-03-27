@@ -48,7 +48,7 @@
 
 ### Phase 2: Organization & Sync — High Priority
 
-- [ ] [03 — Search & Organization](feature_planning/03-search-and-organization.md)
+- [x] [03 — Search & Organization](features/03-search-and-organization.md)
 - [ ] [04 — Sync Engine](feature_planning/04-sync-engine.md)
 
 ### Phase 3: AI & Audio — Medium Priority
@@ -59,6 +59,7 @@
 ### Phase 4: Polish — Low Priority
 
 - [ ] [06 — Polish & Distribution](feature_planning/06-polish-and-distribution.md)
+- [ ] [08 — Markdown Rendering Parity](feature_planning/08-markdown-rendering-parity.md)
 
 ## Extension Ideas (Future)
 
