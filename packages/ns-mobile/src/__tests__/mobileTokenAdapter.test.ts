@@ -44,6 +44,7 @@ describe("createMobileTokenAdapter", () => {
         headers: {
           "Content-Type": "application/json",
           "X-Client-Type": "mobile",
+          "X-Requested-With": "XMLHttpRequest",
         },
         body: JSON.stringify({ refreshToken: "stored-refresh-token" }),
       });
