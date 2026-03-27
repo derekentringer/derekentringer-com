@@ -1,5 +1,8 @@
 import React from "react";
+import { ActivityIndicator, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { useFonts } from "expo-font";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
@@ -19,6 +22,18 @@ const queryClient = new QueryClient({
 });
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    ...MaterialCommunityIcons.font,
+  });
+
+  if (!fontsLoaded) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   return (
     <GestureHandlerRootView
       style={{ flex: 1, backgroundColor: colors.background }}

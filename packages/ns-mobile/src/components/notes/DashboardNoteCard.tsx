@@ -9,19 +9,21 @@ import { relativeTime } from "@/lib/time";
 interface DashboardNoteCardProps {
   note: Note;
   onPress: (noteId: string) => void;
+  compact?: boolean;
+  folderName?: string;
 }
 
-export function DashboardNoteCard({ note, onPress }: DashboardNoteCardProps) {
+export function DashboardNoteCard({ note, onPress, compact, folderName }: DashboardNoteCardProps) {
   const themeColors = useThemeColors();
   const preview = stripMarkdown(note.content || "");
-  const maxTags = 3;
+  const maxTags = compact ? 2 : 3;
   const visibleTags = note.tags.slice(0, maxTags);
   const overflowCount = note.tags.length - maxTags;
 
   return (
     <Pressable
       style={[
-        styles.card,
+        compact ? styles.tileCard : styles.card,
         {
           backgroundColor: themeColors.card,
           borderColor: themeColors.border,
@@ -81,12 +83,12 @@ export function DashboardNoteCard({ note, onPress }: DashboardNoteCardProps) {
       ) : null}
 
       <View style={styles.footer}>
-        {note.folder ? (
+        {(folderName || note.folder) ? (
           <Text
             style={[styles.folderText, { color: themeColors.muted }]}
             numberOfLines={1}
           >
-            {note.folder}
+            {folderName || note.folder}
           </Text>
         ) : null}
         <Text style={[styles.timeText, { color: themeColors.muted }]}>
@@ -104,6 +106,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: spacing.md,
     marginRight: spacing.sm,
+  },
+  tileCard: {
+    flex: 1,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    padding: spacing.sm,
   },
   title: {
     fontSize: 14,
