@@ -49,12 +49,17 @@ Trash management, folder management from mobile, and bottom tab cleanup. The Sea
 ### Folder Management
 
 - **`src/components/notes/FolderPicker.tsx`** — Enhanced with:
-  - "New Folder" button in header — `Alert.prompt` for name, uses `useCreateFolder` mutation
-  - Long-press on folders — action sheet with Rename and Delete options
-  - Rename — `Alert.prompt` pre-filled with current name, uses `useRenameFolder` mutation
+  - "New Folder" button in header — custom cross-platform `PromptDialog` for name input, uses `useCreateFolder` mutation
+  - Long-press on folders — custom `ActionMenuDialog` modal with Rename and Delete on the left, Cancel on the right
+  - Rename — `PromptDialog` pre-filled with current name, uses `useRenameFolder` mutation
   - Delete — confirmation alert, uses `useDeleteFolder` mutation with `mode: "move-up"` (moves notes to parent)
-  - Haptic feedback on all mutations
+  - Light haptic feedback on long-press and all mutations
   - System folders (All Notes, Unfiled) are excluded from long-press actions
+  - Custom `PromptDialog` and `ActionMenuDialog` components replace `Alert.prompt` (iOS-only) and `Alert.alert` for full cross-platform support and layout control
+
+### Dashboard Polish
+
+- **`src/components/notes/DashboardNoteCard.tsx`** — Folder name and time always pinned to card bottom via flex spacer; tile cards have `minHeight: 120` for consistent sizing
 
 ## Files Summary
 
@@ -68,7 +73,8 @@ Trash management, folder management from mobile, and bottom tab cleanup. The Sea
 | Modified | `src/navigation/types.ts` | Removed Search, added Trash/TrashNoteDetail to SettingsStack |
 | Modified | `src/navigation/AppNavigator.tsx` | Removed Search tab, added SettingsNavigator stack |
 | Modified | `src/screens/SettingsScreen.tsx` | Added Trash row with count badge |
-| Modified | `src/components/notes/FolderPicker.tsx` | Added New Folder, long-press rename/delete |
+| Modified | `src/components/notes/FolderPicker.tsx` | Custom PromptDialog + ActionMenuDialog, long-press rename/delete with haptics |
+| Modified | `src/components/notes/DashboardNoteCard.tsx` | Folder/time pinned to bottom, minHeight on tile cards |
 | Deleted | `src/screens/SearchScreen.tsx` | Removed placeholder |
 
 ## Verification
@@ -95,6 +101,7 @@ Trash management, folder management from mobile, and bottom tab cleanup. The Sea
 | Swipeable list items | Native-feeling interaction using react-native-gesture-handler Swipeable. |
 | Deferred FTS5 search | Requires local SQLite data from sync engine (Feature 04). API-based search already works in Notes tab. |
 | Folder management in FolderPicker | No separate Folder Management screen needed. Long-press is intuitive on mobile. |
+| Custom dialogs over Alert.prompt/Alert.alert | `Alert.prompt` is iOS-only (silent no-op on Android). `Alert.alert` button positioning is OS-controlled. Custom Modal dialogs provide cross-platform support and precise button layout. |
 | "move-up" delete mode | Safest option — notes move to parent folder instead of being orphaned or deleted. |
 
 ## Key Patterns Reused
