@@ -10,16 +10,18 @@ import { DashboardScreen } from "@/screens/DashboardScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { NoteEditorScreen } from "@/screens/NoteEditorScreen";
 import { NotesScreen } from "@/screens/NotesScreen";
-import { SearchScreen } from "@/screens/SearchScreen";
 import { AiScreen } from "@/screens/AiScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
+import { TrashScreen } from "@/screens/TrashScreen";
+import { TrashNoteDetailScreen } from "@/screens/TrashNoteDetailScreen";
 import { useThemeColors } from "@/theme/colors";
 import { colors } from "@/theme";
-import type { DashboardStackParamList } from "./types";
+import type { DashboardStackParamList, SettingsStackParamList } from "./types";
 
 const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
 const DashboardStack = createNativeStackNavigator<DashboardStackParamList>();
+const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
 
 function AuthNavigator() {
   return (
@@ -59,6 +61,36 @@ function DashboardNavigator() {
   );
 }
 
+function SettingsNavigator() {
+  const themeColors = useThemeColors();
+
+  return (
+    <SettingsStack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: themeColors.background },
+        headerTintColor: themeColors.foreground,
+        headerShadowVisible: false,
+      }}
+    >
+      <SettingsStack.Screen
+        name="SettingsHome"
+        component={SettingsScreen}
+        options={{ title: "Settings" }}
+      />
+      <SettingsStack.Screen
+        name="Trash"
+        component={TrashScreen}
+        options={{ title: "Trash" }}
+      />
+      <SettingsStack.Screen
+        name="TrashNoteDetail"
+        component={TrashNoteDetailScreen}
+        options={{ title: "" }}
+      />
+    </SettingsStack.Navigator>
+  );
+}
+
 function MainTabNavigator() {
   const themeColors = useThemeColors();
 
@@ -91,18 +123,6 @@ function MainTabNavigator() {
         }}
       />
       <MainTab.Screen
-        name="Search"
-        component={SearchScreen}
-        options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.foreground,
-          tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="magnify" color={color} size={size} />
-          ),
-        }}
-      />
-      <MainTab.Screen
         name="AI"
         component={AiScreen}
         options={{
@@ -116,11 +136,8 @@ function MainTabNavigator() {
       />
       <MainTab.Screen
         name="Settings"
-        component={SettingsScreen}
+        component={SettingsNavigator}
         options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.foreground,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="cog" color={color} size={size} />
           ),

@@ -3,17 +3,25 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   Alert,
 } from "react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { SettingsStackParamList } from "@/navigation/types";
 import useAuthStore from "@/store/authStore";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
+import { useTrashCount } from "@/hooks/useTrash";
 
-export function SettingsScreen() {
+type Props = NativeStackScreenProps<SettingsStackParamList, "SettingsHome">;
+
+export function SettingsScreen({ navigation }: Props) {
   const themeColors = useThemeColors();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const { data: trashCount } = useTrashCount();
 
   const handleLogout = () => {
     Alert.alert("Log Out", "Are you sure you want to log out?", [
@@ -44,6 +52,40 @@ export function SettingsScreen() {
         </View>
       </View>
 
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Data</Text>
+        <Pressable
+          style={styles.menuRow}
+          onPress={() => navigation.navigate("Trash")}
+          accessibilityRole="button"
+          accessibilityLabel="Open trash"
+        >
+          <MaterialCommunityIcons
+            name="trash-can-outline"
+            size={20}
+            color={themeColors.foreground}
+          />
+          <Text style={styles.menuRowText}>Trash</Text>
+          <View style={styles.menuRowRight}>
+            {trashCount != null && trashCount > 0 ? (
+              <View
+                style={[
+                  styles.badge,
+                  { backgroundColor: themeColors.destructive },
+                ]}
+              >
+                <Text style={styles.badgeText}>{trashCount}</Text>
+              </View>
+            ) : null}
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={20}
+              color={themeColors.muted}
+            />
+          </View>
+        </Pressable>
+      </View>
+
       <TouchableOpacity
         style={styles.logoutButton}
         onPress={handleLogout}
@@ -55,7 +97,7 @@ export function SettingsScreen() {
   );
 }
 
-function makeStyles(themeColors: ReturnType<typeof useThemeColors>) {
+function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useThemeColors>) {
   return StyleSheet.create({
     container: {
       flex: 1,
@@ -88,6 +130,39 @@ function makeStyles(themeColors: ReturnType<typeof useThemeColors>) {
     value: {
       color: themeColors.foreground,
       fontSize: 16,
+    },
+    menuRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: themeColors.card,
+      borderRadius: borderRadius.lg,
+      padding: spacing.md,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      gap: spacing.sm,
+    },
+    menuRowText: {
+      color: themeColors.foreground,
+      fontSize: 16,
+      flex: 1,
+    },
+    menuRowRight: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.xs,
+    },
+    badge: {
+      borderRadius: 10,
+      minWidth: 20,
+      height: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 6,
+    },
+    badgeText: {
+      color: "#ffffff",
+      fontSize: 11,
+      fontWeight: "700",
     },
     logoutButton: {
       backgroundColor: themeColors.destructive,
