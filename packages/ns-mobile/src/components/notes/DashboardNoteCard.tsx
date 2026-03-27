@@ -82,6 +82,7 @@ export function DashboardNoteCard({ note, onPress, compact, folderName }: Dashbo
         </View>
       ) : null}
 
+      <View style={styles.spacer} />
       <View style={styles.footer}>
         {(folderName || note.folder) ? (
           <Text
@@ -109,9 +110,13 @@ const styles = StyleSheet.create({
   },
   tileCard: {
     flex: 1,
+    minHeight: 120,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     padding: spacing.sm,
+  },
+  spacer: {
+    flex: 1,
   },
   title: {
     fontSize: 14,
