@@ -4,12 +4,13 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { UpdateNoteRequest, NoteSortField, SortOrder } from "@derekentringer/ns-shared";
+import type { CreateNoteRequest, UpdateNoteRequest, NoteSortField, SortOrder } from "@derekentringer/ns-shared";
 import {
   fetchNotes,
   fetchNote,
   fetchDashboard,
   fetchFavorites,
+  createNote,
   updateNote,
   deleteNote,
 } from "@/api/notes";
@@ -56,6 +57,19 @@ export function useFavorites() {
   return useQuery({
     queryKey: ["favorites"],
     queryFn: () => fetchFavorites(),
+  });
+}
+
+export function useCreateNote() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateNoteRequest) => createNote(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["tags"] });
+      queryClient.invalidateQueries({ queryKey: ["folders"] });
+    },
   });
 }
 

@@ -8,6 +8,7 @@ import useAuthStore from "@/store/authStore";
 import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
+import { NoteEditorScreen } from "@/screens/NoteEditorScreen";
 import { NotesScreen } from "@/screens/NotesScreen";
 import { SearchScreen } from "@/screens/SearchScreen";
 import { AiScreen } from "@/screens/AiScreen";
@@ -48,6 +49,11 @@ function DashboardNavigator() {
         name="NoteDetail"
         component={NoteDetailScreen}
         options={{ title: "" }}
+      />
+      <DashboardStack.Screen
+        name="NoteEditor"
+        component={NoteEditorScreen}
+        options={{ title: "Editor" }}
       />
     </DashboardStack.Navigator>
   );

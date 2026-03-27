@@ -13,8 +13,8 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
-    "@derekentringer/shared": "*",
     "@derekentringer/ns-shared": "*",
+    "@derekentringer/shared": "*",
     "@expo/vector-icons": "^15.0.3",
     "@gorhom/bottom-sheet": "^5.2.8",
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -26,6 +26,7 @@
     "axios": "^1.13.4",
     "expo": "~54.0.32",
     "expo-blur": "~15.0.8",
+    "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-device": "~8.0.10",
     "expo-font": "~14.0.11",

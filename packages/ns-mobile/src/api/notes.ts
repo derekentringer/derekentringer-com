@@ -1,6 +1,7 @@
 import type {
   Note,
   NoteListResponse,
+  CreateNoteRequest,
   UpdateNoteRequest,
   NoteSortField,
   SortOrder,
@@ -65,6 +66,11 @@ export async function fetchFavorites(params?: {
     params: queryParams,
   });
   return data;
+}
+
+export async function createNote(body: CreateNoteRequest): Promise<Note> {
+  const { data } = await api.post<{ note: Note }>("/notes", body);
+  return data.note;
 }
 
 export async function updateNote(

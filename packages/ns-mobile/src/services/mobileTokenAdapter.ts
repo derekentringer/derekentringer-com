@@ -16,6 +16,7 @@ export function createMobileTokenAdapter(): TokenRefreshAdapter {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
           "X-Client-Type": "mobile",
         },
         body: JSON.stringify({ refreshToken }),

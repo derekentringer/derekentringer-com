@@ -9,6 +9,7 @@ export type NotesStackParamList = {
 export type DashboardStackParamList = {
   DashboardHome: undefined;
   NoteDetail: { noteId: string };
+  NoteEditor: { noteId?: string };
 };
 
 export type MainTabParamList = {
