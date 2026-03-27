@@ -1,12 +1,12 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback } from "react";
 import {
   View,
   FlatList,
   Alert,
   RefreshControl,
-  ActivityIndicator,
   StyleSheet,
 } from "react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { Note } from "@derekentringer/ns-shared";
@@ -31,24 +31,16 @@ type Props = NativeStackScreenProps<SettingsStackParamList, "Trash">;
 export function TrashScreen({ navigation }: Props) {
   const themeColors = useThemeColors();
   const {
-    data,
+    data: notes = [],
     isLoading,
     isError,
     refetch,
     isRefetching,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
   } = useTrash();
   const { data: foldersData } = useFolders();
   const restoreNote = useRestoreNote();
   const permanentDelete = usePermanentDeleteNote();
   const emptyTrashMutation = useEmptyTrash();
-
-  const notes = useMemo(
-    () => data?.pages.flatMap((p) => p.notes) ?? [],
-    [data],
-  );
 
   const handleRestore = useCallback(
     (noteId: string) => {
@@ -66,7 +58,7 @@ export function TrashScreen({ navigation }: Props) {
 
   const handlePermanentDelete = useCallback(
     (noteId: string) => {
-      const note = notes.find((n) => n.id === noteId);
+      const note = notes.find((n: Note) => n.id === noteId);
       Alert.alert(
         "Delete Permanently",
         `"${note?.title || "Untitled"}" will be permanently deleted. This cannot be undone.`,
@@ -123,19 +115,13 @@ export function TrashScreen({ navigation }: Props) {
 
   const handlePress = useCallback(
     (noteId: string) => {
-      const note = notes.find((n) => n.id === noteId);
+      const note = notes.find((n: Note) => n.id === noteId);
       if (note) {
         navigation.navigate("TrashNoteDetail", { note });
       }
     },
     [navigation, notes],
   );
-
-  const handleEndReached = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Set header with Empty Trash button
   React.useEffect(() => {
@@ -212,23 +198,10 @@ export function TrashScreen({ navigation }: Props) {
             tintColor={themeColors.primary}
           />
         }
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={
-          isFetchingNextPage ? (
-            <ActivityIndicator
-              style={styles.footer}
-              color={themeColors.primary}
-            />
-          ) : null
-        }
       />
     </View>
   );
 }
-
-// Import here to use in header
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
 const styles = StyleSheet.create({
   container: {
@@ -246,8 +219,5 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     padding: spacing.xs,
-  },
-  footer: {
-    paddingVertical: spacing.md,
   },
 });

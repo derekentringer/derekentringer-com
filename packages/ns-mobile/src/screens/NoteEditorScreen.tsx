@@ -21,6 +21,7 @@ import { spacing, borderRadius } from "@/theme";
 import { formatCreatedDate, formatModifiedDate } from "@/lib/time";
 import { useNote, useDeleteNote, useUpdateNote } from "@/hooks/useNotes";
 import { useAutoSave } from "@/hooks/useAutoSave";
+import useSyncStore from "@/store/syncStore";
 import { useFolders } from "@/hooks/useFolders";
 import { useTags } from "@/hooks/useTags";
 import { FolderPicker } from "@/components/notes/FolderPicker";
@@ -63,6 +64,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const updateNoteMutation = useUpdateNote();
   const { data: foldersData } = useFolders();
   const { data: tagsData } = useTags();
+  const isOnline = useSyncStore((s) => s.isOnline);
 
   const { save, flush, isSaving, isSaved, error } = useAutoSave({
     noteId,
@@ -286,7 +288,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       {/* Status line */}
       <View style={styles.statusBar}>
         <Text style={[styles.statusText, { color: isSaving ? themeColors.muted : error ? themeColors.error : themeColors.muted }]}>
-          {isSaving ? "Saving..." : error ? "Save failed" : "Saved"}
+          {isSaving ? "Saving..." : error ? "Save failed" : isOnline ? "Saved" : "Saved locally"}
           {noteData ? ` · Created ${formatCreatedDate(noteData.createdAt)} · Modified ${formatModifiedDate(noteData.updatedAt)}` : ""}
         </Text>
       </View>

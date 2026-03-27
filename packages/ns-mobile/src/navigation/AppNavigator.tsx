@@ -1,10 +1,13 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { useQueryClient } from "@tanstack/react-query";
 import useAuthStore from "@/store/authStore";
+import useSyncStore from "@/store/syncStore";
 import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
@@ -14,9 +17,18 @@ import { AiScreen } from "@/screens/AiScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { TrashScreen } from "@/screens/TrashScreen";
 import { TrashNoteDetailScreen } from "@/screens/TrashNoteDetailScreen";
+import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { useThemeColors } from "@/theme/colors";
 import { colors } from "@/theme";
+import { initDatabase } from "@/lib/database";
+import { initSyncEngine, destroySyncEngine } from "@/lib/syncEngine";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { tokenStorage } from "@/services/api";
 import type { DashboardStackParamList, SettingsStackParamList } from "./types";
+
+const API_BASE_URL = __DEV__
+  ? "http://localhost:3004"
+  : "https://ns-api.derekentringer.com";
 
 const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
@@ -147,6 +159,69 @@ function MainTabNavigator() {
   );
 }
 
+function AuthenticatedApp() {
+  const queryClient = useQueryClient();
+  const syncSetStatus = useSyncStore((s) => s.setStatus);
+  const syncSetRejections = useSyncStore((s) => s.setRejections);
+  const isOnline = useSyncStore((s) => s.isOnline);
+  const insets = useSafeAreaInsets();
+  const syncInitialized = useRef(false);
+  const [isReady, setIsReady] = useState(false);
+
+  useNetworkStatus();
+
+  useEffect(() => {
+    if (syncInitialized.current) return;
+    syncInitialized.current = true;
+
+    (async () => {
+      // Initialize local database first — must complete before any queries fire
+      await initDatabase();
+      setIsReady(true);
+
+      // Initialize sync engine
+      await initSyncEngine(
+        API_BASE_URL,
+        () => tokenStorage.getAccessToken(),
+        {
+          onStatusChange: (status, error) => {
+            syncSetStatus(status, error);
+          },
+          onDataChanged: () => {
+            // Invalidate all queries so React Query refetches from SQLite
+            queryClient.invalidateQueries();
+          },
+          onSyncRejections: (rejections, forcePush, discard) => {
+            syncSetRejections(rejections, forcePush, discard);
+          },
+        },
+      );
+    })();
+
+    return () => {
+      destroySyncEngine();
+      syncInitialized.current = false;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!isReady) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.flex}>
+      <OfflineBanner />
+      <View style={{ flex: 1, marginTop: isOnline ? 0 : -insets.top }}>
+        <MainTabNavigator />
+      </View>
+    </View>
+  );
+}
+
 export function AppNavigator() {
   const isLoading = useAuthStore((state) => state.isLoading);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -166,12 +241,15 @@ export function AppNavigator() {
 
   return (
     <NavigationContainer>
-      {isAuthenticated ? <MainTabNavigator /> : <AuthNavigator />}
+      {isAuthenticated ? <AuthenticatedApp /> : <AuthNavigator />}
     </NavigationContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     backgroundColor: colors.background,

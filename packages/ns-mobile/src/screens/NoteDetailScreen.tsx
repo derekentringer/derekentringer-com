@@ -33,6 +33,7 @@ import { ErrorCard } from "@/components/common/ErrorCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { useFolders } from "@/hooks/useFolders";
 import { findFolderName } from "@/lib/folders";
+import { manualSync } from "@/lib/syncEngine";
 
 type Props = NativeStackScreenProps<NotesStackParamList, "NoteDetail">;
 
@@ -99,6 +100,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
   }, [noteId]);
 
   const handleRefresh = useCallback(async () => {
+    manualSync();
     await refetch();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [refetch]);
