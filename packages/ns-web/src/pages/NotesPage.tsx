@@ -215,8 +215,8 @@ export function NotesPage() {
   const folderResize = useResizable({
     direction: "horizontal",
     initialSize: 160,
-    minSize: 60,
-    maxSize: 400,
+    minSize: 0,
+    maxSize: 2000,
     storageKey: "ns-folder-height",
   });
   const sidebarResize = useResizable({

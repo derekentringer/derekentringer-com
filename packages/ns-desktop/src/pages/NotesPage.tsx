@@ -391,8 +391,8 @@ export function NotesPage() {
   const folderResize = useResizable({
     direction: "horizontal",
     initialSize: 200,
-    minSize: 80,
-    maxSize: 400,
+    minSize: 0,
+    maxSize: 2000,
     storageKey: "ns-desktop-folder-height",
   });
 
