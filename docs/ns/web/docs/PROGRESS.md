@@ -121,6 +121,8 @@
 
 - [x] Local file indicator — Notes linked to local files on desktop show a muted file icon in the note list with "Linked to a local file" tooltip, and an info bar in the editor: "This note is linked to a local file on a desktop device"
 
+- [x] Unrestricted sidebar panel resizing — Removed min/max constraints on the folder/favorites panel resize divider so users can drag the notes list area to any height; `folderResize` minSize lowered to 0 (fully collapsible) and maxSize raised to 2000px
+
 - [x] [16 — Dashboard](features/16-dashboard.md) — Rich dashboard replaces empty editor state when no note is selected, showing Quick Actions (New Note, New Recording, Import File), Resume Editing hero card, horizontal-scroll Favorites/Recently Edited/Audio Notes sections with `DashboardNoteCard` (default + hero variants), `DashboardSection` wrapper, `audioMode` field across full stack (shared types → Prisma → API → web), `GET /notes/dashboard` endpoint, scrollbar fade animation via CSS `@property --scroll-thumb-color` with `inherits: true` and 0.3s ease transition, tag browser `transition-[max-height,opacity]` replacing `transition-all` to avoid hover jitter, `cursor-pointer` on suggested tag accept/dismiss buttons and tag suggestion dropdowns, 14 new tests
 
 ### Reliability

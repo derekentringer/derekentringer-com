@@ -136,6 +136,8 @@
 
 - [x] Recording source selector fix — AudioRecorder dropdown source items (`Microphone only` / `Meeting mode`) were `<div>` elements with no click handler; changed to `<button>` elements with `onRecordingSourceChange` callback wired to `updateAiSetting("recordingSource", src)` in NotesPage; users can now switch recording source from the dropdown
 
+- [x] Unrestricted sidebar panel resizing — Removed min/max constraints on the folder/favorites panel resize divider so users can drag the notes list area to any height; `folderResize` minSize lowered to 0 (fully collapsible) and maxSize raised to 2000px
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)
