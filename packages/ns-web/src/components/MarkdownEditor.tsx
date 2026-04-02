@@ -27,8 +27,8 @@ export interface MarkdownEditorHandle {
   insertBold: () => void;
   insertItalic: () => void;
   scrollToLine: (line: number) => void;
-  getCursor: () => number;
-  setCursor: (pos: number) => void;
+  getEditorState: () => { cursor: number; scrollTop: number };
+  setEditorState: (cursor: number, scrollTop: number) => void;
 }
 
 interface MarkdownEditorProps {
@@ -268,6 +268,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const themeCompartment = useRef(new Compartment());
   const cursorCompartment = useRef(new Compartment());
   const pendingCursorRef = useRef<number | null>(null);
+  const pendingScrollRef = useRef<number | null>(null);
 
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
@@ -289,8 +290,14 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         effects: EditorView.scrollIntoView(lineInfo.from, { y: "start" }),
       });
     },
-    getCursor: () => viewRef.current?.state.selection.main.head ?? 0,
-    setCursor: (pos: number) => { pendingCursorRef.current = pos; },
+    getEditorState: () => ({
+      cursor: viewRef.current?.state.selection.main.head ?? 0,
+      scrollTop: viewRef.current?.scrollDOM.scrollTop ?? 0,
+    }),
+    setEditorState: (cursor: number, scrollTop: number) => {
+      pendingCursorRef.current = cursor;
+      pendingScrollRef.current = scrollTop;
+    },
   }));
 
   // Create editor on mount
@@ -377,19 +384,29 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+
+    // Always consume pending state, even if content hasn't changed
+    const cursorPos = pendingCursorRef.current;
+    const scrollTop = pendingScrollRef.current;
+    pendingCursorRef.current = null;
+    pendingScrollRef.current = null;
+
     const current = view.state.doc.toString();
     if (current !== value) {
-      const cursorPos = pendingCursorRef.current;
-      pendingCursorRef.current = null;
       const anchor = cursorPos !== null
         ? Math.min(cursorPos, value.length)
         : 0;
       view.dispatch({
         changes: { from: 0, to: current.length, insert: value },
         selection: { anchor },
-        effects: EditorView.scrollIntoView(anchor, { y: "center" }),
         annotations: Transaction.addToHistory.of(false),
       });
+      // Restore exact scroll position synchronously after dispatch
+      // (must not be deferred — requestMeasure fires on next frame
+      // and can race with user mouse interactions)
+      if (scrollTop !== null) {
+        view.scrollDOM.scrollTop = scrollTop;
+      }
     }
   }, [value]);
 

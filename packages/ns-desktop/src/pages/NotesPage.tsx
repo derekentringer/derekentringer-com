@@ -180,7 +180,7 @@ export function NotesPage() {
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [previewTabId, setPreviewTabId] = useState<string | null>(null);
   const tabNoteCacheRef = useRef<Map<string, Note>>(new Map());
-  const tabEditorStateRef = useRef<Map<string, number>>(new Map());
+  const tabEditorStateRef = useRef<Map<string, { cursor: number; scrollTop: number }>>(new Map());
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -653,10 +653,12 @@ export function NotesPage() {
   }, [isDirtyValue, previewTabId, selectedId]);
 
   function selectNote(note: Note) {
-    // Save outgoing cursor position
+    // Save outgoing editor state (cursor + scroll)
     if (selectedId) {
-      const cursor = editorRef.current?.getCursor() ?? 0;
-      tabEditorStateRef.current.set(selectedId, cursor);
+      const state = editorRef.current?.getEditorState();
+      if (state) {
+        tabEditorStateRef.current.set(selectedId, state);
+      }
     }
 
     if (sidebarView !== "trash" && isDirty() && selectedId) {
@@ -674,10 +676,10 @@ export function NotesPage() {
       );
     }
 
-    // Restore incoming cursor position (consumed atomically by the value-sync effect)
-    const cachedCursor = tabEditorStateRef.current.get(note.id);
-    if (cachedCursor !== undefined) {
-      editorRef.current?.setCursor(cachedCursor);
+    // Restore incoming editor state (consumed atomically by the value-sync effect)
+    const cachedState = tabEditorStateRef.current.get(note.id);
+    if (cachedState) {
+      editorRef.current?.setEditorState(cachedState.cursor, cachedState.scrollTop);
     }
 
     loadedTitleRef.current = note.title;

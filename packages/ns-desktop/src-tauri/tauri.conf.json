@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "NoteSync",
-  "version": "1.93.32",
+  "version": "1.93.33",
   "identifier": "com.derekentringer.notesync",
   "build": {
     "frontendDist": "../dist",
