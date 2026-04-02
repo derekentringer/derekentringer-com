@@ -2316,7 +2316,13 @@ export function NotesPage() {
                     if (cached) {
                       const anchor = Math.min(cached.cursor, view.state.doc.length);
                       view.dispatch({ selection: { anchor } });
-                      view.scrollDOM.scrollTop = cached.scrollTop;
+                      // Defer scroll to after CM's first layout pass — the
+                      // scrollDOM has no dimensions during the mount useEffect
+                      const scrollTarget = cached.scrollTop;
+                      view.requestMeasure({
+                        read() {},
+                        write() { view.scrollDOM.scrollTop = scrollTarget; },
+                      });
                     }
                   }}
                   onChange={(val) => {
