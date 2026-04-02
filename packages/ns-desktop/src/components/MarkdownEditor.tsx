@@ -5,8 +5,8 @@ import {
   forwardRef,
   type Ref,
 } from "react";
-import { EditorView, keymap, placeholder, lineNumbers, drawSelection, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import { EditorState, Compartment, Transaction, type Extension } from "@codemirror/state";
+import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
+import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import {
@@ -28,13 +28,13 @@ export interface MarkdownEditorHandle {
   insertItalic: () => void;
   scrollToLine: (line: number) => void;
   getEditorState: () => { cursor: number; scrollTop: number };
-  setEditorState: (cursor: number, scrollTop: number) => void;
 }
 
 interface MarkdownEditorProps {
   value: string;
   onChange: (value: string) => void;
   onSave?: () => void;
+  onMount?: (view: EditorView) => void;
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
@@ -235,47 +235,6 @@ function buildCursorExtensions(
   ];
 }
 
-// Prevent CodeMirror from scrolling to the cursor when the editor gains focus.
-// WKWebView (Tauri) fires focus before mousedown, so CM's scroll-into-view
-// runs before the click can set the cursor, jumping the viewport to the old
-// cursor position and creating an unintended selection. Uses a scroll event
-// listener to catch the actual CM-triggered scroll regardless of which update
-// cycle it occurs in.
-const preventFocusScroll = ViewPlugin.fromClass(class {
-  private savedScroll: number | null = null;
-  private focusHandler: () => void;
-  private scrollHandler: () => void;
-  private timeout: ReturnType<typeof setTimeout> | null = null;
-
-  constructor(private view: EditorView) {
-    this.focusHandler = () => {
-      this.savedScroll = this.view.scrollDOM.scrollTop;
-      // Only counteract scrolls within 150ms of focus — after that,
-      // any scroll is intentional user interaction
-      if (this.timeout) clearTimeout(this.timeout);
-      this.timeout = setTimeout(() => { this.savedScroll = null; }, 150);
-    };
-    this.scrollHandler = () => {
-      if (this.savedScroll !== null) {
-        const saved = this.savedScroll;
-        this.savedScroll = null;
-        if (this.timeout) { clearTimeout(this.timeout); this.timeout = null; }
-        this.view.scrollDOM.scrollTop = saved;
-      }
-    };
-    this.view.contentDOM.addEventListener("focus", this.focusHandler);
-    this.view.scrollDOM.addEventListener("scroll", this.scrollHandler);
-  }
-
-  update() {}
-
-  destroy() {
-    this.view.contentDOM.removeEventListener("focus", this.focusHandler);
-    this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
-    if (this.timeout) clearTimeout(this.timeout);
-  }
-});
-
 export const MarkdownEditor = forwardRef(function MarkdownEditor(
   props: MarkdownEditorProps,
   ref: Ref<MarkdownEditorHandle>,
@@ -284,6 +243,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     value,
     onChange,
     onSave,
+    onMount,
     placeholder: placeholderText = "Start writing...",
     className,
     style: styleProp,
@@ -308,11 +268,11 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
   const cursorCompartment = useRef(new Compartment());
-  const pendingCursorRef = useRef<number | null>(null);
-  const pendingScrollRef = useRef<number | null>(null);
+  const onMountRef = useRef(onMount);
 
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onMountRef.current = onMount;
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
@@ -335,10 +295,6 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
       cursor: viewRef.current?.state.selection.main.head ?? 0,
       scrollTop: viewRef.current?.scrollDOM.scrollTop ?? 0,
     }),
-    setEditorState: (cursor: number, scrollTop: number) => {
-      pendingCursorRef.current = cursor;
-      pendingScrollRef.current = scrollTop;
-    },
   }));
 
   // Create editor on mount
@@ -405,7 +361,6 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             }
           }),
           EditorState.readOnly.of(readOnly),
-          preventFocusScroll,
           ...extraExtensions,
         ],
       }),
@@ -413,48 +368,25 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     });
 
     viewRef.current = view;
+    onMountRef.current?.(view);
 
     return () => {
       view.destroy();
       viewRef.current = null;
     };
+    // Only recreate on mount/unmount — tab switches use key= to remount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync external value changes
+  // Sync in-place value changes (e.g. auto-refresh from sync)
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-
-    // Always consume pending state, even if content hasn't changed
-    const cursorPos = pendingCursorRef.current;
-    const scrollTop = pendingScrollRef.current;
-    pendingCursorRef.current = null;
-    pendingScrollRef.current = null;
-
     const current = view.state.doc.toString();
     if (current !== value) {
       view.dispatch({
         changes: { from: 0, to: current.length, insert: value },
-        // Only set cursor when explicitly requested (tab switch).
-        // When null (auto-refresh), let CM map cursor naturally so
-        // the user's position isn't disrupted.
-        ...(cursorPos !== null
-          ? { selection: { anchor: Math.min(cursorPos, value.length) } }
-          : {}),
-        annotations: Transaction.addToHistory.of(false),
       });
-      // Only set scroll when explicitly requested (tab switch).
-      // CM6 virtualizes rendering so scroll height may not reflect
-      // the new doc until the next measure cycle — use requestMeasure.
-      // The preventFocusScroll plugin handles the WKWebView
-      // focus-scroll race independently.
-      if (scrollTop !== null) {
-        view.requestMeasure({
-          read() {},
-          write() { view.scrollDOM.scrollTop = scrollTop; },
-        });
-      }
     }
   }, [value]);
 

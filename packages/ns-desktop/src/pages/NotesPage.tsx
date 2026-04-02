@@ -676,17 +676,6 @@ export function NotesPage() {
       );
     }
 
-    // Restore incoming editor state (consumed atomically by the value-sync effect).
-    // Always set — cached values for returning tabs, 0/0 for fresh tabs.
-    // This distinguishes tab switches (pendingRefs set) from auto-refresh
-    // content updates (pendingRefs null) so the value-sync effect knows
-    // whether to apply cursor/scroll or leave them alone.
-    const cachedState = tabEditorStateRef.current.get(note.id);
-    editorRef.current?.setEditorState(
-      cachedState?.cursor ?? 0,
-      cachedState?.scrollTop ?? 0,
-    );
-
     loadedTitleRef.current = note.title;
     loadedContentRef.current = note.content;
     tabNoteCacheRef.current.set(note.id, note);
@@ -3027,8 +3016,17 @@ export function NotesPage() {
                 <div className="flex-1 flex min-h-0">
                   {viewMode !== "preview" && (
                     <MarkdownEditor
+                      key={selectedId ?? ""}
                       ref={editorRef}
                       value={content}
+                      onMount={(view) => {
+                        const cached = selectedId ? tabEditorStateRef.current.get(selectedId) : null;
+                        if (cached) {
+                          const anchor = Math.min(cached.cursor, view.state.doc.length);
+                          view.dispatch({ selection: { anchor } });
+                          view.scrollDOM.scrollTop = cached.scrollTop;
+                        }
+                      }}
                       onChange={(val: string) => setContent(val)}
                       onSave={handleSave}
                       showLineNumbers={showLineNumbers}
