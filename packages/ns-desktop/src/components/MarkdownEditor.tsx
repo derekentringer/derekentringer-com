@@ -5,7 +5,7 @@ import {
   forwardRef,
   type Ref,
 } from "react";
-import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
+import { EditorView, keymap, placeholder, lineNumbers, drawSelection, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { EditorState, Compartment, Transaction, type Extension } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -235,6 +235,33 @@ function buildCursorExtensions(
   ];
 }
 
+// Prevent CodeMirror from scrolling to the cursor when the editor gains focus.
+// WKWebView (Tauri) fires focus before mousedown, so CM's scroll-into-view
+// runs before the click can set the cursor, jumping the viewport to the old
+// cursor position and creating an unintended selection.
+const preventFocusScroll = ViewPlugin.fromClass(class {
+  private savedScroll: number | null = null;
+  private focusHandler: () => void;
+
+  constructor(private view: EditorView) {
+    this.focusHandler = () => {
+      this.savedScroll = this.view.scrollDOM.scrollTop;
+    };
+    this.view.contentDOM.addEventListener("focus", this.focusHandler);
+  }
+
+  update(update: ViewUpdate) {
+    if (this.savedScroll !== null && update.focusChanged && this.view.hasFocus) {
+      this.view.scrollDOM.scrollTop = this.savedScroll;
+      this.savedScroll = null;
+    }
+  }
+
+  destroy() {
+    this.view.contentDOM.removeEventListener("focus", this.focusHandler);
+  }
+});
+
 export const MarkdownEditor = forwardRef(function MarkdownEditor(
   props: MarkdownEditorProps,
   ref: Ref<MarkdownEditorHandle>,
@@ -364,6 +391,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             }
           }),
           EditorState.readOnly.of(readOnly),
+          preventFocusScroll,
           ...extraExtensions,
         ],
       }),
