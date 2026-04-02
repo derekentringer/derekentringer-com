@@ -138,6 +138,8 @@
 
 - [x] Unrestricted sidebar panel resizing — Removed min/max constraints on the folder/favorites panel resize divider so users can drag the notes list area to any height; `folderResize` minSize lowered to 0 (fully collapsible) and maxSize raised to 2000px
 
+- [x] Per-tab cursor position caching — Switching between editor tabs now preserves and restores cursor position and scroll location; `pendingCursorRef` in MarkdownEditor consumed atomically in the value-sync `useEffect` dispatch (same transaction as content replacement, with `scrollIntoView` and `Transaction.addToHistory.of(false)` to prevent undo history leaking between notes); separate `tabEditorStateRef` in NotesPage stores cursor per tab, cleaned up on tab close; cursor clamped to doc length when sync changes content of a background tab
+
 ### Phase 9: Hardening — Low Priority
 
 - [ ] [13 — Architecture Hardening](feature_planning/13-architecture-hardening.md)
