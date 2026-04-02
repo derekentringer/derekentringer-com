@@ -78,6 +78,7 @@ function createDarkTheme(accent: string) {
         color: "#ececec",
         fontFamily: "'Roboto Mono', monospace",
         fontSize: "14px",
+        height: "100%",
       },
       ".cm-content": {
         caretColor: accent,
@@ -142,6 +143,7 @@ function createLightTheme(accent: string) {
         color: "#1a1a2e",
         fontFamily: "'Roboto Mono', monospace",
         fontSize: "14px",
+        height: "100%",
       },
       ".cm-content": {
         caretColor: accent,
