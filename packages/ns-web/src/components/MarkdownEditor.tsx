@@ -6,7 +6,7 @@ import {
   type Ref,
 } from "react";
 import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
-import { EditorState, Compartment, Transaction, type Extension } from "@codemirror/state";
+import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import {
@@ -28,13 +28,13 @@ export interface MarkdownEditorHandle {
   insertItalic: () => void;
   scrollToLine: (line: number) => void;
   getEditorState: () => { cursor: number; scrollTop: number };
-  setEditorState: (cursor: number, scrollTop: number) => void;
 }
 
 interface MarkdownEditorProps {
   value: string;
   onChange: (value: string) => void;
   onSave?: () => void;
+  onMount?: (view: EditorView) => void;
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
@@ -243,6 +243,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     value,
     onChange,
     onSave,
+    onMount,
     placeholder: placeholderText = "Start writing...",
     className,
     style: styleProp,
@@ -267,11 +268,11 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
   const cursorCompartment = useRef(new Compartment());
-  const pendingCursorRef = useRef<number | null>(null);
-  const pendingScrollRef = useRef<number | null>(null);
+  const onMountRef = useRef(onMount);
 
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onMountRef.current = onMount;
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
@@ -294,10 +295,6 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
       cursor: viewRef.current?.state.selection.main.head ?? 0,
       scrollTop: viewRef.current?.scrollDOM.scrollTop ?? 0,
     }),
-    setEditorState: (cursor: number, scrollTop: number) => {
-      pendingCursorRef.current = cursor;
-      pendingScrollRef.current = scrollTop;
-    },
   }));
 
   // Create editor on mount
@@ -371,47 +368,25 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     });
 
     viewRef.current = view;
+    onMountRef.current?.(view);
 
     return () => {
       view.destroy();
       viewRef.current = null;
     };
-    // Only recreate on mount/unmount — external value sync handled below
+    // Only recreate on mount/unmount — tab switches use key= to remount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync external value changes
+  // Sync in-place value changes (e.g. auto-refresh from sync)
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-
-    // Always consume pending state, even if content hasn't changed
-    const cursorPos = pendingCursorRef.current;
-    const scrollTop = pendingScrollRef.current;
-    pendingCursorRef.current = null;
-    pendingScrollRef.current = null;
-
     const current = view.state.doc.toString();
     if (current !== value) {
       view.dispatch({
         changes: { from: 0, to: current.length, insert: value },
-        // Only set cursor when explicitly requested (tab switch).
-        // When null (auto-refresh), let CM map cursor naturally so
-        // the user's position isn't disrupted.
-        ...(cursorPos !== null
-          ? { selection: { anchor: Math.min(cursorPos, value.length) } }
-          : {}),
-        annotations: Transaction.addToHistory.of(false),
       });
-      // Only set scroll when explicitly requested (tab switch).
-      // CM6 virtualizes rendering so scroll height may not reflect
-      // the new doc until the next measure cycle — use requestMeasure.
-      if (scrollTop !== null) {
-        view.requestMeasure({
-          read() {},
-          write() { view.scrollDOM.scrollTop = scrollTop; },
-        });
-      }
     }
   }, [value]);
 
