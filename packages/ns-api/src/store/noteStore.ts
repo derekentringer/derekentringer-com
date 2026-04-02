@@ -634,7 +634,7 @@ export async function listFolders(userId: string): Promise<FolderInfo[]> {
   // Get all folders for user (exclude soft-deleted)
   const allFolders = await prisma.folder.findMany({
     where: { userId, deletedAt: null },
-    orderBy: { sortOrder: "asc" },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
   // Get note counts grouped by folderId
