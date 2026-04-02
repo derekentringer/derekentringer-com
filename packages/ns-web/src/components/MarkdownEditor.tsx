@@ -401,11 +401,16 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         selection: { anchor },
         annotations: Transaction.addToHistory.of(false),
       });
-      // Restore exact scroll position synchronously after dispatch
-      // (must not be deferred — requestMeasure fires on next frame
-      // and can race with user mouse interactions)
+      // Restore scroll after CM finishes measuring the new content.
+      // CM6 virtualizes rendering — the scroll height is an estimate
+      // that may not reflect the new doc length until the next measure
+      // cycle. Setting scrollTop synchronously would clamp to the old
+      // (possibly shorter) document's height.
       if (scrollTop !== null) {
-        view.scrollDOM.scrollTop = scrollTop;
+        view.requestMeasure({
+          read() {},
+          write() { view.scrollDOM.scrollTop = scrollTop; },
+        });
       }
     }
   }, [value]);
