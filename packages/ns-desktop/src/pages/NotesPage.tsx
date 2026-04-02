@@ -180,6 +180,7 @@ export function NotesPage() {
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [previewTabId, setPreviewTabId] = useState<string | null>(null);
   const tabNoteCacheRef = useRef<Map<string, Note>>(new Map());
+  const tabEditorStateRef = useRef<Map<string, number>>(new Map());
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -652,6 +653,12 @@ export function NotesPage() {
   }, [isDirtyValue, previewTabId, selectedId]);
 
   function selectNote(note: Note) {
+    // Save outgoing cursor position
+    if (selectedId) {
+      const cursor = editorRef.current?.getCursor() ?? 0;
+      tabEditorStateRef.current.set(selectedId, cursor);
+    }
+
     if (sidebarView !== "trash" && isDirty() && selectedId) {
       // Optimistically update notes array + tab cache so switching back shows saved content
       const savedId = selectedId;
@@ -665,6 +672,12 @@ export function NotesPage() {
       updateNote(savedId, { title: savedTitle, content: savedContent }).catch((err) =>
         console.error("Failed to save previous note:", err),
       );
+    }
+
+    // Restore incoming cursor position (consumed atomically by the value-sync effect)
+    const cachedCursor = tabEditorStateRef.current.get(note.id);
+    if (cachedCursor !== undefined) {
+      editorRef.current?.setCursor(cachedCursor);
     }
 
     loadedTitleRef.current = note.title;
@@ -917,6 +930,7 @@ export function NotesPage() {
 
       // Clean up cache for closed tab
       tabNoteCacheRef.current.delete(noteId);
+      tabEditorStateRef.current.delete(noteId);
 
       return next;
     });

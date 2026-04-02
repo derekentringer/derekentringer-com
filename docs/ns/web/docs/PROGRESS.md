@@ -123,6 +123,8 @@
 
 - [x] Unrestricted sidebar panel resizing — Removed min/max constraints on the folder/favorites panel resize divider so users can drag the notes list area to any height; `folderResize` minSize lowered to 0 (fully collapsible) and maxSize raised to 2000px
 
+- [x] Per-tab cursor position caching — Switching between editor tabs now preserves and restores cursor position and scroll location; `pendingCursorRef` in MarkdownEditor consumed atomically in the value-sync `useEffect` dispatch (same transaction as content replacement, with `scrollIntoView` and `Transaction.addToHistory.of(false)` to prevent undo history leaking between notes); separate `tabEditorStateRef` in NotesPage stores cursor per tab, cleaned up on tab close; cursor clamped to doc length when sync changes content of a background tab
+
 - [x] [16 — Dashboard](features/16-dashboard.md) — Rich dashboard replaces empty editor state when no note is selected, showing Quick Actions (New Note, New Recording, Import File), Resume Editing hero card, horizontal-scroll Favorites/Recently Edited/Audio Notes sections with `DashboardNoteCard` (default + hero variants), `DashboardSection` wrapper, `audioMode` field across full stack (shared types → Prisma → API → web), `GET /notes/dashboard` endpoint, scrollbar fade animation via CSS `@property --scroll-thumb-color` with `inherits: true` and 0.3s ease transition, tag browser `transition-[max-height,opacity]` replacing `transition-all` to avoid hover jitter, `cursor-pointer` on suggested tag accept/dismiss buttons and tag suggestion dropdowns, 14 new tests
 
 ### Reliability

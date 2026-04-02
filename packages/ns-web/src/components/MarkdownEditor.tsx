@@ -6,7 +6,7 @@ import {
   type Ref,
 } from "react";
 import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
-import { EditorState, Compartment, type Extension } from "@codemirror/state";
+import { EditorState, Compartment, Transaction, type Extension } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import {
@@ -27,6 +27,8 @@ export interface MarkdownEditorHandle {
   insertBold: () => void;
   insertItalic: () => void;
   scrollToLine: (line: number) => void;
+  getCursor: () => number;
+  setCursor: (pos: number) => void;
 }
 
 interface MarkdownEditorProps {
@@ -265,6 +267,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
   const cursorCompartment = useRef(new Compartment());
+  const pendingCursorRef = useRef<number | null>(null);
 
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
@@ -286,6 +289,8 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         effects: EditorView.scrollIntoView(lineInfo.from, { y: "start" }),
       });
     },
+    getCursor: () => viewRef.current?.state.selection.main.head ?? 0,
+    setCursor: (pos: number) => { pendingCursorRef.current = pos; },
   }));
 
   // Create editor on mount
@@ -374,8 +379,16 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     if (!view) return;
     const current = view.state.doc.toString();
     if (current !== value) {
+      const cursorPos = pendingCursorRef.current;
+      pendingCursorRef.current = null;
+      const anchor = cursorPos !== null
+        ? Math.min(cursorPos, value.length)
+        : 0;
       view.dispatch({
         changes: { from: 0, to: current.length, insert: value },
+        selection: { anchor },
+        effects: EditorView.scrollIntoView(anchor, { y: "center" }),
+        annotations: Transaction.addToHistory.of(false),
       });
     }
   }, [value]);

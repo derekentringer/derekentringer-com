@@ -112,6 +112,7 @@ export function NotesPage() {
   const [previewTabId, setPreviewTabId] = useState<string | null>(null);
   // Cache note data for open tabs so folder navigation doesn't lose them
   const tabNoteCacheRef = useRef<Map<string, Note>>(new Map());
+  const tabEditorStateRef = useRef<Map<string, number>>(new Map());
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isDirty, setIsDirty] = useState(false);
@@ -620,6 +621,12 @@ export function NotesPage() {
   }
 
   function selectNote(note: Note) {
+    // Save outgoing cursor position
+    if (selectedId) {
+      const cursor = editorRef.current?.getCursor() ?? 0;
+      tabEditorStateRef.current.set(selectedId, cursor);
+    }
+
     if (isDirty && selectedId) {
       // Optimistically update notes array + tab cache so switching back shows saved content
       const savedId = selectedId;
@@ -636,6 +643,13 @@ export function NotesPage() {
         showError("Failed to save changes to previous note");
       });
     }
+
+    // Restore incoming cursor position (consumed atomically by the value-sync effect)
+    const cachedCursor = tabEditorStateRef.current.get(note.id);
+    if (cachedCursor !== undefined) {
+      editorRef.current?.setCursor(cachedCursor);
+    }
+
     loadedTitleRef.current = note.title;
     loadedContentRef.current = note.content;
     // Update tab note cache so folder navigation doesn't lose tab data
@@ -744,6 +758,7 @@ export function NotesPage() {
 
       // Clean up cache for closed tab
       tabNoteCacheRef.current.delete(noteId);
+      tabEditorStateRef.current.delete(noteId);
 
       return next;
     });
