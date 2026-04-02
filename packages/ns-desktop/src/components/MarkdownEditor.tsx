@@ -238,27 +238,41 @@ function buildCursorExtensions(
 // Prevent CodeMirror from scrolling to the cursor when the editor gains focus.
 // WKWebView (Tauri) fires focus before mousedown, so CM's scroll-into-view
 // runs before the click can set the cursor, jumping the viewport to the old
-// cursor position and creating an unintended selection.
+// cursor position and creating an unintended selection. Uses a scroll event
+// listener to catch the actual CM-triggered scroll regardless of which update
+// cycle it occurs in.
 const preventFocusScroll = ViewPlugin.fromClass(class {
   private savedScroll: number | null = null;
   private focusHandler: () => void;
+  private scrollHandler: () => void;
+  private timeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private view: EditorView) {
     this.focusHandler = () => {
       this.savedScroll = this.view.scrollDOM.scrollTop;
+      // Only counteract scrolls within 150ms of focus — after that,
+      // any scroll is intentional user interaction
+      if (this.timeout) clearTimeout(this.timeout);
+      this.timeout = setTimeout(() => { this.savedScroll = null; }, 150);
+    };
+    this.scrollHandler = () => {
+      if (this.savedScroll !== null) {
+        const saved = this.savedScroll;
+        this.savedScroll = null;
+        if (this.timeout) { clearTimeout(this.timeout); this.timeout = null; }
+        this.view.scrollDOM.scrollTop = saved;
+      }
     };
     this.view.contentDOM.addEventListener("focus", this.focusHandler);
+    this.view.scrollDOM.addEventListener("scroll", this.scrollHandler);
   }
 
-  update(update: ViewUpdate) {
-    if (this.savedScroll !== null && update.focusChanged && this.view.hasFocus) {
-      this.view.scrollDOM.scrollTop = this.savedScroll;
-      this.savedScroll = null;
-    }
-  }
+  update() {}
 
   destroy() {
     this.view.contentDOM.removeEventListener("focus", this.focusHandler);
+    this.view.scrollDOM.removeEventListener("scroll", this.scrollHandler);
+    if (this.timeout) clearTimeout(this.timeout);
   }
 });
 
@@ -428,18 +442,18 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         selection: { anchor },
         annotations: Transaction.addToHistory.of(false),
       });
-      // Restore scroll after CM finishes measuring the new content.
-      // CM6 virtualizes rendering — the scroll height is an estimate
-      // that may not reflect the new doc length until the next measure
-      // cycle. Setting scrollTop synchronously would clamp to the old
-      // (possibly shorter) document's height. The preventFocusScroll
-      // plugin handles the WKWebView focus-scroll race independently.
-      if (scrollTop !== null) {
-        view.requestMeasure({
-          read() {},
-          write() { view.scrollDOM.scrollTop = scrollTop; },
-        });
-      }
+      // Always restore scroll after CM finishes measuring new content.
+      // CM6 virtualizes rendering — scroll height is an estimate that
+      // may not reflect the new doc until the next measure cycle.
+      // Uses cached value or 0 (fresh note) to prevent the previous
+      // tab's scroll position from leaking into the new tab.
+      // The preventFocusScroll plugin handles the WKWebView
+      // focus-scroll race independently.
+      const targetScroll = scrollTop ?? 0;
+      view.requestMeasure({
+        read() {},
+        write() { view.scrollDOM.scrollTop = targetScroll; },
+      });
     }
   }, [value]);
 

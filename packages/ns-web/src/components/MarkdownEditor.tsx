@@ -401,17 +401,16 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         selection: { anchor },
         annotations: Transaction.addToHistory.of(false),
       });
-      // Restore scroll after CM finishes measuring the new content.
-      // CM6 virtualizes rendering — the scroll height is an estimate
-      // that may not reflect the new doc length until the next measure
-      // cycle. Setting scrollTop synchronously would clamp to the old
-      // (possibly shorter) document's height.
-      if (scrollTop !== null) {
-        view.requestMeasure({
-          read() {},
-          write() { view.scrollDOM.scrollTop = scrollTop; },
-        });
-      }
+      // Always restore scroll after CM finishes measuring new content.
+      // CM6 virtualizes rendering — scroll height is an estimate that
+      // may not reflect the new doc until the next measure cycle.
+      // Uses cached value or 0 (fresh note) to prevent the previous
+      // tab's scroll position from leaking into the new tab.
+      const targetScroll = scrollTop ?? 0;
+      view.requestMeasure({
+        read() {},
+        write() { view.scrollDOM.scrollTop = targetScroll; },
+      });
     }
   }, [value]);
 
