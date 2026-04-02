@@ -676,11 +676,16 @@ export function NotesPage() {
       );
     }
 
-    // Restore incoming editor state (consumed atomically by the value-sync effect)
+    // Restore incoming editor state (consumed atomically by the value-sync effect).
+    // Always set — cached values for returning tabs, 0/0 for fresh tabs.
+    // This distinguishes tab switches (pendingRefs set) from auto-refresh
+    // content updates (pendingRefs null) so the value-sync effect knows
+    // whether to apply cursor/scroll or leave them alone.
     const cachedState = tabEditorStateRef.current.get(note.id);
-    if (cachedState) {
-      editorRef.current?.setEditorState(cachedState.cursor, cachedState.scrollTop);
-    }
+    editorRef.current?.setEditorState(
+      cachedState?.cursor ?? 0,
+      cachedState?.scrollTop ?? 0,
+    );
 
     loadedTitleRef.current = note.title;
     loadedContentRef.current = note.content;

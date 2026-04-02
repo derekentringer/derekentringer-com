@@ -393,24 +393,25 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
 
     const current = view.state.doc.toString();
     if (current !== value) {
-      const anchor = cursorPos !== null
-        ? Math.min(cursorPos, value.length)
-        : 0;
       view.dispatch({
         changes: { from: 0, to: current.length, insert: value },
-        selection: { anchor },
+        // Only set cursor when explicitly requested (tab switch).
+        // When null (auto-refresh), let CM map cursor naturally so
+        // the user's position isn't disrupted.
+        ...(cursorPos !== null
+          ? { selection: { anchor: Math.min(cursorPos, value.length) } }
+          : {}),
         annotations: Transaction.addToHistory.of(false),
       });
-      // Always restore scroll after CM finishes measuring new content.
-      // CM6 virtualizes rendering — scroll height is an estimate that
-      // may not reflect the new doc until the next measure cycle.
-      // Uses cached value or 0 (fresh note) to prevent the previous
-      // tab's scroll position from leaking into the new tab.
-      const targetScroll = scrollTop ?? 0;
-      view.requestMeasure({
-        read() {},
-        write() { view.scrollDOM.scrollTop = targetScroll; },
-      });
+      // Only set scroll when explicitly requested (tab switch).
+      // CM6 virtualizes rendering so scroll height may not reflect
+      // the new doc until the next measure cycle — use requestMeasure.
+      if (scrollTop !== null) {
+        view.requestMeasure({
+          read() {},
+          write() { view.scrollDOM.scrollTop = scrollTop; },
+        });
+      }
     }
   }, [value]);
 
