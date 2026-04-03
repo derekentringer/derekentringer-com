@@ -147,17 +147,22 @@ export function ResizableImage({
               setCtxMenu(null);
               try {
                 const { save } = await import("@tauri-apps/plugin-dialog");
-                const { writeFile } = await import("@tauri-apps/plugin-fs");
-                const filename = src.split("/").pop() || "image";
-                const savePath = await save({ defaultPath: filename });
+                const { writeBinaryFile } = await import("../lib/tauriFs.ts");
+                const rawName = src.split("/").pop() || "image.jpg";
+                const ext = rawName.includes(".") ? rawName.split(".").pop()! : "jpg";
+                const filename = rawName.includes(".") ? rawName : `${rawName}.${ext}`;
+                const extMap: Record<string, string> = { jpg: "JPEG Image", jpeg: "JPEG Image", png: "PNG Image", webp: "WebP Image", gif: "GIF Image" };
+                const savePath = await save({
+                  defaultPath: filename,
+                  filters: [{ name: extMap[ext] || "Image", extensions: [ext] }],
+                });
                 if (savePath) {
                   const res = await fetch(src);
                   const buffer = await res.arrayBuffer();
-                  await writeFile(savePath, new Uint8Array(buffer));
+                  await writeBinaryFile(savePath, new Uint8Array(buffer));
                 }
-              } catch {
-                // Fallback: open in browser
-                window.open(src, "_blank");
+              } catch (err) {
+                console.error("Image download failed:", err);
               }
             }}
             className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
