@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { parseAltDimensions, updateImageDimensions } from "../lib/imageMarkdown.ts";
 import { ImageLightbox } from "./ImageLightbox.tsx";
 
@@ -19,13 +19,32 @@ export function ResizableImage({
 }: ResizableImageProps) {
   const { text: cleanAlt, width, height } = parseAltDimensions(alt);
   const imgRef = useRef<HTMLImageElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [previewWidth, setPreviewWidth] = useState<number | null>(null);
   const [previewHeight, setPreviewHeight] = useState<number | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   const displayWidth = previewWidth ?? width ?? undefined;
   const displayHeight = previewHeight ?? height ?? undefined;
+
+  // Dismiss context menu on click outside
+  useEffect(() => {
+    if (!ctxMenu) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setCtxMenu(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [ctxMenu]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  }, []);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -58,7 +77,6 @@ export function ResizableImage({
         document.body.style.userSelect = "";
         setIsResizing(false);
 
-        // Commit dimensions to markdown
         setPreviewWidth((w) => {
           setPreviewHeight((h) => {
             if (w !== null && h !== null) {
@@ -77,6 +95,8 @@ export function ResizableImage({
     [content, imageIndex, onContentChange],
   );
 
+  const fullAlt = alt;
+
   return (
     <>
       <span
@@ -90,6 +110,7 @@ export function ResizableImage({
           width={displayWidth}
           height={displayHeight}
           onDoubleClick={() => setLightboxOpen(true)}
+          onContextMenu={handleContextMenu}
           className="cursor-pointer"
           style={
             displayWidth
@@ -103,6 +124,38 @@ export function ResizableImage({
           title="Drag to resize"
         />
       </span>
+      {ctxMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          <button
+            onClick={() => { navigator.clipboard.writeText(src); setCtxMenu(null); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            Copy Image URL
+          </button>
+          <button
+            onClick={() => { navigator.clipboard.writeText(`![${fullAlt}](${src})`); setCtxMenu(null); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            Copy Markdown Link
+          </button>
+          <button
+            onClick={() => {
+              const a = document.createElement("a");
+              a.href = src;
+              a.download = "";
+              a.click();
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            Download
+          </button>
+        </div>
+      )}
       {lightboxOpen && (
         <ImageLightbox
           src={src}
