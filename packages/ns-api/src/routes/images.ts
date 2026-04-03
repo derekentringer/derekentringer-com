@@ -130,7 +130,7 @@ export default async function imageRoutes(fastify: FastifyInstance) {
 
       const imageId = randomUUID();
       const ext = MIME_TO_EXT[file.mimetype] || "bin";
-      const r2Key = buildR2Key(userId, imageId, ext);
+      const r2Key = buildR2Key(imageId, ext);
 
       let r2Url: string;
       try {
