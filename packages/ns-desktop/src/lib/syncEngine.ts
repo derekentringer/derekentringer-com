@@ -8,8 +8,10 @@ import {
   fetchNoteById,
   upsertNoteFromRemote,
   upsertFolderFromRemote,
+  upsertImageFromRemote,
   softDeleteNoteFromRemote,
   softDeleteFolderFromRemote,
+  softDeleteImageFromRemote,
   getNoteLocalPath,
   getNoteLocalFileHash,
 } from "./db.ts";
@@ -23,6 +25,7 @@ import type {
   SyncPushResponse,
   Note,
   FolderSyncData,
+  ImageSyncData,
 } from "@derekentringer/ns-shared";
 
 const SSE_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3004";
@@ -357,16 +360,48 @@ async function pushChanges(id: string): Promise<void> {
 
   for (const entry of deduped.values()) {
     const [, action] = entry.action.split(":");
-    const entityType = entry.entity_type as "note" | "folder";
+    const entityType = entry.entity_type as "note" | "folder" | "image";
 
-    let data: Note | FolderSyncData | null = null;
+    let data: Note | FolderSyncData | ImageSyncData | null = null;
 
     if (action !== "delete" && entityType === "note") {
       const note = await fetchNoteById(entry.entity_id);
       if (note) data = note;
     } else if (action !== "delete" && entityType === "folder") {
-      // Read folder data from local DB for push
       data = await readLocalFolder(entry.entity_id);
+    } else if (entityType === "image" && action !== "delete") {
+      // Pending upload: upload binary via API, then update local DB
+      if (entry.payload) {
+        try {
+          const { readCachedImage } = await import("./imageCacheService.ts");
+          const { fetchImageById, updateImageAfterUpload } = await import("./db.ts");
+          const imageRow = await fetchImageById(entry.entity_id);
+          if (imageRow) {
+            const cachedData = await readCachedImage(entry.entity_id, imageRow.mimeType);
+            if (cachedData) {
+              const file = new File([new Uint8Array(cachedData) as BlobPart], imageRow.filename, { type: imageRow.mimeType });
+              const { uploadImage } = await import("../api/imageApi.ts");
+              const result = await uploadImage(imageRow.noteId, file);
+              await updateImageAfterUpload(entry.entity_id, "", result.r2Url);
+              // Update note content: replace placeholder URL with real R2 URL
+              const placeholder = `notesync-local://${entry.entity_id}`;
+              if (imageRow.r2Url === placeholder) {
+                const noteData = await fetchNoteById(imageRow.noteId);
+                if (noteData && noteData.content.includes(placeholder)) {
+                  const { updateNote } = await import("./db.ts");
+                  await updateNote(imageRow.noteId, {
+                    content: noteData.content.replaceAll(placeholder, result.r2Url),
+                  });
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to upload queued image:", err);
+        }
+      }
+      // Image was uploaded via API — server already has it, skip sync push
+      continue;
     }
 
     changes.push({
@@ -540,6 +575,9 @@ async function pullChanges(id: string): Promise<void> {
     } else if (change.type === "folder") {
       await applyFolderChange(change);
       hadChanges = true;
+    } else if (change.type === "image") {
+      await applyImageChange(change);
+      hadChanges = true;
     }
   }
 
@@ -605,6 +643,17 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
   const folderData = change.data as FolderSyncData | null;
   if (!folderData) return;
   await upsertFolderFromRemote(folderData);
+}
+
+async function applyImageChange(change: SyncChange): Promise<void> {
+  if (change.action === "delete") {
+    await softDeleteImageFromRemote(change.id);
+    return;
+  }
+
+  const imageData = change.data as ImageSyncData | null;
+  if (!imageData) return;
+  await upsertImageFromRemote(imageData);
 }
 
 async function readLocalFolder(folderId: string): Promise<FolderSyncData | null> {

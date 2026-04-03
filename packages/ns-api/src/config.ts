@@ -17,6 +17,10 @@ export function loadConfig(): Config {
       "ANTHROPIC_API_KEY",
       "VOYAGE_API_KEY",
       "OPENAI_API_KEY",
+      "R2_ACCOUNT_ID",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "R2_BUCKET_NAME",
     ];
     for (const name of required) {
       if (!process.env[name]) {
@@ -48,6 +52,11 @@ export function loadConfig(): Config {
     openaiApiKey: process.env.OPENAI_API_KEY || "",
     resendApiKey: process.env.RESEND_API_KEY || "",
     appUrl: process.env.APP_URL || "http://localhost:3005",
+    r2AccountId: process.env.R2_ACCOUNT_ID || "",
+    r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || "",
+    r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+    r2BucketName: process.env.R2_BUCKET_NAME || "",
+    r2PublicUrl: process.env.R2_PUBLIC_URL || "",
   };
 
   return cachedConfig;
@@ -67,6 +76,11 @@ export interface Config {
   openaiApiKey: string;
   resendApiKey: string;
   appUrl: string;
+  r2AccountId: string;
+  r2AccessKeyId: string;
+  r2SecretAccessKey: string;
+  r2BucketName: string;
+  r2PublicUrl: string;
 }
 
 /** Reset cached config (for testing only) */

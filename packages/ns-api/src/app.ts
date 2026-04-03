@@ -19,6 +19,7 @@ import aiRoutes from "./routes/ai.js";
 import adminRoutes from "./routes/admin.js";
 import totpRoutes from "./routes/totp.js";
 import syncRoutes from "./routes/sync.js";
+import imageRoutes from "./routes/images.js";
 
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -102,6 +103,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(adminRoutes, { prefix: "/admin" });
   app.register(totpRoutes, { prefix: "/auth/totp" });
   app.register(syncRoutes, { prefix: "/sync" });
+  app.register(imageRoutes, { prefix: "/images" });
 
 
   app.get("/robots.txt", async (_request, reply) => {

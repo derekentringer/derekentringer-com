@@ -13,6 +13,7 @@ import { getNote, updateNote, createNote, findRelevantNotes } from "../store/not
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
+import { getImagesByNoteIds } from "../store/imageStore.js";
 import {
   isEmbeddingEnabled,
   setEmbeddingEnabled,
@@ -218,6 +219,23 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       (async () => {
         try {
           const relevantNotes = await findRelevantNotes(userId, question, 5);
+
+          // Enrich with image descriptions for AI context
+          if (relevantNotes.length > 0) {
+            const noteIds = relevantNotes.map((n) => n.id);
+            const images = await getImagesByNoteIds(userId, noteIds);
+            const descByNote = new Map<string, string[]>();
+            for (const img of images) {
+              if (img.aiDescription) {
+                const arr = descByNote.get(img.noteId) ?? [];
+                arr.push(img.aiDescription);
+                descByNote.set(img.noteId, arr);
+              }
+            }
+            for (const note of relevantNotes) {
+              (note as { imageDescriptions?: string[] }).imageDescriptions = descByNote.get(note.id);
+            }
+          }
 
           const sources = relevantNotes.map((n) => ({
             id: n.id,
