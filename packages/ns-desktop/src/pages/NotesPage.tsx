@@ -2005,7 +2005,8 @@ export function NotesPage() {
           });
           const otherPaths = paths.filter((p: string) => !imagePaths.includes(p));
 
-          if (imagePaths.length > 0 && selectedId) {
+          const currentNoteId = selectedIdRef.current;
+          if (imagePaths.length > 0 && currentNoteId) {
             // Handle image drops
             (async () => {
               try {
@@ -2017,7 +2018,7 @@ export function NotesPage() {
                   const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
                   const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
                   const file = new File([data.buffer], name, { type: mimeMap[ext] || "image/png" });
-                  const result = await uploadImage(selectedId, file);
+                  const result = await uploadImage(currentNoteId, file);
                   // Insert markdown at end of content
                   const imgName = name.replace(/\.[^.]+$/, "");
                   setContent((prev) => prev + `\n![${imgName}](${result.r2Url})`);
