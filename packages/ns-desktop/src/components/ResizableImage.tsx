@@ -147,7 +147,7 @@ export function ResizableImage({
               setCtxMenu(null);
               try {
                 const { save } = await import("@tauri-apps/plugin-dialog");
-                const { writeBinaryFile } = await import("../lib/tauriFs.ts");
+                const { writeFile } = await import("@tauri-apps/plugin-fs");
                 const rawName = src.split("/").pop() || "image.jpg";
                 const ext = rawName.includes(".") ? rawName.split(".").pop()! : "jpg";
                 const filename = rawName.includes(".") ? rawName : `${rawName}.${ext}`;
@@ -156,10 +156,20 @@ export function ResizableImage({
                   defaultPath: filename,
                   filters: [{ name: extMap[ext] || "Image", extensions: [ext] }],
                 });
-                if (savePath) {
-                  const res = await fetch(src);
-                  const buffer = await res.arrayBuffer();
-                  await writeBinaryFile(savePath, new Uint8Array(buffer));
+                if (savePath && imgRef.current) {
+                  // Draw loaded image to canvas to get binary data (avoids CORS fetch issues)
+                  const img = imgRef.current;
+                  const canvas = document.createElement("canvas");
+                  canvas.width = img.naturalWidth;
+                  canvas.height = img.naturalHeight;
+                  const ctx = canvas.getContext("2d")!;
+                  ctx.drawImage(img, 0, 0);
+                  const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/png" };
+                  const blob = await new Promise<Blob>((resolve) =>
+                    canvas.toBlob((b) => resolve(b!), mimeMap[ext] || "image/png"),
+                  );
+                  const buffer = await blob.arrayBuffer();
+                  await writeFile(savePath, new Uint8Array(buffer));
                 }
               } catch (err) {
                 console.error("Image download failed:", err);
