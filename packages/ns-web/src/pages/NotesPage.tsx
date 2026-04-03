@@ -1319,16 +1319,35 @@ export function NotesPage() {
   }
 
   function handleFileDrop(e: React.DragEvent) {
+    e.preventDefault();
     setIsDragOver(false);
-    // Let image files pass through to the CM6 imageUploadExtension
     const files = Array.from(e.dataTransfer.files);
     const imageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+    const imageFiles = files.filter((f) => imageTypes.has(f.type));
     const nonImageFiles = files.filter((f) => !imageTypes.has(f.type));
-    if (nonImageFiles.length === 0) return; // All images — let CM6 handle
-    e.preventDefault();
-    const dt = new DataTransfer();
-    nonImageFiles.forEach((f) => dt.items.add(f));
-    handleImportFiles(dt.files, true);
+
+    // Upload image files directly
+    if (imageFiles.length > 0 && selectedId) {
+      (async () => {
+        try {
+          const { uploadImage } = await import("../api/imageApi.ts");
+          for (const file of imageFiles) {
+            const result = await uploadImage(selectedId, file);
+            const name = file.name.replace(/\.[^.]+$/, "");
+            setContent((prev) => prev + `\n![${name}](${result.r2Url})`);
+          }
+        } catch {
+          showError("Failed to upload image");
+        }
+      })();
+    }
+
+    // Import text files
+    if (nonImageFiles.length > 0) {
+      const dt = new DataTransfer();
+      nonImageFiles.forEach((f) => dt.items.add(f));
+      handleImportFiles(dt.files, true);
+    }
   }
 
   // Keyboard shortcuts: Cmd/Ctrl+S (save), Cmd/Ctrl+K (search), Cmd/Ctrl+Shift+D (focus mode)
