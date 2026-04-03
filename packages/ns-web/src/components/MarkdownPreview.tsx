@@ -6,9 +6,11 @@ import rehypeSlug from "rehype-slug";
 import type { PluggableList } from "unified";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { InteractiveTable } from "./InteractiveTable.tsx";
+import { ResizableImage } from "./ResizableImage.tsx";
 import { remarkWikiLink } from "../lib/remarkWikiLink.ts";
 import { findTables } from "../lib/tableMarkdown.ts";
 import { toggleCheckbox } from "../lib/toggleCheckbox.ts";
+import { findImages, parseAltDimensions } from "../lib/imageMarkdown.ts";
 
 interface MarkdownPreviewProps {
   content: string;
@@ -43,15 +45,35 @@ export function MarkdownPreview({
   const markdownComponents = useMemo(() => {
     const components: Record<string, React.ElementType> = {
       pre: CodeBlock,
-      img: ({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) => (
-        <img
-          src={src}
-          alt={alt}
-          loading="lazy"
-          {...props}
-          style={{ maxWidth: "100%", height: "auto", borderRadius: "6px" }}
-        />
-      ),
+      img: ({ src, alt, node, ...props }: React.ComponentPropsWithoutRef<"img"> & { node?: { position?: { start: { offset?: number } } } }) => {
+        const parsedAlt = parseAltDimensions(alt ?? "");
+        if (onContentChangeRef.current && src) {
+          const currentContent = contentRef.current;
+          const images = findImages(currentContent);
+          const offset = node?.position?.start?.offset;
+          let imageIndex = offset != null
+            ? images.findIndex((img) => img.startOffset === offset)
+            : -1;
+          if (imageIndex === -1) {
+            imageIndex = images.findIndex((img) => img.src === src);
+          }
+          if (imageIndex !== -1) {
+            return (
+              <ResizableImage
+                src={src}
+                alt={alt ?? ""}
+                content={currentContent}
+                onContentChange={onContentChangeRef.current}
+                imageIndex={imageIndex}
+              />
+            );
+          }
+        }
+        const style: React.CSSProperties = parsedAlt.width
+          ? { width: parsedAlt.width, height: parsedAlt.height ?? "auto", borderRadius: "6px" }
+          : { maxWidth: "100%", height: "auto", borderRadius: "6px" };
+        return <img src={src} alt={parsedAlt.text} loading="lazy" {...props} style={style} />;
+      },
     };
     if (onContentChange) {
       components.table = ({
