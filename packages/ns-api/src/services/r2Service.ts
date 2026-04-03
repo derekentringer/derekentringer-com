@@ -39,7 +39,7 @@ export function buildR2Key(
   imageId: string,
   ext: string,
 ): string {
-  return `images/${imageId}.${ext}`;
+  return `${imageId}.${ext}`;
 }
 
 export async function uploadImage(
