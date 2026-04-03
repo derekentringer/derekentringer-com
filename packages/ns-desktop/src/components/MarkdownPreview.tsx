@@ -205,14 +205,15 @@ export function MarkdownPreview({
               const imgSrc = imgCtxMenu.src;
               setImgCtxMenu(null);
               try {
-                const res = await fetch(imgSrc);
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = imgSrc.split("/").pop() || "image";
-                a.click();
-                URL.revokeObjectURL(url);
+                const { save } = await import("@tauri-apps/plugin-dialog");
+                const { writeFile } = await import("@tauri-apps/plugin-fs");
+                const filename = imgSrc.split("/").pop() || "image";
+                const savePath = await save({ defaultPath: filename });
+                if (savePath) {
+                  const res = await fetch(imgSrc);
+                  const buffer = await res.arrayBuffer();
+                  await writeFile(savePath, new Uint8Array(buffer));
+                }
               } catch {
                 window.open(imgSrc, "_blank");
               }
