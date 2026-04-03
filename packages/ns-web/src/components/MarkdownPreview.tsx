@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -7,6 +7,7 @@ import type { PluggableList } from "unified";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { InteractiveTable } from "./InteractiveTable.tsx";
 import { ResizableImage } from "./ResizableImage.tsx";
+import { ImageLightbox } from "./ImageLightbox.tsx";
 import { remarkWikiLink } from "../lib/remarkWikiLink.ts";
 import { findTables } from "../lib/tableMarkdown.ts";
 import { toggleCheckbox } from "../lib/toggleCheckbox.ts";
@@ -33,6 +34,8 @@ export function MarkdownPreview({
   const onContentChangeRef = useRef(onContentChange);
   contentRef.current = content;
   onContentChangeRef.current = onContentChange;
+
+  const [lightboxSrc, setLightboxSrc] = useState<{ src: string; alt: string } | null>(null);
 
   const plugins = useMemo((): PluggableList => {
     const base: PluggableList = [remarkGfm];
@@ -72,7 +75,7 @@ export function MarkdownPreview({
         const style: React.CSSProperties = parsedAlt.width
           ? { width: parsedAlt.width, height: parsedAlt.height ?? "auto", borderRadius: "6px" }
           : { maxWidth: "100%", height: "auto", borderRadius: "6px" };
-        return <img src={src} alt={parsedAlt.text} loading="lazy" {...props} style={style} />;
+        return <img src={src} alt={parsedAlt.text} loading="lazy" {...props} style={style} className="cursor-pointer" onDoubleClick={() => src && setLightboxSrc({ src, alt: parsedAlt.text })} />;
       },
     };
     if (onContentChange) {
@@ -139,11 +142,20 @@ export function MarkdownPreview({
   );
 
   return (
-    <div
-      className={`markdown-preview ${className ?? ""}`}
-      onClick={handleClick}
-    >
-      <ReactMarkdown remarkPlugins={plugins} rehypePlugins={[rehypeSlug, rehypeHighlight]} components={markdownComponents}>{content}</ReactMarkdown>
-    </div>
+    <>
+      <div
+        className={`markdown-preview ${className ?? ""}`}
+        onClick={handleClick}
+      >
+        <ReactMarkdown remarkPlugins={plugins} rehypePlugins={[rehypeSlug, rehypeHighlight]} components={markdownComponents}>{content}</ReactMarkdown>
+      </div>
+      {lightboxSrc && (
+        <ImageLightbox
+          src={lightboxSrc.src}
+          alt={lightboxSrc.alt}
+          onClose={() => setLightboxSrc(null)}
+        />
+      )}
+    </>
   );
 }
