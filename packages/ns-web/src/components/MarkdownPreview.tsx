@@ -201,12 +201,21 @@ export function MarkdownPreview({
             Copy Markdown Link
           </button>
           <button
-            onClick={() => {
-              const a = document.createElement("a");
-              a.href = imgCtxMenu.src;
-              a.download = "";
-              a.click();
+            onClick={async () => {
+              const imgSrc = imgCtxMenu.src;
               setImgCtxMenu(null);
+              try {
+                const res = await fetch(imgSrc);
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = imgSrc.split("/").pop() || "image";
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch {
+                window.open(imgSrc, "_blank");
+              }
             }}
             className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
