@@ -71,6 +71,12 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/010.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "add images table",
+            sql: include_str!("../migrations/011.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
