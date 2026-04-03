@@ -66,6 +66,25 @@ vi.mock("../services/embeddingService.js", () => ({
   generateQueryEmbedding: (...args: unknown[]) => mockGenerateQueryEmbedding(...args),
 }));
 
+vi.mock("../store/imageStore.js", () => ({
+  getImagesByNoteIds: vi.fn().mockResolvedValue([]),
+  getImageDescriptionsForNoteId: vi.fn().mockResolvedValue([]),
+  createImage: vi.fn(),
+  getImage: vi.fn(),
+  getImagesByNoteId: vi.fn().mockResolvedValue([]),
+  softDeleteImage: vi.fn(),
+  updateImageAiDescription: vi.fn(),
+  getImagesChangedSince: vi.fn().mockResolvedValue([]),
+  getR2KeysForNoteIds: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../services/r2Service.js", () => ({
+  uploadImage: vi.fn().mockResolvedValue("https://r2.example.com/test.jpg"),
+  deleteImage: vi.fn(),
+  deleteImages: vi.fn(),
+  buildR2Key: vi.fn().mockReturnValue("images/test/test.jpg"),
+}));
+
 const mockFindRelevantNotes = vi.fn();
 
 vi.mock("../store/noteStore.js", async (importOriginal) => {

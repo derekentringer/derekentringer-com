@@ -273,6 +273,7 @@ export interface NoteContext {
   id: string;
   title: string;
   content: string;
+  imageDescriptions?: string[];
 }
 
 export async function* answerQuestion(
@@ -283,7 +284,13 @@ export async function* answerQuestion(
   const anthropic = getClient();
 
   const contextBlock = noteContexts
-    .map((n) => `## ${n.title}\n${n.content}`)
+    .map((n) => {
+      let block = `## ${n.title}\n${n.content}`;
+      if (n.imageDescriptions && n.imageDescriptions.length > 0) {
+        block += `\n\n[Images in this note]\n${n.imageDescriptions.map((d) => `- ${d}`).join("\n")}`;
+      }
+      return block;
+    })
     .join("\n\n---\n\n");
 
   let lastError: unknown;
@@ -319,6 +326,61 @@ export async function* answerQuestion(
         }
       }
       return; // Stream completed successfully
+    } catch (err: unknown) {
+      lastError = err;
+      const status = (err as { status?: number })?.status;
+      if (status && RETRYABLE_STATUSES.includes(status)) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError;
+}
+
+export async function analyzeImage(
+  base64: string,
+  mimeType: string,
+): Promise<string> {
+  const anthropic = getClient();
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+
+    try {
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 300,
+        temperature: 0.3,
+        system:
+          "You are an image analysis assistant. Describe the image contents in detail for search indexing. Include text visible in the image, objects, diagrams, charts, people, colors, and layout. Be thorough but concise (2-5 sentences). Output only the description.",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: mimeType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+                  data: base64,
+                },
+              },
+              { type: "text", text: "Describe this image." },
+            ],
+          },
+        ],
+      });
+
+      const block = response.content[0];
+      if (block.type === "text") {
+        return block.text.trim();
+      }
+      return "";
     } catch (err: unknown) {
       lastError = err;
       const status = (err as { status?: number })?.status;

@@ -9,21 +9,24 @@ import type {
   SyncRejection,
   Note,
   FolderSyncData,
+  ImageSyncData,
 } from "@derekentringer/shared/ns";
 import {
   getSyncCursor,
   upsertSyncCursor,
   getNotesChangedSince,
   getFoldersChangedSince,
+  getImagesChangedSince,
 } from "../store/syncStore.js";
 import { getPrisma } from "../lib/prisma.js";
 import { toNote } from "../lib/mappers.js";
 import type {
   Note as PrismaNote,
   Folder as PrismaFolder,
+  Image as PrismaImage,
 } from "../generated/prisma/client.js";
 
-type PrismaLike = Pick<ReturnType<typeof getPrisma>, "note" | "folder">;
+type PrismaLike = Pick<ReturnType<typeof getPrisma>, "note" | "folder" | "image">;
 
 const BATCH_LIMIT = 100;
 
@@ -37,6 +40,24 @@ function toFolderSyncData(f: PrismaFolder): FolderSyncData {
     createdAt: f.createdAt.toISOString(),
     updatedAt: f.updatedAt.toISOString(),
     deletedAt: f.deletedAt ? f.deletedAt.toISOString() : null,
+  };
+}
+
+function toImageSyncData(i: PrismaImage): ImageSyncData {
+  return {
+    id: i.id,
+    noteId: i.noteId,
+    filename: i.filename,
+    mimeType: i.mimeType,
+    sizeBytes: i.sizeBytes,
+    r2Key: i.r2Key,
+    r2Url: i.r2Url,
+    altText: i.altText,
+    aiDescription: i.aiDescription,
+    sortOrder: i.sortOrder,
+    createdAt: i.createdAt.toISOString(),
+    updatedAt: i.updatedAt.toISOString(),
+    deletedAt: i.deletedAt ? i.deletedAt.toISOString() : null,
   };
 }
 
@@ -91,6 +112,22 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
                 changeAction: change.action,
                 reason: "timestamp_conflict",
                 message: "Server has a newer version of this folder",
+              });
+            } else {
+              skipped++;
+            }
+          } else if (change.type === "image") {
+            const result = await applyImageChange(tx, userId, change);
+            if (result === "applied") {
+              applied++;
+            } else if (result === "timestamp_conflict") {
+              skipped++;
+              rejections.push({
+                changeId: change.id,
+                changeType: "image",
+                changeAction: change.action,
+                reason: "timestamp_conflict",
+                message: "Server has a newer version of this image",
               });
             } else {
               skipped++;
@@ -163,9 +200,10 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
 
     const sinceDate = new Date(since);
 
-    const [notes, folders] = await Promise.all([
+    const [notes, folders, images] = await Promise.all([
       getNotesChangedSince(userId, sinceDate),
       getFoldersChangedSince(userId, sinceDate),
+      getImagesChangedSince(userId, sinceDate),
     ]);
 
     const noteChanges: SyncChange[] = notes.map((n) => ({
@@ -184,8 +222,16 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
       timestamp: f.updatedAt.toISOString(),
     }));
 
+    const imageChanges: SyncChange[] = images.map((i) => ({
+      id: i.id,
+      type: "image" as const,
+      action: determineImageAction(i, sinceDate),
+      data: toImageSyncData(i),
+      timestamp: i.updatedAt.toISOString(),
+    }));
+
     // Merge and sort by timestamp, limit to batch size
-    const allChanges = [...noteChanges, ...folderChanges]
+    const allChanges = [...noteChanges, ...folderChanges, ...imageChanges]
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       .slice(0, BATCH_LIMIT);
 
@@ -196,6 +242,7 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
       const allUpdatedAts = [
         ...notes.map((n) => n.updatedAt.getTime()),
         ...folders.map((f) => f.updatedAt.getTime()),
+        ...images.map((i) => i.updatedAt.getTime()),
       ];
       cursorDate = new Date(Math.max(...allUpdatedAts));
     } else {
@@ -203,7 +250,7 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     }
     await upsertSyncCursor(userId, deviceId, cursorDate);
 
-    const hasMore = (notes.length + folders.length) >= BATCH_LIMIT;
+    const hasMore = (notes.length + folders.length + images.length) >= BATCH_LIMIT;
 
     const response: SyncPullResponse = {
       changes: allChanges,
@@ -431,6 +478,81 @@ async function applyFolderChange(
         throw err;
       }
     }
+    return "applied";
+  }
+}
+
+function determineImageAction(
+  image: PrismaImage,
+  since: Date,
+): "create" | "update" | "delete" {
+  if (image.deletedAt) return "delete";
+  if (image.createdAt > since) return "create";
+  return "update";
+}
+
+async function applyImageChange(
+  prisma: PrismaLike,
+  userId: string,
+  change: SyncChange,
+): Promise<ApplyResult> {
+  const imageData = change.data as ImageSyncData | null;
+
+  if (change.action === "delete") {
+    const existing = await prisma.image.findUnique({ where: { id: change.id } });
+    if (existing && existing.userId === userId) {
+      await prisma.image.update({
+        where: { id: change.id },
+        data: { deletedAt: new Date(change.timestamp) },
+      });
+      return "applied";
+    }
+    return "skipped";
+  }
+
+  if (!imageData) return "skipped";
+
+  const existing = await prisma.image.findUnique({ where: { id: change.id } });
+
+  if (existing) {
+    if (existing.userId !== userId) return "skipped";
+
+    const clientTime = new Date(change.timestamp);
+    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
+
+    await prisma.image.update({
+      where: { id: change.id },
+      data: {
+        noteId: imageData.noteId,
+        filename: imageData.filename,
+        mimeType: imageData.mimeType,
+        sizeBytes: imageData.sizeBytes,
+        r2Key: imageData.r2Key,
+        r2Url: imageData.r2Url,
+        altText: imageData.altText,
+        aiDescription: imageData.aiDescription,
+        sortOrder: imageData.sortOrder,
+        deletedAt: imageData.deletedAt ? new Date(imageData.deletedAt) : null,
+      },
+    });
+    return "applied";
+  } else {
+    await prisma.image.create({
+      data: {
+        id: change.id,
+        userId,
+        noteId: imageData.noteId,
+        filename: imageData.filename,
+        mimeType: imageData.mimeType,
+        sizeBytes: imageData.sizeBytes,
+        r2Key: imageData.r2Key,
+        r2Url: imageData.r2Url,
+        altText: imageData.altText ?? "",
+        aiDescription: imageData.aiDescription,
+        sortOrder: imageData.sortOrder ?? 0,
+        deletedAt: imageData.deletedAt ? new Date(imageData.deletedAt) : null,
+      },
+    });
     return "applied";
   }
 }

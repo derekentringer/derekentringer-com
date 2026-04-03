@@ -3035,6 +3035,34 @@ export function NotesPage() {
                       }}
                       onChange={(val: string) => setContent(val)}
                       onSave={handleSave}
+                      onImageUpload={selectedId ? async (file) => {
+                        if (navigator.onLine) {
+                          const { uploadImage } = await import("../api/imageApi.ts");
+                          const result = await uploadImage(selectedId, file);
+                          return result.r2Url;
+                        }
+                        // Offline: save locally and queue for upload
+                        const { v4: uuidv4 } = await import("uuid");
+                        const { saveImageLocally } = await import("../lib/imageCacheService.ts");
+                        const { createLocalImage, enqueueSyncAction } = await import("../lib/db.ts");
+                        const imageId = uuidv4();
+                        const buffer = new Uint8Array(await file.arrayBuffer());
+                        const localPath = await saveImageLocally(imageId, file.type, buffer);
+                        const placeholderUrl = `notesync-local://${imageId}`;
+                        await createLocalImage({
+                          id: imageId,
+                          noteId: selectedId,
+                          filename: file.name,
+                          mimeType: file.type,
+                          sizeBytes: file.size,
+                          r2Key: "",
+                          r2Url: placeholderUrl,
+                          altText: "",
+                          syncStatus: "pending_upload",
+                        });
+                        await enqueueSyncAction("create", imageId, "image", localPath);
+                        return placeholderUrl;
+                      } : undefined}
                       showLineNumbers={showLineNumbers}
                       wordWrap={editorSettings.wordWrap}
                       tabSize={editorSettings.tabSize}

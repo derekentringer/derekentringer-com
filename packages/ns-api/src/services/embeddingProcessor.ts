@@ -1,6 +1,7 @@
 import { getPrisma } from "../lib/prisma.js";
 import { generateEmbedding } from "./embeddingService.js";
 import { isEmbeddingEnabled } from "../store/settingStore.js";
+import { getImageDescriptionsForNoteId } from "../store/imageStore.js";
 
 const BATCH_SIZE = 1;
 const INTERVAL_MS = 60_000; // 1 minute — stay well within 3 RPM free tier
@@ -49,14 +50,31 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function buildEmbeddingText(note: PendingNote): Promise<string> {
+  let text = `${note.title}\n${note.content}`.trim();
+  try {
+    const descriptions = await getImageDescriptionsForNoteId(note.id);
+    if (descriptions.length > 0) {
+      text += `\n\n[Images]\n${descriptions.join("\n")}`;
+    }
+  } catch {
+    // Image descriptions are supplementary — don't fail embedding on error
+  }
+  return text;
+}
+
 export async function processAllPendingEmbeddings(): Promise<void> {
   let batch = await getPendingNotes(BATCH_SIZE);
 
   while (batch.length > 0) {
     for (const note of batch) {
       try {
-        const text = `${note.title}\n${note.content}`.trim();
-        if (text.length === 0 || !note.content.trim()) {
+        if (!note.content.trim()) {
+          await markNoteEmbeddingCurrent(note.id);
+          continue;
+        }
+        const text = await buildEmbeddingText(note);
+        if (text.length === 0) {
           await markNoteEmbeddingCurrent(note.id);
           continue;
         }
@@ -83,8 +101,12 @@ async function processBatch(): Promise<void> {
 
   for (const note of notes) {
     try {
-      const text = `${note.title}\n${note.content}`.trim();
-      if (text.length === 0 || !note.content.trim()) {
+      if (!note.content.trim()) {
+        await markNoteEmbeddingCurrent(note.id);
+        continue;
+      }
+      const text = await buildEmbeddingText(note);
+      if (text.length === 0) {
         await markNoteEmbeddingCurrent(note.id);
         continue;
       }

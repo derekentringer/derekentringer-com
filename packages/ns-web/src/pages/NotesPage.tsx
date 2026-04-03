@@ -2330,6 +2330,11 @@ export function NotesPage() {
                     if (val !== loadedContentRef.current) setIsDirty(true);
                   }}
                   onSave={handleSave}
+                  onImageUpload={selectedId ? async (file) => {
+                    const { uploadImage } = await import("../api/imageApi.ts");
+                    const result = await uploadImage(selectedId, file);
+                    return result.r2Url;
+                  } : undefined}
                   showLineNumbers={showLineNumbers}
                   wordWrap={editorSettings.wordWrap}
                   tabSize={editorSettings.tabSize}

@@ -2,6 +2,7 @@ import { getPrisma } from "../lib/prisma.js";
 import type {
   Note as PrismaNote,
   Folder as PrismaFolder,
+  Image as PrismaImage,
 } from "../generated/prisma/client.js";
 
 const BATCH_LIMIT = 100;
@@ -51,6 +52,21 @@ export async function getFoldersChangedSince(
 ): Promise<PrismaFolder[]> {
   const prisma = getPrisma();
   return prisma.folder.findMany({
+    where: {
+      userId,
+      updatedAt: { gt: since },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: BATCH_LIMIT,
+  });
+}
+
+export async function getImagesChangedSince(
+  userId: string,
+  since: Date,
+): Promise<PrismaImage[]> {
+  const prisma = getPrisma();
+  return prisma.image.findMany({
     where: {
       userId,
       updatedAt: { gt: since },

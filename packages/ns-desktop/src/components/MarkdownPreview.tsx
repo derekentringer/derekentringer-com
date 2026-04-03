@@ -43,6 +43,15 @@ export function MarkdownPreview({
   const markdownComponents = useMemo(() => {
     const components: Record<string, React.ElementType> = {
       pre: CodeBlock,
+      img: ({ src, alt, ...props }: React.ComponentPropsWithoutRef<"img">) => (
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          {...props}
+          style={{ maxWidth: "100%", height: "auto", borderRadius: "6px" }}
+        />
+      ),
     };
     if (onContentChange) {
       components.table = ({
