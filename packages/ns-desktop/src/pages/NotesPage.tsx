@@ -2019,9 +2019,16 @@ export function NotesPage() {
                   const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
                   const file = new File([data.buffer], name, { type: mimeMap[ext] || "image/png" });
                   const result = await uploadImage(currentNoteId, file);
-                  // Insert markdown at end of content
+                  // Insert markdown at cursor position
                   const imgName = name.replace(/\.[^.]+$/, "");
-                  setContent((prev) => prev + `\n![${imgName}](${result.r2Url})`);
+                  const md = `\n![${imgName}](${result.r2Url})\n`;
+                  const cursor = editorRef.current?.getEditorState()?.cursor ?? -1;
+                  setContent((prev) => {
+                    if (cursor >= 0 && cursor <= prev.length) {
+                      return prev.slice(0, cursor) + md + prev.slice(cursor);
+                    }
+                    return prev + md;
+                  });
                 }
               } catch (err) {
                 console.error("Image drop upload failed:", err);
