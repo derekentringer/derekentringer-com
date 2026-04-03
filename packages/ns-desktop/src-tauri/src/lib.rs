@@ -121,6 +121,14 @@ fn remove_secure_item(key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn download_file(url: String, save_path: String) -> Result<(), String> {
+    let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    std::fs::write(&save_path, &bytes).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 fn check_meeting_recording_support() -> Result<bool, String> {
     #[cfg(target_os = "macos")]
     {
@@ -177,7 +185,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
-        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording])
+        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:notesync.db", get_migrations())
