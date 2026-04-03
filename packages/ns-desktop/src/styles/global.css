@@ -551,3 +551,11 @@
   border-radius: 6px;
   cursor: default;
 }
+
+/* Image grid — consecutive image-only paragraphs flow horizontally */
+.markdown-preview p:has(> .resizable-image-wrapper:only-child),
+.markdown-preview p:has(> .image-inline-wrapper:only-child) {
+  display: inline-block;
+  vertical-align: top;
+  margin: 4px;
+}

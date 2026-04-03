@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -36,6 +36,19 @@ export function MarkdownPreview({
   onContentChangeRef.current = onContentChange;
 
   const [lightboxSrc, setLightboxSrc] = useState<{ src: string; alt: string } | null>(null);
+  const [imgCtxMenu, setImgCtxMenu] = useState<{ src: string; alt: string; x: number; y: number } | null>(null);
+  const imgCtxMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!imgCtxMenu) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (imgCtxMenuRef.current && !imgCtxMenuRef.current.contains(e.target as Node)) {
+        setImgCtxMenu(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [imgCtxMenu]);
 
   const plugins = useMemo((): PluggableList => {
     const base: PluggableList = [remarkGfm];
@@ -75,7 +88,20 @@ export function MarkdownPreview({
         const style: React.CSSProperties = parsedAlt.width
           ? { width: parsedAlt.width, height: parsedAlt.height ?? "auto", borderRadius: "6px" }
           : { maxWidth: "100%", height: "auto", borderRadius: "6px" };
-        return <img src={src} alt={parsedAlt.text} loading="lazy" {...props} style={style} className="cursor-pointer" onDoubleClick={() => src && setLightboxSrc({ src, alt: parsedAlt.text })} />;
+        return (
+          <span className="image-inline-wrapper">
+            <img
+              src={src}
+              alt={parsedAlt.text}
+              loading="lazy"
+              {...props}
+              style={style}
+              className="cursor-pointer"
+              onDoubleClick={() => src && setLightboxSrc({ src, alt: parsedAlt.text })}
+              onContextMenu={(e) => { if (src) { e.preventDefault(); setImgCtxMenu({ src, alt: alt ?? "", x: e.clientX, y: e.clientY }); } }}
+            />
+          </span>
+        );
       },
     };
     if (onContentChange) {
@@ -155,6 +181,38 @@ export function MarkdownPreview({
           alt={lightboxSrc.alt}
           onClose={() => setLightboxSrc(null)}
         />
+      )}
+      {imgCtxMenu && (
+        <div
+          ref={imgCtxMenuRef}
+          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
+          style={{ left: imgCtxMenu.x, top: imgCtxMenu.y }}
+        >
+          <button
+            onClick={() => { navigator.clipboard.writeText(imgCtxMenu.src); setImgCtxMenu(null); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            Copy Image URL
+          </button>
+          <button
+            onClick={() => { navigator.clipboard.writeText(`![${imgCtxMenu.alt}](${imgCtxMenu.src})`); setImgCtxMenu(null); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            Copy Markdown Link
+          </button>
+          <button
+            onClick={() => {
+              const a = document.createElement("a");
+              a.href = imgCtxMenu.src;
+              a.download = "";
+              a.click();
+              setImgCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            Download
+          </button>
+        </div>
       )}
     </>
   );

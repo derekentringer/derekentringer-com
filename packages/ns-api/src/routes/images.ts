@@ -146,7 +146,7 @@ export default async function imageRoutes(fastify: FastifyInstance) {
 
       const image = await createImage(userId, noteId, {
         id: imageId,
-        filename: file.filename,
+        filename: `${imageId}.${ext}`,
         mimeType: file.mimetype,
         sizeBytes: file.buffer.length,
         r2Key,
