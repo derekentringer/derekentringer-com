@@ -1319,11 +1319,16 @@ export function NotesPage() {
   }
 
   function handleFileDrop(e: React.DragEvent) {
-    e.preventDefault();
     setIsDragOver(false);
-    if (e.dataTransfer.files.length > 0) {
-      handleImportFiles(e.dataTransfer.files, true);
-    }
+    // Let image files pass through to the CM6 imageUploadExtension
+    const files = Array.from(e.dataTransfer.files);
+    const imageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+    const nonImageFiles = files.filter((f) => !imageTypes.has(f.type));
+    if (nonImageFiles.length === 0) return; // All images — let CM6 handle
+    e.preventDefault();
+    const dt = new DataTransfer();
+    nonImageFiles.forEach((f) => dt.items.add(f));
+    handleImportFiles(dt.files, true);
   }
 
   // Keyboard shortcuts: Cmd/Ctrl+S (save), Cmd/Ctrl+K (search), Cmd/Ctrl+Shift+D (focus mode)

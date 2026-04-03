@@ -1997,7 +1997,41 @@ export function NotesPage() {
         setIsDragOver(false);
         const paths = event.payload.paths;
         if (paths.length > 0) {
-          handleImportPaths(paths, true);
+          // Check if any paths are images — upload them instead of importing
+          const imageExts = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+          const imagePaths = paths.filter((p: string) => {
+            const ext = p.slice(p.lastIndexOf(".")).toLowerCase();
+            return imageExts.has(ext);
+          });
+          const otherPaths = paths.filter((p: string) => !imagePaths.includes(p));
+
+          if (imagePaths.length > 0 && selectedId) {
+            // Handle image drops
+            (async () => {
+              try {
+                const { readFile } = await import("@tauri-apps/plugin-fs");
+                const { uploadImage } = await import("../api/imageApi.ts");
+                for (const imgPath of imagePaths) {
+                  const data = await readFile(imgPath);
+                  const name = imgPath.split("/").pop() || "image";
+                  const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+                  const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
+                  const file = new File([data.buffer], name, { type: mimeMap[ext] || "image/png" });
+                  const result = await uploadImage(selectedId, file);
+                  // Insert markdown at end of content
+                  const imgName = name.replace(/\.[^.]+$/, "");
+                  setContent((prev) => prev + `\n![${imgName}](${result.r2Url})`);
+                }
+              } catch (err) {
+                console.error("Image drop upload failed:", err);
+                showError("Failed to upload dropped image");
+              }
+            })();
+          }
+
+          if (otherPaths.length > 0) {
+            handleImportPaths(otherPaths, true);
+          }
         }
       }
     }).then((fn) => {
