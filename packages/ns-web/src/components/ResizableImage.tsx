@@ -143,12 +143,20 @@ export function ResizableImage({
             Copy Markdown Link
           </button>
           <button
-            onClick={() => {
-              const a = document.createElement("a");
-              a.href = src;
-              a.download = "";
-              a.click();
+            onClick={async () => {
               setCtxMenu(null);
+              try {
+                const res = await fetch(src);
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = src.split("/").pop() || "image";
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch {
+                window.open(src, "_blank");
+              }
             }}
             className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
