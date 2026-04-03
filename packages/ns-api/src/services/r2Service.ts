@@ -36,11 +36,10 @@ function getPublicUrl(r2Key: string): string {
 }
 
 export function buildR2Key(
-  userId: string,
   imageId: string,
   ext: string,
 ): string {
-  return `images/${userId}/${imageId}.${ext}`;
+  return `images/${imageId}.${ext}`;
 }
 
 export async function uploadImage(
