@@ -1319,8 +1319,11 @@ export function NotesPage() {
   }
 
   function handleFileDrop(e: React.DragEvent) {
+    // If CM6's imageUploadExtension already handled this drop, skip
+    const alreadyHandled = e.nativeEvent.defaultPrevented;
     e.preventDefault();
     setIsDragOver(false);
+    if (alreadyHandled) return;
     const files = Array.from(e.dataTransfer.files);
     const imageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
     const imageFiles = files.filter((f) => imageTypes.has(f.type));
