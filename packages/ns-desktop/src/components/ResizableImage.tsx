@@ -146,15 +146,17 @@ export function ResizableImage({
             onClick={async () => {
               setCtxMenu(null);
               try {
-                const res = await fetch(src);
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = src.split("/").pop() || "image";
-                a.click();
-                URL.revokeObjectURL(url);
+                const { save } = await import("@tauri-apps/plugin-dialog");
+                const { writeFile } = await import("@tauri-apps/plugin-fs");
+                const filename = src.split("/").pop() || "image";
+                const savePath = await save({ defaultPath: filename });
+                if (savePath) {
+                  const res = await fetch(src);
+                  const buffer = await res.arrayBuffer();
+                  await writeFile(savePath, new Uint8Array(buffer));
+                }
               } catch {
+                // Fallback: open in browser
                 window.open(src, "_blank");
               }
             }}
