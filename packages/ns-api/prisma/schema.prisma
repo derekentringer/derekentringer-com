@@ -22,6 +22,7 @@ model User {
 
   notes              Note[]
   folders            Folder[]
+  images             Image[]
   refreshTokens      RefreshToken[]
   passkeys           Passkey[]
 
@@ -79,6 +80,7 @@ model Note {
   outgoingLinks      NoteLink[]                   @relation("OutgoingLinks")
   incomingLinks      NoteLink[]                   @relation("IncomingLinks")
   versions           NoteVersion[]
+  images             Image[]
   user               User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -169,4 +171,29 @@ model RefreshToken {
 
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+model Image {
+  id            String    @id @default(uuid())
+  noteId        String
+  userId        String
+  filename      String
+  mimeType      String
+  sizeBytes     Int
+  r2Key         String    @unique
+  r2Url         String
+  altText       String    @default("")
+  aiDescription String?
+  sortOrder     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  note          Note      @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
+  @@index([userId])
+  @@index([updatedAt])
+  @@index([deletedAt])
+  @@map("images")
 }

@@ -7,6 +7,7 @@ import {
 } from "react";
 import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
+import { imageUploadExtension } from "../editor/imageUpload.ts";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import {
@@ -35,6 +36,7 @@ interface MarkdownEditorProps {
   onChange: (value: string) => void;
   onSave?: () => void;
   onMount?: (view: EditorView) => void;
+  onImageUpload?: (file: File) => Promise<string>;
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
@@ -246,6 +248,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     onChange,
     onSave,
     onMount,
+    onImageUpload,
     placeholder: placeholderText = "Start writing...",
     className,
     style: styleProp,
@@ -265,6 +268,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onImageUploadRef = useRef(onImageUpload);
   const lineNumberCompartment = useRef(new Compartment());
   const wordWrapCompartment = useRef(new Compartment());
   const tabSizeCompartment = useRef(new Compartment());
@@ -275,6 +279,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
   onMountRef.current = onMount;
+  onImageUploadRef.current = onImageUpload;
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
@@ -363,6 +368,12 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             }
           }),
           EditorState.readOnly.of(readOnly),
+          imageUploadExtension((file) => {
+            if (!onImageUploadRef.current) {
+              return Promise.reject(new Error("Image upload not available"));
+            }
+            return onImageUploadRef.current(file);
+          }),
           ...extraExtensions,
         ],
       }),

@@ -54,6 +54,10 @@ describe("loadConfig", () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
     process.env.VOYAGE_API_KEY = "pa-test-voyage-key";
     process.env.OPENAI_API_KEY = "sk-test-openai-key";
+    process.env.R2_ACCOUNT_ID = "test-account";
+    process.env.R2_ACCESS_KEY_ID = "test-key";
+    process.env.R2_SECRET_ACCESS_KEY = "test-secret";
+    process.env.R2_BUCKET_NAME = "test-bucket";
 
     const config = loadConfig();
 

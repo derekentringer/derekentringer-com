@@ -25,6 +25,7 @@ export type {
   SyncPushResponse,
   SyncRejection,
   FolderSyncData,
+  ImageSyncData,
   AiCompleteRequest,
   AiSummarizeRequest,
   AiSuggestTagsRequest,

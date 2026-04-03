@@ -178,7 +178,7 @@ packages/
   - `npm run db:migrate:deploy` — Apply migrations in production
   - `npm run db:seed` — Run seed script
   - `npm run db:studio` — Open Prisma Studio
-- **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN` (defaults to `http://localhost:3005`), `OPENAI_API_KEY` (for Whisper audio transcription), `RESEND_API_KEY` (password reset emails), `APP_URL` (frontend URL for email links, defaults to `http://localhost:3005`), `RP_ID` (WebAuthn domain, defaults to `localhost`)
+- **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN` (defaults to `http://localhost:3005`), `OPENAI_API_KEY` (for Whisper audio transcription), `RESEND_API_KEY` (password reset emails), `APP_URL` (frontend URL for email links, defaults to `http://localhost:3005`), `RP_ID` (WebAuthn domain, defaults to `localhost`), `R2_ACCOUNT_ID` (Cloudflare R2 account), `R2_ACCESS_KEY_ID` (R2 API token key), `R2_SECRET_ACCESS_KEY` (R2 API token secret), `R2_BUCKET_NAME` (R2 bucket, `notesync-images`), `R2_PUBLIC_URL` (R2 public domain, `https://notesync-images.derekentringer.com`)
 - **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`
 
 ## External Services

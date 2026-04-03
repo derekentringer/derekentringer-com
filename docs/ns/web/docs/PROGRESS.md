@@ -111,6 +111,8 @@
 
 - [x] [21 — Interactive Tables](features/21-interactive-tables.md) — GFM tables in markdown preview become sortable and editable when `onContentChange` is provided; click column header toggles asc ↔ desc sort (rewrites markdown rows via natural `localeCompare`), double-click cell enters inline edit mode with Enter/Escape/Tab navigation; `tableMarkdown.ts` utility (`findTables`, `parseRow`, `serializeTable`, `updateCell`, `sortTableByColumn`), `InteractiveTable` component with `SortIndicator` SVG arrows, stable component refs via `useRef` in MarkdownPreview preventing remount on content change, trash view tables remain static, 48 new tests
 
+- [x] Image support via Cloudflare R2 — Paste or drag-drop images into the CodeMirror editor; images upload to Cloudflare R2 object storage via `POST /images/upload` with MIME validation and magic byte checks (JPEG/PNG/WebP/GIF, 10MB limit); markdown `![name](r2-url)` inserted with upload placeholder; Claude vision API generates `aiDescription` on upload (fire-and-forget) for AI chat and semantic search indexing; `Image` Prisma model with R2 key/URL, cascading delete from notes; embedding processor includes image descriptions in note text for vector search; Q&A assistant enriches context with image descriptions; custom `img` component in MarkdownPreview with lazy loading; `imageUploadExtension` CM6 extension handles paste/drop events; sync protocol extended with `"image"` change type for cross-device sync
+
 ### Bug Fixes
 
 - [x] File drag-and-drop import tab fix — `handleImportFiles` called `selectNote` instead of `openNoteAsTab`, so drag-imported notes appeared in sidebar but didn't open a tab; fixed to match `handleCreate` behavior

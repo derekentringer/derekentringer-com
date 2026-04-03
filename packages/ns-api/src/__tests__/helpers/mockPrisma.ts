@@ -27,6 +27,7 @@ export interface MockPrisma {
   noteVersion: MockModel;
   noteLink: MockModel;
   folder: MockModel;
+  image: MockModel;
   setting: MockModel;
   syncCursor: MockModel;
   refreshToken: MockModel;
@@ -62,6 +63,7 @@ export function createMockPrisma(): MockPrisma {
     noteVersion: createMockModel(),
     noteLink: createMockModel(),
     folder: createMockModel(),
+    image: createMockModel(),
     setting: createMockModel(),
     syncCursor: createMockModel(),
     refreshToken: createMockModel(),
@@ -79,6 +81,9 @@ export function createMockPrisma(): MockPrisma {
       return Promise.all(input as Promise<unknown>[]);
     },
   );
+
+  // Default image.findMany to empty array (sync pull queries images)
+  mock.image.findMany.mockResolvedValue([]);
 
   setPrisma(mock as unknown as PrismaClient);
   return mock;

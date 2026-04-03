@@ -108,18 +108,34 @@ export interface FolderSyncData {
   deletedAt: string | null;
 }
 
+export interface ImageSyncData {
+  id: string;
+  noteId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  r2Key: string;
+  r2Url: string;
+  altText: string;
+  aiDescription: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
 export interface SyncChange {
   id: string;
-  type: "note" | "folder";
+  type: "note" | "folder" | "image";
   action: "create" | "update" | "delete";
-  data: Note | FolderSyncData | null;
+  data: Note | FolderSyncData | ImageSyncData | null;
   timestamp: string;
   force?: boolean;
 }
 
 export interface SyncRejection {
   changeId: string;
-  changeType: "note" | "folder";
+  changeType: "note" | "folder" | "image";
   changeAction: "create" | "update" | "delete";
   reason: "fk_constraint" | "unique_constraint" | "not_found" | "timestamp_conflict" | "unknown";
   message: string;

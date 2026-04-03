@@ -4,6 +4,7 @@ import type {
   Note,
   FolderInfo,
   FolderSyncData,
+  ImageSyncData,
   TagInfo,
   NoteSearchResult,
   NoteSortField,
@@ -1156,7 +1157,7 @@ export interface SyncQueueEntry {
 export async function enqueueSyncAction(
   action: string,
   entityId: string,
-  entityType: "note" | "folder",
+  entityType: "note" | "folder" | "image",
   payload?: string,
 ): Promise<void> {
   const db = await getDb();
@@ -1178,7 +1179,7 @@ export async function readSyncQueue(limit = 100): Promise<SyncQueueEntry[]> {
       id: r.id,
       action: r.action,
       entity_id: r.note_id,
-      entity_type: entityType === "folder" ? "folder" : "note",
+      entity_type: entityType === "folder" ? "folder" : entityType === "image" ? "image" : "note",
       payload: r.payload,
       created_at: r.created_at,
     };
@@ -1486,4 +1487,142 @@ export async function fetchAudioNotes(limit = 10): Promise<Note[]> {
     [limit],
   );
   return rows.map(rowToNote);
+}
+
+// --- Images ---
+
+export async function upsertImageFromRemote(image: ImageSyncData): Promise<void> {
+  const db = await getDb();
+  const existing = await db.select<{ id: string; updated_at: string }[]>(
+    "SELECT id, updated_at FROM images WHERE id = $1",
+    [image.id],
+  );
+
+  if (existing.length > 0) {
+    if (existing[0].updated_at > image.updatedAt) return;
+
+    await db.execute(
+      `UPDATE images SET note_id = $1, filename = $2, mime_type = $3, size_bytes = $4,
+       r2_key = $5, r2_url = $6, alt_text = $7, ai_description = $8, sort_order = $9,
+       updated_at = $10, deleted_at = $11
+       WHERE id = $12`,
+      [
+        image.noteId,
+        image.filename,
+        image.mimeType,
+        image.sizeBytes,
+        image.r2Key,
+        image.r2Url,
+        image.altText,
+        image.aiDescription,
+        image.sortOrder,
+        image.updatedAt,
+        image.deletedAt,
+        image.id,
+      ],
+    );
+  } else {
+    await db.execute(
+      `INSERT INTO images (id, note_id, filename, mime_type, size_bytes, r2_key, r2_url,
+       alt_text, ai_description, sort_order, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      [
+        image.id,
+        image.noteId,
+        image.filename,
+        image.mimeType,
+        image.sizeBytes,
+        image.r2Key,
+        image.r2Url,
+        image.altText,
+        image.aiDescription,
+        image.sortOrder,
+        image.createdAt,
+        image.updatedAt,
+        image.deletedAt,
+      ],
+    );
+  }
+}
+
+export async function softDeleteImageFromRemote(imageId: string): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE images SET deleted_at = $1, updated_at = $1 WHERE id = $2",
+    [now, imageId],
+  );
+}
+
+export async function createLocalImage(data: {
+  id: string;
+  noteId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  r2Key: string;
+  r2Url: string;
+  altText: string;
+  syncStatus: string;
+}): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO images (id, note_id, filename, mime_type, size_bytes, r2_key, r2_url,
+     alt_text, sync_status, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)`,
+    [
+      data.id, data.noteId, data.filename, data.mimeType, data.sizeBytes,
+      data.r2Key, data.r2Url, data.altText, data.syncStatus, now,
+    ],
+  );
+}
+
+export async function updateImageAfterUpload(
+  imageId: string,
+  r2Key: string,
+  r2Url: string,
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE images SET r2_key = $1, r2_url = $2, sync_status = 'synced', updated_at = $3 WHERE id = $4",
+    [r2Key, r2Url, now, imageId],
+  );
+}
+
+export async function fetchPendingImageUploads(): Promise<
+  { id: string; noteId: string; filename: string; mimeType: string; sizeBytes: number }[]
+> {
+  const db = await getDb();
+  return db.select(
+    "SELECT id, note_id as noteId, filename, mime_type as mimeType, size_bytes as sizeBytes FROM images WHERE sync_status = 'pending_upload' AND deleted_at IS NULL",
+  );
+}
+
+export async function fetchImageById(imageId: string): Promise<ImageSyncData | null> {
+  const db = await getDb();
+  const rows = await db.select<{
+    id: string; note_id: string; filename: string; mime_type: string;
+    size_bytes: number; r2_key: string; r2_url: string; alt_text: string;
+    ai_description: string | null; sort_order: number;
+    created_at: string; updated_at: string; deleted_at: string | null;
+  }[]>("SELECT * FROM images WHERE id = $1", [imageId]);
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    id: r.id,
+    noteId: r.note_id,
+    filename: r.filename,
+    mimeType: r.mime_type,
+    sizeBytes: r.size_bytes,
+    r2Key: r.r2_key,
+    r2Url: r.r2_url,
+    altText: r.alt_text,
+    aiDescription: r.ai_description,
+    sortOrder: r.sort_order,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    deletedAt: r.deleted_at,
+  };
 }
