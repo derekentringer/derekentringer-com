@@ -1012,12 +1012,12 @@ export async function getDashboardData(userId: string): Promise<{
     }),
     prisma.note.findMany({
       where: { userId, favorite: true, deletedAt: null },
-      orderBy: { favoriteSortOrder: "asc" },
+      orderBy: { updatedAt: "desc" },
       take: 10,
     }),
     prisma.note.findMany({
       where: { userId, audioMode: { not: null }, deletedAt: null },
-      orderBy: { updatedAt: "desc" },
+      orderBy: { createdAt: "desc" },
       take: 10,
     }),
   ]);

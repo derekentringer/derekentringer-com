@@ -72,7 +72,7 @@ function SortableTab({ tab, isActive, onSelectTab, onCloseTab, onPinTab }: Sorta
           : "bg-background text-muted-foreground hover:bg-accent border-t-2 border-transparent"
       }`}
     >
-      <span className={`truncate flex-1 text-left ${tab.isPreview ? "italic" : ""}`}>
+      <span className={`truncate flex-1 text-left pl-[5px] ${tab.isPreview ? "italic" : ""}`}>
         {tab.isDirty && <span className="text-primary mr-1">●</span>}
         {tab.localFileStatus === "missing" && <span className="text-red-500 mr-1" title="Local file missing">▲</span>}
         {tab.title || "Untitled"}

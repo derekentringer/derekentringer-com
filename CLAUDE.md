@@ -73,7 +73,12 @@ packages/
 - `src/components/SyncStatusButton.tsx` — Sync status icon; shows rejection-aware click behavior when `hasRejections` is true
 - UI/UX must match `ns-web` — desktop components mirror web components
 - **Build (prod signed)**: `npm run tauri:build:prod` — syncs git tag version, clears WebKit cache, builds universal macOS binary with ad-hoc signing and `VITE_API_URL=https://ns-api.derekentringer.com`
-- **Build output**: `src-tauri/target/universal-apple-darwin/release/bundle/macos/NoteSync.app`
+- **Build (local testing)**: `VITE_API_URL=http://localhost:3004 npm run tauri:build:local` — builds x64 macOS binary connecting to local ns-api. **IMPORTANT**: Must pass `VITE_API_URL` explicitly because `tauri build` runs Vite in production mode, which loads `.env.production` (pointing to prod API). Without the override, the "local" build connects to production.
+- **Build output (prod)**: `src-tauri/target/universal-apple-darwin/release/bundle/macos/NoteSync.app`
+- **Build output (local)**: `src-tauri/target/release/bundle/macos/NoteSync.app`
+- **Local vs prod SQLite**: The desktop uses separate SQLite databases per environment. When `VITE_API_URL` contains "localhost", it uses `notesync_localhost.db`; otherwise `notesync.db` (see `src/lib/dbName.ts`). To reset the local database: `rm ~/Library/Application\ Support/com.derekentringer.notesync/notesync_localhost.db`
+- **Local ns-api CORS**: The ns-api `.env` must include Tauri origins for desktop to connect locally: `CORS_ORIGIN=http://localhost:3005,http://localhost:3006,tauri://localhost,https://tauri.localhost`
+- **Local ns-api migrations**: `prisma migrate dev` does not work locally (access denied). Run migration SQL manually: `psql "postgresql://derekentringer@localhost:5432/notesync" -f prisma/migrations/<migration_dir>/migration.sql`. Check applied migrations with: `psql "postgresql://derekentringer@localhost:5432/notesync" -c "SELECT migration_name FROM _prisma_migrations ORDER BY finished_at;"`
 - **Dev**: `npm run dev` (Tauri dev mode on port 3006)
 - **macOS permissions**: Hardened runtime requires `com.apple.security.device.audio-input` entitlement for TCC microphone prompt. Without it, macOS silently denies without prompting.
 - **Reset macOS permissions**: `tccutil reset Microphone com.derekentringer.notesync` and `tccutil reset ScreenCapture com.derekentringer.notesync`

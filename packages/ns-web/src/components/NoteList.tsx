@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -7,6 +7,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { NoteSearchResult } from "@derekentringer/shared/ns";
 import type { ExportFormat } from "../lib/importExport.ts";
+import { stripMarkdown } from "../lib/stripMarkdown.ts";
 import { SearchSnippet } from "./SearchSnippet.tsx";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
 
@@ -73,13 +74,33 @@ function SortableNoteItem({
     opacity: isDragging ? 0.5 : 1,
   };
 
+  const snippet = useMemo(() => {
+    if (note.headline) return null; // search results use headline instead
+    if (!note.content) return null;
+    return stripMarkdown(note.content, 80);
+  }, [note.content, note.headline]);
+
+  const relativeDate = useMemo(() => {
+    const date = new Date(note.updatedAt);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return "just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 7) return `${diffDay}d ago`;
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }, [note.updatedAt]);
+
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center relative">
+    <div ref={setNodeRef} style={style} className="flex items-start relative mb-px">
       {sortByManual && (
         <span
           {...attributes}
           {...listeners}
-          className="cursor-grab px-1 text-muted-foreground hover:text-foreground text-xs select-none shrink-0"
+          className="cursor-grab px-1 pt-2.5 text-muted-foreground hover:text-foreground text-xs select-none shrink-0"
           title="Drag to reorder"
         >
           &#x2630;
@@ -93,28 +114,49 @@ function SortableNoteItem({
           e.preventDefault();
           onContextMenuOpen(note.id, e.clientX, e.clientY);
         }}
-        className={`flex-1 text-left px-2 py-2 rounded-md text-sm transition-colors cursor-pointer ${
+        className={`flex-1 text-left px-2 py-1.5 rounded-md overflow-hidden transition-colors cursor-pointer ${
           isSelected
             ? "bg-accent text-foreground"
             : "text-muted hover:bg-accent hover:text-foreground"
         }`}
       >
-        <span className="flex items-center truncate">
-          {note.favorite && <span className="text-[10px] text-primary mr-1">★</span>}
-          <span className="truncate">{note.title || "Untitled"}</span>
+        {/* Title row */}
+        <span className="flex items-center gap-1 overflow-hidden">
+          {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+          <span className="text-sm font-medium truncate">{note.title || "Untitled"}</span>
           {note.isLocalFile && (
             <span
-              className="inline-block w-1.5 h-1.5 rounded-full shrink-0 ml-1 bg-muted-foreground/50"
+              className="inline-block w-1.5 h-1.5 rounded-full shrink-0 bg-muted-foreground/50"
               title="This note is linked to a local file"
             />
           )}
         </span>
-        {note.headline && <SearchSnippet headline={note.headline} />}
+        {/* Content preview */}
+        {note.headline ? (
+          <SearchSnippet headline={note.headline} />
+        ) : snippet ? (
+          <p className="text-xs text-muted-foreground truncate mt-0.5">{snippet}</p>
+        ) : null}
+        {/* Metadata row */}
+        <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+          <span className="text-[10px] text-muted-foreground shrink-0">{relativeDate}</span>
+          {note.tags && note.tags.length > 0 && (
+            <>
+              <span className="text-[10px] text-muted-foreground">·</span>
+              {note.tags.slice(0, 2).map((tag) => (
+                <span key={tag} className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
+              ))}
+              {note.tags.length > 2 && (
+                <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
+              )}
+            </>
+          )}
+        </div>
       </button>
       {contextMenu?.noteId === note.id && (onDeleteNote || onExportNote || onToggleFavorite) && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
+          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg inline-flex flex-col"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           {onExportNote && (
@@ -124,7 +166,7 @@ function SortableNoteItem({
                   onExportNote(note.id, "md");
                   onContextMenuClose();
                 }}
-                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+                className="block w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors whitespace-nowrap cursor-pointer"
               >
                 Export as .md
               </button>
@@ -133,7 +175,7 @@ function SortableNoteItem({
                   onExportNote(note.id, "txt");
                   onContextMenuClose();
                 }}
-                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+                className="block w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors whitespace-nowrap cursor-pointer"
               >
                 Export as .txt
               </button>
@@ -142,7 +184,7 @@ function SortableNoteItem({
                   onExportNote(note.id, "pdf");
                   onContextMenuClose();
                 }}
-                className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+                className="block w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors whitespace-nowrap cursor-pointer"
               >
                 Export as .pdf
               </button>
@@ -154,7 +196,7 @@ function SortableNoteItem({
                 onToggleFavorite(note.id, !note.favorite);
                 onContextMenuClose();
               }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors"
+              className="block w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors whitespace-nowrap cursor-pointer"
             >
               {note.favorite ? "Unfavorite" : "Favorite"}
             </button>

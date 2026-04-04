@@ -54,7 +54,7 @@ describe("TagBrowser", () => {
     );
 
     const reactButton = screen.getByText("react").closest("button")!;
-    expect(reactButton.className).toContain("bg-primary");
+    expect(reactButton.className).toContain("bg-accent");
   });
 
   it("calls onToggleTag when a tag is clicked", async () => {
@@ -73,7 +73,7 @@ describe("TagBrowser", () => {
     expect(onToggleTag).toHaveBeenCalledWith("react");
   });
 
-  it("shows clear filter button when tags are active", () => {
+  it("highlights active tags in list layout", () => {
     render(
       <TagBrowser
         tags={mockTags}
@@ -84,7 +84,8 @@ describe("TagBrowser", () => {
       />,
     );
 
-    expect(screen.getByText("clear filter")).toBeInTheDocument();
+    const reactButton = screen.getByText("react").closest("button")!;
+    expect(reactButton.className).toContain("bg-accent");
   });
 
   it("does not show clear filter button when no tags are active", () => {

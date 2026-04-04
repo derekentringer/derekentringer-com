@@ -33,7 +33,7 @@ export function EditorToolbar({
             onClick={() => onViewModeChange(mode.value)}
             className={`px-2.5 py-0.5 text-xs transition-colors cursor-pointer ${
               viewMode === mode.value
-                ? "bg-primary text-primary-contrast font-medium"
+                ? "bg-primary/20 text-primary font-medium"
                 : "text-muted-foreground hover:text-foreground hover:bg-accent"
             }`}
           >
@@ -66,9 +66,9 @@ export function EditorToolbar({
             onClick={onToggleLineNumbers}
             className={`px-2 py-0.5 text-xs rounded transition-colors cursor-pointer ${
               showLineNumbers
-                ? "text-primary"
-                : "text-muted-foreground hover:text-foreground"
-            } hover:bg-accent`}
+                ? "bg-primary/20 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+            }`}
             title="Toggle line numbers"
           >
             #

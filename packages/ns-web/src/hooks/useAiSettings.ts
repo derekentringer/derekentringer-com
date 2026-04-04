@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   rewrite: false,
   semanticSearch: false,
   audioNotes: false,
-  audioMode: "memo",
+  audioMode: "meeting",
   qaAssistant: false,
 };
 
@@ -58,7 +58,7 @@ function loadSettings(): AiSettings {
       rewrite: typeof parsed.rewrite === "boolean" ? parsed.rewrite : false,
       semanticSearch: typeof parsed.semanticSearch === "boolean" ? parsed.semanticSearch : false,
       audioNotes: typeof parsed.audioNotes === "boolean" ? parsed.audioNotes : false,
-      audioMode: VALID_AUDIO_MODES.includes(parsed.audioMode) ? parsed.audioMode : "memo",
+      audioMode: VALID_AUDIO_MODES.includes(parsed.audioMode) ? parsed.audioMode : "meeting",
       qaAssistant: typeof parsed.qaAssistant === "boolean" ? parsed.qaAssistant : false,
     };
   } catch {
