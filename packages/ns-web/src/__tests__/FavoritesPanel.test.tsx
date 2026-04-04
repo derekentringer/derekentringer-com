@@ -72,14 +72,14 @@ describe("FavoritesPanel", () => {
     expect(container.querySelector("[data-testid='favorites-panel']")).toBeNull();
   });
 
-  it("renders section header when items exist", () => {
+  it("renders sort controls when items exist", () => {
     renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteFolders={[makeFolder()]}
       />,
     );
-    expect(screen.getByText("Favorites")).toBeInTheDocument();
+    expect(screen.getByTestId("fav-sort-by")).toBeInTheDocument();
   });
 
   it("renders favorite folders and notes", () => {
@@ -159,34 +159,29 @@ describe("FavoritesPanel", () => {
     expect(onUnfavoriteFolder).toHaveBeenCalledWith("folder-1");
   });
 
-  it("collapse/expand toggle persists", () => {
-    const { rerender } = renderWithDnd(
+  it("always shows items without collapse toggle", () => {
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteFolders={[makeFolder()]}
       />,
     );
 
-    // Items visible initially
+    // Items always visible (no collapse toggle)
     expect(screen.getByText("Work")).toBeInTheDocument();
+    expect(screen.getByTestId("fav-sort-by")).toBeInTheDocument();
+  });
 
-    // Click collapse
-    fireEvent.click(screen.getByText("Favorites"));
-    expect(localStorage.getItem("ns-favorites-collapsed")).toBe("true");
-
-    // Items should be hidden
-    expect(screen.queryByText("Work")).not.toBeInTheDocument();
-
-    // Re-render preserves collapsed state
-    rerender(
-      <DndContext>
-        <FavoritesPanel
-          {...defaultProps}
-          favoriteFolders={[makeFolder()]}
-        />
-      </DndContext>,
+  it("always shows favorite items (no collapse toggle)", () => {
+    renderWithDnd(
+      <FavoritesPanel
+        {...defaultProps}
+        favoriteFolders={[makeFolder()]}
+        favoriteNotes={[makeNote()]}
+      />,
     );
-    expect(screen.queryByText("Work")).not.toBeInTheDocument();
+    expect(screen.getByText("Work")).toBeInTheDocument();
+    expect(screen.getByText("Favorite Note")).toBeInTheDocument();
   });
 
   // Sort controls tests
@@ -229,15 +224,14 @@ describe("FavoritesPanel", () => {
     expect(onFavSortOrderChange).toHaveBeenCalledWith("desc");
   });
 
-  it("does not show sort controls when collapsed", () => {
-    localStorage.setItem("ns-favorites-collapsed", "true");
+  it("always shows sort controls (no collapse toggle)", () => {
     renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteNotes={[makeNote()]}
       />,
     );
-    expect(screen.queryByTestId("fav-sort-by")).not.toBeInTheDocument();
+    expect(screen.getByTestId("fav-sort-by")).toBeInTheDocument();
   });
 
   it("shows drag handles only when sort is manual", () => {

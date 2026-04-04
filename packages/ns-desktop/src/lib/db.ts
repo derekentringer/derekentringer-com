@@ -172,6 +172,14 @@ export interface FetchNotesOptions {
   sortOrder?: SortOrder;
 }
 
+export async function countAllNotes(): Promise<number> {
+  const db = await getDb();
+  const rows = await db.select<{ count: number }[]>(
+    "SELECT COUNT(*) as count FROM notes WHERE is_deleted = 0",
+  );
+  return rows[0]?.count ?? 0;
+}
+
 export async function fetchNotes(options?: FetchNotesOptions): Promise<Note[]> {
   const db = await getDb();
 

@@ -14,6 +14,7 @@ interface FavoritesPanelProps {
   selectedNoteId: string | null;
   onSelectFolder: (folderId: string | null) => void;
   onSelectNote: (noteId: string) => void;
+  onDoubleClickNote?: (noteId: string) => void;
   onUnfavoriteFolder: (folderId: string) => void;
   onUnfavoriteNote: (noteId: string) => void;
   favSortBy: NoteSortField;
@@ -33,12 +34,14 @@ function SortableFavoriteNoteItem({
   note,
   isSelected,
   onSelect,
+  onDoubleClick,
   onContextMenu,
   sortByManual,
 }: {
   note: Note;
   isSelected: boolean;
   onSelect: (noteId: string) => void;
+  onDoubleClick?: (noteId: string) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   sortByManual: boolean;
 }) {
@@ -71,6 +74,7 @@ function SortableFavoriteNoteItem({
       )}
       <button
         onClick={() => onSelect(note.id)}
+        onDoubleClick={(e) => { e.preventDefault(); onDoubleClick?.(note.id); }}
         onContextMenu={onContextMenu}
         className={`flex-1 text-left px-2 py-1.5 rounded-md text-sm transition-colors truncate cursor-pointer ${
           isSelected
@@ -91,6 +95,7 @@ export function FavoritesPanel({
   selectedNoteId,
   onSelectFolder,
   onSelectNote,
+  onDoubleClickNote,
   onUnfavoriteFolder,
   onUnfavoriteNote,
   favSortBy,
@@ -127,63 +132,39 @@ export function FavoritesPanel({
   const sortByManual = favSortBy === "sortOrder";
 
   return (
-    <div className="px-2 py-1" data-testid="favorites-panel">
-      <div className="flex items-center px-1 mb-1">
-        <button
-          onClick={() =>
-            setIsCollapsed((v) => {
-              const next = !v;
-              try {
-                localStorage.setItem("ns-favorites-collapsed", String(next));
-              } catch {}
-              return next;
-            })
-          }
-          className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors text-left cursor-pointer"
-        >
-          <span
-            className="inline-block transition-transform"
-            style={{
-              transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
-            }}
-          >
-            ▾
-          </span>
+    <div className="px-2 pt-2" data-testid="favorites-panel">
+      <div className="flex items-center justify-between mb-1">
+        <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
           Favorites
-        </button>
-
-        {!isCollapsed && (
-          <div className="flex items-center gap-1 ml-auto">
-            <select
-              value={favSortBy}
-              onChange={(e) => onFavSortByChange(e.target.value as NoteSortField)}
-              className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
-              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
-              aria-label="Sort favorites by"
-              data-testid="fav-sort-by"
-            >
-              <option value="sortOrder">Manual</option>
-              <option value="updatedAt">Modified</option>
-              <option value="createdAt">Created</option>
-              <option value="title">Title</option>
-            </select>
-            <button
-              onClick={() => onFavSortOrderChange(favSortOrder === "asc" ? "desc" : "asc")}
-              className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              title={favSortOrder === "asc" ? "Ascending" : "Descending"}
-              aria-label={`Sort favorites ${favSortOrder === "asc" ? "ascending" : "descending"}`}
-              data-testid="fav-sort-order"
-            >
-              {favSortOrder === "asc" ? "\u2191" : "\u2193"}
-            </button>
-          </div>
-        )}
+        </span>
+        <div className="flex items-center gap-1">
+          <select
+            value={favSortBy}
+            onChange={(e) => onFavSortByChange(e.target.value as NoteSortField)}
+            className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+            style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
+            aria-label="Sort favorites by"
+            data-testid="fav-sort-by"
+          >
+            <option value="sortOrder">Manual</option>
+            <option value="updatedAt">Modified</option>
+            <option value="createdAt">Created</option>
+            <option value="title">Title</option>
+          </select>
+          <button
+            onClick={() => onFavSortOrderChange(favSortOrder === "asc" ? "desc" : "asc")}
+            className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            title={favSortOrder === "asc" ? "Ascending" : "Descending"}
+            aria-label={`Sort favorites ${favSortOrder === "asc" ? "ascending" : "descending"}`}
+            data-testid="fav-sort-order"
+          >
+            {favSortOrder === "asc" ? "\u2191" : "\u2193"}
+          </button>
+        </div>
       </div>
 
-      {!isCollapsed && (
-        <>
-          <div className="max-h-[200px] overflow-y-auto">
+      <div className="overflow-y-auto">
             {/* Favorite folders */}
             {favoriteFolders.map((folder) => (
               <button
@@ -215,6 +196,7 @@ export function FavoritesPanel({
                   note={note}
                   isSelected={selectedNoteId === note.id}
                   onSelect={onSelectNote}
+                  onDoubleClick={onDoubleClickNote}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setContextMenu({ type: "note", id: note.id, x: e.clientX, y: e.clientY });
@@ -223,9 +205,7 @@ export function FavoritesPanel({
                 />
               ))}
             </SortableContext>
-          </div>
-        </>
-      )}
+      </div>
 
       {/* Context menu */}
       {contextMenu && (

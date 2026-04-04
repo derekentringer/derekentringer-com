@@ -143,19 +143,15 @@ function FolderTreeNode({
             }`}
             style={{ paddingLeft }}
           >
-            {hasChildren ? (
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleExpand(folder.id);
-                }}
-                className="inline-flex items-center justify-center w-4 h-4 mr-0.5 text-[10px] cursor-pointer shrink-0 select-none"
-              >
-                {isExpanded ? "\u25BC" : "\u25B6"}
-              </span>
-            ) : (
-              <span className="w-4 mr-0.5 shrink-0" />
-            )}
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExpand(folder.id);
+              }}
+              className="inline-flex items-center justify-center w-4 h-4 mr-0.5 text-[10px] cursor-pointer shrink-0 select-none"
+            >
+              {isExpanded ? "\u25BC" : "\u25B6"}
+            </span>
             <span className="truncate">{folder.name}</span>
             {folder.favorite && (
               <span className="text-[10px] text-primary shrink-0 ml-0.5">
@@ -254,7 +250,7 @@ export function FolderTree({
   const [expandedMap, setExpandedMap] = useState<Map<string, boolean>>(() => {
     const stored = loadExpandedState();
     for (const f of folders) {
-      if (!stored.has(f.id)) stored.set(f.id, true);
+      if (!stored.has(f.id)) stored.set(f.id, f.children.length > 0);
     }
     return stored;
   });
@@ -279,14 +275,14 @@ export function FolderTree({
   });
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  // Ensure new root folders default to expanded
+  // Ensure new root folders default to expanded (only if they have children)
   useEffect(() => {
     setExpandedMap((prev) => {
       const next = new Map(prev);
       let changed = false;
       for (const f of folders) {
         if (!next.has(f.id)) {
-          next.set(f.id, true);
+          next.set(f.id, f.children.length > 0);
           changed = true;
         }
       }
@@ -396,47 +392,22 @@ export function FolderTree({
   }
 
   return (
-    <div className="px-2 py-1">
-      <div className="flex items-center justify-between px-1 mb-1">
-        <button
-          onClick={() =>
-            setIsSectionCollapsed((v) => {
-              const next = !v;
-              try {
-                localStorage.setItem("ns-folders-collapsed", String(next));
-              } catch {}
-              return next;
-            })
-          }
-          className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors cursor-pointer"
-        >
-          <span
-            className="inline-block transition-transform"
-            style={{
-              transform: isSectionCollapsed
-                ? "rotate(-90deg)"
-                : "rotate(0deg)",
-            }}
-          >
-            ▾
-          </span>
+    <div className="px-2 pt-2">
+      <div className="flex items-center justify-between mb-1">
+        <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg>
           Folders
+        </span>
+        <button
+          onClick={() => setIsCreating(true)}
+          className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          title="New folder"
+        >
+          +
         </button>
-        {!isSectionCollapsed && (
-          <button
-            onClick={() => setIsCreating(true)}
-            className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            title="New folder"
-          >
-            +
-          </button>
-        )}
       </div>
 
-      {!isSectionCollapsed && (
-        <>
-          {/* All Notes */}
+      {/* All Notes */}
           <button
             onClick={() => onSelectFolder(null)}
             className={`w-full text-left px-2 py-1 rounded text-sm transition-colors truncate cursor-pointer ${
@@ -514,8 +485,6 @@ export function FolderTree({
               className="w-full px-2 py-1 rounded text-sm bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             />
           )}
-        </>
-      )}
 
       {/* Context menu */}
       {contextMenu && (
