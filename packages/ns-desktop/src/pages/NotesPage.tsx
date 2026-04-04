@@ -145,7 +145,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
-import { AudioRecorder } from "../components/AudioRecorder.tsx";
+import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
+import { RecordingBar } from "../components/RecordingBar.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
@@ -277,6 +278,9 @@ export function NotesPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+
+  // Audio recording state
+  const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -770,6 +774,7 @@ export function NotesPage() {
       // Re-fetch so sort order is respected (e.g. modified-desc moves edited note to top)
       reloadNotes();
       loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
 
       // Three-write save: also write to local file if linked
       if (updated.isLocalFile) {
@@ -1018,6 +1023,7 @@ export function NotesPage() {
       openNoteAsTab(note);
       await refreshSidebarData();
       loadNoteTitles();
+      setDashboardKey((k) => k + 1);
       notifyLocalChange();
       setTimeout(() => {
         const titleInput = document.querySelector<HTMLInputElement>("[data-title-input]");
@@ -1036,6 +1042,7 @@ export function NotesPage() {
       openNoteAsTab(serverNote);
       await refreshSidebarData();
       loadNoteTitles();
+      setDashboardKey((k) => k + 1);
       notifyLocalChange();
     } catch (err) {
       console.error("Failed to save audio note:", err);
@@ -1090,6 +1097,8 @@ export function NotesPage() {
       }
       await refreshSidebarData();
       loadNoteTitles();
+      loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
       notifyLocalChange();
     } catch (err) {
       console.error("Failed to delete note:", err);
@@ -1104,6 +1113,7 @@ export function NotesPage() {
       const updated = await updateNote(noteId, { tags: newTags });
       setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
       await refreshTags();
+      setDashboardKey((k) => k + 1);
       notifyLocalChange();
     } catch (err) {
       console.error("Failed to update tags:", err);
@@ -1177,6 +1187,7 @@ export function NotesPage() {
         prev.map((n) => (n.id === updated.id ? { ...n, favorite: updated.favorite } : n)),
       );
       loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
       notifyLocalChange();
     } catch {
       showError("Failed to update favorite");
@@ -1408,6 +1419,8 @@ export function NotesPage() {
       }
       await refreshSidebarData();
       loadNoteTitles();
+      loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
       notifyLocalChange();
     } catch (err) {
       console.error("Failed to restore note:", err);
@@ -2299,6 +2312,7 @@ export function NotesPage() {
       );
       setSuggestedTags((prev) => prev.filter((t) => t !== tag));
       await refreshTags();
+      setDashboardKey((k) => k + 1);
       notifyLocalChange();
     } catch {
       showError("Failed to add tag");
@@ -2385,10 +2399,41 @@ export function NotesPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col h-full">
+    {/* Recording bar — top of window, animated */}
+    <div
+      className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out shrink-0"
+      style={{
+        maxHeight: recordingState && recordingState.state === "recording" ? "36px" : "0px",
+        opacity: recordingState && recordingState.state === "recording" ? 1 : 0,
+      }}
+    >
+      {recordingState && (
+        <RecordingBar
+          state={recordingState.state as "recording" | "processing"}
+          elapsed={recordingState.elapsed}
+          mode={recordingState.mode}
+          stream={recordingState.stream}
+          onStop={recordingState.onStop}
+        />
+      )}
+    </div>
+    <div className="flex flex-1 min-h-0">
       {/* Ribbon — always visible */}
       <Ribbon
         onNewNote={handleCreate}
+        audioSlot={aiSettings.masterAiEnabled && aiSettings.audioNotes ? (
+          <AudioRecorder
+            defaultMode={aiSettings.audioMode}
+            folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+            recordingSource={aiSettings.recordingSource}
+            onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
+            onNoteCreated={handleAudioNoteCreated}
+            onError={showError}
+            onRecordingStateChange={setRecordingState}
+            onModeChange={(m) => updateAiSetting("audioMode", m)}
+          />
+        ) : undefined}
         syncStatus={syncStatusState}
         syncError={syncErrorState}
         onSync={manualSync}
@@ -2411,19 +2456,6 @@ export function NotesPage() {
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode ? 0 : sidebarResize.size }}
       >
-        {/* Sidebar header with audio recorder */}
-        {sidebarView === "notes" && aiSettings.masterAiEnabled && aiSettings.audioNotes && (
-          <div className="px-2 pt-2 pb-1 flex items-center justify-end shrink-0">
-            <AudioRecorder
-              defaultMode={aiSettings.audioMode}
-              folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
-              recordingSource={aiSettings.recordingSource}
-              onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
-              onNoteCreated={handleAudioNoteCreated}
-              onError={showError}
-            />
-          </div>
-        )}
 
         {sidebarView === "notes" ? (
           <DndContext
@@ -2801,7 +2833,7 @@ export function NotesPage() {
       {/* Editor area */}
       <main
         ref={mainRef}
-        className="flex-1 flex min-w-0 relative"
+        className="flex-1 flex min-w-0 relative overflow-hidden"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
@@ -2883,7 +2915,7 @@ export function NotesPage() {
         ) : selectedNote ? (
           <>
             {/* Toolbar status bar */}
-            <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border shrink-0">
+            <div className="flex items-center gap-1.5 px-4 py-1 border-b border-border shrink-0">
               <span className="text-[11px] text-muted-foreground">
                 {saveStatus === "saving"
                   ? "Saving..."
@@ -2952,7 +2984,7 @@ export function NotesPage() {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-1.5 bottom-1.5" ref={folderDropdownRef}>
+              <div className="absolute left-2 bottom-1.5" ref={folderDropdownRef}>
                 <button
                   onClick={() => setShowFolderDropdown((v) => !v)}
                   className="w-8 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -3218,7 +3250,7 @@ export function NotesPage() {
           </div>
         ) : (
           <Dashboard
-            key={dashboardKey}
+            refreshKey={dashboardKey}
             onSelectNote={handleDashboardSelectNote}
             onCreateNote={handleCreate}
             onStartRecording={handleDashboardStartRecording}
@@ -3449,6 +3481,7 @@ export function NotesPage() {
           onClose={() => setShowSyncIssuesDialog(false)}
         />
       )}
+    </div>
     </div>
   );
 }

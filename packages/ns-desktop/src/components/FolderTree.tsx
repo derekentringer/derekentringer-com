@@ -490,7 +490,7 @@ export function FolderTree({
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
+          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg inline-flex flex-col"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
