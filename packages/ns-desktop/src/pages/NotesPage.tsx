@@ -150,6 +150,7 @@ import { AudioRecorder } from "../components/AudioRecorder.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
+import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
@@ -241,6 +242,15 @@ export function NotesPage() {
   const [trashRetentionDays, setTrashRetentionDays] = useState<number>(() => {
     const stored = localStorage.getItem(TRASH_RETENTION_KEY);
     return stored !== null ? Number(stored) : 30;
+  });
+
+  // Sidebar panel tab state
+  const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>(() => {
+    try {
+      const stored = localStorage.getItem("ns-sidebar-panel");
+      if (stored && ["explorer", "search", "favorites", "tags"].includes(stored)) return stored as SidebarPanel;
+    } catch {}
+    return "explorer";
   });
 
   // Settings / Change Password / Admin
@@ -577,6 +587,10 @@ export function NotesPage() {
     try { localStorage.setItem("ns-desktop-sort-order", sortOrder); } catch {}
   }, [sortOrder]);
 
+  useEffect(() => {
+    try { localStorage.setItem("ns-sidebar-panel", sidebarPanel); } catch {}
+  }, [sidebarPanel]);
+
   // --- Semantic search lifecycle ---
 
   const semanticEnabled = aiSettings.masterAiEnabled && aiSettings.semanticSearch;
@@ -627,7 +641,8 @@ export function NotesPage() {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        setSidebarPanel("search");
+        requestAnimationFrame(() => searchInputRef.current?.focus());
       }
     }
     document.addEventListener("keydown", handleKeyDown);
@@ -2325,101 +2340,27 @@ export function NotesPage() {
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode ? 0 : sidebarResize.size }}
       >
-        {/* Sidebar header */}
-        <div className="pl-4 pr-2 py-4 flex items-center justify-between">
-          <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
-          {sidebarView === "notes" && (
-            <div className="flex items-center gap-1.5">
-              {aiSettings.masterAiEnabled && aiSettings.audioNotes && (
-                <AudioRecorder
-                  defaultMode={aiSettings.audioMode}
-                  folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
-                  recordingSource={aiSettings.recordingSource}
-                  onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
-                  onNoteCreated={handleAudioNoteCreated}
-                  onError={showError}
-                />
-              )}
-              <button
-                onClick={handleCreate}
-                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
-                title="New note"
-              >
-                +
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Search bar + tag browser (hidden in trash view) */}
+        {/* Sidebar header with audio recorder and new note button */}
         {sidebarView === "notes" && (
-        <div
-          ref={searchPanelRef}
-          className="p-2"
-          onMouseDown={(e) => {
-            // Prevent blur when clicking inside the search panel (tags, show more, etc.)
-            if (e.target !== searchInputRef.current) {
-              e.preventDefault();
-            }
-          }}
-        >
-          <div className="flex items-center rounded-md bg-input border border-border focus-within:ring-1 focus-within:ring-ring">
-            {semanticEnabled && (
-              <select
-                value={searchMode}
-                onChange={(e) => setSearchMode(e.target.value as SearchMode)}
-                className="appearance-none bg-transparent text-xs text-muted-foreground pl-2 pr-1 py-1.5 focus:outline-none cursor-pointer"
-                aria-label="Search mode"
-              >
-                <option value="hybrid">Hybrid</option>
-                <option value="keyword">Keyword</option>
-                <option value="semantic">Semantic</option>
-              </select>
-            )}
-            <div className="relative flex-1">
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setSearchFocused(false)}
-                placeholder="Search notes... (⌘K)"
-                className={`w-full py-1.5 pr-6 text-sm bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none ${semanticEnabled ? "pl-1" : "px-3"}`}
+          <div className="px-2 pt-2 pb-1 flex items-center justify-end gap-1.5 shrink-0">
+            {aiSettings.masterAiEnabled && aiSettings.audioNotes && (
+              <AudioRecorder
+                defaultMode={aiSettings.audioMode}
+                folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+                recordingSource={aiSettings.recordingSource}
+                onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
+                onNoteCreated={handleAudioNoteCreated}
+                onError={showError}
               />
-              {searchQuery && (
-                <button
-                  onClick={() => {
-                    setSearchQuery("");
-                    setSearchResults(null);
-                  }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs cursor-pointer"
-                >
-                  &times;
-                </button>
-              )}
-            </div>
-          </div>
-          <div
-            className="overflow-y-auto overflow-x-hidden transition-[max-height,opacity] duration-200 ease-in-out"
-            style={{
-              maxHeight: searchFocused || activeTags.length > 0 || searchQuery ? "200px" : "0px",
-              opacity: searchFocused || activeTags.length > 0 || searchQuery ? 1 : 0,
-            }}
-          >
-            {tags.length > 0 && (
-              <div className="pt-2">
-                <TagBrowser
-                  tags={tags}
-                  activeTags={activeTags}
-                  onToggleTag={handleToggleTag}
-                  onRenameTag={handleRenameTag}
-                  onDeleteTag={handleDeleteTag}
-                />
-              </div>
             )}
+            <button
+              onClick={handleCreate}
+              className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
+              title="New note"
+            >
+              +
+            </button>
           </div>
-        </div>
         )}
 
         {sidebarView === "notes" ? (
@@ -2428,146 +2369,292 @@ export function NotesPage() {
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
           >
-            {/* Favorites + Folder tree (resizable) */}
-            <div className="shrink-0 overflow-y-auto overflow-x-hidden" style={{ height: folderResize.size }}>
-              {(favoriteFolders.length > 0 || favoriteNotes.length > 0) && (
-                <FavoritesPanel
-                  favoriteFolders={favoriteFolders}
-                  favoriteNotes={favoriteNotes}
-                  activeFolder={searchResults ? null : activeFolder}
-                  selectedNoteId={selectedId}
-                  onSelectFolder={(folderId) => {
-                    setActiveFolder(folderId);
-                    setSearchQuery("");
-                    setSearchResults(null);
-                  }}
-                  onSelectNote={handleFavoriteNoteClick}
-                  onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
-                  onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
-                  favSortBy={favSortBy}
-                  favSortOrder={favSortOrder}
-                  onFavSortByChange={handleFavSortByChange}
-                  onFavSortOrderChange={handleFavSortOrderChange}
-                />
-              )}
-              <FolderTree
-                folders={folders}
-                activeFolder={searchResults ? null : activeFolder}
-                totalNotes={notes.length}
-                onSelectFolder={(folderId) => {
-                  setActiveFolder(folderId);
-                  setSearchQuery("");
-                  setSearchResults(null);
-                }}
-                onCreateFolder={handleCreateFolder}
-                onRenameFolder={handleRenameFolder}
-                onDeleteFolder={handleDeleteFolder}
-                onMoveFolder={handleMoveFolder}
-                onExportFolder={handleExportFolder}
-                onToggleFavorite={handleToggleFolderFavorite}
-              />
-            </div>
-
-            <ResizeDivider
-              direction="horizontal"
-              isDragging={folderResize.isDragging}
-              onPointerDown={folderResize.onPointerDown}
+            {/* Sidebar tabs */}
+            <SidebarTabs
+              activePanel={sidebarPanel}
+              onPanelChange={setSidebarPanel}
+              showFavorites={favoriteFolders.length > 0 || favoriteNotes.length > 0}
             />
 
-            {/* Notes header with sort controls */}
-            <div className="px-2 py-1">
-              <div className="flex items-center justify-between px-1 mb-1">
-                <span className="text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg>
-                  {searchResults ? "Search Results" : "Notes"}
-                </span>
-                {!searchResults && (
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value as NoteSortField)}
-                      className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
-                      style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
-                      aria-label="Sort by"
-                    >
-                      <option value="sortOrder">Manual</option>
-                      <option value="updatedAt">Modified</option>
-                      <option value="createdAt">Created</option>
-                      <option value="title">Title</option>
-                    </select>
-                    <button
-                      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                      title={sortOrder === "asc" ? "Ascending" : "Descending"}
-                      aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
-                    >
-                      {sortOrder === "asc" ? "\u2191" : "\u2193"}
-                    </button>
-                    <button
-                      onClick={handleCreate}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                      title="New note"
-                    >
-                      +
-                    </button>
+            {/* Sidebar panel content — switches based on active tab */}
+            <div className="flex-1 flex flex-col min-h-0">
+              {sidebarPanel === "explorer" && (
+                <>
+                  <div className="flex-1 overflow-y-auto overflow-x-hidden">
+                    <FolderTree
+                      folders={folders}
+                      activeFolder={searchResults ? null : activeFolder}
+                      totalNotes={notes.length}
+                      onSelectFolder={(folderId) => {
+                        setActiveFolder(folderId);
+                        setSearchQuery("");
+                        setSearchResults(null);
+                      }}
+                      onCreateFolder={handleCreateFolder}
+                      onRenameFolder={handleRenameFolder}
+                      onDeleteFolder={handleDeleteFolder}
+                      onMoveFolder={handleMoveFolder}
+                      onExportFolder={handleExportFolder}
+                      onToggleFavorite={handleToggleFolderFavorite}
+                    />
                   </div>
-                )}
-              </div>
-            </div>
 
-            {/* Note list */}
-            <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2" data-testid="note-list">
-              {isLoading ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  Loading...
-                </div>
-              ) : searchResults ? (
-                searchResults.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                    No results found
-                  </div>
-                ) : (
-                  <NoteList
-                    notes={filteredNotes}
-                    selectedId={selectedId}
-                    onSelect={handleNoteSelect}
-                    onDoubleClick={openNoteAsTab}
-                    onDeleteNote={handleLocalFileDelete}
-                    onExportNote={handleExportNote}
-                    onToggleFavorite={handleToggleNoteFavorite}
-                    searchResults={searchResults}
-                    sortByManual={sortBy === "sortOrder"}
-                    localFileStatuses={localFileStatuses}
-                    onUnlinkLocalFile={handleUnlinkLocalFile}
-                    onSaveAsLocalFile={handleSaveAsLocalFile}
-                    onSaveToFile={handleSaveToFile}
-                    onUseLocalVersion={handleUseLocalVersion}
-                    onViewDiff={handleViewDiff}
+                  <ResizeDivider
+                    direction="horizontal"
+                    isDragging={folderResize.isDragging}
+                    onPointerDown={folderResize.onPointerDown}
                   />
-                )
-              ) : filteredNotes.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  No notes yet
-                </div>
-              ) : (
-                <NoteList
-                  notes={filteredNotes}
-                  selectedId={selectedId}
-                  onSelect={handleNoteSelect}
-                  onDoubleClick={openNoteAsTab}
-                  onDeleteNote={handleLocalFileDelete}
-                  onExportNote={handleExportNote}
-                  onToggleFavorite={handleToggleNoteFavorite}
-                  sortByManual={sortBy === "sortOrder"}
-                  localFileStatuses={localFileStatuses}
-                  onUnlinkLocalFile={handleUnlinkLocalFile}
-                  onSaveAsLocalFile={handleSaveAsLocalFile}
-                  onSaveToFile={handleSaveToFile}
-                  onUseLocalVersion={handleUseLocalVersion}
-                  onViewDiff={handleViewDiff}
-                />
+
+                  <div className="shrink-0 flex flex-col" style={{ height: folderResize.size }}>
+                    {/* Notes header with sort controls */}
+                    <div className="px-2 py-1">
+                      <div className="flex items-center justify-between px-1 mb-1">
+                        <span className="text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg>
+                          {searchResults ? "Search Results" : "Notes"}
+                        </span>
+                        {!searchResults && (
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={sortBy}
+                              onChange={(e) => setSortBy(e.target.value as NoteSortField)}
+                              className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
+                              aria-label="Sort by"
+                            >
+                              <option value="sortOrder">Manual</option>
+                              <option value="updatedAt">Modified</option>
+                              <option value="createdAt">Created</option>
+                              <option value="title">Title</option>
+                            </select>
+                            <button
+                              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                              className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                              title={sortOrder === "asc" ? "Ascending" : "Descending"}
+                              aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
+                            >
+                              {sortOrder === "asc" ? "\u2191" : "\u2193"}
+                            </button>
+                            <button
+                              onClick={handleCreate}
+                              className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                              title="New note"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Note list */}
+                    <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2" data-testid="note-list">
+                      {isLoading ? (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          Loading...
+                        </div>
+                      ) : searchResults ? (
+                        searchResults.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">
+                            No results found
+                          </div>
+                        ) : (
+                          <NoteList
+                            notes={filteredNotes}
+                            selectedId={selectedId}
+                            onSelect={handleNoteSelect}
+                            onDoubleClick={openNoteAsTab}
+                            onDeleteNote={handleLocalFileDelete}
+                            onExportNote={handleExportNote}
+                            onToggleFavorite={handleToggleNoteFavorite}
+                            searchResults={searchResults}
+                            sortByManual={sortBy === "sortOrder"}
+                            localFileStatuses={localFileStatuses}
+                            onUnlinkLocalFile={handleUnlinkLocalFile}
+                            onSaveAsLocalFile={handleSaveAsLocalFile}
+                            onSaveToFile={handleSaveToFile}
+                            onUseLocalVersion={handleUseLocalVersion}
+                            onViewDiff={handleViewDiff}
+                          />
+                        )
+                      ) : filteredNotes.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          No notes yet
+                        </div>
+                      ) : (
+                        <NoteList
+                          notes={filteredNotes}
+                          selectedId={selectedId}
+                          onSelect={handleNoteSelect}
+                          onDoubleClick={openNoteAsTab}
+                          onDeleteNote={handleLocalFileDelete}
+                          onExportNote={handleExportNote}
+                          onToggleFavorite={handleToggleNoteFavorite}
+                          sortByManual={sortBy === "sortOrder"}
+                          localFileStatuses={localFileStatuses}
+                          onUnlinkLocalFile={handleUnlinkLocalFile}
+                          onSaveAsLocalFile={handleSaveAsLocalFile}
+                          onSaveToFile={handleSaveToFile}
+                          onUseLocalVersion={handleUseLocalVersion}
+                          onViewDiff={handleViewDiff}
+                        />
+                      )}
+                    </nav>
+                  </div>
+                </>
               )}
-            </nav>
+
+              {sidebarPanel === "search" && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div
+                    ref={searchPanelRef}
+                    className="p-2 shrink-0"
+                    onMouseDown={(e) => {
+                      if (e.target !== searchInputRef.current) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
+                    <div className="flex items-center rounded-md bg-input border border-border focus-within:ring-1 focus-within:ring-ring">
+                      {semanticEnabled && (
+                        <select
+                          value={searchMode}
+                          onChange={(e) => setSearchMode(e.target.value as SearchMode)}
+                          className="appearance-none bg-transparent text-xs text-muted-foreground pl-2 pr-1 py-1.5 focus:outline-none cursor-pointer"
+                          aria-label="Search mode"
+                        >
+                          <option value="hybrid">Hybrid</option>
+                          <option value="keyword">Keyword</option>
+                          <option value="semantic">Semantic</option>
+                        </select>
+                      )}
+                      <div className="relative flex-1">
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onFocus={() => setSearchFocused(true)}
+                          onBlur={() => setSearchFocused(false)}
+                          placeholder="Search notes... (⌘K)"
+                          className={`w-full py-1.5 pr-6 text-sm bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none ${semanticEnabled ? "pl-1" : "px-3"}`}
+                        />
+                        {searchQuery && (
+                          <button
+                            onClick={() => {
+                              setSearchQuery("");
+                              setSearchResults(null);
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs cursor-pointer"
+                          >
+                            &times;
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {tags.length > 0 && (
+                      <div className="overflow-y-auto overflow-x-hidden mt-2">
+                        <TagBrowser
+                          tags={tags}
+                          activeTags={activeTags}
+                          onToggleTag={handleToggleTag}
+                          onRenameTag={handleRenameTag}
+                          onDeleteTag={handleDeleteTag}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2" data-testid="note-list">
+                    {isLoading ? (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        Loading...
+                      </div>
+                    ) : searchResults ? (
+                      searchResults.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">
+                          No results found
+                        </div>
+                      ) : (
+                        <NoteList
+                          notes={filteredNotes}
+                          selectedId={selectedId}
+                          onSelect={handleNoteSelect}
+                          onDoubleClick={openNoteAsTab}
+                          onDeleteNote={handleLocalFileDelete}
+                          onExportNote={handleExportNote}
+                          onToggleFavorite={handleToggleNoteFavorite}
+                          searchResults={searchResults}
+                          sortByManual={sortBy === "sortOrder"}
+                          localFileStatuses={localFileStatuses}
+                          onUnlinkLocalFile={handleUnlinkLocalFile}
+                          onSaveAsLocalFile={handleSaveAsLocalFile}
+                          onSaveToFile={handleSaveToFile}
+                          onUseLocalVersion={handleUseLocalVersion}
+                          onViewDiff={handleViewDiff}
+                        />
+                      )
+                    ) : filteredNotes.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        No notes yet
+                      </div>
+                    ) : (
+                      <NoteList
+                        notes={filteredNotes}
+                        selectedId={selectedId}
+                        onSelect={handleNoteSelect}
+                        onDoubleClick={openNoteAsTab}
+                        onDeleteNote={handleLocalFileDelete}
+                        onExportNote={handleExportNote}
+                        onToggleFavorite={handleToggleNoteFavorite}
+                        sortByManual={sortBy === "sortOrder"}
+                        localFileStatuses={localFileStatuses}
+                        onUnlinkLocalFile={handleUnlinkLocalFile}
+                        onSaveAsLocalFile={handleSaveAsLocalFile}
+                        onSaveToFile={handleSaveToFile}
+                        onUseLocalVersion={handleUseLocalVersion}
+                        onViewDiff={handleViewDiff}
+                      />
+                    )}
+                  </nav>
+                </div>
+              )}
+
+              {sidebarPanel === "favorites" && (
+                <div className="flex-1 overflow-y-auto">
+                  <FavoritesPanel
+                    favoriteFolders={favoriteFolders}
+                    favoriteNotes={favoriteNotes}
+                    activeFolder={searchResults ? null : activeFolder}
+                    selectedNoteId={selectedId}
+                    onSelectFolder={(folderId) => {
+                      setActiveFolder(folderId);
+                      setSearchQuery("");
+                      setSearchResults(null);
+                    }}
+                    onSelectNote={handleFavoriteNoteClick}
+                    onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
+                    onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
+                    favSortBy={favSortBy}
+                    favSortOrder={favSortOrder}
+                    onFavSortByChange={handleFavSortByChange}
+                    onFavSortOrderChange={handleFavSortOrderChange}
+                  />
+                </div>
+              )}
+
+              {sidebarPanel === "tags" && (
+                <div className="flex-1 overflow-y-auto p-2">
+                  <TagBrowser
+                    tags={tags}
+                    activeTags={activeTags}
+                    onToggleTag={handleToggleTag}
+                    onRenameTag={handleRenameTag}
+                    onDeleteTag={handleDeleteTag}
+                  />
+                </div>
+              )}
+            </div>
 
           </DndContext>
         ) : (
