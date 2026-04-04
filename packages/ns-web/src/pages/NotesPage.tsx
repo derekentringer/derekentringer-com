@@ -53,7 +53,7 @@ import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../component
 import { NoteList } from "../components/NoteList.tsx";
 import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
-import { TagBrowser } from "../components/TagBrowser.tsx";
+import { TagBrowser, type TagLayout, type TagSort } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
@@ -73,6 +73,8 @@ import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import { connectSseStream } from "../api/sse.ts";
 import { Dashboard } from "../components/Dashboard.tsx";
 import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
+import { stripMarkdown } from "../lib/stripMarkdown.ts";
+import { SearchSnippet } from "../components/SearchSnippet.tsx";
 import { Ribbon } from "../components/Ribbon.tsx";
 import { NoteListPanel } from "../components/NoteListPanel.tsx";
 import {
@@ -109,6 +111,7 @@ export function NotesPage() {
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<NoteSearchResult[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [previewTabId, setPreviewTabId] = useState<string | null>(null);
@@ -187,6 +190,22 @@ export function NotesPage() {
       if (stored && ["explorer", "search", "favorites", "tags"].includes(stored)) return stored as SidebarPanel;
     } catch {}
     return "explorer";
+  });
+
+  // Tag panel state
+  const [tagLayout, setTagLayout] = useState<TagLayout>(() => {
+    try {
+      const stored = localStorage.getItem("ns-tag-layout");
+      if (stored === "pills" || stored === "list") return stored;
+    } catch {}
+    return "list";
+  });
+  const [tagSort, setTagSort] = useState<TagSort>(() => {
+    try {
+      const stored = localStorage.getItem("ns-tag-sort");
+      if (stored === "count" || stored === "alpha") return stored;
+    } catch {}
+    return "count";
   });
 
   // Folder dropdown state
@@ -325,27 +344,22 @@ export function NotesPage() {
   }, []);
 
   const loadNotes = useCallback(
-    async (searchQuery?: string) => {
+    async () => {
       const requestId = ++loadNotesCounterRef.current;
       try {
         const folderIdParam =
-          !searchQuery && activeFolder && activeFolder !== "__unfiled__"
+          activeFolder && activeFolder !== "__unfiled__"
             ? activeFolder
             : undefined;
         const result = await fetchNotes({
-          search: searchQuery || undefined,
-          searchMode: searchQuery && settings.semanticSearch ? searchMode : undefined,
           folderId: folderIdParam,
           tags: activeTags.length > 0 ? activeTags : undefined,
           sortBy,
           sortOrder,
         });
-        // Only apply if this is still the latest request — prevents a stale fetch
-        // (started before a save) from overwriting the notes array with old data
         if (requestId !== loadNotesCounterRef.current) return;
         let filtered = result.notes;
-        // Client-side filter for "unfiled" (notes with no folder) — skip during search
-        if (!searchQuery && activeFolder === "__unfiled__") {
+        if (activeFolder === "__unfiled__") {
           filtered = filtered.filter((n) => !n.folderId);
         }
         setNotes(filtered);
@@ -355,7 +369,28 @@ export function NotesPage() {
         setIsLoading(false);
       }
     },
-    [sortBy, sortOrder, activeFolder, activeTags, searchMode, settings.semanticSearch],
+    [sortBy, sortOrder, activeFolder, activeTags],
+  );
+
+  const loadSearchResults = useCallback(
+    async (query: string) => {
+      if (!query) {
+        setSearchResults(null);
+        return;
+      }
+      try {
+        const result = await fetchNotes({
+          search: query,
+          searchMode: settings.semanticSearch ? searchMode : undefined,
+          sortBy: "updatedAt",
+          sortOrder: "desc",
+        });
+        setSearchResults(result.notes);
+      } catch {
+        showError("Failed to search notes");
+      }
+    },
+    [searchMode, settings.semanticSearch],
   );
 
   const loadTrash = useCallback(async () => {
@@ -398,10 +433,15 @@ export function NotesPage() {
     return result;
   }, [folders]);
 
-  // Load notes on mount and when search/sort/folder/mode changes
+  // Load notes on mount and when sort/folder/tag changes
   useEffect(() => {
-    loadNotes(debouncedSearch || undefined);
-  }, [debouncedSearch, loadNotes]);
+    loadNotes();
+  }, [loadNotes]);
+
+  // Search results update when debounced search changes
+  useEffect(() => {
+    loadSearchResults(debouncedSearch);
+  }, [debouncedSearch, loadSearchResults]);
 
   // Load folders on mount
   useEffect(() => {
@@ -510,7 +550,7 @@ export function NotesPage() {
       debounceTimer = setTimeout(() => {
         setSyncStatus("syncing");
         const reloads: Promise<unknown>[] = [
-          loadNotesRef.current(debouncedSearchRef.current || undefined),
+          loadNotesRef.current(),
           loadFoldersRef.current(),
           loadFavoriteNotesRef.current(),
           loadNoteTitlesRef.current(),
@@ -539,7 +579,7 @@ export function NotesPage() {
     // Fallback poll at 120s (safety net if SSE drops silently)
     const FALLBACK_POLL_MS = 120_000;
     const fallbackTimer = setInterval(() => {
-      loadNotesRef.current(debouncedSearchRef.current || undefined);
+      loadNotesRef.current();
       loadFoldersRef.current();
       loadFavoriteNotesRef.current();
     }, FALLBACK_POLL_MS);
@@ -565,7 +605,7 @@ export function NotesPage() {
     );
     setOpenTabs((prev) => prev.map((id) => reconciledIds.get(id) ?? id));
     setPreviewTabId((prev) => prev && reconciledIds.has(prev) ? reconciledIds.get(prev)! : prev);
-    loadNotes(debouncedSearch || undefined);
+    loadNotes();
   }, [reconciledIds]);
 
   // Manual sync triggered by SyncStatusButton click
@@ -574,7 +614,7 @@ export function NotesPage() {
     setSyncError(null);
     try {
       const reloads: Promise<unknown>[] = [
-        loadNotes(debouncedSearch || undefined),
+        loadNotes(),
         loadFolders(),
         loadFavoriteNotes(),
         loadNoteTitles(),
@@ -588,7 +628,7 @@ export function NotesPage() {
       setSyncStatus("error");
       setSyncError("Sync failed");
     }
-  }, [loadNotes, loadFolders, loadFavoriteNotes, loadNoteTitles, loadTrash, debouncedSearch, sidebarView]);
+  }, [loadNotes, loadFolders, loadFavoriteNotes, loadNoteTitles, loadTrash, sidebarView]);
 
   // Deep-link: navigate to note from URL on mount (only on initial load)
   const deepLinkHandled = useRef(false);
@@ -865,14 +905,14 @@ export function NotesPage() {
       setVersionRefreshKey((k) => k + 1);
 
       // Re-fetch so sort order is respected (e.g. modified-desc moves edited note to top)
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
       loadFavoriteNotes();
     } catch {
       showError("Failed to save note");
     } finally {
       setIsSaving(false);
     }
-  }, [selectedId, isDirty, isSaving, title, content, loadNoteTitles, loadNotes, loadFavoriteNotes, debouncedSearch]);
+  }, [selectedId, isDirty, isSaving, title, content, loadNoteTitles, loadNotes, loadFavoriteNotes]);
 
   async function handleDelete() {
     if (!selectedId) return;
@@ -983,7 +1023,7 @@ export function NotesPage() {
       });
     } catch {
       showError("Failed to reorder notes");
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     }
   }
 
@@ -1046,7 +1086,7 @@ export function NotesPage() {
         setNotes((prev) =>
           prev.map((n) => (n.id === updated.id ? updated : n)),
         );
-        loadNotes(debouncedSearch || undefined);
+        loadNotes();
         loadFolders();
       } catch {
         showError("Failed to move note");
@@ -1077,7 +1117,7 @@ export function NotesPage() {
     try {
       await renameFolderApi(folderId, newName);
       loadFolders();
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     } catch {
       showError("Failed to rename folder");
     }
@@ -1107,7 +1147,7 @@ export function NotesPage() {
         prev.map((t) => (t === oldName ? newName : t)),
       );
       loadFolders(); // reloads tags too
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     } catch {
       showError("Failed to rename tag");
     }
@@ -1119,7 +1159,7 @@ export function NotesPage() {
       await deleteTagApi(name);
       setActiveTags((prev) => prev.filter((t) => t !== name));
       loadFolders(); // reloads tags too
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     } catch {
       showError("Failed to delete tag");
     }
@@ -1149,7 +1189,7 @@ export function NotesPage() {
         setActiveFolder(null);
       }
       loadFolders();
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     } catch {
       showError("Failed to delete folder");
     }
@@ -1269,7 +1309,7 @@ export function NotesPage() {
       (progress) => setImportProgress(progress),
     );
     setImportProgress(null);
-    loadNotes(debouncedSearch || undefined);
+    loadNotes();
     loadFolders();
     if (autoSelect && lastCreatedNote && result.successCount > 0) {
       openNoteAsTab(lastCreatedNote);
@@ -1535,7 +1575,26 @@ export function NotesPage() {
     }
   }
 
-  function handleFavoriteNoteClick(noteId: string) {
+  function handleFavoriteNoteSelect(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      handleNoteSelect(note);
+    } else {
+      import("../api/offlineNotes.ts").then(({ fetchNote }) => {
+        fetchNote(noteId)
+          .then((fetched) => {
+            setNotes((prev) => {
+              if (prev.some((n) => n.id === fetched.id)) return prev;
+              return [fetched, ...prev];
+            });
+            handleNoteSelect(fetched);
+          })
+          .catch(() => showError("Favorited note not found"));
+      });
+    }
+  }
+
+  function handleFavoriteNoteOpen(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
       openNoteAsTab(note);
@@ -1810,13 +1869,14 @@ export function NotesPage() {
                 <div className="flex-1 flex flex-col min-h-0">
                   <div
                     ref={searchPanelRef}
-                    className="p-2 shrink-0"
-                    onMouseDown={(e) => {
-                      if (e.target !== searchInputRef.current) {
-                        e.preventDefault();
-                      }
-                    }}
+                    className="px-2 pt-2 shrink-0"
                   >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                        Search
+                      </span>
+                    </div>
                     <div className="relative flex items-center rounded-md bg-input border border-border focus-within:ring-2 focus-within:ring-ring">
                       {settings.masterAiEnabled && settings.semanticSearch && (
                         <select
@@ -1854,15 +1914,63 @@ export function NotesPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto px-2">
-                    <TagBrowser
-                      tags={tags}
-                      activeTags={activeTags}
-                      onToggleTag={handleToggleTag}
-                      onRenameTag={handleRenameTag}
-                      onDeleteTag={handleDeleteTag}
-                    />
-                  </div>
+                  {/* Search results */}
+                  {debouncedSearch && (
+                    <nav className="flex-1 overflow-y-auto px-2 pb-2">
+                      {searchResults === null ? (
+                        <div className="px-1 py-2 text-xs text-muted-foreground">Searching...</div>
+                      ) : searchResults.length === 0 ? (
+                        <div className="px-1 py-2 text-xs text-muted-foreground">No results found</div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <div className="px-1 py-1 text-[10px] text-muted-foreground">{searchResults.length} result{searchResults.length !== 1 ? "s" : ""}</div>
+                          {searchResults.map((note) => {
+                            const snippet = note.headline ? null : (note.content ? stripMarkdown(note.content, 80) : null);
+                            const date = new Date(note.updatedAt);
+                            const now = new Date();
+                            const diffMin = Math.floor((now.getTime() - date.getTime()) / 60000);
+                            const relDate = diffMin < 1 ? "just now" : diffMin < 60 ? `${diffMin}m ago` : Math.floor(diffMin / 60) < 24 ? `${Math.floor(diffMin / 60)}h ago` : Math.floor(diffMin / 60 / 24) < 7 ? `${Math.floor(diffMin / 60 / 24)}d ago` : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                            return (
+                              <button
+                                key={note.id}
+                                onClick={() => handleNoteSelect(note)}
+                                onDoubleClick={(e) => { e.preventDefault(); openNoteAsTab(note); }}
+                                className={`w-full text-left px-2 py-1.5 rounded overflow-hidden transition-colors cursor-pointer mb-px ${
+                                  selectedId === note.id
+                                    ? "bg-accent text-foreground"
+                                    : "text-muted hover:bg-accent hover:text-foreground"
+                                }`}
+                              >
+                                <span className="flex items-center gap-1 overflow-hidden">
+                                  {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+                                  <span className="text-sm font-medium truncate">{note.title || "Untitled"}</span>
+                                </span>
+                                {note.headline ? (
+                                  <SearchSnippet headline={note.headline} />
+                                ) : snippet ? (
+                                  <p className="text-xs text-muted-foreground truncate mt-0.5">{snippet}</p>
+                                ) : null}
+                                <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                                  <span className="text-[10px] text-muted-foreground shrink-0">{relDate}</span>
+                                  {note.tags && note.tags.length > 0 && (
+                                    <>
+                                      <span className="text-[10px] text-muted-foreground">·</span>
+                                      {note.tags.slice(0, 2).map((tag) => (
+                                        <span key={tag} className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
+                                      ))}
+                                      {note.tags.length > 2 && (
+                                        <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </nav>
+                  )}
                 </div>
               )}
 
@@ -1874,7 +1982,8 @@ export function NotesPage() {
                     activeFolder={activeFolder}
                     selectedNoteId={selectedId}
                     onSelectFolder={setActiveFolder}
-                    onSelectNote={handleFavoriteNoteClick}
+                    onSelectNote={handleFavoriteNoteSelect}
+                    onDoubleClickNote={handleFavoriteNoteOpen}
                     onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
                     onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
                     favSortBy={favSortBy}
@@ -1886,13 +1995,64 @@ export function NotesPage() {
               )}
 
               {sidebarPanel === "tags" && (
-                <div className="flex-1 overflow-y-auto p-2">
+                <div className="flex-1 overflow-y-auto px-2 pt-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                      Tags
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={tagSort}
+                        onChange={(e) => {
+                          const val = e.target.value as TagSort;
+                          setTagSort(val);
+                          try { localStorage.setItem("ns-tag-sort", val); } catch {}
+                        }}
+                        className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
+                        aria-label="Sort tags"
+                      >
+                        <option value="count">By count</option>
+                        <option value="alpha">A-Z</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          const next = tagLayout === "pills" ? "list" : "pills";
+                          setTagLayout(next);
+                          try { localStorage.setItem("ns-tag-layout", next); } catch {}
+                        }}
+                        className="flex items-center justify-center w-5 h-5 rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        title={tagLayout === "pills" ? "Switch to list view" : "Switch to pill view"}
+                        aria-label="Toggle tag layout"
+                      >
+                        {tagLayout === "pills" ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                        )}
+                      </button>
+                      {activeTags.length > 0 && (
+                        <button
+                          onClick={() => activeTags.forEach((t) => handleToggleTag(t))}
+                          className="flex items-center justify-center w-5 h-5 rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          title="Clear tag filter"
+                          aria-label="Clear tag filter"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <TagBrowser
                     tags={tags}
                     activeTags={activeTags}
                     onToggleTag={handleToggleTag}
                     onRenameTag={handleRenameTag}
                     onDeleteTag={handleDeleteTag}
+                    layout={tagLayout}
+                    sortBy={tagSort}
+                    showFilter
                   />
                 </div>
               )}
@@ -2001,7 +2161,7 @@ export function NotesPage() {
                 notes={notes}
                 selectedId={selectedId}
                 isLoading={isLoading}
-                isSearchResults={!!debouncedSearch}
+                isSearchResults={false}
                 sortBy={sortBy}
                 sortOrder={sortOrder}
                 onSortByChange={setSortBy}
@@ -2158,7 +2318,7 @@ export function NotesPage() {
                             setNotes((prev) =>
                               prev.map((n) => (n.id === updated.id ? updated : n)),
                             );
-                            loadNotes(debouncedSearch || undefined);
+                            loadNotes();
                             loadFolders();
                           } catch {
                             showError("Failed to move note");
@@ -2250,19 +2410,18 @@ export function NotesPage() {
                 {suggestedTags.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent text-xs text-foreground border border-border"
+                    className="inline-flex items-center rounded-full bg-accent text-xs text-foreground border border-border overflow-hidden"
                   >
-                    {tag}
                     <button
                       onClick={() => handleAcceptTag(tag)}
-                      className="text-primary hover:text-primary-hover transition-colors cursor-pointer"
-                      title="Accept tag"
+                      className="px-2 py-0.5 hover:bg-primary/20 transition-colors cursor-pointer"
+                      title="Add tag"
                     >
-                      +
+                      {tag}
                     </button>
                     <button
                       onClick={() => handleDismissTag(tag)}
-                      className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                      className="px-1 py-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border-l border-border"
                       title="Dismiss"
                     >
                       ✕

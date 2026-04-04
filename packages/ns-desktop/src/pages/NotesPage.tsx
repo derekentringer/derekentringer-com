@@ -24,6 +24,7 @@ import type {
 } from "@derekentringer/ns-shared";
 import {
   fetchNotes,
+  countAllNotes,
   createNote,
   updateNote,
   softDeleteNote,
@@ -77,7 +78,7 @@ import { NoteList } from "../components/NoteList.tsx";
 import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
-import { TagBrowser } from "../components/TagBrowser.tsx";
+import { TagBrowser, type TagLayout, type TagSort } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { DiffView } from "../components/DiffView.tsx";
@@ -149,6 +150,8 @@ import { QAPanel } from "../components/QAPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
 import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
+import { stripMarkdown } from "../lib/stripMarkdown.ts";
+import { SearchSnippet } from "../components/SearchSnippet.tsx";
 import { Ribbon } from "../components/Ribbon.tsx";
 import { NoteListPanel } from "../components/NoteListPanel.tsx";
 
@@ -175,6 +178,7 @@ export function NotesPage() {
 
   // Notes
   const [notes, setNotes] = useState<Note[]>([]);
+  const [allNotesCount, setAllNotesCount] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
@@ -251,6 +255,22 @@ export function NotesPage() {
       if (stored && ["explorer", "search", "favorites", "tags"].includes(stored)) return stored as SidebarPanel;
     } catch {}
     return "explorer";
+  });
+
+  // Tag panel state
+  const [tagLayout, setTagLayout] = useState<TagLayout>(() => {
+    try {
+      const stored = localStorage.getItem("ns-tag-layout");
+      if (stored === "pills" || stored === "list") return stored;
+    } catch {}
+    return "list";
+  });
+  const [tagSort, setTagSort] = useState<TagSort>(() => {
+    try {
+      const stored = localStorage.getItem("ns-tag-sort");
+      if (stored === "count" || stored === "alpha") return stored;
+    } catch {}
+    return "count";
   });
 
   // Settings / Change Password / Admin
@@ -532,6 +552,8 @@ export function NotesPage() {
         fetchTags(),
       ]);
       setNotes(notesResult);
+      const totalCount = await countAllNotes();
+      setAllNotesCount(totalCount);
       setFolders(foldersResult);
       setTags(tagsResult);
       loadNoteTitles();
@@ -564,15 +586,19 @@ export function NotesPage() {
   const reloadNotes = useCallback(async () => {
     const requestId = ++reloadNotesCounterRef.current;
     try {
-      const result = await fetchNotes({
-        folderId: activeFolder === "__unfiled__" ? null : activeFolder === null ? undefined : activeFolder,
-        sortBy,
-        sortOrder,
-      });
+      const [result, totalCount] = await Promise.all([
+        fetchNotes({
+          folderId: activeFolder === "__unfiled__" ? null : activeFolder === null ? undefined : activeFolder,
+          sortBy,
+          sortOrder,
+        }),
+        countAllNotes(),
+      ]);
       // Only apply if this is still the latest request — prevents a stale fetch
       // (started before a save) from overwriting the notes array with old data
       if (requestId === reloadNotesCounterRef.current) {
         setNotes(result);
+        setAllNotesCount(totalCount);
       }
     } catch (err) {
       console.error("Failed to reload notes:", err);
@@ -1201,7 +1227,25 @@ export function NotesPage() {
     }
   }
 
-  function handleFavoriteNoteClick(noteId: string) {
+  function handleFavoriteNoteSelect(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      handleNoteSelect(note);
+      return;
+    }
+    fetchNoteById(noteId)
+      .then((fetched) => {
+        if (fetched) {
+          setNotes((prev) =>
+            prev.some((n) => n.id === fetched.id) ? prev : [fetched, ...prev],
+          );
+          handleNoteSelect(fetched);
+        }
+      })
+      .catch(() => showError("Favorited note not found"));
+  }
+
+  function handleFavoriteNoteOpen(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
       openNoteAsTab(note);
@@ -2400,13 +2444,9 @@ export function NotesPage() {
                 <div className="flex-1 overflow-y-auto overflow-x-hidden">
                   <FolderTree
                     folders={folders}
-                    activeFolder={searchResults ? null : activeFolder}
-                    totalNotes={notes.length}
-                    onSelectFolder={(folderId) => {
-                      setActiveFolder(folderId);
-                      setSearchQuery("");
-                      setSearchResults(null);
-                    }}
+                    activeFolder={activeFolder}
+                    totalNotes={allNotesCount}
+                    onSelectFolder={setActiveFolder}
                     onCreateFolder={handleCreateFolder}
                     onRenameFolder={handleRenameFolder}
                     onDeleteFolder={handleDeleteFolder}
@@ -2421,13 +2461,14 @@ export function NotesPage() {
                 <div className="flex-1 flex flex-col min-h-0">
                   <div
                     ref={searchPanelRef}
-                    className="p-2 shrink-0"
-                    onMouseDown={(e) => {
-                      if (e.target !== searchInputRef.current) {
-                        e.preventDefault();
-                      }
-                    }}
+                    className="px-2 pt-2 shrink-0"
                   >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                        Search
+                      </span>
+                    </div>
                     <div className="flex items-center rounded-md bg-input border border-border focus-within:ring-1 focus-within:ring-ring">
                       {semanticEnabled && (
                         <select
@@ -2466,16 +2507,62 @@ export function NotesPage() {
                       </div>
                     </div>
                   </div>
-                  {tags.length > 0 && (
-                    <div className="flex-1 overflow-y-auto overflow-x-hidden px-2">
-                      <TagBrowser
-                        tags={tags}
-                        activeTags={activeTags}
-                        onToggleTag={handleToggleTag}
-                        onRenameTag={handleRenameTag}
-                        onDeleteTag={handleDeleteTag}
-                      />
-                    </div>
+                  {/* Search results */}
+                  {searchQuery && (
+                    <nav className="flex-1 overflow-y-auto px-2 pb-2">
+                      {searchResults === null ? (
+                        <div className="px-1 py-2 text-xs text-muted-foreground">Searching...</div>
+                      ) : searchResults.length === 0 ? (
+                        <div className="px-1 py-2 text-xs text-muted-foreground">No results found</div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <div className="px-1 py-1 text-[10px] text-muted-foreground">{searchResults.length} result{searchResults.length !== 1 ? "s" : ""}</div>
+                          {searchResults.map((note) => {
+                            const snippet = note.headline ? null : (note.content ? stripMarkdown(note.content, 80) : null);
+                            const date = new Date(note.updatedAt);
+                            const now = new Date();
+                            const diffMin = Math.floor((now.getTime() - date.getTime()) / 60000);
+                            const relDate = diffMin < 1 ? "just now" : diffMin < 60 ? `${diffMin}m ago` : Math.floor(diffMin / 60) < 24 ? `${Math.floor(diffMin / 60)}h ago` : Math.floor(diffMin / 60 / 24) < 7 ? `${Math.floor(diffMin / 60 / 24)}d ago` : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                            return (
+                              <button
+                                key={note.id}
+                                onClick={() => handleNoteSelect(note)}
+                                onDoubleClick={(e) => { e.preventDefault(); openNoteAsTab(note); }}
+                                className={`w-full text-left px-2 py-1.5 rounded overflow-hidden transition-colors cursor-pointer mb-px ${
+                                  selectedId === note.id
+                                    ? "bg-accent text-foreground"
+                                    : "text-muted hover:bg-accent hover:text-foreground"
+                                }`}
+                              >
+                                <span className="flex items-center gap-1 overflow-hidden">
+                                  {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+                                  <span className="text-sm font-medium truncate">{note.title || "Untitled"}</span>
+                                </span>
+                                {note.headline ? (
+                                  <SearchSnippet headline={note.headline} />
+                                ) : snippet ? (
+                                  <p className="text-xs text-muted-foreground truncate mt-0.5">{snippet}</p>
+                                ) : null}
+                                <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                                  <span className="text-[10px] text-muted-foreground shrink-0">{relDate}</span>
+                                  {note.tags && note.tags.length > 0 && (
+                                    <>
+                                      <span className="text-[10px] text-muted-foreground">·</span>
+                                      {note.tags.slice(0, 2).map((tag) => (
+                                        <span key={tag} className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
+                                      ))}
+                                      {note.tags.length > 2 && (
+                                        <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </nav>
                   )}
                 </div>
               )}
@@ -2485,14 +2572,11 @@ export function NotesPage() {
                   <FavoritesPanel
                     favoriteFolders={favoriteFolders}
                     favoriteNotes={favoriteNotes}
-                    activeFolder={searchResults ? null : activeFolder}
+                    activeFolder={activeFolder}
                     selectedNoteId={selectedId}
-                    onSelectFolder={(folderId) => {
-                      setActiveFolder(folderId);
-                      setSearchQuery("");
-                      setSearchResults(null);
-                    }}
-                    onSelectNote={handleFavoriteNoteClick}
+                    onSelectFolder={setActiveFolder}
+                    onSelectNote={handleFavoriteNoteSelect}
+                    onDoubleClickNote={handleFavoriteNoteOpen}
                     onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
                     onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
                     favSortBy={favSortBy}
@@ -2504,13 +2588,64 @@ export function NotesPage() {
               )}
 
               {sidebarPanel === "tags" && (
-                <div className="flex-1 overflow-y-auto p-2">
+                <div className="flex-1 overflow-y-auto px-2 pt-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                      Tags
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={tagSort}
+                        onChange={(e) => {
+                          const val = e.target.value as TagSort;
+                          setTagSort(val);
+                          try { localStorage.setItem("ns-tag-sort", val); } catch {}
+                        }}
+                        className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
+                        aria-label="Sort tags"
+                      >
+                        <option value="count">By count</option>
+                        <option value="alpha">A-Z</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          const next = tagLayout === "pills" ? "list" : "pills";
+                          setTagLayout(next);
+                          try { localStorage.setItem("ns-tag-layout", next); } catch {}
+                        }}
+                        className="flex items-center justify-center w-5 h-5 rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        title={tagLayout === "pills" ? "Switch to list view" : "Switch to pill view"}
+                        aria-label="Toggle tag layout"
+                      >
+                        {tagLayout === "pills" ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                        )}
+                      </button>
+                      {activeTags.length > 0 && (
+                        <button
+                          onClick={() => activeTags.forEach((t) => handleToggleTag(t))}
+                          className="flex items-center justify-center w-5 h-5 rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          title="Clear tag filter"
+                          aria-label="Clear tag filter"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <TagBrowser
                     tags={tags}
                     activeTags={activeTags}
                     onToggleTag={handleToggleTag}
                     onRenameTag={handleRenameTag}
                     onDeleteTag={handleDeleteTag}
+                    layout={tagLayout}
+                    sortBy={tagSort}
+                    showFilter
                   />
                 </div>
               )}
@@ -2633,7 +2768,7 @@ export function NotesPage() {
                 notes={filteredNotes}
                 selectedId={selectedId}
                 isLoading={isLoading}
-                isSearchResults={!!searchResults}
+                isSearchResults={false}
                 sortBy={sortBy}
                 sortOrder={sortOrder}
                 onSortByChange={setSortBy}
@@ -2644,7 +2779,6 @@ export function NotesPage() {
                 onExportNote={handleExportNote}
                 onToggleFavorite={handleToggleNoteFavorite}
                 onCreate={handleCreate}
-                searchResults={searchResults}
                 localFileStatuses={localFileStatuses}
                 onUnlinkLocalFile={handleUnlinkLocalFile}
                 onSaveAsLocalFile={handleSaveAsLocalFile}
@@ -2933,19 +3067,18 @@ export function NotesPage() {
                 {suggestedTags.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent text-xs text-foreground border border-border"
+                    className="inline-flex items-center rounded-full bg-accent text-xs text-foreground border border-border overflow-hidden"
                   >
-                    {tag}
                     <button
                       onClick={() => handleAcceptTag(tag)}
-                      className="text-primary hover:text-primary-hover transition-colors cursor-pointer"
-                      title="Accept tag"
+                      className="px-2 py-0.5 hover:bg-primary/20 transition-colors cursor-pointer"
+                      title="Add tag"
                     >
-                      +
+                      {tag}
                     </button>
                     <button
                       onClick={() => handleDismissTag(tag)}
-                      className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                      className="px-1 py-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border-l border-border"
                       title="Dismiss"
                     >
                       ✕

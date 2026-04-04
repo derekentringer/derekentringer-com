@@ -681,7 +681,7 @@ describe("NotesPage", () => {
   });
 
   describe("Tags", () => {
-    it("renders tag pills when search tab is active", async () => {
+    it("renders tag pills when tags tab is active", async () => {
       const user = userEvent.setup();
       mockFetchTags.mockResolvedValue({
         tags: [
@@ -694,9 +694,9 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      // Switch to search tab to see tags
-      const searchTab = screen.getByRole("button", { name: "Search" });
-      await user.click(searchTab);
+      // Switch to tags tab to see tags
+      const tagsTab = screen.getByRole("button", { name: "Tags" });
+      await user.click(tagsTab);
 
       expect(screen.getByText("javascript")).toBeInTheDocument();
       expect(screen.getByText("react")).toBeInTheDocument();
@@ -708,9 +708,9 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      // Switch to search tab
-      const searchTab = screen.getByRole("button", { name: "Search" });
-      await user.click(searchTab);
+      // Switch to tags tab
+      const tagsTab = screen.getByRole("button", { name: "Tags" });
+      await user.click(tagsTab);
 
       expect(screen.queryByText("javascript")).not.toBeInTheDocument();
     });
