@@ -1,8 +1,9 @@
 # 25 — Navigation & Layout Improvements (Obsidian-Inspired)
 
-**Status:** Planned
+**Status:** Phases 1-5 Complete, Phases 6-8 Planned
 **Phase:** UI Enhancement
 **Priority:** Medium
+**Completed Phases:** Sidebar Tabs, Ribbon, Note List Panel, Rich Note Rows, Audio Recording Refactor
 
 ## Context
 
