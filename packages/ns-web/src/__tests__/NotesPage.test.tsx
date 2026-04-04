@@ -565,7 +565,7 @@ describe("NotesPage", () => {
       });
     });
 
-    it("hides new note button in trash view", async () => {
+    it("keeps new note button visible in trash view via ribbon", async () => {
       mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
 
       renderNotesPage();
@@ -578,7 +578,8 @@ describe("NotesPage", () => {
 
       await screen.findByText("Trash is empty");
 
-      expect(screen.queryAllByTitle("New note")).toHaveLength(0);
+      // New note button is in the ribbon, always visible
+      expect(screen.getAllByTitle("New note").length).toBeGreaterThan(0);
     });
   });
 

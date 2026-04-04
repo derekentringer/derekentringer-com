@@ -39,7 +39,7 @@ import {
   toggleFolderFavoriteApi,
 } from "../api/offlineNotes.ts";
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
-import { SyncStatusButton, type SyncStatus } from "../components/SyncStatusButton.tsx";
+import { type SyncStatus } from "../components/SyncStatusButton.tsx";
 import {
   MarkdownEditor,
   type MarkdownEditorHandle,
@@ -71,9 +71,9 @@ import { DiffView } from "../components/DiffView.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import { connectSseStream } from "../api/sse.ts";
-import { ImportButton } from "../components/ImportButton.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
 import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
+import { Ribbon } from "../components/Ribbon.tsx";
 import {
   parseFileList,
   importFiles,
@@ -1734,29 +1734,39 @@ export function NotesPage() {
 
   return (
     <div className="flex h-full">
+      {/* Ribbon — always visible */}
+      <Ribbon
+        onNewNote={handleCreate}
+        syncStatus={syncStatus}
+        syncError={syncError}
+        onSync={handleManualSync}
+        pendingCount={pendingCount}
+        onTrash={switchToTrash}
+        trashCount={trashTotal}
+        showTrash={sidebarView === "notes"}
+        onImportFiles={(files) => handleImportFiles(files)}
+        onImportDirectory={(files) => handleImportFiles(files)}
+        showImport={sidebarView === "notes"}
+        onSettings={() => navigate("/settings")}
+        onAdmin={() => navigate("/admin")}
+        showAdmin={user?.role === "admin"}
+        onSignOut={logout}
+      />
+
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode ? 0 : sidebarResize.size }}
       >
-        {/* Sidebar header with audio recorder and new note button */}
-        {sidebarView === "notes" && (
-          <div className="px-2 pt-2 pb-1 flex items-center justify-end gap-1.5 shrink-0">
-            {settings.masterAiEnabled && settings.audioNotes && (
-              <AudioRecorder
-                defaultMode={settings.audioMode}
-                folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
-                onNoteCreated={handleAudioNoteCreated}
-                onError={showError}
-              />
-            )}
-            <button
-              onClick={handleCreate}
-              className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
-              title="New note"
-            >
-              +
-            </button>
+        {/* Sidebar header with audio recorder */}
+        {sidebarView === "notes" && settings.masterAiEnabled && settings.audioNotes && (
+          <div className="px-2 pt-2 pb-1 flex items-center justify-end shrink-0">
+            <AudioRecorder
+              defaultMode={settings.audioMode}
+              folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+              onNoteCreated={handleAudioNoteCreated}
+              onError={showError}
+            />
           </div>
         )}
 
@@ -1773,7 +1783,7 @@ export function NotesPage() {
             <div className="flex-1 flex flex-col min-h-0">
               {sidebarPanel === "explorer" && (
                 <>
-                  <div className="flex-1 overflow-y-auto">
+                  <div className="shrink-0 overflow-y-auto" style={{ height: folderResize.size }}>
                     <FolderTree
                       folders={folders}
                       activeFolder={activeFolder}
@@ -1794,7 +1804,7 @@ export function NotesPage() {
                     onPointerDown={folderResize.onPointerDown}
                   />
 
-                  <div className="shrink-0 flex flex-col" style={{ height: folderResize.size }}>
+                  <div className="flex-1 flex flex-col min-h-0">
                     <div className="px-2 py-1">
                       <div className="flex items-center justify-between px-1 mb-1">
                         <span className="text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
@@ -2057,59 +2067,6 @@ export function NotesPage() {
           </>
         )}
 
-        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <SyncStatusButton
-              status={syncStatus}
-              error={syncError}
-              onSync={handleManualSync}
-              pendingCount={pendingCount}
-            />
-            {sidebarView === "notes" && (
-              <>
-                <button
-                  onClick={switchToTrash}
-                  className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                  title="Trash"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  {trashTotal > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
-                      {trashTotal}
-                    </span>
-                  )}
-                </button>
-                <ImportButton
-                  onImportFiles={(files) => handleImportFiles(files)}
-                  onImportDirectory={(files) => handleImportFiles(files)}
-                />
-              </>
-            )}
-            <button
-              onClick={() => navigate("/settings")}
-              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-              title="Settings"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </button>
-            {user?.role === "admin" && (
-              <button
-                onClick={() => navigate("/admin")}
-                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                title="Admin"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              </button>
-            )}
-          </div>
-          <button
-            onClick={logout}
-            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-            title="Sign out"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          </button>
-        </div>
       </aside>
 
       <div className="flex" style={{ pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>

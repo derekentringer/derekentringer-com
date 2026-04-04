@@ -89,7 +89,6 @@ import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.t
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
-import { SyncStatusButton } from "../components/SyncStatusButton.tsx";
 import { SyncIssuesDialog } from "../components/SyncIssuesDialog.tsx";
 import {
   initSyncEngine,
@@ -116,7 +115,6 @@ import {
   type ImportProgress,
   type ExportFormat,
 } from "../lib/importExport.ts";
-import { ImportButton } from "../components/ImportButton.tsx";
 import { ImportChoiceDialog } from "../components/ImportChoiceDialog.tsx";
 import { LocalFileDeleteDialog } from "../components/LocalFileDeleteDialog.tsx";
 import { ExternalChangeDialog } from "../components/ExternalChangeDialog.tsx";
@@ -151,6 +149,7 @@ import { QAPanel } from "../components/QAPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
 import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
+import { Ribbon } from "../components/Ribbon.tsx";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
@@ -2335,31 +2334,42 @@ export function NotesPage() {
 
   return (
     <div className="flex h-full">
+      {/* Ribbon — always visible */}
+      <Ribbon
+        onNewNote={handleCreate}
+        syncStatus={syncStatusState}
+        syncError={syncErrorState}
+        onSync={manualSync}
+        hasRejections={syncRejections.length > 0}
+        onViewIssues={() => setShowSyncIssuesDialog(true)}
+        onTrash={handleViewTrash}
+        trashCount={trashCount}
+        showTrash={sidebarView === "notes"}
+        onImportFiles={(files) => handleImportFiles(files)}
+        onImportDirectory={(files) => handleImportFiles(files)}
+        showImport={sidebarView === "notes"}
+        onSettings={() => setShowSettings(true)}
+        onAdmin={() => setShowAdmin(true)}
+        showAdmin={user?.role === "admin"}
+        onSignOut={logout}
+      />
+
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode ? 0 : sidebarResize.size }}
       >
-        {/* Sidebar header with audio recorder and new note button */}
-        {sidebarView === "notes" && (
-          <div className="px-2 pt-2 pb-1 flex items-center justify-end gap-1.5 shrink-0">
-            {aiSettings.masterAiEnabled && aiSettings.audioNotes && (
-              <AudioRecorder
-                defaultMode={aiSettings.audioMode}
-                folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
-                recordingSource={aiSettings.recordingSource}
-                onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
-                onNoteCreated={handleAudioNoteCreated}
-                onError={showError}
-              />
-            )}
-            <button
-              onClick={handleCreate}
-              className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
-              title="New note"
-            >
-              +
-            </button>
+        {/* Sidebar header with audio recorder */}
+        {sidebarView === "notes" && aiSettings.masterAiEnabled && aiSettings.audioNotes && (
+          <div className="px-2 pt-2 pb-1 flex items-center justify-end shrink-0">
+            <AudioRecorder
+              defaultMode={aiSettings.audioMode}
+              folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+              recordingSource={aiSettings.recordingSource}
+              onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
+              onNoteCreated={handleAudioNoteCreated}
+              onError={showError}
+            />
           </div>
         )}
 
@@ -2380,7 +2390,7 @@ export function NotesPage() {
             <div className="flex-1 flex flex-col min-h-0">
               {sidebarPanel === "explorer" && (
                 <>
-                  <div className="flex-1 overflow-y-auto overflow-x-hidden">
+                  <div className="shrink-0 overflow-y-auto overflow-x-hidden" style={{ height: folderResize.size }}>
                     <FolderTree
                       folders={folders}
                       activeFolder={searchResults ? null : activeFolder}
@@ -2405,7 +2415,7 @@ export function NotesPage() {
                     onPointerDown={folderResize.onPointerDown}
                   />
 
-                  <div className="shrink-0 flex flex-col" style={{ height: folderResize.size }}>
+                  <div className="flex-1 flex flex-col min-h-0">
                     {/* Notes header with sort controls */}
                     <div className="px-2 py-1">
                       <div className="flex items-center justify-between px-1 mb-1">
@@ -2751,60 +2761,6 @@ export function NotesPage() {
         )}
 
         {/* Sidebar bottom bar */}
-        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <SyncStatusButton
-              status={syncStatusState}
-              error={syncErrorState}
-              onSync={manualSync}
-              hasRejections={syncRejections.length > 0}
-              onViewIssues={() => setShowSyncIssuesDialog(true)}
-            />
-            {sidebarView === "notes" && (
-              <>
-                <button
-                  onClick={handleViewTrash}
-                  className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                  title="Trash"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  {trashCount > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
-                      {trashCount}
-                    </span>
-                  )}
-                </button>
-                <ImportButton
-                  onImportFiles={(files) => handleImportFiles(files)}
-                  onImportDirectory={(files) => handleImportFiles(files)}
-                />
-              </>
-            )}
-            <button
-              onClick={() => setShowSettings(true)}
-              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-              title="Settings"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-            {user?.role === "admin" && (
-              <button
-                onClick={() => setShowAdmin(true)}
-                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                title="Admin"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              </button>
-            )}
-          </div>
-          <button
-            onClick={logout}
-            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-            title="Sign out"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          </button>
-        </div>
       </aside>
 
       <div className="flex" style={{ pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
