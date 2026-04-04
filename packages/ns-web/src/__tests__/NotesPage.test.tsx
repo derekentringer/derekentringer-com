@@ -680,7 +680,7 @@ describe("NotesPage", () => {
   });
 
   describe("Tags", () => {
-    it("renders tag pills when search is focused", async () => {
+    it("renders tag pills when search tab is active", async () => {
       const user = userEvent.setup();
       mockFetchTags.mockResolvedValue({
         tags: [
@@ -693,9 +693,9 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      // Tags are hidden until search is focused
-      const searchInput = screen.getByPlaceholderText("Search notes... (⌘K)");
-      await user.click(searchInput);
+      // Switch to search tab to see tags
+      const searchTab = screen.getByRole("button", { name: "Search" });
+      await user.click(searchTab);
 
       expect(screen.getByText("javascript")).toBeInTheDocument();
       expect(screen.getByText("react")).toBeInTheDocument();
@@ -707,8 +707,9 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      const searchInput = screen.getByPlaceholderText("Search notes... (⌘K)");
-      await user.click(searchInput);
+      // Switch to search tab
+      const searchTab = screen.getByRole("button", { name: "Search" });
+      await user.click(searchTab);
 
       expect(screen.queryByText("javascript")).not.toBeInTheDocument();
     });
@@ -764,7 +765,7 @@ describe("NotesPage", () => {
       await screen.findByText("Test Note");
 
       // Sidebar should be visible (width > 0)
-      const sidebar = screen.getByText("NoteSync").closest("aside")!;
+      const sidebar = screen.getByRole("button", { name: "File Explorer" }).closest("aside")!;
       expect(sidebar.style.width).not.toBe("0px");
 
       // Press Cmd+Shift+D to enter focus mode
