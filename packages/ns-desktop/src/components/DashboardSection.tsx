@@ -19,7 +19,7 @@ export function DashboardSection({
       {isEmpty ? (
         <p className="text-sm text-muted-foreground">{emptyMessage || "Nothing here yet."}</p>
       ) : (
-        <div className="dashboard-scroll flex gap-3 overflow-x-auto pb-2">{children}</div>
+        <div className="flex gap-3 overflow-x-auto scrollbar-none" style={{ scrollbarWidth: "none" }}>{children}</div>
       )}
     </div>
   );

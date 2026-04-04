@@ -6,6 +6,7 @@ import { ImportButton } from "./ImportButton.tsx";
 interface RibbonProps {
   // Top actions
   onNewNote: () => void;
+  audioSlot?: ReactNode;
   // Sync
   syncStatus: SyncStatus;
   syncError: string | null;
@@ -30,6 +31,7 @@ interface RibbonProps {
 
 export function Ribbon({
   onNewNote,
+  audioSlot,
   syncStatus,
   syncError,
   onSync,
@@ -56,6 +58,7 @@ export function Ribbon({
         >
           +
         </button>
+        {audioSlot}
       </div>
 
       {/* Spacer */}

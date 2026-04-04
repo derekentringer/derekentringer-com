@@ -10,6 +10,7 @@ interface DashboardProps {
   onStartRecording: () => void;
   onImportFile: () => void;
   audioNotesEnabled: boolean;
+  refreshKey?: number;
 }
 
 interface DashboardData {
@@ -24,6 +25,7 @@ export function Dashboard({
   onStartRecording,
   onImportFile,
   audioNotesEnabled,
+  refreshKey = 0,
 }: DashboardProps) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,7 @@ export function Dashboard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshKey]);
 
   if (loading) {
     return (
@@ -83,7 +85,7 @@ export function Dashboard({
   const remainingRecent = data?.recentlyEdited.slice(1) ?? [];
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    <div className="flex-1 overflow-y-auto min-w-0 p-4 space-y-4">
       {/* Quick Actions */}
       <div>
         <h2 className="text-sm font-semibold text-foreground mb-2">Quick Actions</h2>

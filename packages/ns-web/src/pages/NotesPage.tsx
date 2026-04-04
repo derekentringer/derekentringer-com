@@ -63,7 +63,8 @@ import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.t
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
-import { AudioRecorder } from "../components/AudioRecorder.tsx";
+import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
+import { RecordingBar } from "../components/RecordingBar.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
@@ -104,7 +105,7 @@ export function NotesPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { noteId: routeNoteId } = useParams<{ noteId?: string }>();
-  const { settings } = useAiSettings();
+  const { settings, updateSetting: updateAiSetting } = useAiSettings();
   const { settings: editorSettings } = useEditorSettings();
   const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -237,6 +238,9 @@ export function NotesPage() {
 
   // Copy link state
   const [linkCopied, setLinkCopied] = useState(false);
+
+  // Audio recording state
+  const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -850,6 +854,7 @@ export function NotesPage() {
       loadNoteTitles();
       // Re-fetch to ensure proper sort order
       loadNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to create note");
     }
@@ -907,6 +912,7 @@ export function NotesPage() {
       // Re-fetch so sort order is respected (e.g. modified-desc moves edited note to top)
       loadNotes();
       loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to save note");
     } finally {
@@ -958,6 +964,8 @@ export function NotesPage() {
       }
       setTrashTotal((prev) => prev + 1);
       loadFolders();
+      loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to delete note");
     }
@@ -975,6 +983,8 @@ export function NotesPage() {
       setTitle("");
       setContent("");
       loadFolders();
+      loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to restore note");
     }
@@ -1173,6 +1183,7 @@ export function NotesPage() {
         prev.map((n) => (n.id === updated.id ? updated : n)),
       );
       loadFolders(); // reloads tags too
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to update tags");
     }
@@ -1528,6 +1539,7 @@ export function NotesPage() {
         prev.map((n) => (n.id === updated.id ? { ...n, favorite: updated.favorite } : n)),
       );
       loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to update favorite");
     }
@@ -1707,6 +1719,7 @@ export function NotesPage() {
       );
       setSuggestedTags((prev) => prev.filter((t) => t !== tag));
       loadFolders();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to add tag");
     }
@@ -1718,8 +1731,9 @@ export function NotesPage() {
 
   function handleAudioNoteCreated(note: Note) {
     setNotes((prev) => [note, ...prev]);
-    selectNote(note);
+    openNoteAsTab(note);
     loadFolders();
+    setDashboardKey((k) => k + 1);
   }
 
   // Clear suggested tags when switching notes
@@ -1800,10 +1814,39 @@ export function NotesPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col h-full">
+    {/* Recording bar — top of window, animated */}
+    <div
+      className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out shrink-0"
+      style={{
+        maxHeight: recordingState && recordingState.state === "recording" ? "36px" : "0px",
+        opacity: recordingState && recordingState.state === "recording" ? 1 : 0,
+      }}
+    >
+      {recordingState && (
+        <RecordingBar
+          state={recordingState.state as "recording" | "processing"}
+          elapsed={recordingState.elapsed}
+          mode={recordingState.mode}
+          stream={recordingState.stream}
+          onStop={recordingState.onStop}
+        />
+      )}
+    </div>
+    <div className="flex flex-1 min-h-0">
       {/* Ribbon — always visible */}
       <Ribbon
         onNewNote={handleCreate}
+        audioSlot={settings.masterAiEnabled && settings.audioNotes ? (
+          <AudioRecorder
+            defaultMode={settings.audioMode}
+            folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+            onNoteCreated={handleAudioNoteCreated}
+            onError={showError}
+            onRecordingStateChange={setRecordingState}
+            onModeChange={(m) => updateAiSetting("audioMode", m)}
+          />
+        ) : undefined}
         syncStatus={syncStatus}
         syncError={syncError}
         onSync={handleManualSync}
@@ -1825,17 +1868,6 @@ export function NotesPage() {
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode ? 0 : sidebarResize.size }}
       >
-        {/* Sidebar header with audio recorder */}
-        {sidebarView === "notes" && settings.masterAiEnabled && settings.audioNotes && (
-          <div className="px-2 pt-2 pb-1 flex items-center justify-end shrink-0">
-            <AudioRecorder
-              defaultMode={settings.audioMode}
-              folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
-              onNoteCreated={handleAudioNoteCreated}
-              onError={showError}
-            />
-          </div>
-        )}
 
         {sidebarView === "notes" ? (
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -2188,7 +2220,7 @@ export function NotesPage() {
       {/* Editor area */}
       <main
         ref={mainRef}
-        className="flex-1 flex min-w-0 relative"
+        className="flex-1 flex min-w-0 relative overflow-hidden"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleFileDrop}
@@ -2213,7 +2245,7 @@ export function NotesPage() {
         {selectedNote && sidebarView === "notes" ? (
           <>
             {/* Toolbar */}
-            <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border shrink-0">
+            <div className="flex items-center gap-1.5 px-4 py-1 border-b border-border shrink-0">
               <span className="text-[11px] text-muted-foreground">
                 {isSyncing
                   ? "Syncing..."
@@ -2292,7 +2324,7 @@ export function NotesPage() {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-1.5 bottom-1.5" ref={folderDropdownRef}>
+              <div className="absolute left-2 bottom-1.5" ref={folderDropdownRef}>
                 <button
                   onClick={() => setShowFolderDropdown((v) => !v)}
                   className="w-8 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -2600,7 +2632,7 @@ export function NotesPage() {
           </div>
         ) : (
           <Dashboard
-            key={dashboardKey}
+            refreshKey={dashboardKey}
             onSelectNote={handleDashboardSelectNote}
             onCreateNote={handleCreate}
             onStartRecording={handleDashboardStartRecording}
@@ -2757,6 +2789,8 @@ export function NotesPage() {
           </button>
         </div>
       )}
+    </div>
+
     </div>
   );
 }
