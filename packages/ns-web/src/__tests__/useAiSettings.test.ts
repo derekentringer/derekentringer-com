@@ -21,7 +21,7 @@ describe("useAiSettings", () => {
       rewrite: false,
       semanticSearch: false,
       audioNotes: false,
-      audioMode: "memo",
+      audioMode: "meeting",
       qaAssistant: false,
     });
   });
@@ -174,7 +174,7 @@ describe("useAiSettings", () => {
       rewrite: false,
       semanticSearch: false,
       audioNotes: false,
-      audioMode: "memo",
+      audioMode: "meeting",
       qaAssistant: false,
     });
   });
@@ -198,7 +198,7 @@ describe("useAiSettings", () => {
       rewrite: false,
       semanticSearch: false,
       audioNotes: false,
-      audioMode: "memo",
+      audioMode: "meeting",
       qaAssistant: false,
     });
   });
@@ -244,7 +244,7 @@ describe("useAiSettings", () => {
 
     const { result } = renderHook(() => useAiSettings());
 
-    expect(result.current.settings.audioMode).toBe("memo");
+    expect(result.current.settings.audioMode).toBe("meeting");
   });
 
   it("updateSetting persists audioMode to localStorage", () => {

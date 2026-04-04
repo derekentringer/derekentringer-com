@@ -27,16 +27,26 @@ function getSupportedMimeType(): string | undefined {
   return undefined;
 }
 
+export type RecorderState = "idle" | "recording" | "processing";
+
+export interface AudioRecordingState {
+  state: RecorderState;
+  elapsed: number;
+  mode: AudioMode;
+  stream: MediaStream | null;
+  onStop: () => void;
+}
+
 interface AudioRecorderProps {
   defaultMode: AudioMode;
   folderId?: string;
   onNoteCreated: (note: Note) => void;
   onError: (message: string) => void;
+  onRecordingStateChange?: (recordingState: AudioRecordingState | null) => void;
+  onModeChange?: (mode: AudioMode) => void;
 }
 
-type RecorderState = "idle" | "recording" | "processing";
-
-export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, onRecordingStateChange, onModeChange }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -48,6 +58,10 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError }:
   const startTimeRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const modeRef = useRef(mode);
+  const folderIdRef = useRef(folderId);
+  modeRef.current = mode;
+  folderIdRef.current = folderId;
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -78,7 +92,33 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError }:
   // Cleanup on unmount
   useEffect(() => cleanup, [cleanup]);
 
+  const handleStop = useCallback(() => {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  // Notify parent of recording state changes
+  useEffect(() => {
+    if (state === "idle") {
+      onRecordingStateChange?.(null);
+    } else {
+      onRecordingStateChange?.({
+        state,
+        elapsed,
+        mode,
+        stream: streamRef.current,
+        onStop: handleStop,
+      });
+    }
+  }, [state, elapsed, mode, handleStop, onRecordingStateChange]);
+
   async function handleRecord() {
+    setShowModes(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -101,7 +141,7 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError }:
         setState("processing");
 
         try {
-          const result = await transcribeAudio(blob, mode, folderId);
+          const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
           onNoteCreated(result.note);
         } catch (err) {
           onError(err instanceof Error ? err.message : "Transcription failed");
@@ -132,85 +172,89 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError }:
     }
   }
 
-  function handleStop() {
-    if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPressRef = useRef(false);
+
+  function handlePointerDown() {
+    if (state !== "idle") return;
+    didLongPressRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      didLongPressRef.current = true;
+      setShowModes(true);
+    }, 500);
+  }
+
+  const handledByPointerRef = useRef(false);
+
+  function handlePointerUp() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
     }
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (state !== "idle") return;
+    if (!didLongPressRef.current && !showModes) {
+      handledByPointerRef.current = true;
+      handleRecord();
     }
   }
 
-  function formatTime(ms: number): string {
-    const totalSec = Math.floor(ms / 1000);
-    const min = Math.floor(totalSec / 60);
-    const sec = totalSec % 60;
-    return `${min}:${sec.toString().padStart(2, "0")}`;
+  function handlePointerLeave() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
   }
 
-  if (state === "processing") {
-    return (
-      <div className="flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
-        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-          <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-        </svg>
-        Processing...
-      </div>
-    );
-  }
-
-  if (state === "recording") {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="flex items-center gap-1.5 text-sm text-destructive">
-          <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
-          {formatTime(elapsed)}
-        </span>
-        <button
-          onClick={handleStop}
-          className="px-2 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors cursor-pointer"
-          title="Stop recording"
-        >
-          Stop
-        </button>
-      </div>
-    );
-  }
-
+  // Idle state — click to record, long-press for mode selector
   return (
-    <div className="relative flex items-center" ref={dropdownRef}>
+    <div className="relative" ref={dropdownRef}>
       <button
-        onClick={handleRecord}
-        className="h-7 px-2 rounded-l-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center gap-1 cursor-pointer"
-        title={`Record audio (${MODE_LABELS[mode]})`}
+        onPointerDown={state === "idle" ? handlePointerDown : undefined}
+        onPointerUp={state === "idle" ? handlePointerUp : undefined}
+        onPointerLeave={state === "idle" ? handlePointerLeave : undefined}
+        onClick={state === "recording" ? handleStop : state === "idle" ? () => {
+          if (handledByPointerRef.current) { handledByPointerRef.current = false; return; }
+          if (!showModes) handleRecord();
+        } : undefined}
+        className={`flex items-center justify-center w-7 h-7 rounded transition-colors cursor-pointer select-none ${
+          state === "recording"
+            ? "text-destructive hover:bg-destructive/10"
+            : state === "processing"
+              ? "text-muted-foreground opacity-50 cursor-not-allowed"
+              : "text-muted-foreground hover:text-foreground hover:bg-accent"
+        }`}
+        title={state === "recording" ? "Stop recording" : state === "processing" ? "Processing..." : `Record audio (${MODE_LABELS[mode]}) — hold for options`}
+        aria-label={state === "recording" ? "Stop recording" : "Record audio"}
+        disabled={state === "processing"}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          <line x1="12" y1="19" x2="12" y2="23" />
-          <line x1="8" y1="23" x2="16" y2="23" />
-        </svg>
+        {state === "recording" ? (
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+          </svg>
+        ) : state === "processing" ? (
+          <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+            <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+        )}
       </button>
-      <button
-        onClick={() => setShowModes(!showModes)}
-        className="h-7 px-1 rounded-r-md border border-l-0 border-border text-sm text-muted-foreground hover:text-foreground hover:border-foreground transition-colors flex items-center cursor-pointer"
-        title="Change recording mode"
-        aria-label="Recording mode"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      {showModes && (
-        <div className="absolute top-full right-0 mt-1 bg-card border border-border rounded-md shadow-lg py-1 z-50 min-w-[120px]">
+      {showModes && state === "idle" && (
+        <div className="absolute top-0 left-full ml-1 bg-card border border-border rounded-md shadow-lg py-1 z-50 min-w-[120px]">
+          <div className="px-3 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">Mode</div>
           {MODES.map((m) => (
             <button
               key={m}
               onClick={() => {
                 setMode(m);
                 setShowModes(false);
+                onModeChange?.(m);
               }}
               className={`w-full text-left px-3 py-1.5 text-sm transition-colors cursor-pointer ${
                 m === mode

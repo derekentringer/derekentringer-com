@@ -568,16 +568,28 @@ async function pullChanges(id: string): Promise<void> {
   const result: SyncPullResponse = await response.json();
   let hadChanges = false;
 
-  for (const change of result.changes) {
-    if (change.type === "note") {
-      await applyNoteChange(change);
-      hadChanges = true;
-    } else if (change.type === "folder") {
-      await applyFolderChange(change);
-      hadChanges = true;
-    } else if (change.type === "image") {
-      await applyImageChange(change);
-      hadChanges = true;
+  // Sort changes: folders first, then notes, then images to respect FK constraints
+  // (images.note_id REFERENCES notes(id), folders.parent_id REFERENCES folders(id))
+  const typePriority: Record<string, number> = { folder: 0, note: 1, image: 2 };
+  const sortedChanges = [...result.changes].sort(
+    (a, b) => (typePriority[a.type] ?? 9) - (typePriority[b.type] ?? 9),
+  );
+
+  for (const change of sortedChanges) {
+    try {
+      if (change.type === "note") {
+        await applyNoteChange(change);
+        hadChanges = true;
+      } else if (change.type === "folder") {
+        await applyFolderChange(change);
+        hadChanges = true;
+      } else if (change.type === "image") {
+        await applyImageChange(change);
+        hadChanges = true;
+      }
+    } catch (err) {
+      console.warn(`Failed to apply ${change.type} change ${change.id}:`, err);
+      // Continue processing remaining changes — don't let one failure block others
     }
   }
 

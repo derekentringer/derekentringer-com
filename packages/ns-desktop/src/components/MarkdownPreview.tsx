@@ -185,7 +185,7 @@ export function MarkdownPreview({
       {imgCtxMenu && (
         <div
           ref={imgCtxMenuRef}
-          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]"
+          className="fixed z-50 py-1 bg-card border border-border rounded-md shadow-lg inline-flex flex-col"
           style={{ left: imgCtxMenu.x, top: imgCtxMenu.y }}
         >
           <button

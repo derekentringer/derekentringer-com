@@ -172,6 +172,14 @@ export interface FetchNotesOptions {
   sortOrder?: SortOrder;
 }
 
+export async function countAllNotes(): Promise<number> {
+  const db = await getDb();
+  const rows = await db.select<{ count: number }[]>(
+    "SELECT COUNT(*) as count FROM notes WHERE is_deleted = 0",
+  );
+  return rows[0]?.count ?? 0;
+}
+
 export async function fetchNotes(options?: FetchNotesOptions): Promise<Note[]> {
   const db = await getDb();
 
@@ -1483,7 +1491,7 @@ export async function fetchRecentlyEditedNotes(limit = 10): Promise<Note[]> {
 export async function fetchAudioNotes(limit = 10): Promise<Note[]> {
   const db = await getDb();
   const rows = await db.select<NoteRow[]>(
-    `SELECT * FROM notes WHERE audio_mode IS NOT NULL AND is_deleted = 0 ORDER BY updated_at DESC LIMIT $1`,
+    `SELECT * FROM notes WHERE audio_mode IS NOT NULL AND is_deleted = 0 ORDER BY created_at DESC LIMIT $1`,
     [limit],
   );
   return rows.map(rowToNote);

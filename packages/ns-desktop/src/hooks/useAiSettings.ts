@@ -37,7 +37,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   rewrite: false,
   semanticSearch: false,
   audioNotes: false,
-  audioMode: "memo",
+  audioMode: "meeting",
   recordingSource: "microphone",
   qaAssistant: false,
 };

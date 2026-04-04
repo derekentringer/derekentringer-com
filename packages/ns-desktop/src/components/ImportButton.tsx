@@ -37,7 +37,7 @@ export function ImportButton({ onImportFiles, onImportDirectory }: ImportButtonP
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-1 z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[140px]">
+        <div className="absolute bottom-full left-0 mb-1 z-50 py-1 bg-card border border-border rounded-md shadow-lg w-fit">
           <button
             onClick={() => {
               setOpen(false);

@@ -565,7 +565,7 @@ describe("NotesPage", () => {
       });
     });
 
-    it("hides new note button in trash view", async () => {
+    it("keeps new note button visible in trash view via ribbon", async () => {
       mockFetchTrash.mockResolvedValue({ notes: [], total: 0 });
 
       renderNotesPage();
@@ -578,7 +578,8 @@ describe("NotesPage", () => {
 
       await screen.findByText("Trash is empty");
 
-      expect(screen.queryAllByTitle("New note")).toHaveLength(0);
+      // New note button is in the ribbon, always visible
+      expect(screen.getAllByTitle("New note").length).toBeGreaterThan(0);
     });
   });
 
@@ -680,7 +681,7 @@ describe("NotesPage", () => {
   });
 
   describe("Tags", () => {
-    it("renders tag pills when search is focused", async () => {
+    it("renders tag pills when tags tab is active", async () => {
       const user = userEvent.setup();
       mockFetchTags.mockResolvedValue({
         tags: [
@@ -693,9 +694,9 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      // Tags are hidden until search is focused
-      const searchInput = screen.getByPlaceholderText("Search notes... (⌘K)");
-      await user.click(searchInput);
+      // Switch to tags tab to see tags
+      const tagsTab = screen.getByRole("button", { name: "Tags" });
+      await user.click(tagsTab);
 
       expect(screen.getByText("javascript")).toBeInTheDocument();
       expect(screen.getByText("react")).toBeInTheDocument();
@@ -707,8 +708,9 @@ describe("NotesPage", () => {
 
       await screen.findByText("No notes yet");
 
-      const searchInput = screen.getByPlaceholderText("Search notes... (⌘K)");
-      await user.click(searchInput);
+      // Switch to tags tab
+      const tagsTab = screen.getByRole("button", { name: "Tags" });
+      await user.click(tagsTab);
 
       expect(screen.queryByText("javascript")).not.toBeInTheDocument();
     });
@@ -764,7 +766,7 @@ describe("NotesPage", () => {
       await screen.findByText("Test Note");
 
       // Sidebar should be visible (width > 0)
-      const sidebar = screen.getByText("NoteSync").closest("aside")!;
+      const sidebar = screen.getByRole("button", { name: "File Explorer" }).closest("aside")!;
       expect(sidebar.style.width).not.toBe("0px");
 
       // Press Cmd+Shift+D to enter focus mode

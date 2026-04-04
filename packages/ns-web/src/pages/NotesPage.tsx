@@ -39,7 +39,7 @@ import {
   toggleFolderFavoriteApi,
 } from "../api/offlineNotes.ts";
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
-import { SyncStatusButton, type SyncStatus } from "../components/SyncStatusButton.tsx";
+import { type SyncStatus } from "../components/SyncStatusButton.tsx";
 import {
   MarkdownEditor,
   type MarkdownEditorHandle,
@@ -53,7 +53,7 @@ import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../component
 import { NoteList } from "../components/NoteList.tsx";
 import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
-import { TagBrowser } from "../components/TagBrowser.tsx";
+import { TagBrowser, type TagLayout, type TagSort } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
@@ -63,7 +63,8 @@ import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.t
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
-import { AudioRecorder } from "../components/AudioRecorder.tsx";
+import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
+import { RecordingBar } from "../components/RecordingBar.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
@@ -71,8 +72,12 @@ import { DiffView } from "../components/DiffView.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import { connectSseStream } from "../api/sse.ts";
-import { ImportButton } from "../components/ImportButton.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
+import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
+import { stripMarkdown } from "../lib/stripMarkdown.ts";
+import { SearchSnippet } from "../components/SearchSnippet.tsx";
+import { Ribbon } from "../components/Ribbon.tsx";
+import { NoteListPanel } from "../components/NoteListPanel.tsx";
 import {
   parseFileList,
   importFiles,
@@ -100,13 +105,14 @@ export function NotesPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { noteId: routeNoteId } = useParams<{ noteId?: string }>();
-  const { settings } = useAiSettings();
+  const { settings, updateSetting: updateAiSetting } = useAiSettings();
   const { settings: editorSettings } = useEditorSettings();
   const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<NoteSearchResult[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [previewTabId, setPreviewTabId] = useState<string | null>(null);
@@ -178,6 +184,31 @@ export function NotesPage() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchMode, setSearchMode] = useState<"keyword" | "semantic" | "hybrid">(settings.semanticSearch ? "hybrid" : "keyword");
 
+  // Sidebar panel tab state
+  const [sidebarPanel, setSidebarPanel] = useState<SidebarPanel>(() => {
+    try {
+      const stored = localStorage.getItem("ns-sidebar-panel");
+      if (stored && ["explorer", "search", "favorites", "tags"].includes(stored)) return stored as SidebarPanel;
+    } catch {}
+    return "explorer";
+  });
+
+  // Tag panel state
+  const [tagLayout, setTagLayout] = useState<TagLayout>(() => {
+    try {
+      const stored = localStorage.getItem("ns-tag-layout");
+      if (stored === "pills" || stored === "list") return stored;
+    } catch {}
+    return "list";
+  });
+  const [tagSort, setTagSort] = useState<TagSort>(() => {
+    try {
+      const stored = localStorage.getItem("ns-tag-sort");
+      if (stored === "count" || stored === "alpha") return stored;
+    } catch {}
+    return "count";
+  });
+
   // Folder dropdown state
   const [showFolderDropdown, setShowFolderDropdown] = useState(false);
   const folderDropdownRef = useRef<HTMLDivElement>(null);
@@ -208,6 +239,9 @@ export function NotesPage() {
   // Copy link state
   const [linkCopied, setLinkCopied] = useState(false);
 
+  // Audio recording state
+  const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
+
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
@@ -222,10 +256,17 @@ export function NotesPage() {
   });
   const sidebarResize = useResizable({
     direction: "vertical",
-    initialSize: 256,
-    minSize: 180,
-    maxSize: 480,
+    initialSize: 220,
+    minSize: 140,
+    maxSize: 400,
     storageKey: "ns-sidebar-width",
+  });
+  const noteListResize = useResizable({
+    direction: "vertical",
+    initialSize: 250,
+    minSize: 180,
+    maxSize: 400,
+    storageKey: "ns-notelist-width",
   });
   const splitResize = useResizable({
     direction: "vertical",
@@ -286,6 +327,11 @@ export function NotesPage() {
     try { localStorage.setItem("ns-sort-order", sortOrder); } catch {}
   }, [sortOrder]);
 
+  // Persist sidebar panel tab selection
+  useEffect(() => {
+    try { localStorage.setItem("ns-sidebar-panel", sidebarPanel); } catch {}
+  }, [sidebarPanel]);
+
   const loadFolders = useCallback(async () => {
     try {
       const [folderResult, notesResult, tagResult] = await Promise.all([
@@ -302,27 +348,22 @@ export function NotesPage() {
   }, []);
 
   const loadNotes = useCallback(
-    async (searchQuery?: string) => {
+    async () => {
       const requestId = ++loadNotesCounterRef.current;
       try {
         const folderIdParam =
-          !searchQuery && activeFolder && activeFolder !== "__unfiled__"
+          activeFolder && activeFolder !== "__unfiled__"
             ? activeFolder
             : undefined;
         const result = await fetchNotes({
-          search: searchQuery || undefined,
-          searchMode: searchQuery && settings.semanticSearch ? searchMode : undefined,
           folderId: folderIdParam,
           tags: activeTags.length > 0 ? activeTags : undefined,
           sortBy,
           sortOrder,
         });
-        // Only apply if this is still the latest request — prevents a stale fetch
-        // (started before a save) from overwriting the notes array with old data
         if (requestId !== loadNotesCounterRef.current) return;
         let filtered = result.notes;
-        // Client-side filter for "unfiled" (notes with no folder) — skip during search
-        if (!searchQuery && activeFolder === "__unfiled__") {
+        if (activeFolder === "__unfiled__") {
           filtered = filtered.filter((n) => !n.folderId);
         }
         setNotes(filtered);
@@ -332,7 +373,28 @@ export function NotesPage() {
         setIsLoading(false);
       }
     },
-    [sortBy, sortOrder, activeFolder, activeTags, searchMode, settings.semanticSearch],
+    [sortBy, sortOrder, activeFolder, activeTags],
+  );
+
+  const loadSearchResults = useCallback(
+    async (query: string) => {
+      if (!query) {
+        setSearchResults(null);
+        return;
+      }
+      try {
+        const result = await fetchNotes({
+          search: query,
+          searchMode: settings.semanticSearch ? searchMode : undefined,
+          sortBy: "updatedAt",
+          sortOrder: "desc",
+        });
+        setSearchResults(result.notes);
+      } catch {
+        showError("Failed to search notes");
+      }
+    },
+    [searchMode, settings.semanticSearch],
   );
 
   const loadTrash = useCallback(async () => {
@@ -375,10 +437,15 @@ export function NotesPage() {
     return result;
   }, [folders]);
 
-  // Load notes on mount and when search/sort/folder/mode changes
+  // Load notes on mount and when sort/folder/tag changes
   useEffect(() => {
-    loadNotes(debouncedSearch || undefined);
-  }, [debouncedSearch, loadNotes]);
+    loadNotes();
+  }, [loadNotes]);
+
+  // Search results update when debounced search changes
+  useEffect(() => {
+    loadSearchResults(debouncedSearch);
+  }, [debouncedSearch, loadSearchResults]);
 
   // Load folders on mount
   useEffect(() => {
@@ -487,7 +554,7 @@ export function NotesPage() {
       debounceTimer = setTimeout(() => {
         setSyncStatus("syncing");
         const reloads: Promise<unknown>[] = [
-          loadNotesRef.current(debouncedSearchRef.current || undefined),
+          loadNotesRef.current(),
           loadFoldersRef.current(),
           loadFavoriteNotesRef.current(),
           loadNoteTitlesRef.current(),
@@ -516,7 +583,7 @@ export function NotesPage() {
     // Fallback poll at 120s (safety net if SSE drops silently)
     const FALLBACK_POLL_MS = 120_000;
     const fallbackTimer = setInterval(() => {
-      loadNotesRef.current(debouncedSearchRef.current || undefined);
+      loadNotesRef.current();
       loadFoldersRef.current();
       loadFavoriteNotesRef.current();
     }, FALLBACK_POLL_MS);
@@ -542,7 +609,7 @@ export function NotesPage() {
     );
     setOpenTabs((prev) => prev.map((id) => reconciledIds.get(id) ?? id));
     setPreviewTabId((prev) => prev && reconciledIds.has(prev) ? reconciledIds.get(prev)! : prev);
-    loadNotes(debouncedSearch || undefined);
+    loadNotes();
   }, [reconciledIds]);
 
   // Manual sync triggered by SyncStatusButton click
@@ -551,7 +618,7 @@ export function NotesPage() {
     setSyncError(null);
     try {
       const reloads: Promise<unknown>[] = [
-        loadNotes(debouncedSearch || undefined),
+        loadNotes(),
         loadFolders(),
         loadFavoriteNotes(),
         loadNoteTitles(),
@@ -565,7 +632,7 @@ export function NotesPage() {
       setSyncStatus("error");
       setSyncError("Sync failed");
     }
-  }, [loadNotes, loadFolders, loadFavoriteNotes, loadNoteTitles, loadTrash, debouncedSearch, sidebarView]);
+  }, [loadNotes, loadFolders, loadFavoriteNotes, loadNoteTitles, loadTrash, sidebarView]);
 
   // Deep-link: navigate to note from URL on mount (only on initial load)
   const deepLinkHandled = useRef(false);
@@ -787,6 +854,7 @@ export function NotesPage() {
       loadNoteTitles();
       // Re-fetch to ensure proper sort order
       loadNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to create note");
     }
@@ -842,14 +910,15 @@ export function NotesPage() {
       setVersionRefreshKey((k) => k + 1);
 
       // Re-fetch so sort order is respected (e.g. modified-desc moves edited note to top)
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
       loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to save note");
     } finally {
       setIsSaving(false);
     }
-  }, [selectedId, isDirty, isSaving, title, content, loadNoteTitles, loadNotes, loadFavoriteNotes, debouncedSearch]);
+  }, [selectedId, isDirty, isSaving, title, content, loadNoteTitles, loadNotes, loadFavoriteNotes]);
 
   async function handleDelete() {
     if (!selectedId) return;
@@ -895,6 +964,8 @@ export function NotesPage() {
       }
       setTrashTotal((prev) => prev + 1);
       loadFolders();
+      loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to delete note");
     }
@@ -912,6 +983,8 @@ export function NotesPage() {
       setTitle("");
       setContent("");
       loadFolders();
+      loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to restore note");
     }
@@ -960,7 +1033,7 @@ export function NotesPage() {
       });
     } catch {
       showError("Failed to reorder notes");
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     }
   }
 
@@ -1023,7 +1096,7 @@ export function NotesPage() {
         setNotes((prev) =>
           prev.map((n) => (n.id === updated.id ? updated : n)),
         );
-        loadNotes(debouncedSearch || undefined);
+        loadNotes();
         loadFolders();
       } catch {
         showError("Failed to move note");
@@ -1054,7 +1127,7 @@ export function NotesPage() {
     try {
       await renameFolderApi(folderId, newName);
       loadFolders();
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     } catch {
       showError("Failed to rename folder");
     }
@@ -1084,7 +1157,7 @@ export function NotesPage() {
         prev.map((t) => (t === oldName ? newName : t)),
       );
       loadFolders(); // reloads tags too
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     } catch {
       showError("Failed to rename tag");
     }
@@ -1096,7 +1169,7 @@ export function NotesPage() {
       await deleteTagApi(name);
       setActiveTags((prev) => prev.filter((t) => t !== name));
       loadFolders(); // reloads tags too
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     } catch {
       showError("Failed to delete tag");
     }
@@ -1110,6 +1183,7 @@ export function NotesPage() {
         prev.map((n) => (n.id === updated.id ? updated : n)),
       );
       loadFolders(); // reloads tags too
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to update tags");
     }
@@ -1126,7 +1200,7 @@ export function NotesPage() {
         setActiveFolder(null);
       }
       loadFolders();
-      loadNotes(debouncedSearch || undefined);
+      loadNotes();
     } catch {
       showError("Failed to delete folder");
     }
@@ -1246,7 +1320,7 @@ export function NotesPage() {
       (progress) => setImportProgress(progress),
     );
     setImportProgress(null);
-    loadNotes(debouncedSearch || undefined);
+    loadNotes();
     loadFolders();
     if (autoSelect && lastCreatedNote && result.successCount > 0) {
       openNoteAsTab(lastCreatedNote);
@@ -1362,7 +1436,9 @@ export function NotesPage() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        setSidebarPanel("search");
+        // Allow the search panel to render before focusing
+        requestAnimationFrame(() => searchInputRef.current?.focus());
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D")) {
         e.preventDefault();
@@ -1463,6 +1539,7 @@ export function NotesPage() {
         prev.map((n) => (n.id === updated.id ? { ...n, favorite: updated.favorite } : n)),
       );
       loadFavoriteNotes();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to update favorite");
     }
@@ -1510,7 +1587,26 @@ export function NotesPage() {
     }
   }
 
-  function handleFavoriteNoteClick(noteId: string) {
+  function handleFavoriteNoteSelect(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      handleNoteSelect(note);
+    } else {
+      import("../api/offlineNotes.ts").then(({ fetchNote }) => {
+        fetchNote(noteId)
+          .then((fetched) => {
+            setNotes((prev) => {
+              if (prev.some((n) => n.id === fetched.id)) return prev;
+              return [fetched, ...prev];
+            });
+            handleNoteSelect(fetched);
+          })
+          .catch(() => showError("Favorited note not found"));
+      });
+    }
+  }
+
+  function handleFavoriteNoteOpen(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
       openNoteAsTab(note);
@@ -1623,6 +1719,7 @@ export function NotesPage() {
       );
       setSuggestedTags((prev) => prev.filter((t) => t !== tag));
       loadFolders();
+      setDashboardKey((k) => k + 1);
     } catch {
       showError("Failed to add tag");
     }
@@ -1634,8 +1731,9 @@ export function NotesPage() {
 
   function handleAudioNoteCreated(note: Note) {
     setNotes((prev) => [note, ...prev]);
-    selectNote(note);
+    openNoteAsTab(note);
     loadFolders();
+    setDashboardKey((k) => k + 1);
   }
 
   // Clear suggested tags when switching notes
@@ -1716,201 +1814,281 @@ export function NotesPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col h-full">
+    {/* Recording bar — top of window, animated */}
+    <div
+      className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out shrink-0"
+      style={{
+        maxHeight: recordingState && recordingState.state === "recording" ? "36px" : "0px",
+        opacity: recordingState && recordingState.state === "recording" ? 1 : 0,
+      }}
+    >
+      {recordingState && (
+        <RecordingBar
+          state={recordingState.state as "recording" | "processing"}
+          elapsed={recordingState.elapsed}
+          mode={recordingState.mode}
+          stream={recordingState.stream}
+          onStop={recordingState.onStop}
+        />
+      )}
+    </div>
+    <div className="flex flex-1 min-h-0">
+      {/* Ribbon — always visible */}
+      <Ribbon
+        onNewNote={handleCreate}
+        audioSlot={settings.masterAiEnabled && settings.audioNotes ? (
+          <AudioRecorder
+            defaultMode={settings.audioMode}
+            folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+            onNoteCreated={handleAudioNoteCreated}
+            onError={showError}
+            onRecordingStateChange={setRecordingState}
+            onModeChange={(m) => updateAiSetting("audioMode", m)}
+          />
+        ) : undefined}
+        syncStatus={syncStatus}
+        syncError={syncError}
+        onSync={handleManualSync}
+        pendingCount={pendingCount}
+        onTrash={switchToTrash}
+        trashCount={trashTotal}
+        showTrash={sidebarView === "notes"}
+        onImportFiles={(files) => handleImportFiles(files)}
+        onImportDirectory={(files) => handleImportFiles(files)}
+        showImport={sidebarView === "notes"}
+        onSettings={() => navigate("/settings")}
+        onAdmin={() => navigate("/admin")}
+        showAdmin={user?.role === "admin"}
+        onSignOut={logout}
+      />
+
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode ? 0 : sidebarResize.size }}
       >
-        <div className="pl-4 pr-2 py-4 flex items-center justify-between">
-          <h1 className="text-lg font-normal text-foreground">NoteSync</h1>
-          {sidebarView === "notes" && (
-            <div className="flex items-center gap-1.5">
-              {settings.masterAiEnabled && settings.audioNotes && (
-                <AudioRecorder
-                  defaultMode={settings.audioMode}
-                  folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
-                  onNoteCreated={handleAudioNoteCreated}
-                  onError={showError}
-                />
-              )}
-              <button
-                onClick={handleCreate}
-                className="w-7 h-7 flex items-center justify-center rounded bg-primary text-primary-contrast hover:bg-primary-hover transition-colors text-lg leading-none cursor-pointer"
-                title="New note"
-              >
-                +
-              </button>
-            </div>
-          )}
-        </div>
 
         {sidebarView === "notes" ? (
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <div
-              ref={searchPanelRef}
-              className="p-2"
-              onMouseDown={(e) => {
-                // Prevent blur when clicking inside the search panel (tags, show more, etc.)
-                if (e.target !== searchInputRef.current) {
-                  e.preventDefault();
-                }
-              }}
-            >
-              <div className="relative flex items-center rounded-md bg-input border border-border focus-within:ring-2 focus-within:ring-ring">
-                {settings.masterAiEnabled && settings.semanticSearch && (
-                  <select
-                    value={searchMode}
-                    onChange={(e) => setSearchMode(e.target.value as "keyword" | "semantic" | "hybrid")}
-                    className="bg-transparent border-none border-r border-border text-[11px] text-muted-foreground pl-2 pr-0 py-1.5 focus:outline-none cursor-pointer appearance-none"
-                    style={{ backgroundImage: "none" }}
-                    aria-label="Search mode"
-                    data-testid="search-mode-select"
+            {/* Sidebar tabs */}
+            <SidebarTabs
+              activePanel={sidebarPanel}
+              onPanelChange={setSidebarPanel}
+              showFavorites={favoriteFolders.length > 0 || favoriteNotes.length > 0}
+            />
+
+            {/* Sidebar panel content — switches based on active tab */}
+            <div className="flex-1 flex flex-col min-h-0">
+              {sidebarPanel === "explorer" && (
+                <div className="flex-1 overflow-y-auto">
+                  <FolderTree
+                    folders={folders}
+                    activeFolder={activeFolder}
+                    totalNotes={allNotesCount}
+                    onSelectFolder={setActiveFolder}
+                    onCreateFolder={handleCreateFolder}
+                    onRenameFolder={handleRenameFolder}
+                    onDeleteFolder={handleDeleteFolder}
+                    onMoveFolder={handleMoveFolder}
+                    onExportFolder={handleExportFolder}
+                    onToggleFavorite={handleToggleFolderFavorite}
+                  />
+                </div>
+              )}
+
+              {sidebarPanel === "search" && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div
+                    ref={searchPanelRef}
+                    className="px-2 pt-2 shrink-0"
                   >
-                    <option value="keyword">Keyword</option>
-                    <option value="semantic">Semantic</option>
-                    <option value="hybrid">Hybrid</option>
-                  </select>
-                )}
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Search notes... (⌘K)"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onFocus={() => setSearchFocused(true)}
-                  onBlur={() => setSearchFocused(false)}
-                  className={`flex-1 bg-transparent py-1.5 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none ${settings.semanticSearch ? "pl-1" : "pl-3"}`}
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors text-xs cursor-pointer"
-                    aria-label="Clear search"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-              <div
-                className="overflow-y-auto overflow-x-hidden transition-[max-height,opacity] duration-200 ease-in-out"
-                style={{
-                  maxHeight: searchFocused || activeTags.length > 0 || search ? "200px" : "0px",
-                  opacity: searchFocused || activeTags.length > 0 || search ? 1 : 0,
-                }}
-              >
-                <div className="pt-2">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                        Search
+                      </span>
+                    </div>
+                    <div className="relative flex items-center rounded-md bg-input border border-border focus-within:ring-2 focus-within:ring-ring">
+                      {settings.masterAiEnabled && settings.semanticSearch && (
+                        <select
+                          value={searchMode}
+                          onChange={(e) => setSearchMode(e.target.value as "keyword" | "semantic" | "hybrid")}
+                          className="bg-transparent border-none border-r border-border text-[11px] text-muted-foreground pl-2 pr-0 py-1.5 focus:outline-none cursor-pointer appearance-none"
+                          style={{ backgroundImage: "none" }}
+                          aria-label="Search mode"
+                          data-testid="search-mode-select"
+                        >
+                          <option value="keyword">Keyword</option>
+                          <option value="semantic">Semantic</option>
+                          <option value="hybrid">Hybrid</option>
+                        </select>
+                      )}
+                      <input
+                        ref={searchInputRef}
+                        type="text"
+                        placeholder="Search notes... (⌘K)"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        onFocus={() => setSearchFocused(true)}
+                        onBlur={() => setSearchFocused(false)}
+                        className={`flex-1 bg-transparent py-1.5 pr-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none ${settings.semanticSearch ? "pl-1" : "pl-3"}`}
+                      />
+                      {search && (
+                        <button
+                          type="button"
+                          onClick={() => setSearch("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors text-xs cursor-pointer"
+                          aria-label="Clear search"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Search results */}
+                  {debouncedSearch && (
+                    <nav className="flex-1 overflow-y-auto px-2 pb-2">
+                      {searchResults === null ? (
+                        <div className="px-1 py-2 text-xs text-muted-foreground">Searching...</div>
+                      ) : searchResults.length === 0 ? (
+                        <div className="px-1 py-2 text-xs text-muted-foreground">No results found</div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <div className="px-1 py-1 text-[10px] text-muted-foreground">{searchResults.length} result{searchResults.length !== 1 ? "s" : ""}</div>
+                          {searchResults.map((note) => {
+                            const snippet = note.headline ? null : (note.content ? stripMarkdown(note.content, 80) : null);
+                            const date = new Date(note.updatedAt);
+                            const now = new Date();
+                            const diffMin = Math.floor((now.getTime() - date.getTime()) / 60000);
+                            const relDate = diffMin < 1 ? "just now" : diffMin < 60 ? `${diffMin}m ago` : Math.floor(diffMin / 60) < 24 ? `${Math.floor(diffMin / 60)}h ago` : Math.floor(diffMin / 60 / 24) < 7 ? `${Math.floor(diffMin / 60 / 24)}d ago` : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                            return (
+                              <button
+                                key={note.id}
+                                onClick={() => handleNoteSelect(note)}
+                                onDoubleClick={(e) => { e.preventDefault(); openNoteAsTab(note); }}
+                                className={`w-full text-left px-2 py-1.5 rounded overflow-hidden transition-colors cursor-pointer mb-px ${
+                                  selectedId === note.id
+                                    ? "bg-accent text-foreground"
+                                    : "text-muted hover:bg-accent hover:text-foreground"
+                                }`}
+                              >
+                                <span className="flex items-center gap-1 overflow-hidden">
+                                  {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+                                  <span className="text-sm font-medium truncate">{note.title || "Untitled"}</span>
+                                </span>
+                                {note.headline ? (
+                                  <SearchSnippet headline={note.headline} />
+                                ) : snippet ? (
+                                  <p className="text-xs text-muted-foreground truncate mt-0.5">{snippet}</p>
+                                ) : null}
+                                <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                                  <span className="text-[10px] text-muted-foreground shrink-0">{relDate}</span>
+                                  {note.tags && note.tags.length > 0 && (
+                                    <>
+                                      <span className="text-[10px] text-muted-foreground">·</span>
+                                      {note.tags.slice(0, 2).map((tag) => (
+                                        <span key={tag} className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
+                                      ))}
+                                      {note.tags.length > 2 && (
+                                        <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </nav>
+                  )}
+                </div>
+              )}
+
+              {sidebarPanel === "favorites" && (
+                <div className="flex-1 overflow-y-auto">
+                  <FavoritesPanel
+                    favoriteFolders={favoriteFolders}
+                    favoriteNotes={favoriteNotes}
+                    activeFolder={activeFolder}
+                    selectedNoteId={selectedId}
+                    onSelectFolder={setActiveFolder}
+                    onSelectNote={handleFavoriteNoteSelect}
+                    onDoubleClickNote={handleFavoriteNoteOpen}
+                    onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
+                    onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
+                    favSortBy={favSortBy}
+                    favSortOrder={favSortOrder}
+                    onFavSortByChange={handleFavSortByChange}
+                    onFavSortOrderChange={handleFavSortOrderChange}
+                  />
+                </div>
+              )}
+
+              {sidebarPanel === "tags" && (
+                <div className="flex-1 overflow-y-auto px-2 pt-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+                      Tags
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={tagSort}
+                        onChange={(e) => {
+                          const val = e.target.value as TagSort;
+                          setTagSort(val);
+                          try { localStorage.setItem("ns-tag-sort", val); } catch {}
+                        }}
+                        className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+                        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
+                        aria-label="Sort tags"
+                      >
+                        <option value="count">By count</option>
+                        <option value="alpha">A-Z</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          const next = tagLayout === "pills" ? "list" : "pills";
+                          setTagLayout(next);
+                          try { localStorage.setItem("ns-tag-layout", next); } catch {}
+                        }}
+                        className="flex items-center justify-center w-5 h-5 rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        title={tagLayout === "pills" ? "Switch to list view" : "Switch to pill view"}
+                        aria-label="Toggle tag layout"
+                      >
+                        {tagLayout === "pills" ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                        )}
+                      </button>
+                      {activeTags.length > 0 && (
+                        <button
+                          onClick={() => activeTags.forEach((t) => handleToggleTag(t))}
+                          className="flex items-center justify-center w-5 h-5 rounded bg-subtle text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          title="Clear tag filter"
+                          aria-label="Clear tag filter"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <TagBrowser
                     tags={tags}
                     activeTags={activeTags}
                     onToggleTag={handleToggleTag}
                     onRenameTag={handleRenameTag}
                     onDeleteTag={handleDeleteTag}
+                    layout={tagLayout}
+                    sortBy={tagSort}
+                    showFilter
                   />
                 </div>
-              </div>
-            </div>
-
-            <div className="shrink-0 overflow-y-auto" style={{ height: folderResize.size }}>
-              {(favoriteFolders.length > 0 || favoriteNotes.length > 0) && (
-                <FavoritesPanel
-                  favoriteFolders={favoriteFolders}
-                  favoriteNotes={favoriteNotes}
-                  activeFolder={activeFolder}
-                  selectedNoteId={selectedId}
-                  onSelectFolder={setActiveFolder}
-                  onSelectNote={handleFavoriteNoteClick}
-                  onUnfavoriteFolder={(id) => handleToggleFolderFavorite(id, false)}
-                  onUnfavoriteNote={(id) => handleToggleNoteFavorite(id, false)}
-                  favSortBy={favSortBy}
-                  favSortOrder={favSortOrder}
-                  onFavSortByChange={handleFavSortByChange}
-                  onFavSortOrderChange={handleFavSortOrderChange}
-                />
               )}
-              <FolderTree
-                folders={folders}
-                activeFolder={activeFolder}
-                totalNotes={allNotesCount}
-                onSelectFolder={setActiveFolder}
-                onCreateFolder={handleCreateFolder}
-                onRenameFolder={handleRenameFolder}
-                onDeleteFolder={handleDeleteFolder}
-                onMoveFolder={handleMoveFolder}
-                onExportFolder={handleExportFolder}
-                onToggleFavorite={handleToggleFolderFavorite}
-              />
             </div>
-
-            <ResizeDivider
-              direction="horizontal"
-              isDragging={folderResize.isDragging}
-              onPointerDown={folderResize.onPointerDown}
-            />
-
-            <div className="px-2 py-1">
-              <div className="flex items-center justify-between px-1 mb-1">
-                <span className="text-sm text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" /></svg>
-                  {debouncedSearch ? "Search Results" : "Notes"}
-                </span>
-                {!debouncedSearch && (
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value as NoteSortField)}
-                      className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
-                      style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
-                      aria-label="Sort by"
-                    >
-                      <option value="sortOrder">Manual</option>
-                      <option value="updatedAt">Modified</option>
-                      <option value="createdAt">Created</option>
-                      <option value="title">Title</option>
-                    </select>
-                    <button
-                      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                      title={sortOrder === "asc" ? "Ascending" : "Descending"}
-                      aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
-                    >
-                      {sortOrder === "asc" ? "\u2191" : "\u2193"}
-                    </button>
-                    <button
-                      onClick={handleCreate}
-                      className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                      title="New note"
-                    >
-                      +
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <nav className="flex-1 overflow-y-auto p-2" data-testid="note-list">
-              {isLoading ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  Loading...
-                </div>
-              ) : notes.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  {debouncedSearch ? "No notes found" : "No notes yet"}
-                </div>
-              ) : (
-                <NoteList
-                  notes={notes}
-                  selectedId={selectedId}
-                  onSelect={handleNoteSelect}
-                  onDoubleClick={openNoteAsTab}
-                  onDeleteNote={handleDeleteNoteById}
-                  onExportNote={handleExportNote}
-                  onToggleFavorite={handleToggleNoteFavorite}
-                  sortByManual={sortBy === "sortOrder"}
-                />
-              )}
-            </nav>
           </DndContext>
         ) : (
           <>
@@ -1993,59 +2171,6 @@ export function NotesPage() {
           </>
         )}
 
-        <div className="px-4 py-3 border-t border-border flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <SyncStatusButton
-              status={syncStatus}
-              error={syncError}
-              onSync={handleManualSync}
-              pendingCount={pendingCount}
-            />
-            {sidebarView === "notes" && (
-              <>
-                <button
-                  onClick={switchToTrash}
-                  className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                  title="Trash"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  {trashTotal > 0 && (
-                    <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-0.5 rounded-full bg-border text-[10px] text-muted-foreground">
-                      {trashTotal}
-                    </span>
-                  )}
-                </button>
-                <ImportButton
-                  onImportFiles={(files) => handleImportFiles(files)}
-                  onImportDirectory={(files) => handleImportFiles(files)}
-                />
-              </>
-            )}
-            <button
-              onClick={() => navigate("/settings")}
-              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-              title="Settings"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </button>
-            {user?.role === "admin" && (
-              <button
-                onClick={() => navigate("/admin")}
-                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-                title="Admin"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              </button>
-            )}
-          </div>
-          <button
-            onClick={logout}
-            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
-            title="Sign out"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          </button>
-        </div>
       </aside>
 
       <div className="flex" style={{ pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
@@ -2056,10 +2181,46 @@ export function NotesPage() {
         />
       </div>
 
+      {/* Note list panel */}
+      {sidebarView === "notes" && (
+        <>
+          <div
+            className={`shrink-0 overflow-hidden ${noteListResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
+            style={{ width: focusMode ? 0 : noteListResize.size }}
+          >
+            <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <NoteListPanel
+                notes={notes}
+                selectedId={selectedId}
+                isLoading={isLoading}
+                isSearchResults={false}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onSortByChange={setSortBy}
+                onSortOrderChange={setSortOrder}
+                onSelect={handleNoteSelect}
+                onDoubleClick={openNoteAsTab}
+                onDeleteNote={handleDeleteNoteById}
+                onExportNote={handleExportNote}
+                onToggleFavorite={handleToggleNoteFavorite}
+                onCreate={handleCreate}
+              />
+            </DndContext>
+          </div>
+          <div className="flex" style={{ pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
+            <ResizeDivider
+              direction="vertical"
+              isDragging={noteListResize.isDragging}
+              onPointerDown={noteListResize.onPointerDown}
+            />
+          </div>
+        </>
+      )}
+
       {/* Editor area */}
       <main
         ref={mainRef}
-        className="flex-1 flex min-w-0 relative"
+        className="flex-1 flex min-w-0 relative overflow-hidden"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleFileDrop}
@@ -2084,7 +2245,7 @@ export function NotesPage() {
         {selectedNote && sidebarView === "notes" ? (
           <>
             {/* Toolbar */}
-            <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border shrink-0">
+            <div className="flex items-center gap-1.5 px-4 py-1 border-b border-border shrink-0">
               <span className="text-[11px] text-muted-foreground">
                 {isSyncing
                   ? "Syncing..."
@@ -2163,7 +2324,7 @@ export function NotesPage() {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-1.5 bottom-1.5" ref={folderDropdownRef}>
+              <div className="absolute left-2 bottom-1.5" ref={folderDropdownRef}>
                 <button
                   onClick={() => setShowFolderDropdown((v) => !v)}
                   className="w-8 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -2189,7 +2350,7 @@ export function NotesPage() {
                             setNotes((prev) =>
                               prev.map((n) => (n.id === updated.id ? updated : n)),
                             );
-                            loadNotes(debouncedSearch || undefined);
+                            loadNotes();
                             loadFolders();
                           } catch {
                             showError("Failed to move note");
@@ -2281,19 +2442,18 @@ export function NotesPage() {
                 {suggestedTags.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent text-xs text-foreground border border-border"
+                    className="inline-flex items-center rounded-full bg-accent text-xs text-foreground border border-border overflow-hidden"
                   >
-                    {tag}
                     <button
                       onClick={() => handleAcceptTag(tag)}
-                      className="text-primary hover:text-primary-hover transition-colors cursor-pointer"
-                      title="Accept tag"
+                      className="px-2 py-0.5 hover:bg-primary/20 transition-colors cursor-pointer"
+                      title="Add tag"
                     >
-                      +
+                      {tag}
                     </button>
                     <button
                       onClick={() => handleDismissTag(tag)}
-                      className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                      className="px-1 py-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border-l border-border"
                       title="Dismiss"
                     >
                       ✕
@@ -2472,7 +2632,7 @@ export function NotesPage() {
           </div>
         ) : (
           <Dashboard
-            key={dashboardKey}
+            refreshKey={dashboardKey}
             onSelectNote={handleDashboardSelectNote}
             onCreateNote={handleCreate}
             onStartRecording={handleDashboardStartRecording}
@@ -2629,6 +2789,8 @@ export function NotesPage() {
           </button>
         </div>
       )}
+    </div>
+
     </div>
   );
 }
