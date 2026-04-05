@@ -1587,10 +1587,10 @@ export function NotesPage() {
     }
   }
 
-  function handleFavoriteNoteSelect(noteId: string) {
+  function resolveFavoriteNote(noteId: string, cb: (note: Note) => void) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
-      handleNoteSelect(note);
+      cb(note);
     } else {
       import("../api/offlineNotes.ts").then(({ fetchNote }) => {
         fetchNote(noteId)
@@ -1599,30 +1599,27 @@ export function NotesPage() {
               if (prev.some((n) => n.id === fetched.id)) return prev;
               return [fetched, ...prev];
             });
-            handleNoteSelect(fetched);
+            cb(fetched);
           })
           .catch(() => showError("Favorited note not found"));
       });
     }
   }
 
+  function handleFavoriteNoteSelect(noteId: string) {
+    resolveFavoriteNote(noteId, (note) => handleNoteSelect(note));
+  }
+
   function handleFavoriteNoteOpen(noteId: string) {
-    const note = notes.find((n) => n.id === noteId);
-    if (note) {
-      openNoteAsTab(note);
-    } else {
-      import("../api/offlineNotes.ts").then(({ fetchNote }) => {
-        fetchNote(noteId)
-          .then((fetched) => {
-            setNotes((prev) => {
-              if (prev.some((n) => n.id === fetched.id)) return prev;
-              return [fetched, ...prev];
-            });
-            openNoteAsTab(fetched);
-          })
-          .catch(() => showError("Favorited note not found"));
-      });
+    // If the note already has a tab (preview or permanent), just pin it
+    if (openTabs.includes(noteId)) {
+      if (previewTabId === noteId) {
+        setPreviewTabId(null);
+      }
+      selectNote(notes.find((n) => n.id === noteId)!);
+      return;
     }
+    resolveFavoriteNote(noteId, (note) => openNoteAsTab(note));
   }
 
   function handleWikiLinkClick(noteId: string) {
