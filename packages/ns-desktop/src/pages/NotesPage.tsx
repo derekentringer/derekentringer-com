@@ -1238,10 +1238,10 @@ export function NotesPage() {
     }
   }
 
-  function handleFavoriteNoteSelect(noteId: string) {
+  function resolveFavoriteNote(noteId: string, cb: (note: Note) => void) {
     const note = notes.find((n) => n.id === noteId);
     if (note) {
-      handleNoteSelect(note);
+      cb(note);
       return;
     }
     fetchNoteById(noteId)
@@ -1250,28 +1250,26 @@ export function NotesPage() {
           setNotes((prev) =>
             prev.some((n) => n.id === fetched.id) ? prev : [fetched, ...prev],
           );
-          handleNoteSelect(fetched);
+          cb(fetched);
         }
       })
       .catch(() => showError("Favorited note not found"));
   }
 
+  function handleFavoriteNoteSelect(noteId: string) {
+    resolveFavoriteNote(noteId, (note) => handleNoteSelect(note));
+  }
+
   function handleFavoriteNoteOpen(noteId: string) {
-    const note = notes.find((n) => n.id === noteId);
-    if (note) {
-      openNoteAsTab(note);
+    if (openTabs.includes(noteId)) {
+      if (previewTabId === noteId) {
+        setPreviewTabId(null);
+      }
+      const note = notes.find((n) => n.id === noteId);
+      if (note) selectNote(note);
       return;
     }
-    fetchNoteById(noteId)
-      .then((fetched) => {
-        if (fetched) {
-          setNotes((prev) =>
-            prev.some((n) => n.id === fetched.id) ? prev : [fetched, ...prev],
-          );
-          openNoteAsTab(fetched);
-        }
-      })
-      .catch(() => showError("Favorited note not found"));
+    resolveFavoriteNote(noteId, (note) => openNoteAsTab(note));
   }
 
   async function handleDeleteFolder(folderId: string, mode: "move-up" | "recursive") {
