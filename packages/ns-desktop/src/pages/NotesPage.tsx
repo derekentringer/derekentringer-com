@@ -180,11 +180,25 @@ export function NotesPage() {
   // Notes
   const [notes, setNotes] = useState<Note[]>([]);
   const [allNotesCount, setAllNotesCount] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("ns-desktop-selected-tab") || null;
+    } catch { return null; }
+  });
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
-  const [openTabs, setOpenTabs] = useState<string[]>([]);
-  const [previewTabId, setPreviewTabId] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("ns-desktop-open-tabs");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [];
+  });
+  const [previewTabId, setPreviewTabId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("ns-desktop-preview-tab") || null;
+    } catch { return null; }
+  });
   const tabNoteCacheRef = useRef<Map<string, Note>>(new Map());
   const tabEditorStateRef = useRef<Map<string, { cursor: number; scrollTop: number }>>(new Map());
   const [title, setTitle] = useState("");
@@ -585,6 +599,35 @@ export function NotesPage() {
     loadFavoriteNotes();
   }, [loadFavoriteNotes]);
 
+  // Restore persisted selected tab on mount
+  const tabRestoreHandled = useRef(false);
+  useEffect(() => {
+    if (isLoading || tabRestoreHandled.current) return;
+    tabRestoreHandled.current = true;
+    if (!selectedId || openTabs.length === 0) return;
+
+    const found = notes.find((n) => n.id === selectedId);
+    if (found) {
+      selectNote(found);
+    } else {
+      fetchNoteById(selectedId)
+        .then((note) => {
+          if (note) {
+            setNotes((prev) => {
+              if (prev.some((n) => n.id === note.id)) return prev;
+              return [note, ...prev];
+            });
+            selectNote(note);
+          }
+        })
+        .catch(() => {
+          setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
+          setSelectedId(null);
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
+
   // --- Reload notes when folder/sort changes ---
 
   const reloadNotes = useCallback(async () => {
@@ -627,6 +670,23 @@ export function NotesPage() {
   useEffect(() => {
     try { localStorage.setItem("ns-sidebar-panel", sidebarPanel); } catch {}
   }, [sidebarPanel]);
+
+  // Persist open tabs state
+  useEffect(() => {
+    try { localStorage.setItem("ns-desktop-open-tabs", JSON.stringify(openTabs)); } catch {}
+  }, [openTabs]);
+  useEffect(() => {
+    try {
+      if (selectedId) localStorage.setItem("ns-desktop-selected-tab", selectedId);
+      else localStorage.removeItem("ns-desktop-selected-tab");
+    } catch {}
+  }, [selectedId]);
+  useEffect(() => {
+    try {
+      if (previewTabId) localStorage.setItem("ns-desktop-preview-tab", previewTabId);
+      else localStorage.removeItem("ns-desktop-preview-tab");
+    } catch {}
+  }, [previewTabId]);
 
   // --- Semantic search lifecycle ---
 

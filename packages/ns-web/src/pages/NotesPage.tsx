@@ -113,9 +113,23 @@ export function NotesPage() {
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
   const [searchResults, setSearchResults] = useState<NoteSearchResult[] | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [openTabs, setOpenTabs] = useState<string[]>([]);
-  const [previewTabId, setPreviewTabId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("ns-selected-tab") || null;
+    } catch { return null; }
+  });
+  const [openTabs, setOpenTabs] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("ns-open-tabs");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [];
+  });
+  const [previewTabId, setPreviewTabId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("ns-preview-tab") || null;
+    } catch { return null; }
+  });
   // Cache note data for open tabs so folder navigation doesn't lose them
   const tabNoteCacheRef = useRef<Map<string, Note>>(new Map());
   const tabEditorStateRef = useRef<Map<string, { cursor: number; scrollTop: number }>>(new Map());
@@ -331,6 +345,23 @@ export function NotesPage() {
   useEffect(() => {
     try { localStorage.setItem("ns-sidebar-panel", sidebarPanel); } catch {}
   }, [sidebarPanel]);
+
+  // Persist open tabs state
+  useEffect(() => {
+    try { localStorage.setItem("ns-open-tabs", JSON.stringify(openTabs)); } catch {}
+  }, [openTabs]);
+  useEffect(() => {
+    try {
+      if (selectedId) localStorage.setItem("ns-selected-tab", selectedId);
+      else localStorage.removeItem("ns-selected-tab");
+    } catch {}
+  }, [selectedId]);
+  useEffect(() => {
+    try {
+      if (previewTabId) localStorage.setItem("ns-preview-tab", previewTabId);
+      else localStorage.removeItem("ns-preview-tab");
+    } catch {}
+  }, [previewTabId]);
 
   const loadFolders = useCallback(async () => {
     try {
@@ -664,6 +695,37 @@ export function NotesPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeNoteId, isLoading]);
+
+  // Restore persisted selected tab on mount
+  const tabRestoreHandled = useRef(false);
+  useEffect(() => {
+    if (isLoading || tabRestoreHandled.current) return;
+    tabRestoreHandled.current = true;
+    if (routeNoteId) return; // deep link handler takes priority
+    if (!selectedId || openTabs.length === 0) return;
+
+    const found = notes.find((n) => n.id === selectedId);
+    if (found) {
+      selectNote(found);
+    } else {
+      import("../api/offlineNotes.ts").then(({ fetchNote }) => {
+        fetchNote(selectedId)
+          .then((note) => {
+            setNotes((prev) => {
+              if (prev.some((n) => n.id === note.id)) return prev;
+              return [note, ...prev];
+            });
+            selectNote(note);
+          })
+          .catch(() => {
+            // Note no longer exists — remove from tabs
+            setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
+            setSelectedId(null);
+          });
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
   const selectedNote =
     sidebarView === "notes"
