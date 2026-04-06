@@ -245,11 +245,12 @@ function buildDecorations(view: EditorView): DecorationSet {
               if (tblCursor.type.name === "TableHeader") {
                 decorations.push(Decoration.line({ class: "cm-lp-table-header" }).range(childLine.from));
               } else if (tblCursor.type.name === "TableDelimiter" && tblCursor.from === childLine.from) {
-                // This is the separator row (|------|-----| ) — hide it
+                // Separator row — replace content within line and collapse via CSS
                 const delimLine = view.state.doc.lineAt(tblCursor.from);
-                // Hide from end of previous line (newline) to end of delimiter line
-                const hideFrom = delimLine.from > 0 ? delimLine.from - 1 : delimLine.from;
-                decorations.push(Decoration.replace({}).range(hideFrom, delimLine.to));
+                if (delimLine.to > delimLine.from) {
+                  decorations.push(Decoration.replace({}).range(delimLine.from, delimLine.to));
+                }
+                decorations.push(Decoration.line({ class: "cm-lp-hidden-line" }).range(delimLine.from));
               } else if (tblCursor.type.name === "TableRow") {
                 decorations.push(Decoration.line({ class: "cm-lp-table-row" }).range(childLine.from));
               }
@@ -296,9 +297,12 @@ function buildDecorations(view: EditorView): DecorationSet {
             } while (cursor.nextSibling());
           }
 
-          // Hide the opening fence line (``` + language)
+          // Hide the opening fence line (``` + language) — replace content within line, collapse via CSS
           const openLine = view.state.doc.lineAt(node.from);
-          decorations.push(Decoration.replace({}).range(openLine.from, openLine.to + 1)); // +1 for newline
+          if (openLine.to > openLine.from) {
+            decorations.push(Decoration.replace({}).range(openLine.from, openLine.to));
+          }
+          decorations.push(Decoration.line({ class: "cm-lp-hidden-line" }).range(openLine.from));
 
           // Style each code content line with background
           const firstCodeLine = view.state.doc.lineAt(codeStart);
@@ -316,12 +320,13 @@ function buildDecorations(view: EditorView): DecorationSet {
             }).range(firstCodeLine.from));
           }
 
-          // Hide the closing fence line
+          // Hide the closing fence line — replace content within line, collapse via CSS
           if (closeFenceStart > node.from) {
             const closeLineObj = view.state.doc.lineAt(closeFenceStart);
-            // Hide from the newline before closing fence to end of closing fence
-            const hideFrom = closeLineObj.from > 0 ? closeLineObj.from - 1 : closeLineObj.from;
-            decorations.push(Decoration.replace({}).range(hideFrom, closeLineObj.to));
+            if (closeLineObj.to > closeLineObj.from) {
+              decorations.push(Decoration.replace({}).range(closeLineObj.from, closeLineObj.to));
+            }
+            decorations.push(Decoration.line({ class: "cm-lp-hidden-line" }).range(closeLineObj.from));
           }
 
           return false; // don't recurse into children
@@ -485,6 +490,12 @@ const livePreviewTheme = EditorView.baseTheme({
     marginRight: "4px",
     cursor: "pointer",
     accentColor: "var(--color-primary, #d4e157)",
+  },
+  ".cm-lp-hidden-line": {
+    fontSize: "0",
+    lineHeight: "0",
+    height: "0",
+    overflow: "hidden",
   },
   ".cm-lp-table-header": {
     fontWeight: "bold",
