@@ -79,13 +79,14 @@ class CheckboxWidget extends WidgetType {
 
 // Rendered table widget — parses markdown table and renders as HTML <table>
 class TableWidget extends WidgetType {
-  constructor(readonly source: string) { super(); }
+  constructor(readonly source: string, readonly sourceFrom: number) { super(); }
   eq(other: TableWidget) { return this.source === other.source; }
-  toDOM() {
+  toDOM(view: EditorView) {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-lp-table-widget";
 
-    const lines = this.source.split("\n").filter((l) => l.trim());
+    const rawLines = this.source.split("\n");
+    const lines = rawLines.filter((l) => l.trim());
     if (lines.length < 2) { wrapper.textContent = this.source; return wrapper; }
 
     const parseRow = (line: string): string[] =>
@@ -103,12 +104,21 @@ class TableWidget extends WidgetType {
       return "";
     });
 
+    // Build source line offset map: row index → character offset in source
+    const lineOffsets: number[] = [];
+    let offset = 0;
+    for (const rl of rawLines) {
+      lineOffsets.push(offset);
+      offset += rl.length + 1; // +1 for newline
+    }
+
     const table = document.createElement("table");
     table.className = "cm-lp-table";
 
-    // Header
+    // Header (source line 0)
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
+    headerRow.dataset.sourceLine = "0";
     headers.forEach((h, i) => {
       const th = document.createElement("th");
       th.textContent = h;
@@ -118,11 +128,12 @@ class TableWidget extends WidgetType {
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
-    // Body rows
+    // Body rows (source lines 2+, skipping delimiter at line 1)
     const tbody = document.createElement("tbody");
     for (let r = 2; r < lines.length; r++) {
       const cells = parseRow(lines[r]);
       const tr = document.createElement("tr");
+      tr.dataset.sourceLine = String(r);
       headers.forEach((_, i) => {
         const td = document.createElement("td");
         td.textContent = cells[i] ?? "";
@@ -133,6 +144,23 @@ class TableWidget extends WidgetType {
     }
     table.appendChild(tbody);
     wrapper.appendChild(table);
+
+    // Click anywhere on the table → move cursor to the corresponding source line
+    const sourceFrom = this.sourceFrom;
+    wrapper.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      // Find which row was clicked
+      const tr = (e.target as HTMLElement).closest("tr");
+      let targetLine = 0;
+      if (tr?.dataset.sourceLine) {
+        targetLine = parseInt(tr.dataset.sourceLine, 10);
+      }
+      const targetPos = sourceFrom + (lineOffsets[targetLine] ?? 0);
+      const clampedPos = Math.min(targetPos, view.state.doc.length);
+      view.dispatch({ selection: { anchor: clampedPos } });
+      view.focus();
+    });
+
     return wrapper;
   }
 }
@@ -303,7 +331,7 @@ function buildDecorations(view: EditorView): DecorationSet {
           const firstLine = view.state.doc.lineAt(node.from);
           if (firstLine.to > firstLine.from) {
             decorations.push(
-              Decoration.replace({ widget: new TableWidget(tableSource) }).range(firstLine.from, firstLine.to),
+              Decoration.replace({ widget: new TableWidget(tableSource, node.from) }).range(firstLine.from, firstLine.to),
             );
           }
 
@@ -559,6 +587,7 @@ const livePreviewTheme = EditorView.baseTheme({
   ".cm-lp-table-widget": {
     margin: "4px 0",
     overflow: "auto",
+    cursor: "pointer",
   },
   ".cm-lp-table": {
     borderCollapse: "collapse",
