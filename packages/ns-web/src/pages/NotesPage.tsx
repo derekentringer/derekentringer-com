@@ -77,6 +77,7 @@ import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
 import { stripMarkdown } from "../lib/stripMarkdown.ts";
 import { SearchSnippet } from "../components/SearchSnippet.tsx";
 import { Ribbon } from "../components/Ribbon.tsx";
+import { NoteStrycGame } from "../components/NoteStrycGame.tsx";
 import { NoteListPanel } from "../components/NoteListPanel.tsx";
 import {
   parseFileList,
@@ -255,6 +256,7 @@ export function NotesPage() {
 
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
+  const [showGame, setShowGame] = useState(false);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -1910,6 +1912,7 @@ export function NotesPage() {
         syncError={syncError}
         onSync={handleManualSync}
         pendingCount={pendingCount}
+        onGame={() => setShowGame(true)}
         onTrash={switchToTrash}
         trashCount={trashTotal}
         showTrash={sidebarView === "notes"}
@@ -2850,6 +2853,8 @@ export function NotesPage() {
       )}
     </div>
 
+    {/* NoteStryc mini game */}
+    {showGame && <NoteStrycGame onExit={() => setShowGame(false)} />}
     </div>
   );
 }
