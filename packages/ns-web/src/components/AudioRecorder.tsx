@@ -60,8 +60,12 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modeRef = useRef(mode);
   const folderIdRef = useRef(folderId);
+  const onNoteCreatedRef = useRef(onNoteCreated);
+  const onErrorRef = useRef(onError);
   modeRef.current = mode;
   folderIdRef.current = folderId;
+  onNoteCreatedRef.current = onNoteCreated;
+  onErrorRef.current = onError;
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -142,9 +146,9 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
 
         try {
           const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
-          onNoteCreated(result.note);
+          onNoteCreatedRef.current(result.note);
         } catch (err) {
-          onError(err instanceof Error ? err.message : "Transcription failed");
+          onErrorRef.current(err instanceof Error ? err.message : "Transcription failed");
         } finally {
           setState("idle");
           setElapsed(0);
@@ -165,9 +169,9 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     } catch (err) {
       cleanup();
       if (err instanceof DOMException && err.name === "NotAllowedError") {
-        onError("Microphone permission denied");
+        onErrorRef.current("Microphone permission denied");
       } else {
-        onError("Failed to start recording");
+        onErrorRef.current("Failed to start recording");
       }
     }
   }
