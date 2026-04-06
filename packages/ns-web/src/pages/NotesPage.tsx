@@ -2547,6 +2547,10 @@ export function NotesPage() {
               onLink={() => editorRef.current?.insertLink()}
               onImage={() => editorRef.current?.insertImage()}
               onWikiLink={() => editorRef.current?.insertWikiLink()}
+              onBulletList={() => editorRef.current?.insertBulletList()}
+              onNumberedList={() => editorRef.current?.insertNumberedList()}
+              onCheckbox={() => editorRef.current?.insertCheckbox()}
+              onBlockquote={() => editorRef.current?.insertBlockquote()}
               showLineNumbers={showLineNumbers}
               onToggleLineNumbers={() => setShowLineNumbers((v) => !v)}
             />
