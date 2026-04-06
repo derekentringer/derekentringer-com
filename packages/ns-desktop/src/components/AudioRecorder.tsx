@@ -42,6 +42,7 @@ export interface AudioRecordingState {
   elapsed: number;
   mode: AudioMode;
   stream: MediaStream | null;
+  audioLevel: number;
   onStop: () => void;
 }
 
@@ -61,6 +62,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [meetingSupported, setMeetingSupported] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -130,18 +132,12 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       setState("recording");
       setElapsed(0);
 
-      // Open a mic stream purely for waveform visualization (not used for recording)
-      try {
-        const vizStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        streamRef.current = vizStream;
-      } catch {
-        // Mic permission denied or unavailable — waveform will use simulated fallback
-      }
-
-      // Listen for tick events from Rust
-      const unlisten = await listen<number>("meeting-recording-tick", (event) => {
-        setElapsed(event.payload * 1000); // Convert seconds to ms for formatTime
-        if (event.payload * 1000 >= MAX_DURATION_MS) {
+      // Listen for tick events from Rust (payload is [elapsed_secs, rms_level])
+      const unlisten = await listen<[number, number]>("meeting-recording-tick", (event) => {
+        const [secs, level] = event.payload;
+        setElapsed(secs * 1000);
+        setAudioLevel(level);
+        if (secs * 1000 >= MAX_DURATION_MS) {
           handleStop();
         }
       });
@@ -272,10 +268,11 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         elapsed,
         mode,
         stream: streamRef.current,
+        audioLevel,
         onStop: handleStop,
       });
     }
-  }, [state, elapsed, mode, handleStop, onRecordingStateChange]);
+  }, [state, elapsed, mode, audioLevel, handleStop, onRecordingStateChange]);
 
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPressRef = useRef(false);
