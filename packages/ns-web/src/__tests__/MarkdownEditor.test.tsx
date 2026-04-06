@@ -25,15 +25,29 @@ vi.mock("@codemirror/view", () => {
     static theme() {
       return [];
     }
+    static baseTheme() {
+      return [];
+    }
     static lineWrapping = [];
     static updateListener = { of: () => [] };
+    static atomicRanges = { of: () => [] };
   }
+  const MockDecoration = {
+    replace: () => ({ range: () => ({}) }),
+    mark: () => ({ range: () => ({}) }),
+    widget: () => ({ range: () => ({}) }),
+    set: () => ({}),
+    none: {},
+  };
   return {
     EditorView: MockEditorView,
     keymap: { of: () => [] },
     placeholder: () => [],
     lineNumbers: () => [],
     drawSelection: () => [],
+    Decoration: MockDecoration,
+    ViewPlugin: { fromClass: () => [] },
+    WidgetType: class {},
   };
 });
 
@@ -55,11 +69,16 @@ vi.mock("@codemirror/state", () => {
       tabSize: { of: () => [] },
     },
     Compartment: MockCompartment,
+    RangeSet: { of: () => ({}) },
   };
 });
 
 vi.mock("@codemirror/lang-markdown", () => ({
   markdown: () => [],
+}));
+
+vi.mock("@lezer/markdown", () => ({
+  GFM: [],
 }));
 
 vi.mock("@codemirror/language-data", () => ({
@@ -76,6 +95,7 @@ vi.mock("@codemirror/commands", () => ({
 vi.mock("@codemirror/language", () => ({
   HighlightStyle: { define: () => ({}) },
   syntaxHighlighting: () => [],
+  syntaxTree: () => ({ iterate: () => {} }),
   indentUnit: { of: () => [] },
 }));
 
