@@ -13,6 +13,7 @@ interface RecordingBarProps {
   elapsed: number;
   mode: AudioMode;
   stream: MediaStream | null;
+  audioLevel?: number;
   onStop: () => void;
 }
 
@@ -23,7 +24,7 @@ function formatTime(ms: number): string {
   return `${min}:${sec.toString().padStart(2, "0")}`;
 }
 
-export function RecordingBar({ state, elapsed, mode, stream, onStop }: RecordingBarProps) {
+export function RecordingBar({ state, elapsed, mode, stream, audioLevel, onStop }: RecordingBarProps) {
   if (state === "processing") {
     return (
       <div className="h-9 px-4 bg-sidebar border-b border-border flex items-center gap-3 shrink-0">
@@ -45,7 +46,7 @@ export function RecordingBar({ state, elapsed, mode, stream, onStop }: Recording
       <span className="text-xs text-foreground tabular-nums shrink-0">{formatTime(elapsed)}</span>
 
       {/* Waveform */}
-      <AudioWaveform stream={stream} isRecording={true} width={80} height={20} />
+      <AudioWaveform stream={stream} isRecording={true} audioLevel={audioLevel} width={80} height={20} />
 
       {/* Mode label */}
       <span className="text-[10px] text-muted-foreground shrink-0">{MODE_LABELS[mode]}</span>

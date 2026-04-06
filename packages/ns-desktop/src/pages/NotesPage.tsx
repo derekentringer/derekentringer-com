@@ -2474,6 +2474,7 @@ export function NotesPage() {
           elapsed={recordingState.elapsed}
           mode={recordingState.mode}
           stream={recordingState.stream}
+          audioLevel={recordingState.audioLevel}
           onStop={recordingState.onStop}
         />
       )}
