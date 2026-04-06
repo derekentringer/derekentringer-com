@@ -159,11 +159,15 @@
 
 - [x] Live Preview Mode 5c/5d — Links `[text](url)` hide syntax and show styled text (blue underline); wiki-links `[[title]]` hide brackets and show accent-colored dotted underline; images `![alt](url)` hide syntax and show alt text with image icon prefix; wiki-links detected via regex (not in Lezer tree)
 
-- [x] Toolbar formatting buttons — Strikethrough (~~), Inline Code (`), Heading (cycle h1-h6), Link ([text](url) template), Image (![alt](url) template), Wiki-Link ([[title]] template); smart selection support (selected text becomes link text/alt/title); line number toggle moved to left side above gutter
+- [x] Toolbar formatting buttons — Strikethrough (~~), Inline Code (`), Heading (cycle h1-h6), Link ([text](url) template), Image (![alt](url) template), Wiki-Link ([[title]] template), Bullet List (- ), Numbered List (1. ), Checkbox (- [ ] ), Blockquote (> ); smart selection support; line number toggle moved above gutter; all buttons toggle (remove prefix if already present)
 
-- [ ] Live Preview Mode 5e — Lists and checkboxes (planned)
+- [x] Live Preview Mode 5e — Unordered list markers (- or *) replaced with bullet dot (•); task list checkboxes ([ ] and [x]) replaced with clickable checkbox widgets that toggle source markdown; bullet hidden for task items; ordered list markers left as-is; CheckboxWidget with eq() and accent color
+
+- [x] Live Preview Mode 5g — Blockquote lines styled with accent-colored left border, italic text, muted color via Decoration.line(); `>` marker and trailing space hidden; matches Split/Preview appearance
+
+- [x] Preview list fixes — Restored list-style-type (disc/decimal) stripped by Tailwind v4 reset; task lists use list-style: none with no left padding; code block backgrounds use --color-subtle for visibility
+
 - [ ] Live Preview Mode 5f — Code blocks (planned)
-- [ ] Live Preview Mode 5g — Blockquotes full styling (planned)
 - [ ] Live Preview Mode 5h — Tables (planned)
 - [ ] Live Preview Mode 5i — Polish and integration (planned)
 
