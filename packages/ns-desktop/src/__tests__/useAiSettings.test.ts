@@ -21,7 +21,7 @@ describe("useAiSettings", () => {
       rewrite: false,
       semanticSearch: false,
       audioNotes: false,
-      audioMode: "memo",
+      audioMode: "meeting",
       recordingSource: "microphone",
       qaAssistant: false,
     });
@@ -81,7 +81,7 @@ describe("useAiSettings", () => {
       rewrite: false,
       semanticSearch: false,
       audioNotes: false,
-      audioMode: "memo",
+      audioMode: "meeting",
       recordingSource: "microphone",
       qaAssistant: false,
     });
