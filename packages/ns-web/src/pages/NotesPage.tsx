@@ -2544,6 +2544,9 @@ export function NotesPage() {
               onStrikethrough={() => editorRef.current?.insertStrikethrough()}
               onInlineCode={() => editorRef.current?.insertInlineCode()}
               onHeading={() => editorRef.current?.cycleHeading()}
+              onLink={() => editorRef.current?.insertLink()}
+              onImage={() => editorRef.current?.insertImage()}
+              onWikiLink={() => editorRef.current?.insertWikiLink()}
               showLineNumbers={showLineNumbers}
               onToggleLineNumbers={() => setShowLineNumbers((v) => !v)}
             />
