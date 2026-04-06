@@ -666,12 +666,13 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     let (mic_tx, mic_rx) = mpsc::sync_channel::<Vec<f32>>(128);
     let mic_writer = spawn_writer_thread(mic_temp_path.clone(), mic_rx);
 
+    let mic_rms = Arc::new(Mutex::new(0.0f32));
     let mic_audio_unit = setup_input_audio_unit(
         mic_device_id,
         mic_sample_rate,
         mic_channels,
         mic_tx.clone(),
-        None,
+        Some(Arc::clone(&mic_rms)),
     )?;
     log::info!(
         "Mic capture started: {}Hz {}ch (streaming to disk)",
@@ -750,7 +751,8 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     // Step 6: Timer thread
     let stop_flag = Arc::new(Mutex::new(false));
     let stop_flag_clone = Arc::clone(&stop_flag);
-    let rms_for_tick = Arc::clone(&audio_rms);
+    let sys_rms_for_tick = Arc::clone(&audio_rms);
+    let mic_rms_for_tick = Arc::clone(&mic_rms);
 
     thread::spawn(move || {
         let mut elapsed_secs: u64 = 0;
@@ -762,7 +764,9 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
                 }
             }
             elapsed_secs += 1;
-            let level = rms_for_tick.lock().map(|v| *v).unwrap_or(0.0);
+            let sys_level = sys_rms_for_tick.lock().map(|v| *v).unwrap_or(0.0);
+            let mic_level = mic_rms_for_tick.lock().map(|v| *v).unwrap_or(0.0);
+            let level = sys_level.max(mic_level);
             let _ = app_handle.emit("meeting-recording-tick", (elapsed_secs, level));
         }
     });
