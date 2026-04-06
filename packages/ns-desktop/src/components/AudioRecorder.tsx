@@ -130,6 +130,14 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       setState("recording");
       setElapsed(0);
 
+      // Open a mic stream purely for waveform visualization (not used for recording)
+      try {
+        const vizStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = vizStream;
+      } catch {
+        // Mic permission denied or unavailable — waveform will use simulated fallback
+      }
+
       // Listen for tick events from Rust
       const unlisten = await listen<number>("meeting-recording-tick", (event) => {
         setElapsed(event.payload * 1000); // Convert seconds to ms for formatTime
@@ -140,7 +148,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       tickUnlistenRef.current = unlisten;
     } catch (err) {
       cleanup();
-      onError(err instanceof Error ? err.message : String(err));
+      onErrorRef.current(err instanceof Error ? err.message : String(err));
     }
   }
 
