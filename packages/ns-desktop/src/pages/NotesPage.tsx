@@ -147,7 +147,7 @@ import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
 import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
 import { RecordingBar } from "../components/RecordingBar.tsx";
-import { NoteStrycGame } from "../components/NoteStrycGame.tsx";
+import { SyncSwarmGame } from "../components/SyncSwarmGame.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
@@ -3545,8 +3545,8 @@ export function NotesPage() {
       )}
     </div>
 
-    {/* NoteStryc mini game */}
-    {showGame && <NoteStrycGame onExit={() => setShowGame(false)} />}
+    {/* SyncSwarm mini game */}
+    {showGame && <SyncSwarmGame onExit={() => setShowGame(false)} />}
     </div>
   );
 }
