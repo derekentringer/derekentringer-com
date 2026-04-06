@@ -8,7 +8,7 @@
  * style the visible text. atomicRanges prevents the cursor from entering
  * hidden ranges.
  */
-import { type Extension, type Range, RangeSet } from "@codemirror/state";
+import { type Extension, type Range, RangeSet, StateField, StateEffect } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -158,10 +158,16 @@ function getActiveLines(view: EditorView): Set<number> {
 // --- Regex for wiki-links [[title]] ---
 const WIKI_LINK_RE = /\[\[([^\]]+)\]\]/g;
 
+interface DecorationPair {
+  inline: DecorationSet;
+  block: DecorationSet;
+}
+
 // --- Build decorations for a given view ---
-function buildDecorations(view: EditorView): DecorationSet {
+function buildDecorations(view: EditorView): DecorationPair {
   const activeLines = getActiveLines(view);
   const decorations: Range<Decoration>[] = [];
+  const blockDecorations: Range<Decoration>[] = [];
   const { from: vpFrom, to: vpTo } = view.viewport;
   const tree = syntaxTree(view.state);
 
@@ -299,17 +305,17 @@ function buildDecorations(view: EditorView): DecorationSet {
 
           const tableSource = view.state.sliceDoc(node.from, node.to);
 
-          // Place rendered table widget on the first line, hide content
+          // Place rendered table widget (block decoration — must go via StateField)
           const firstLine = view.state.doc.lineAt(node.from);
-          decorations.push(
+          blockDecorations.push(
             Decoration.widget({
               widget: new TableWidget(tableSource),
               block: true,
-              side: -1, // render before the line
+              side: -1,
             }).range(firstLine.from),
           );
 
-          // Hide all table lines (replace content within each line + collapse)
+          // Hide all table lines (inline — replace content within each line + collapse)
           for (let n = tblStartLine; n <= tblEndLine; n++) {
             const line = view.state.doc.line(n);
             if (line.to > line.from) {
@@ -477,15 +483,27 @@ function buildDecorations(view: EditorView): DecorationSet {
 
   // Sort by position (required for RangeSet)
   decorations.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
-  return RangeSet.of(decorations);
+  blockDecorations.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
+  return {
+    inline: RangeSet.of(decorations),
+    block: RangeSet.of(blockDecorations),
+  };
 }
 
-// --- ViewPlugin ---
+// --- Effect to sync block decorations from ViewPlugin → StateField ---
+const setBlockDecos = StateEffect.define<DecorationSet>();
+
+// --- ViewPlugin (inline decorations: marks, replace within lines, line classes) ---
 class LivePreviewPlugin {
   decorations: DecorationSet;
 
   constructor(view: EditorView) {
-    this.decorations = buildDecorations(view);
+    const result = buildDecorations(view);
+    this.decorations = result.inline;
+    // Sync block decorations to StateField on next microtask to avoid dispatch during constructor
+    queueMicrotask(() => {
+      view.dispatch({ effects: setBlockDecos.of(result.block) });
+    });
   }
 
   update(update: ViewUpdate) {
@@ -494,10 +512,32 @@ class LivePreviewPlugin {
       update.selectionSet ||
       update.viewportChanged
     ) {
-      this.decorations = buildDecorations(update.view);
+      const result = buildDecorations(update.view);
+      this.decorations = result.inline;
+      // Sync block decorations — but only if they weren't triggered by our own effect
+      const hasOurEffect = update.transactions.some((tr) =>
+        tr.effects.some((e) => e.is(setBlockDecos)),
+      );
+      if (!hasOurEffect) {
+        update.view.dispatch({ effects: setBlockDecos.of(result.block) });
+      }
     }
   }
 }
+
+// --- StateField (block decorations: block widgets for tables) ---
+const blockDecoField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(decos, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setBlockDecos)) return effect.value;
+    }
+    return decos;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 // --- Theme styles for live preview decorations ---
 const livePreviewTheme = EditorView.baseTheme({
@@ -618,5 +658,5 @@ export function livePreview(): Extension {
       }),
   });
 
-  return [plugin, livePreviewTheme];
+  return [plugin, blockDecoField, livePreviewTheme];
 }
