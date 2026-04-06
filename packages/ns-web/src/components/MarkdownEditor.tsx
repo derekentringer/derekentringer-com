@@ -8,7 +8,9 @@ import {
 import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { imageUploadExtension } from "../editor/imageUpload.ts";
+import { livePreview } from "../editor/livePreview.ts";
 import { markdown } from "@codemirror/lang-markdown";
+import { GFM } from "@lezer/markdown";
 import { languages } from "@codemirror/language-data";
 import {
   defaultKeymap,
@@ -27,6 +29,9 @@ export interface MarkdownEditorHandle {
   focus: () => void;
   insertBold: () => void;
   insertItalic: () => void;
+  insertStrikethrough: () => void;
+  insertInlineCode: () => void;
+  cycleHeading: () => void;
   scrollToLine: (line: number) => void;
   getEditorState: () => { cursor: number; scrollTop: number };
 }
@@ -50,6 +55,34 @@ interface MarkdownEditorProps {
   accentColor?: string;
   cursorStyle?: "line" | "block" | "underline";
   cursorBlink?: boolean;
+  enableLivePreview?: boolean;
+}
+
+function cycleHeadingLevel(view: EditorView) {
+  const { head } = view.state.selection.main;
+  const line = view.state.doc.lineAt(head);
+  const text = line.text;
+  const match = text.match(/^(#{1,6})\s/);
+  if (match) {
+    const level = match[1].length;
+    if (level >= 6) {
+      // Remove heading prefix entirely
+      const prefixLen = level + 1; // "######" + space
+      view.dispatch({
+        changes: { from: line.from, to: line.from + prefixLen, insert: "" },
+      });
+    } else {
+      // Add one more #
+      view.dispatch({
+        changes: { from: line.from, to: line.from, insert: "#" },
+      });
+    }
+  } else {
+    // Add h1 prefix
+    view.dispatch({
+      changes: { from: line.from, to: line.from, insert: "# " },
+    });
+  }
 }
 
 function wrapSelection(view: EditorView, marker: string) {
@@ -262,6 +295,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     accentColor,
     cursorStyle = "line",
     cursorBlink = true,
+    enableLivePreview = false,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -274,6 +308,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
   const cursorCompartment = useRef(new Compartment());
+  const livePreviewCompartment = useRef(new Compartment());
   const onMountRef = useRef(onMount);
 
   onChangeRef.current = onChange;
@@ -288,6 +323,15 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     },
     insertItalic: () => {
       if (viewRef.current) wrapSelection(viewRef.current, "*");
+    },
+    insertStrikethrough: () => {
+      if (viewRef.current) wrapSelection(viewRef.current, "~~");
+    },
+    insertInlineCode: () => {
+      if (viewRef.current) wrapSelection(viewRef.current, "`");
+    },
+    cycleHeading: () => {
+      if (viewRef.current) cycleHeadingLevel(viewRef.current);
     },
     scrollToLine: (line: number) => {
       const view = viewRef.current;
@@ -316,7 +360,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
       state: EditorState.create({
         doc: value,
         extensions: [
-          markdown({ codeLanguages: languages }),
+          markdown({ codeLanguages: languages, extensions: GFM }),
           themeCompartment.current.of([
             isDark ? createDarkTheme(accent) : createLightTheme(accent),
             syntaxHighlighting(isDark ? createDarkHighlightStyle(accent) : createLightHighlightStyle(accent)),
@@ -374,6 +418,9 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             }
             return onImageUploadRef.current(file);
           }),
+          livePreviewCompartment.current.of(
+            enableLivePreview ? livePreview() : [],
+          ),
           ...extraExtensions,
         ],
       }),
@@ -465,6 +512,17 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
       ),
     });
   }, [cursorStyle, cursorBlink, theme, accentColor]);
+
+  // Toggle live preview
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: livePreviewCompartment.current.reconfigure(
+        enableLivePreview ? livePreview() : [],
+      ),
+    });
+  }, [enableLivePreview]);
 
   const containerStyle: React.CSSProperties = {
     ...styleProp,

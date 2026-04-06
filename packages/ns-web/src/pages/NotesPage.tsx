@@ -1816,7 +1816,7 @@ export function NotesPage() {
       const heading = previewContainer.querySelector(`#${CSS.escape(slug)}`);
       if (heading) {
         heading.scrollIntoView({ behavior: "smooth", block: "start" });
-        if (viewMode !== "editor") return;
+        if (viewMode !== "editor" && viewMode !== "live") return;
       }
     }
     // In editor mode (or if preview heading not found), scroll the editor
@@ -2541,6 +2541,9 @@ export function NotesPage() {
               onViewModeChange={setViewMode}
               onBold={() => editorRef.current?.insertBold()}
               onItalic={() => editorRef.current?.insertItalic()}
+              onStrikethrough={() => editorRef.current?.insertStrikethrough()}
+              onInlineCode={() => editorRef.current?.insertInlineCode()}
+              onHeading={() => editorRef.current?.cycleHeading()}
               showLineNumbers={showLineNumbers}
               onToggleLineNumbers={() => setShowLineNumbers((v) => !v)}
             />
@@ -2592,6 +2595,7 @@ export function NotesPage() {
                   accentColor={resolvedAccentColor}
                   cursorStyle={editorSettings.cursorStyle}
                   cursorBlink={editorSettings.cursorBlink}
+                  enableLivePreview={viewMode === "live"}
                   extensions={[wikiLinkExt, ...aiExtensions]}
                   className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                   style={viewMode === "split" ? { width: splitResize.size } : undefined}
@@ -2604,7 +2608,7 @@ export function NotesPage() {
                   onPointerDown={splitResize.onPointerDown}
                 />
               )}
-              {viewMode !== "editor" && (
+              {(viewMode === "split" || viewMode === "preview") && (
                 <MarkdownPreview
                   content={content}
                   className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
