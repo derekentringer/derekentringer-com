@@ -70,8 +70,6 @@ vi.mock("@codemirror/state", () => {
     },
     Compartment: MockCompartment,
     RangeSet: { of: () => ({}) },
-    StateField: { define: () => [] },
-    StateEffect: { define: () => ({ of: () => ({}) }) },
   };
 });
 
