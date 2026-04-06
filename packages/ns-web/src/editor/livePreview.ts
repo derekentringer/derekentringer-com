@@ -15,6 +15,7 @@ import {
   EditorView,
   ViewPlugin,
   type ViewUpdate,
+  WidgetType,
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 
@@ -35,6 +36,46 @@ const headingMarks = [
   Decoration.mark({ class: "cm-lp-h5" }),
   Decoration.mark({ class: "cm-lp-h6" }),
 ];
+
+// List bullet replacement widget
+class BulletWidget extends WidgetType {
+  eq() { return true; }
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-lp-bullet";
+    span.textContent = "•";
+    return span;
+  }
+}
+
+// Checkbox widget for task lists
+class CheckboxWidget extends WidgetType {
+  constructor(readonly checked: boolean) { super(); }
+  eq(other: CheckboxWidget) { return this.checked === other.checked; }
+  toDOM(view: EditorView) {
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = this.checked;
+    input.className = "cm-lp-checkbox";
+    input.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      // Find this widget's position and toggle the marker in source
+      const pos = view.posAtDOM(input);
+      const line = view.state.doc.lineAt(pos);
+      const text = line.text;
+      const bracketIdx = text.indexOf("[ ]");
+      const checkedIdx = text.indexOf("[x]");
+      if (bracketIdx >= 0) {
+        const from = line.from + bracketIdx;
+        view.dispatch({ changes: { from, to: from + 3, insert: "[x]" } });
+      } else if (checkedIdx >= 0) {
+        const from = line.from + checkedIdx;
+        view.dispatch({ changes: { from, to: from + 3, insert: "[ ]" } });
+      }
+    });
+    return input;
+  }
+}
 
 // Horizontal rule mark
 const hrMark = Decoration.mark({ class: "cm-lp-hr" });
@@ -196,8 +237,46 @@ function buildDecorations(view: EditorView): DecorationSet {
 
         case "QuoteMark": {
           // Hide the > marker in blockquotes
-          const lineText = view.state.sliceDoc(node.from, node.to);
           decorations.push(Decoration.replace({}).range(node.from, node.to));
+          return false;
+        }
+
+        case "ListMark": {
+          // Replace - or * bullets with • (skip if this is a task list item)
+          const markText = view.state.sliceDoc(node.from, node.to);
+          if (markText === "-" || markText === "*") {
+            // Check if this list item has a TaskMarker sibling (don't replace bullet for tasks)
+            const parent = node.node.parent;
+            let isTask = false;
+            if (parent) {
+              const cursor = parent.cursor();
+              if (cursor.firstChild()) {
+                do {
+                  if (cursor.type.name === "Task") { isTask = true; break; }
+                } while (cursor.nextSibling());
+              }
+            }
+            if (isTask) {
+              // Hide the bullet mark — checkbox widget will replace the visual
+              decorations.push(Decoration.replace({}).range(node.from, node.to));
+            } else {
+              // Replace - or * with bullet dot
+              decorations.push(
+                Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to),
+              );
+            }
+          }
+          // Ordered list marks (1., 2., etc.) — leave as-is
+          return false;
+        }
+
+        case "TaskMarker": {
+          // Replace [ ] or [x] with a clickable checkbox widget
+          const markerText = view.state.sliceDoc(node.from, node.to);
+          const checked = markerText === "[x]" || markerText === "[X]";
+          decorations.push(
+            Decoration.replace({ widget: new CheckboxWidget(checked) }).range(node.from, node.to),
+          );
           return false;
         }
       }
@@ -291,6 +370,17 @@ const livePreviewTheme = EditorView.baseTheme({
     color: "#58a6ff",
     fontStyle: "italic",
     "&::before": { content: "'\\1F5BC\\FE0E '", fontSize: "0.9em" },
+  },
+  ".cm-lp-bullet": {
+    color: "rgba(128, 128, 128, 0.7)",
+    fontSize: "1.1em",
+    lineHeight: "1",
+  },
+  ".cm-lp-checkbox": {
+    verticalAlign: "middle",
+    marginRight: "4px",
+    cursor: "pointer",
+    accentColor: "var(--color-primary, #d4e157)",
   },
   ".cm-lp-blockquote": {
     borderLeft: "3px solid rgba(128, 128, 128, 0.4)",
