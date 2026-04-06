@@ -227,6 +227,75 @@ function buildDecorations(view: EditorView): DecorationSet {
           return false;
         }
 
+        case "FencedCode": {
+          // Block-level reveal: if cursor is on ANY line of the block, show raw
+          const blockStartLine = view.state.doc.lineAt(node.from).number;
+          const blockEndLine = view.state.doc.lineAt(node.to).number;
+          let cursorInBlock = false;
+          for (let n = blockStartLine; n <= blockEndLine; n++) {
+            if (activeLines.has(n)) { cursorInBlock = true; break; }
+          }
+          if (cursorInBlock) return false;
+
+          // Find child nodes for fence markers and code content
+          let openFenceEnd = node.from;
+          let closeFenceStart = node.to;
+          let codeStart = node.from;
+          let codeEnd = node.to;
+          let language = "";
+
+          const cursor = node.node.cursor();
+          if (cursor.firstChild()) {
+            do {
+              if (cursor.type.name === "CodeMark") {
+                if (cursor.from === node.from) {
+                  // Opening fence
+                  openFenceEnd = cursor.to;
+                } else {
+                  // Closing fence
+                  closeFenceStart = cursor.from;
+                }
+              } else if (cursor.type.name === "CodeInfo") {
+                language = view.state.sliceDoc(cursor.from, cursor.to);
+                openFenceEnd = cursor.to;
+              } else if (cursor.type.name === "CodeText") {
+                codeStart = cursor.from;
+                codeEnd = cursor.to;
+              }
+            } while (cursor.nextSibling());
+          }
+
+          // Hide the opening fence line (``` + language)
+          const openLine = view.state.doc.lineAt(node.from);
+          decorations.push(Decoration.replace({}).range(openLine.from, openLine.to + 1)); // +1 for newline
+
+          // Style each code content line with background
+          const firstCodeLine = view.state.doc.lineAt(codeStart);
+          const closeLine = view.state.doc.lineAt(closeFenceStart > node.from ? closeFenceStart : node.to);
+          for (let n = firstCodeLine.number; n < closeLine.number; n++) {
+            const line = view.state.doc.line(n);
+            decorations.push(Decoration.line({ class: "cm-lp-codeblock-line" }).range(line.from));
+          }
+
+          // Add language label on the first code line
+          if (language && firstCodeLine.number < closeLine.number) {
+            decorations.push(Decoration.line({
+              class: "cm-lp-codeblock-first",
+              attributes: { "data-language": language },
+            }).range(firstCodeLine.from));
+          }
+
+          // Hide the closing fence line
+          if (closeFenceStart > node.from) {
+            const closeLineObj = view.state.doc.lineAt(closeFenceStart);
+            // Hide from the newline before closing fence to end of closing fence
+            const hideFrom = closeLineObj.from > 0 ? closeLineObj.from - 1 : closeLineObj.from;
+            decorations.push(Decoration.replace({}).range(hideFrom, closeLineObj.to));
+          }
+
+          return false; // don't recurse into children
+        }
+
         case "HorizontalRule": {
           // Style the --- or *** or ___ as a subtle horizontal rule
           decorations.push(hrMark.range(node.from, node.to));
@@ -385,6 +454,24 @@ const livePreviewTheme = EditorView.baseTheme({
     marginRight: "4px",
     cursor: "pointer",
     accentColor: "var(--color-primary, #d4e157)",
+  },
+  ".cm-lp-codeblock-line": {
+    backgroundColor: "var(--color-subtle, #1a1c24)",
+    fontFamily: "monospace",
+  },
+  ".cm-lp-codeblock-first": {
+    backgroundColor: "var(--color-subtle, #1a1c24)",
+    fontFamily: "monospace",
+    borderTop: "1px solid var(--color-border, #1e2028)",
+    borderTopLeftRadius: "6px",
+    borderTopRightRadius: "6px",
+    "&::after": {
+      content: "attr(data-language)",
+      float: "right",
+      fontSize: "0.75em",
+      color: "var(--color-muted-foreground, #666)",
+      opacity: "0.7",
+    },
   },
   ".cm-lp-blockquote-line": {
     borderLeft: "3px solid var(--color-primary, #d4e157)",
