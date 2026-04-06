@@ -40,6 +40,7 @@ export interface MarkdownEditorHandle {
   insertCheckbox: () => void;
   insertBlockquote: () => void;
   insertCodeBlock: () => void;
+  insertTable: () => void;
   scrollToLine: (line: number) => void;
   getEditorState: () => { cursor: number; scrollTop: number };
 }
@@ -169,6 +170,15 @@ function insertCodeBlockTemplate(view: EditorView) {
   view.dispatch({
     changes: { from, to, insert },
     selection: { anchor: cursorPos },
+  });
+}
+
+function insertTableTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const table = "| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n|          |          |          |";
+  view.dispatch({
+    changes: { from, to, insert: table },
+    selection: { anchor: from + 2, head: from + 10 }, // select "Column 1"
   });
 }
 
@@ -443,6 +453,9 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     },
     insertCodeBlock: () => {
       if (viewRef.current) insertCodeBlockTemplate(viewRef.current);
+    },
+    insertTable: () => {
+      if (viewRef.current) insertTableTemplate(viewRef.current);
     },
     scrollToLine: (line: number) => {
       const view = viewRef.current;

@@ -227,6 +227,37 @@ function buildDecorations(view: EditorView): DecorationSet {
           return false;
         }
 
+        case "Table": {
+          // Block-level reveal: if cursor is on ANY line of the table, show raw
+          const tblStartLine = view.state.doc.lineAt(node.from).number;
+          const tblEndLine = view.state.doc.lineAt(node.to).number;
+          let cursorInTable = false;
+          for (let n = tblStartLine; n <= tblEndLine; n++) {
+            if (activeLines.has(n)) { cursorInTable = true; break; }
+          }
+          if (cursorInTable) return false;
+
+          // Walk children to find header, delimiter, and rows
+          const tblCursor = node.node.cursor();
+          if (tblCursor.firstChild()) {
+            do {
+              const childLine = view.state.doc.lineAt(tblCursor.from);
+              if (tblCursor.type.name === "TableHeader") {
+                decorations.push(Decoration.line({ class: "cm-lp-table-header" }).range(childLine.from));
+              } else if (tblCursor.type.name === "TableDelimiter" && tblCursor.from === childLine.from) {
+                // This is the separator row (|------|-----| ) — hide it
+                const delimLine = view.state.doc.lineAt(tblCursor.from);
+                // Hide from end of previous line (newline) to end of delimiter line
+                const hideFrom = delimLine.from > 0 ? delimLine.from - 1 : delimLine.from;
+                decorations.push(Decoration.replace({}).range(hideFrom, delimLine.to));
+              } else if (tblCursor.type.name === "TableRow") {
+                decorations.push(Decoration.line({ class: "cm-lp-table-row" }).range(childLine.from));
+              }
+            } while (tblCursor.nextSibling());
+          }
+          return false;
+        }
+
         case "FencedCode": {
           // Block-level reveal: if cursor is on ANY line of the block, show raw
           const blockStartLine = view.state.doc.lineAt(node.from).number;
@@ -454,6 +485,15 @@ const livePreviewTheme = EditorView.baseTheme({
     marginRight: "4px",
     cursor: "pointer",
     accentColor: "var(--color-primary, #d4e157)",
+  },
+  ".cm-lp-table-header": {
+    fontWeight: "bold",
+    backgroundColor: "var(--color-subtle, #1a1c24)",
+    borderBottom: "2px solid var(--color-border, #1e2028)",
+  },
+  ".cm-lp-table-row": {
+    backgroundColor: "var(--color-subtle, #1a1c24)",
+    borderBottom: "1px solid var(--color-border, #1e2028)",
   },
   ".cm-lp-codeblock-line": {
     backgroundColor: "var(--color-subtle, #1a1c24)",

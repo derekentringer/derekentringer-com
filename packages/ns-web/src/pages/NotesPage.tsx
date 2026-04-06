@@ -2552,6 +2552,7 @@ export function NotesPage() {
               onCheckbox={() => editorRef.current?.insertCheckbox()}
               onBlockquote={() => editorRef.current?.insertBlockquote()}
               onCodeBlock={() => editorRef.current?.insertCodeBlock()}
+              onTable={() => editorRef.current?.insertTable()}
               showLineNumbers={showLineNumbers}
               onToggleLineNumbers={() => setShowLineNumbers((v) => !v)}
             />
