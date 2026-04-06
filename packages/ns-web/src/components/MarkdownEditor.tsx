@@ -39,6 +39,7 @@ export interface MarkdownEditorHandle {
   insertNumberedList: () => void;
   insertCheckbox: () => void;
   insertBlockquote: () => void;
+  insertCodeBlock: () => void;
   scrollToLine: (line: number) => void;
   getEditorState: () => { cursor: number; scrollTop: number };
 }
@@ -154,6 +155,21 @@ function insertLinePrefix(view: EditorView, prefix: string) {
       changes: { from: line.from, to: line.from, insert: prefix },
     });
   }
+}
+
+function insertCodeBlockTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  const insert = selected
+    ? `\`\`\`\n${selected}\n\`\`\``
+    : "```\n\n```";
+  const cursorPos = selected
+    ? from + 4 + selected.length // after closing ```
+    : from + 4; // on the empty line between fences
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: cursorPos },
+  });
 }
 
 function wrapSelection(view: EditorView, marker: string) {
@@ -424,6 +440,9 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     },
     insertBlockquote: () => {
       if (viewRef.current) insertLinePrefix(viewRef.current, "> ");
+    },
+    insertCodeBlock: () => {
+      if (viewRef.current) insertCodeBlockTemplate(viewRef.current);
     },
     scrollToLine: (line: number) => {
       const view = viewRef.current;
