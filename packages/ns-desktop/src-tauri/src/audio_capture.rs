@@ -573,6 +573,7 @@ fn setup_input_audio_unit(
     sample_rate: f64,
     channels: u16,
     sender: mpsc::SyncSender<Vec<f32>>,
+    rms_level: Option<Arc<Mutex<f32>>>,
 ) -> Result<AudioUnit, String> {
     use coreaudio::audio_unit::audio_format::LinearPcmFlags;
     use coreaudio::audio_unit::render_callback;
@@ -600,7 +601,15 @@ fn setup_input_audio_unit(
     type Args = render_callback::Args<render_callback::data::Interleaved<f32>>;
     audio_unit
         .set_input_callback(move |args: Args| {
-            let _ = sender.try_send(args.data.buffer.to_vec());
+            let buf = args.data.buffer;
+            if let Some(ref rms) = rms_level {
+                let sum: f32 = buf.iter().map(|s| s * s).sum();
+                let level = (sum / buf.len().max(1) as f32).sqrt();
+                if let Ok(mut val) = rms.lock() {
+                    *val = level;
+                }
+            }
+            let _ = sender.try_send(buf.to_vec());
             Ok(())
         })
         .map_err(|e| format!("Failed to set input callback: {e}"))?;
@@ -662,6 +671,7 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
         mic_sample_rate,
         mic_channels,
         mic_tx.clone(),
+        None,
     )?;
     log::info!(
         "Mic capture started: {}Hz {}ch (streaming to disk)",
@@ -723,11 +733,13 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     let (sys_tx, sys_rx) = mpsc::sync_channel::<Vec<f32>>(128);
     let sys_writer = spawn_writer_thread(system_temp_path.clone(), sys_rx);
 
+    let audio_rms = Arc::new(Mutex::new(0.0f32));
     let system_audio_unit = setup_input_audio_unit(
         aggregate_device_id,
         system_sample_rate,
         system_channels,
         sys_tx.clone(),
+        Some(Arc::clone(&audio_rms)),
     )?;
     log::info!(
         "System audio capture started: {}Hz {}ch (streaming to disk)",
@@ -738,6 +750,7 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     // Step 6: Timer thread
     let stop_flag = Arc::new(Mutex::new(false));
     let stop_flag_clone = Arc::clone(&stop_flag);
+    let rms_for_tick = Arc::clone(&audio_rms);
 
     thread::spawn(move || {
         let mut elapsed_secs: u64 = 0;
@@ -749,7 +762,8 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
                 }
             }
             elapsed_secs += 1;
-            let _ = app_handle.emit("meeting-recording-tick", elapsed_secs);
+            let level = rms_for_tick.lock().map(|v| *v).unwrap_or(0.0);
+            let _ = app_handle.emit("meeting-recording-tick", (elapsed_secs, level));
         }
     });
 
