@@ -23,6 +23,8 @@ const boldMark = Decoration.mark({ class: "cm-lp-bold" });
 const italicMark = Decoration.mark({ class: "cm-lp-italic" });
 const strikethroughMark = Decoration.mark({ class: "cm-lp-strikethrough" });
 const inlineCodeMark = Decoration.mark({ class: "cm-lp-code" });
+const linkMark = Decoration.mark({ class: "cm-lp-link" });
+const wikiLinkMark = Decoration.mark({ class: "cm-lp-wikilink" });
 
 // Heading marks (h1–h6)
 const headingMarks = [
@@ -54,21 +56,8 @@ function getActiveLines(view: EditorView): Set<number> {
   return active;
 }
 
-// --- Helper: determine heading level from ATXHeading node ---
-function getHeadingLevel(view: EditorView, from: number, to: number): number {
-  const text = view.state.sliceDoc(from, to);
-  const match = text.match(/^(#{1,6})\s/);
-  return match ? match[1].length : 1;
-}
-
-// --- Helper: get the number of marker characters for emphasis ---
-function getMarkerLen(nodeType: string, view: EditorView, from: number): number {
-  if (nodeType === "StrongEmphasis") return 2; // ** or __
-  if (nodeType === "Emphasis") return 1; // * or _
-  // For Strikethrough, marker is ~~
-  if (nodeType === "Strikethrough") return 2;
-  return 1;
-}
+// --- Regex for wiki-links [[title]] ---
+const WIKI_LINK_RE = /\[\[([^\]]+)\]\]/g;
 
 // --- Build decorations for a given view ---
 function buildDecorations(view: EditorView): DecorationSet {
@@ -164,6 +153,41 @@ function buildDecorations(view: EditorView): DecorationSet {
           return false;
         }
 
+        case "Link": {
+          // [text](url) → hide [ and ](url), style text as link
+          // Find child positions from the parse tree
+          const linkText = view.state.sliceDoc(node.from, node.to);
+          // Check if this is actually a wiki-link (handled separately)
+          if (linkText.startsWith("[[")) return false;
+          const closeBracket = linkText.indexOf("](");
+          if (closeBracket === -1) return false; // malformed
+          const textStart = node.from + 1; // after [
+          const textEnd = node.from + closeBracket;
+          if (textEnd <= textStart) return false;
+          decorations.push(
+            Decoration.replace({}).range(node.from, textStart), // hide [
+            linkMark.range(textStart, textEnd), // style text
+            Decoration.replace({}).range(textEnd, node.to), // hide ](url)
+          );
+          return false;
+        }
+
+        case "Image": {
+          // ![alt](url) → hide ![ and ](url), style alt as image label
+          const imgText = view.state.sliceDoc(node.from, node.to);
+          const closeBracket = imgText.indexOf("](");
+          if (closeBracket === -1) return false;
+          const altStart = node.from + 2; // after ![
+          const altEnd = node.from + closeBracket;
+          if (altEnd <= altStart) return false;
+          decorations.push(
+            Decoration.replace({}).range(node.from, altStart), // hide ![
+            Decoration.mark({ class: "cm-lp-image" }).range(altStart, altEnd), // style alt
+            Decoration.replace({}).range(altEnd, node.to), // hide ](url)
+          );
+          return false;
+        }
+
         case "HorizontalRule": {
           // Style the --- or *** or ___ as a subtle horizontal rule
           decorations.push(hrMark.range(node.from, node.to));
@@ -179,6 +203,28 @@ function buildDecorations(view: EditorView): DecorationSet {
       }
     },
   });
+
+  // Wiki-links [[title]] — not in Lezer tree, detect via regex
+  for (let i = 1; i <= view.state.doc.lines; i++) {
+    if (activeLines.has(i)) continue;
+    const line = view.state.doc.line(i);
+    if (line.from > vpTo || line.to < vpFrom) continue;
+    WIKI_LINK_RE.lastIndex = 0;
+    let match;
+    while ((match = WIKI_LINK_RE.exec(line.text)) !== null) {
+      const start = line.from + match.index;
+      const end = start + match[0].length;
+      const titleStart = start + 2; // after [[
+      const titleEnd = end - 2; // before ]]
+      if (titleEnd > titleStart) {
+        decorations.push(
+          Decoration.replace({}).range(start, titleStart), // hide [[
+          wikiLinkMark.range(titleStart, titleEnd), // style title
+          Decoration.replace({}).range(titleEnd, end), // hide ]]
+        );
+      }
+    }
+  }
 
   // Sort by position (required for RangeSet)
   decorations.sort((a, b) => a.from - b.from || a.value.startSide - b.value.startSide);
@@ -227,6 +273,24 @@ const livePreviewTheme = EditorView.baseTheme({
     textDecoration: "none",
     opacity: "0.3",
     letterSpacing: "0.5em",
+  },
+  ".cm-lp-link": {
+    color: "#58a6ff",
+    textDecoration: "underline",
+    textUnderlineOffset: "2px",
+    cursor: "pointer",
+  },
+  ".cm-lp-wikilink": {
+    color: "#d4e157",
+    textDecoration: "underline",
+    textDecorationStyle: "dotted",
+    textUnderlineOffset: "2px",
+    cursor: "pointer",
+  },
+  ".cm-lp-image": {
+    color: "#58a6ff",
+    fontStyle: "italic",
+    "&::before": { content: "'\\1F5BC\\FE0E '", fontSize: "0.9em" },
   },
   ".cm-lp-blockquote": {
     borderLeft: "3px solid rgba(128, 128, 128, 0.4)",
