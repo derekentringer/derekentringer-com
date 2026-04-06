@@ -35,6 +35,10 @@ export interface MarkdownEditorHandle {
   insertLink: () => void;
   insertImage: () => void;
   insertWikiLink: () => void;
+  insertBulletList: () => void;
+  insertNumberedList: () => void;
+  insertCheckbox: () => void;
+  insertBlockquote: () => void;
   scrollToLine: (line: number) => void;
   getEditorState: () => { cursor: number; scrollTop: number };
 }
@@ -135,6 +139,21 @@ function insertWikiLinkTemplate(view: EditorView) {
       ? { anchor: from + insert.length }
       : { anchor: from + 2, head: from + 2 + "note title".length },
   });
+}
+
+function insertLinePrefix(view: EditorView, prefix: string) {
+  const { head } = view.state.selection.main;
+  const line = view.state.doc.lineAt(head);
+  // If line already starts with this prefix, remove it (toggle)
+  if (line.text.startsWith(prefix)) {
+    view.dispatch({
+      changes: { from: line.from, to: line.from + prefix.length, insert: "" },
+    });
+  } else {
+    view.dispatch({
+      changes: { from: line.from, to: line.from, insert: prefix },
+    });
+  }
 }
 
 function wrapSelection(view: EditorView, marker: string) {
@@ -393,6 +412,18 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     },
     insertWikiLink: () => {
       if (viewRef.current) insertWikiLinkTemplate(viewRef.current);
+    },
+    insertBulletList: () => {
+      if (viewRef.current) insertLinePrefix(viewRef.current, "- ");
+    },
+    insertNumberedList: () => {
+      if (viewRef.current) insertLinePrefix(viewRef.current, "1. ");
+    },
+    insertCheckbox: () => {
+      if (viewRef.current) insertLinePrefix(viewRef.current, "- [ ] ");
+    },
+    insertBlockquote: () => {
+      if (viewRef.current) insertLinePrefix(viewRef.current, "> ");
     },
     scrollToLine: (line: number) => {
       const view = viewRef.current;
