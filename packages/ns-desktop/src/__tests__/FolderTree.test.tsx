@@ -229,17 +229,15 @@ describe("FolderTree", () => {
     expect(onToggleFavorite).toHaveBeenCalledWith("f1", true);
   });
 
-  it("toggles section collapse", async () => {
+  it("renders Folders header as non-collapsible label", () => {
     const folders = [makeFolder({ id: "f1", name: "Work" })];
     render(<FolderTree {...defaultProps} folders={folders} />);
 
+    // Header is present
+    expect(screen.getByText("Folders")).toBeInTheDocument();
+    // Content is always visible (no collapse toggle)
     expect(screen.getByText("Work")).toBeInTheDocument();
-
-    // Click "Folders" header to collapse
-    await userEvent.click(screen.getByText("Folders"));
-
-    expect(screen.queryByText("Work")).not.toBeInTheDocument();
-    expect(screen.queryByText("All Notes")).not.toBeInTheDocument();
+    expect(screen.getByText("All Notes")).toBeInTheDocument();
   });
 });
 

@@ -46,30 +46,24 @@ describe("TagBrowser", () => {
     expect(onToggleTag).toHaveBeenCalledWith("work");
   });
 
-  it("highlights active tags with primary color", () => {
+  it("highlights active tags in list layout", () => {
     const tags: TagInfo[] = [{ name: "active", count: 1 }];
     render(
       <TagBrowser {...defaultProps} tags={tags} activeTags={["active"]} />,
     );
 
     const button = screen.getByText("active").closest("button");
-    expect(button).toHaveClass("bg-primary");
+    expect(button).toHaveClass("bg-accent");
   });
 
-  it("shows 'Clear filter' button when tags are active", () => {
-    const tags: TagInfo[] = [{ name: "work", count: 5 }];
+  it("highlights active tags with primary color in pills layout", () => {
+    const tags: TagInfo[] = [{ name: "active", count: 1 }];
     render(
-      <TagBrowser {...defaultProps} tags={tags} activeTags={["work"]} />,
+      <TagBrowser {...defaultProps} tags={tags} activeTags={["active"]} layout="pills" />,
     );
 
-    expect(screen.getByText("clear filter")).toBeInTheDocument();
-  });
-
-  it("does not show 'Clear filter' when no tags are active", () => {
-    const tags: TagInfo[] = [{ name: "work", count: 5 }];
-    render(<TagBrowser {...defaultProps} tags={tags} />);
-
-    expect(screen.queryByText("Clear filter")).not.toBeInTheDocument();
+    const button = screen.getByText("active").closest("button");
+    expect(button).toHaveClass("bg-primary");
   });
 
   it("shows context menu on right-click", async () => {

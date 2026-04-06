@@ -145,6 +145,14 @@
 
 - [x] Audio upload retry logic — `transcribeAudio` client retries up to 2 times with exponential backoff on 502/503/504 status codes; handles transient Whisper API failures gracefully
 
+### Navigation & Layout
+
+- [x] [22 — Navigation & Layout Improvements](features/22-navigation-layout.md) — Obsidian-inspired multi-panel layout: vertical ribbon strip (new note, audio record, settings, game launcher), tabbed sidebar (Explorer, Search, Favorites, Tags), separate resizable note list panel with rich note rows (snippets, dates, dimmed accent-colored tags), TagBrowser with list/pill layouts and filter, consistent tab header alignment, context menus with tight wrapping, localStorage persistence for all panel states
+
+- [x] [23 — Audio Recording Refactor](features/23-audio-recording-refactor.md) — Ribbon-integrated audio recording: click-to-record with last-used mode, long-press for mode/source selector, floating top RecordingBar with elapsed time and real-time AudioWaveform (Web Audio API AnalyserNode), ribbon mic icon becomes stop button during recording, mode remembered via localStorage, refs pattern for stale closure prevention, vertical slide animation on recording bar
+
+- [x] [24 — SyncSwarm Game](features/24-syncswarm-game.md) — Hidden Galaga-style ASCII space shooter: enemy formations with bezier entry animations, diving attacks, boss tractor beam capture, dual fighter mode, challenge stages every 3 levels, parallax starfield with 3 grey-toned depth layers (speed varies by game phase), per-character color rendering via RenderSegment spans, high score persistence, launched from rocket icon in ribbon
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

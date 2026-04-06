@@ -55,12 +55,15 @@ packages/
   ns-api/       — Fastify API server (NoteSync backend)
   shared/       — Shared TypeScript types and utilities
   ns-desktop/   — Tauri v2 desktop app (NoteSync for macOS)
-  fin-mobile/   — React Native app (deferred to Phase 6)
+  ns-mobile/    — React Native app (NoteSync for Android/iOS)
+  fin-mobile/   — React Native app (Finance for Android/iOS)
 ```
 
 ### NoteSync Desktop (`packages/ns-desktop/`)
 
 - Tauri v2 desktop app wrapping the NoteSync web frontend
+- **Feature docs**: `docs/ns/desktop/docs/features/` (00–26), progress tracker at `docs/ns/desktop/docs/PROGRESS.md`
+- **Feature planning docs**: `docs/ns/desktop/docs/feature_planning/` for planned/in-progress features
 - `src-tauri/tauri.conf.json` — Tauri config (bundle ID: `com.derekentringer.notesync`, `bundle.macOS.infoPlist` points to `Info.plist`, `bundle.macOS.entitlements` points to `NoteSync.entitlements`)
 - `src-tauri/Info.plist` — Custom plist merged into built app by Tauri v2 bundler (`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`); must be referenced as a path string in `tauri.conf.json`, not an inline object
 - `src-tauri/NoteSync.entitlements` — macOS entitlements (`com.apple.security.device.audio-input`); required for TCC microphone prompt with hardened runtime + ad-hoc signing
@@ -102,6 +105,8 @@ packages/
 ### Finance Web (`packages/fin-web/`)
 
 - React + Vite SPA for personal finance dashboard
+- **Feature docs**: `docs/fin/web/docs/features/` (00–16), progress tracker at `docs/fin/web/docs/PROGRESS.md`
+- **Feature planning docs**: `docs/fin/web/docs/feature_planning/` for planned/in-progress features
 - `src/App.tsx` — Routes + auth-gated layout
 - `src/pages/LoginPage.tsx` — Login form with email/password and TOTP 2FA support
 - `src/context/AuthContext.tsx` — JWT auth state management with multi-user support
@@ -145,9 +150,19 @@ packages/
 ### NoteSync Web (`packages/ns-web/`)
 
 - React + Vite SPA for note-taking app
+- **Feature docs**: `docs/ns/web/docs/features/` (00–24), progress tracker at `docs/ns/web/docs/PROGRESS.md`
+- **Feature planning docs**: `docs/ns/web/docs/feature_planning/` for planned/in-progress features
 - `src/App.tsx` — Routes + auth-gated layout
 - `src/pages/LoginPage.tsx` — Login form with NoteSync branding and logo
 - `src/pages/NotesPage.tsx` — Notes view with sidebar + editor shell
+- `src/components/SidebarTabs.tsx` — Tabbed sidebar (Explorer, Search, Favorites, Tags)
+- `src/components/Ribbon.tsx` — Vertical utility strip (new note, audio record, settings, game)
+- `src/components/NoteListPanel.tsx` — Separate resizable note list panel
+- `src/components/AudioRecorder.tsx` — Ribbon-integrated audio recording with mode selector
+- `src/components/RecordingBar.tsx` — Floating top bar during recording with waveform
+- `src/components/AudioWaveform.tsx` — Real-time audio visualization via Web Audio API
+- `src/components/SyncSwarmGame.tsx` — Hidden Galaga-style ASCII space shooter
+- `src/components/Dashboard.tsx` — Rich dashboard with quick actions, recent notes, favorites
 - `src/components/NsLogo.tsx` — Inline SVG logo component (lime-yellow rounded square with `+`)
 - `src/components/ResizeDivider.tsx` — Draggable divider for resizable sidebar panels
 - `src/hooks/useResizable.ts` — Custom hook for drag-resize with localStorage persistence
@@ -191,6 +206,25 @@ packages/
   - `npm run db:studio` — Open Prisma Studio
 - **Env vars**: `DATABASE_URL` (PostgreSQL connection string), `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `CORS_ORIGIN` (defaults to `http://localhost:3005`), `OPENAI_API_KEY` (for Whisper audio transcription), `RESEND_API_KEY` (password reset emails), `APP_URL` (frontend URL for email links, defaults to `http://localhost:3005`), `RP_ID` (WebAuthn domain, defaults to `localhost`), `R2_ACCOUNT_ID` (Cloudflare R2 account), `R2_ACCESS_KEY_ID` (R2 API token key), `R2_SECRET_ACCESS_KEY` (R2 API token secret), `R2_BUCKET_NAME` (R2 bucket, `notesync-images`), `R2_PUBLIC_URL` (R2 public domain, `https://notesync-images.derekentringer.com`)
 - **Railway start command**: `npm run db:migrate:deploy --workspace=@derekentringer/ns-api && npm run start --workspace=@derekentringer/ns-api`
+
+### NoteSync Mobile (`packages/ns-mobile/`)
+
+- React Native + Expo app for NoteSync on Android/iOS
+- **Feature docs**: `docs/ns/mobile/docs/features/` (00–04), progress tracker at `docs/ns/mobile/docs/PROGRESS.md`
+- **Feature planning docs**: `docs/ns/mobile/docs/feature_planning/` for planned/in-progress features
+- Offline-first with SQLite (full local copy of notes) + FTS5 search
+- Same sync protocol as desktop (push → pull with last-write-wins via ns-api)
+- Sideload-only distribution (APK for Android, ad-hoc IPA for iOS)
+- Android-focused (push notifications on iOS excluded due to paid Apple Developer account requirement)
+
+### Finance Mobile (`packages/fin-mobile/`)
+
+- React Native + Expo app for Finance on Android/iOS
+- **Feature docs**: `docs/fin/mobile/docs/features/` (00–09), progress tracker at `docs/fin/mobile/docs/PROGRESS.md`
+- **Feature planning docs**: `docs/fin/mobile/docs/feature_planning/` for planned/in-progress features
+- 5 bottom tabs: Dashboard, Accounts, Activity, Planning, More
+- Dark mode only
+- Push notifications via Firebase Cloud Messaging (Android only)
 
 ## External Services
 

@@ -150,6 +150,14 @@
 
 - [x] [15 — Local File Support](features/15-local-file-support.md) — Local file linking with bidirectional sync, import choice dialog (Import to NoteSync / Keep Local), three-write save (file + SQLite + sync), file watcher with write suppression + 30s poll backup, external change detection with dialog/auto-reload and hash dedup, missing file detection with red indicators (dot in note list, triangle on tab), local file diff view (unified/split), cross-device cloud_newer detection, delete choice dialog, unlink local file, web app indicator for local file notes, sync push rejection handling, folder unique index fix
 
+### Navigation & Layout
+
+- [x] [24 — Navigation & Layout Improvements](features/24-navigation-layout.md) — Obsidian-inspired multi-panel layout: vertical ribbon strip (new note, audio record, settings, game launcher), tabbed sidebar (Explorer, Search, Favorites, Tags), separate resizable note list panel with rich note rows (snippets, dates, dimmed accent-colored tags), TagBrowser with list/pill layouts and filter, sync pull sorted by type priority (folders → notes → images) to prevent FK errors, countAllNotes() for stable All Notes count, consistent tab header alignment, context menus with tight wrapping, localStorage persistence for all panel states
+
+- [x] [25 — Audio Recording Refactor](features/25-audio-recording-refactor.md) — Ribbon-integrated audio recording: click-to-record with last-used mode, long-press for mode/source selector (microphone + meeting mode), floating top RecordingBar with elapsed time and real-time AudioWaveform, Rust CoreAudio RMS levels for meeting mode waveform (~15fps tick events), ribbon mic icon becomes stop button during recording, mode remembered via localStorage, refs pattern for stale closure prevention
+
+- [x] [26 — SyncSwarm Game](features/26-syncswarm-game.md) — Hidden Galaga-style ASCII space shooter: enemy formations with bezier entry animations, diving attacks, boss tractor beam capture, dual fighter mode, challenge stages every 3 levels, parallax starfield with 3 grey-toned depth layers, per-character color rendering, high score persistence, launched from rocket icon in ribbon
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)
