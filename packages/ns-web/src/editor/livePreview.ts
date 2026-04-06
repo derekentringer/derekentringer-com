@@ -77,6 +77,66 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
+// Rendered table widget — parses markdown table and renders as HTML <table>
+class TableWidget extends WidgetType {
+  constructor(readonly source: string) { super(); }
+  eq(other: TableWidget) { return this.source === other.source; }
+  toDOM() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "cm-lp-table-widget";
+
+    const lines = this.source.split("\n").filter((l) => l.trim());
+    if (lines.length < 2) { wrapper.textContent = this.source; return wrapper; }
+
+    const parseRow = (line: string): string[] =>
+      line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+
+    const headers = parseRow(lines[0]);
+
+    // Parse alignment from delimiter row
+    const delimCells = parseRow(lines[1]);
+    const aligns: ("left" | "center" | "right" | "")[] = delimCells.map((c) => {
+      const left = c.startsWith(":");
+      const right = c.endsWith(":");
+      if (left && right) return "center";
+      if (right) return "right";
+      return "";
+    });
+
+    const table = document.createElement("table");
+    table.className = "cm-lp-table";
+
+    // Header
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    headers.forEach((h, i) => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      if (aligns[i]) th.style.textAlign = aligns[i];
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body rows
+    const tbody = document.createElement("tbody");
+    for (let r = 2; r < lines.length; r++) {
+      const cells = parseRow(lines[r]);
+      const tr = document.createElement("tr");
+      headers.forEach((_, i) => {
+        const td = document.createElement("td");
+        td.textContent = cells[i] ?? "";
+        if (aligns[i]) td.style.textAlign = aligns[i];
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    return wrapper;
+  }
+}
+
 // Horizontal rule mark
 const hrMark = Decoration.mark({ class: "cm-lp-hr" });
 
@@ -237,24 +297,25 @@ function buildDecorations(view: EditorView): DecorationSet {
           }
           if (cursorInTable) return false;
 
-          // Walk children to find header, delimiter, and rows
-          const tblCursor = node.node.cursor();
-          if (tblCursor.firstChild()) {
-            do {
-              const childLine = view.state.doc.lineAt(tblCursor.from);
-              if (tblCursor.type.name === "TableHeader") {
-                decorations.push(Decoration.line({ class: "cm-lp-table-header" }).range(childLine.from));
-              } else if (tblCursor.type.name === "TableDelimiter" && tblCursor.from === childLine.from) {
-                // Separator row — replace content within line and collapse via CSS
-                const delimLine = view.state.doc.lineAt(tblCursor.from);
-                if (delimLine.to > delimLine.from) {
-                  decorations.push(Decoration.replace({}).range(delimLine.from, delimLine.to));
-                }
-                decorations.push(Decoration.line({ class: "cm-lp-hidden-line" }).range(delimLine.from));
-              } else if (tblCursor.type.name === "TableRow") {
-                decorations.push(Decoration.line({ class: "cm-lp-table-row" }).range(childLine.from));
-              }
-            } while (tblCursor.nextSibling());
+          const tableSource = view.state.sliceDoc(node.from, node.to);
+
+          // Place rendered table widget on the first line, hide content
+          const firstLine = view.state.doc.lineAt(node.from);
+          decorations.push(
+            Decoration.widget({
+              widget: new TableWidget(tableSource),
+              block: true,
+              side: -1, // render before the line
+            }).range(firstLine.from),
+          );
+
+          // Hide all table lines (replace content within each line + collapse)
+          for (let n = tblStartLine; n <= tblEndLine; n++) {
+            const line = view.state.doc.line(n);
+            if (line.to > line.from) {
+              decorations.push(Decoration.replace({}).range(line.from, line.to));
+            }
+            decorations.push(Decoration.line({ class: "cm-lp-hidden-line" }).range(line.from));
           }
           return false;
         }
@@ -497,14 +558,29 @@ const livePreviewTheme = EditorView.baseTheme({
     height: "0",
     overflow: "hidden",
   },
-  ".cm-lp-table-header": {
-    fontWeight: "bold",
-    backgroundColor: "var(--color-subtle, #1a1c24)",
-    borderBottom: "2px solid var(--color-border, #1e2028)",
+  ".cm-lp-table-widget": {
+    margin: "4px 0",
+    overflow: "auto",
   },
-  ".cm-lp-table-row": {
+  ".cm-lp-table": {
+    borderCollapse: "collapse",
+    width: "100%",
+    fontSize: "inherit",
+    fontFamily: "inherit",
+  },
+  ".cm-lp-table th": {
+    fontWeight: "bold",
+    borderBottom: "2px solid var(--color-border, #1e2028)",
+    padding: "6px 12px",
+    textAlign: "left",
     backgroundColor: "var(--color-subtle, #1a1c24)",
+  },
+  ".cm-lp-table td": {
     borderBottom: "1px solid var(--color-border, #1e2028)",
+    padding: "6px 12px",
+  },
+  ".cm-lp-table tbody tr:hover": {
+    backgroundColor: "var(--color-accent, rgba(255,255,255,0.03))",
   },
   ".cm-lp-codeblock-line": {
     backgroundColor: "var(--color-subtle, #1a1c24)",
