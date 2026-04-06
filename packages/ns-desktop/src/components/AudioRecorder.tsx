@@ -73,8 +73,12 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   const isMeetingRef = useRef(false);
   const modeRef = useRef(mode);
   const folderIdRef = useRef(folderId);
+  const onNoteCreatedRef = useRef(onNoteCreated);
+  const onErrorRef = useRef(onError);
   modeRef.current = mode;
   folderIdRef.current = folderId;
+  onNoteCreatedRef.current = onNoteCreated;
+  onErrorRef.current = onError;
 
   // Check meeting recording support on mount
   useEffect(() => {
@@ -158,10 +162,10 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       const blob = new Blob([data], { type: "audio/wav" });
 
       try {
-        const result = await transcribeAudio(blob, mode, folderId);
-        onNoteCreated(result.note);
+        const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
+        onNoteCreatedRef.current(result.note);
       } catch (err) {
-        onError(err instanceof Error ? err.message : "Transcription failed");
+        onErrorRef.current(err instanceof Error ? err.message : "Transcription failed");
       } finally {
         setState("idle");
         setElapsed(0);
@@ -170,7 +174,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       cleanup();
       setState("idle");
       setElapsed(0);
-      onError(err instanceof Error ? err.message : String(err));
+      onErrorRef.current(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -197,10 +201,10 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         setState("processing");
 
         try {
-          const result = await transcribeAudio(blob, mode, folderId);
-          onNoteCreated(result.note);
+          const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
+          onNoteCreatedRef.current(result.note);
         } catch (err) {
-          onError(err instanceof Error ? err.message : "Transcription failed");
+          onErrorRef.current(err instanceof Error ? err.message : "Transcription failed");
         } finally {
           setState("idle");
           setElapsed(0);
