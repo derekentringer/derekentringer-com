@@ -77,7 +77,7 @@ import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
 import { stripMarkdown } from "../lib/stripMarkdown.ts";
 import { SearchSnippet } from "../components/SearchSnippet.tsx";
 import { Ribbon } from "../components/Ribbon.tsx";
-import { NoteStrycGame } from "../components/NoteStrycGame.tsx";
+import { SyncSwarmGame } from "../components/SyncSwarmGame.tsx";
 import { NoteListPanel } from "../components/NoteListPanel.tsx";
 import {
   parseFileList,
@@ -2853,8 +2853,8 @@ export function NotesPage() {
       )}
     </div>
 
-    {/* NoteStryc mini game */}
-    {showGame && <NoteStrycGame onExit={() => setShowGame(false)} />}
+    {/* SyncSwarm mini game */}
+    {showGame && <SyncSwarmGame onExit={() => setShowGame(false)} />}
     </div>
   );
 }
