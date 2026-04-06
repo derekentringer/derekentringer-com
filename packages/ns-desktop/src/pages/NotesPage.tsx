@@ -147,6 +147,7 @@ import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AdminPage } from "./AdminPage.tsx";
 import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
 import { RecordingBar } from "../components/RecordingBar.tsx";
+import { NoteStrycGame } from "../components/NoteStrycGame.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
@@ -295,6 +296,7 @@ export function NotesPage() {
 
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
+  const [showGame, setShowGame] = useState(false);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -2497,6 +2499,7 @@ export function NotesPage() {
         onSync={manualSync}
         hasRejections={syncRejections.length > 0}
         onViewIssues={() => setShowSyncIssuesDialog(true)}
+        onGame={() => setShowGame(true)}
         onTrash={handleViewTrash}
         trashCount={trashCount}
         showTrash={sidebarView === "notes"}
@@ -3540,6 +3543,9 @@ export function NotesPage() {
         />
       )}
     </div>
+
+    {/* NoteStryc mini game */}
+    {showGame && <NoteStrycGame onExit={() => setShowGame(false)} />}
     </div>
   );
 }
