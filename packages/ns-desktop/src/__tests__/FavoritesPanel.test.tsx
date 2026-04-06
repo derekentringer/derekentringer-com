@@ -71,7 +71,7 @@ describe("FavoritesPanel", () => {
     expect(container.querySelector("[data-testid='favorites-panel']")).toBeNull();
   });
 
-  it("renders section header when items exist", () => {
+  it("renders section header with icon when items exist", () => {
     renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
@@ -158,34 +158,18 @@ describe("FavoritesPanel", () => {
     expect(onUnfavoriteFolder).toHaveBeenCalledWith("folder-1");
   });
 
-  it("collapse/expand toggle persists", () => {
-    const { rerender } = renderWithDnd(
+  it("always shows items when favorites exist", () => {
+    renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteFolders={[makeFolder()]}
       />,
     );
 
-    // Items visible initially
+    // Items visible
     expect(screen.getByText("Work")).toBeInTheDocument();
-
-    // Click collapse
-    fireEvent.click(screen.getByText("Favorites"));
-    expect(localStorage.getItem("ns-favorites-collapsed")).toBe("true");
-
-    // Items should be hidden
-    expect(screen.queryByText("Work")).not.toBeInTheDocument();
-
-    // Re-render preserves collapsed state
-    rerender(
-      <DndContext>
-        <FavoritesPanel
-          {...defaultProps}
-          favoriteFolders={[makeFolder()]}
-        />
-      </DndContext>,
-    );
-    expect(screen.queryByText("Work")).not.toBeInTheDocument();
+    // Header visible
+    expect(screen.getByText("Favorites")).toBeInTheDocument();
   });
 
   // Sort controls tests
@@ -228,15 +212,14 @@ describe("FavoritesPanel", () => {
     expect(onFavSortOrderChange).toHaveBeenCalledWith("desc");
   });
 
-  it("does not show sort controls when collapsed", () => {
-    localStorage.setItem("ns-favorites-collapsed", "true");
+  it("always shows sort controls when favorites exist", () => {
     renderWithDnd(
       <FavoritesPanel
         {...defaultProps}
         favoriteNotes={[makeNote()]}
       />,
     );
-    expect(screen.queryByTestId("fav-sort-by")).not.toBeInTheDocument();
+    expect(screen.getByTestId("fav-sort-by")).toBeInTheDocument();
   });
 
   it("shows drag handles only when sort is manual", () => {

@@ -53,6 +53,7 @@ const mockCreateNote = vi.fn().mockResolvedValue({
 
 vi.mock("../lib/db.ts", () => ({
   fetchNotes: (...args: unknown[]) => mockFetchNotes(...args),
+  countAllNotes: vi.fn().mockResolvedValue(0),
   fetchNoteById: vi.fn().mockResolvedValue(null),
   createNote: (...args: unknown[]) => mockCreateNote(...args),
   updateNote: vi.fn().mockResolvedValue({}),
@@ -91,6 +92,7 @@ vi.mock("../lib/db.ts", () => ({
   getNoteLocalFileHash: vi.fn().mockResolvedValue(null),
   fetchRecentlyEditedNotes: vi.fn().mockResolvedValue([]),
   fetchAudioNotes: vi.fn().mockResolvedValue([]),
+  enqueueSyncAction: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock localFileService
@@ -110,6 +112,7 @@ vi.mock("../lib/localFileService.ts", () => ({
   startPollTimer: vi.fn(),
   stopPollTimer: vi.fn(),
   collectFilePaths: vi.fn().mockResolvedValue([]),
+  isDirectory: vi.fn().mockResolvedValue(false),
 }));
 
 // Mock @tauri-apps/api/webview
@@ -238,7 +241,7 @@ async function renderAndOpenTrash(trashNotes: Note[] = []) {
   render(<NotesPage />);
 
   // Wait for initial load
-  await screen.findByText("NoteSync");
+  await screen.findAllByTitle("Trash");
 
   // Click trash button
   const trashButton = screen.getByTitle("Trash");
@@ -560,7 +563,7 @@ describe("TrashView — trash count badge", () => {
     mockFetchTrash.mockResolvedValue(notes);
 
     render(<NotesPage />);
-    await screen.findByText("NoteSync");
+    await screen.findAllByTitle("Trash");
 
     // Wait for trash count to load — badge should show "2"
     const trashButton = screen.getByTitle("Trash");
@@ -574,7 +577,7 @@ describe("TrashView — trash count badge", () => {
     mockFetchTrash.mockResolvedValue([]);
 
     render(<NotesPage />);
-    await screen.findByText("NoteSync");
+    await screen.findAllByTitle("Trash");
 
     // Wait a tick for the effect to settle
     await vi.waitFor(() => {

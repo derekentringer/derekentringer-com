@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 
@@ -41,10 +41,11 @@ describe("AudioRecorder", () => {
         onError={vi.fn()}
       />,
     );
-    expect(screen.getByTitle("Record audio (Memo)")).toBeInTheDocument();
+    expect(screen.getByTitle("Record audio (Memo) — hold for options")).toBeInTheDocument();
   });
 
-  it("shows mode options on dropdown click", async () => {
+  it("shows mode options on long-press", async () => {
+    vi.useFakeTimers();
     render(
       <AudioRecorder
         defaultMode="memo"
@@ -55,15 +56,26 @@ describe("AudioRecorder", () => {
       />,
     );
 
-    await userEvent.click(screen.getByLabelText("Recording mode"));
+    const button = screen.getByRole("button", { name: "Record audio" });
+
+    // Simulate long-press: pointerDown, wait 500ms
+    await act(async () => {
+      button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
 
     expect(screen.getByText("Meeting")).toBeInTheDocument();
     expect(screen.getByText("Lecture")).toBeInTheDocument();
     expect(screen.getByText("Memo")).toBeInTheDocument();
     expect(screen.getByText("Verbatim")).toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 
   it("closes dropdown on mode selection and updates button title", async () => {
+    vi.useFakeTimers();
     render(
       <AudioRecorder
         defaultMode="memo"
@@ -74,15 +86,29 @@ describe("AudioRecorder", () => {
       />,
     );
 
-    await userEvent.click(screen.getByLabelText("Recording mode"));
+    const button = screen.getByRole("button", { name: "Record audio" });
+
+    // Long-press to open dropdown
+    await act(async () => {
+      button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
     expect(screen.getByText("Meeting")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByText("Meeting"));
+    // Click "Meeting" mode
+    await act(async () => {
+      screen.getByText("Meeting").click();
+    });
 
     // Dropdown should be closed
     expect(screen.queryByText("Lecture")).not.toBeInTheDocument();
     // Button title updated
-    expect(screen.getByTitle("Record audio (Meeting)")).toBeInTheDocument();
+    expect(screen.getByTitle("Record audio (Meeting) — hold for options")).toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 
   it("checks meeting recording support on mount", () => {
@@ -99,6 +125,7 @@ describe("AudioRecorder", () => {
   });
 
   it("shows source section in dropdown when meeting is supported", async () => {
+    vi.useFakeTimers();
     mockInvoke.mockResolvedValue(true);
     render(
       <AudioRecorder
@@ -111,18 +138,29 @@ describe("AudioRecorder", () => {
     );
 
     // Wait for the support check to complete
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("check_meeting_recording_support");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
     });
 
-    await userEvent.click(screen.getByLabelText("Recording mode"));
+    const button = screen.getByRole("button", { name: "Record audio" });
+
+    // Long-press to open dropdown
+    await act(async () => {
+      button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
 
     expect(screen.getByText("Source")).toBeInTheDocument();
     expect(screen.getByText("Microphone only")).toBeInTheDocument();
     expect(screen.getByText("Meeting mode")).toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 
   it("hides source section in dropdown when meeting is not supported", async () => {
+    vi.useFakeTimers();
     mockInvoke.mockResolvedValue(false);
     render(
       <AudioRecorder
@@ -134,17 +172,28 @@ describe("AudioRecorder", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("check_meeting_recording_support");
+    // Wait for the support check to complete
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
     });
 
-    await userEvent.click(screen.getByLabelText("Recording mode"));
+    const button = screen.getByRole("button", { name: "Record audio" });
+
+    // Long-press to open dropdown
+    await act(async () => {
+      button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
 
     expect(screen.queryByText("Source")).not.toBeInTheDocument();
     expect(screen.queryByText("Microphone only")).not.toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 
-  it("shows meeting icon when meeting mode is active and supported", async () => {
+  it("shows meeting indicator in title when meeting mode is active and supported", async () => {
     mockInvoke.mockResolvedValue(true);
     render(
       <AudioRecorder
@@ -156,11 +205,9 @@ describe("AudioRecorder", () => {
       />,
     );
 
+    // Wait for the meeting support check to resolve and re-render with meeting indicator
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("check_meeting_recording_support");
+      expect(screen.getByTitle("Record audio (Memo — Meeting mode) — hold for options")).toBeInTheDocument();
     });
-
-    // The title should include "Meeting" indicator
-    expect(screen.getByTitle("Record audio (Memo — Meeting)")).toBeInTheDocument();
   });
 });

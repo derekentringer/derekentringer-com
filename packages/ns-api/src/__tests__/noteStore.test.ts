@@ -1070,7 +1070,7 @@ describe("noteStore", () => {
 
       expect(mockPrisma.note.findMany).toHaveBeenNthCalledWith(2, {
         where: { userId: TEST_USER_ID, favorite: true, deletedAt: null },
-        orderBy: { favoriteSortOrder: "asc" },
+        orderBy: { updatedAt: "desc" },
         take: 10,
       });
     });
@@ -1085,7 +1085,7 @@ describe("noteStore", () => {
 
       expect(mockPrisma.note.findMany).toHaveBeenNthCalledWith(3, {
         where: { userId: TEST_USER_ID, audioMode: { not: null }, deletedAt: null },
-        orderBy: { updatedAt: "desc" },
+        orderBy: { createdAt: "desc" },
         take: 10,
       });
     });
