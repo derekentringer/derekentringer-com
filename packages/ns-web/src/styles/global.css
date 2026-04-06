@@ -327,6 +327,11 @@
   margin: 0.25em 0;
 }
 
+.markdown-preview ul.contains-task-list {
+  list-style-type: none;
+  padding-left: 0.5em;
+}
+
 .markdown-preview table {
   border-collapse: collapse;
   width: 100%;

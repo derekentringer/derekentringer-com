@@ -257,8 +257,10 @@ function buildDecorations(view: EditorView): DecorationSet {
               }
             }
             if (isTask) {
-              // Hide the bullet mark — checkbox widget will replace the visual
-              decorations.push(Decoration.replace({}).range(node.from, node.to));
+              // Hide the bullet mark + trailing space — checkbox widget replaces the visual
+              const afterMark = node.to;
+              const hideEnd = view.state.sliceDoc(afterMark, afterMark + 1) === " " ? afterMark + 1 : afterMark;
+              decorations.push(Decoration.replace({}).range(node.from, hideEnd));
             } else {
               // Replace - or * with bullet dot
               decorations.push(
