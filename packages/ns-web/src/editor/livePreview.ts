@@ -80,8 +80,6 @@ class CheckboxWidget extends WidgetType {
 // Horizontal rule mark
 const hrMark = Decoration.mark({ class: "cm-lp-hr" });
 
-// Blockquote marker hide + styling
-const blockquoteMark = Decoration.mark({ class: "cm-lp-blockquote" });
 
 // --- Helper: get line numbers where the cursor is (active lines) ---
 function getActiveLines(view: EditorView): Set<number> {
@@ -236,8 +234,12 @@ function buildDecorations(view: EditorView): DecorationSet {
         }
 
         case "QuoteMark": {
-          // Hide the > marker in blockquotes
-          decorations.push(Decoration.replace({}).range(node.from, node.to));
+          // Hide the > marker and style the line as a blockquote
+          const afterMark = node.to;
+          const hideEnd = view.state.sliceDoc(afterMark, afterMark + 1) === " " ? afterMark + 1 : afterMark;
+          decorations.push(Decoration.replace({}).range(node.from, hideEnd));
+          const quoteLine = view.state.doc.lineAt(node.from);
+          decorations.push(Decoration.line({ class: "cm-lp-blockquote-line" }).range(quoteLine.from));
           return false;
         }
 
@@ -384,9 +386,11 @@ const livePreviewTheme = EditorView.baseTheme({
     cursor: "pointer",
     accentColor: "var(--color-primary, #d4e157)",
   },
-  ".cm-lp-blockquote": {
-    borderLeft: "3px solid rgba(128, 128, 128, 0.4)",
-    paddingLeft: "8px",
+  ".cm-lp-blockquote-line": {
+    borderLeft: "3px solid var(--color-primary, #d4e157)",
+    paddingLeft: "12px",
+    color: "var(--color-muted, #999)",
+    fontStyle: "italic",
   },
 });
 
