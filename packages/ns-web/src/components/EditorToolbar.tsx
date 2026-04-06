@@ -8,6 +8,9 @@ interface EditorToolbarProps {
   onStrikethrough: () => void;
   onInlineCode: () => void;
   onHeading: () => void;
+  onLink: () => void;
+  onImage: () => void;
+  onWikiLink: () => void;
   showLineNumbers: boolean;
   onToggleLineNumbers: () => void;
 }
@@ -27,6 +30,9 @@ export function EditorToolbar({
   onStrikethrough,
   onInlineCode,
   onHeading,
+  onLink,
+  onImage,
+  onWikiLink,
   showLineNumbers,
   onToggleLineNumbers,
 }: EditorToolbarProps) {
@@ -104,6 +110,35 @@ export function EditorToolbar({
             H
           </button>
 
+          <div className="w-px h-4 bg-border mx-1" />
+          <button
+            onClick={onLink}
+            className="px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors cursor-pointer"
+            title="Insert link"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+          </button>
+          <button
+            onClick={onImage}
+            className="px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors cursor-pointer"
+            title="Insert image"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+          <button
+            onClick={onWikiLink}
+            className="px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors cursor-pointer"
+            title="Insert wiki-link"
+          >
+            [[
+          </button>
         </>
       )}
     </div>

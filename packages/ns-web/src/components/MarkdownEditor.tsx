@@ -32,6 +32,9 @@ export interface MarkdownEditorHandle {
   insertStrikethrough: () => void;
   insertInlineCode: () => void;
   cycleHeading: () => void;
+  insertLink: () => void;
+  insertImage: () => void;
+  insertWikiLink: () => void;
   scrollToLine: (line: number) => void;
   getEditorState: () => { cursor: number; scrollTop: number };
 }
@@ -83,6 +86,55 @@ function cycleHeadingLevel(view: EditorView) {
       changes: { from: line.from, to: line.from, insert: "# " },
     });
   }
+}
+
+function insertLinkTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  if (selected) {
+    // Wrap selection as link text
+    const insert = `[${selected}](url)`;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + selected.length + 3, head: from + selected.length + 6 }, // select "url"
+    });
+  } else {
+    const insert = "[text](url)";
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + 1, head: from + 5 }, // select "text"
+    });
+  }
+}
+
+function insertImageTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  if (selected) {
+    const insert = `![${selected}](url)`;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + selected.length + 4, head: from + selected.length + 7 },
+    });
+  } else {
+    const insert = "![alt](url)";
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + 2, head: from + 5 }, // select "alt"
+    });
+  }
+}
+
+function insertWikiLinkTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  const insert = `[[${selected || "note title"}]]`;
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: selected
+      ? { anchor: from + insert.length }
+      : { anchor: from + 2, head: from + 2 + "note title".length },
+  });
 }
 
 function wrapSelection(view: EditorView, marker: string) {
@@ -332,6 +384,15 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     },
     cycleHeading: () => {
       if (viewRef.current) cycleHeadingLevel(viewRef.current);
+    },
+    insertLink: () => {
+      if (viewRef.current) insertLinkTemplate(viewRef.current);
+    },
+    insertImage: () => {
+      if (viewRef.current) insertImageTemplate(viewRef.current);
+    },
+    insertWikiLink: () => {
+      if (viewRef.current) insertWikiLinkTemplate(viewRef.current);
     },
     scrollToLine: (line: number) => {
       const view = viewRef.current;
