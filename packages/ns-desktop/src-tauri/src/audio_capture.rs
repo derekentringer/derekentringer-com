@@ -755,15 +755,17 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     let mic_rms_for_tick = Arc::clone(&mic_rms);
 
     thread::spawn(move || {
-        let mut elapsed_secs: u64 = 0;
+        let mut tick_count: u64 = 0;
+        let interval = Duration::from_millis(66); // ~15fps for smooth waveform
         loop {
-            thread::sleep(Duration::from_secs(1));
+            thread::sleep(interval);
             if let Ok(stopped) = stop_flag_clone.lock() {
                 if *stopped {
                     break;
                 }
             }
-            elapsed_secs += 1;
+            tick_count += 1;
+            let elapsed_secs = (tick_count * 66) / 1000;
             let sys_level = sys_rms_for_tick.lock().map(|v| *v).unwrap_or(0.0);
             let mic_level = mic_rms_for_tick.lock().map(|v| *v).unwrap_or(0.0);
             let level = sys_level.max(mic_level);
