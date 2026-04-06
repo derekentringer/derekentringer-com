@@ -1,9 +1,9 @@
 # 25 — Navigation & Layout Improvements (Obsidian-Inspired)
 
-**Status:** Phases 1-5 Complete, Phase 5 (Live Preview) Sub-phase 5a Complete, Phases 5b-5i and 6-7 Planned
+**Status:** Phases 1-5 Complete, Phase 5 (Live Preview) Sub-phases 5a/5c/5d Complete, Phases 5e-5i and 6-7 Planned
 **Phase:** UI Enhancement
 **Priority:** Medium
-**Completed Phases:** Sidebar Tabs, Ribbon, Note List Panel, Rich Note Rows, Audio Recording Refactor, Live Preview 5a (Inline Formatting + Headings + Blockquotes + HR)
+**Completed Phases:** Sidebar Tabs, Ribbon, Note List Panel, Rich Note Rows, Audio Recording Refactor, Live Preview 5a (Inline Formatting + Headings + Blockquotes + HR), Live Preview 5c (Links + Wiki-Links), Live Preview 5d (Images), Toolbar Formatting Buttons (Strikethrough, Code, Heading, Link, Image, Wiki-Link)
 
 ## Context
 

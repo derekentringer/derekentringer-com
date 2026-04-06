@@ -153,6 +153,20 @@
 
 - [x] [24 — SyncSwarm Game](features/24-syncswarm-game.md) — Hidden Galaga-style ASCII space shooter: enemy formations with bezier entry animations, diving attacks, boss tractor beam capture, dual fighter mode, challenge stages every 3 levels, parallax starfield with 3 grey-toned depth layers (speed varies by game phase), per-character color rendering via RenderSegment spans, high score persistence, launched from rocket icon in ribbon
 
+### Live Preview (in progress on `develop-ui-update`)
+
+- [x] Live Preview Mode 5a — Obsidian-style inline markdown rendering via CM6 ViewPlugin + Decoration.replace() + atomicRanges; hides syntax on non-active lines for bold, italic, strikethrough, inline code, headings (h1-h6), horizontal rules, blockquote markers; "Live" added to view mode switcher and settings; GFM extensions enabled in CM6 parser for strikethrough; code block background fix (--color-subtle for visibility)
+
+- [x] Live Preview Mode 5c/5d — Links `[text](url)` hide syntax and show styled text (blue underline); wiki-links `[[title]]` hide brackets and show accent-colored dotted underline; images `![alt](url)` hide syntax and show alt text with image icon prefix; wiki-links detected via regex (not in Lezer tree)
+
+- [x] Toolbar formatting buttons — Strikethrough (~~), Inline Code (`), Heading (cycle h1-h6), Link ([text](url) template), Image (![alt](url) template), Wiki-Link ([[title]] template); smart selection support (selected text becomes link text/alt/title); line number toggle moved to left side above gutter
+
+- [ ] Live Preview Mode 5e — Lists and checkboxes (planned)
+- [ ] Live Preview Mode 5f — Code blocks (planned)
+- [ ] Live Preview Mode 5g — Blockquotes full styling (planned)
+- [ ] Live Preview Mode 5h — Tables (planned)
+- [ ] Live Preview Mode 5i — Polish and integration (planned)
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)
