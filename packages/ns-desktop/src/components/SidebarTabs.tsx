@@ -53,10 +53,11 @@ export function SidebarTabs({ activePanel, onPanelChange, showFavorites }: Sideb
   const visibleTabs = showFavorites ? tabs : tabs.filter((t) => t.id !== "favorites");
 
   return (
-    <div className="flex items-center border-b border-border shrink-0">
+    <div className="flex items-center border-b border-border shrink-0" role="tablist" aria-label="Sidebar panels">
       {visibleTabs.map((tab) => (
         <button
           key={tab.id}
+          role="tab"
           onClick={() => onPanelChange(tab.id)}
           className={`flex-1 flex items-center justify-center py-2 transition-colors cursor-pointer ${
             activePanel === tab.id
@@ -65,6 +66,7 @@ export function SidebarTabs({ activePanel, onPanelChange, showFavorites }: Sideb
           }`}
           title={tab.label}
           aria-label={tab.label}
+          aria-selected={activePanel === tab.id}
         >
           {tab.icon}
         </button>

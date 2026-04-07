@@ -318,6 +318,25 @@ export function NotesPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const focusModeDrawerRef = useRef(false);
+
+  // Responsive panel collapse
+  const [collapseNoteList, setCollapseNoteList] = useState(false);
+  const [collapseSidebar, setCollapseSidebar] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const noteListMq = window.matchMedia("(max-width: 900px)");
+    const sidebarMq = window.matchMedia("(max-width: 600px)");
+    const handleNoteList = (e: MediaQueryListEvent | MediaQueryList) => setCollapseNoteList(e.matches);
+    const handleSidebar = (e: MediaQueryListEvent | MediaQueryList) => setCollapseSidebar(e.matches);
+    handleNoteList(noteListMq);
+    handleSidebar(sidebarMq);
+    noteListMq.addEventListener("change", handleNoteList);
+    sidebarMq.addEventListener("change", handleSidebar);
+    return () => {
+      noteListMq.removeEventListener("change", handleNoteList);
+      sidebarMq.removeEventListener("change", handleSidebar);
+    };
+  }, []);
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
@@ -2537,7 +2556,7 @@ export function NotesPage() {
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-        style={{ width: focusMode ? 0 : sidebarResize.size }}
+        style={{ width: focusMode || collapseSidebar ? 0 : sidebarResize.size }}
       >
 
         {sidebarView === "notes" ? (
@@ -2554,7 +2573,7 @@ export function NotesPage() {
             />
 
             {/* Sidebar panel content — switches based on active tab */}
-            <div className="flex-1 flex flex-col min-h-0">
+            <div key={sidebarPanel} className="flex-1 flex flex-col min-h-0 animate-fade-in">
               {sidebarPanel === "explorer" && (
                 <div className="flex-1 overflow-y-auto overflow-x-hidden">
                   <FolderTree
@@ -2863,20 +2882,22 @@ export function NotesPage() {
         {/* Sidebar bottom bar */}
       </aside>
 
-      <div className="flex" style={{ pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
-        <ResizeDivider
-          direction="vertical"
-          isDragging={sidebarResize.isDragging}
-          onPointerDown={sidebarResize.onPointerDown}
-        />
-      </div>
+      {!focusMode && !collapseSidebar && (
+        <div className="flex">
+          <ResizeDivider
+            direction="vertical"
+            isDragging={sidebarResize.isDragging}
+            onPointerDown={sidebarResize.onPointerDown}
+          />
+        </div>
+      )}
 
       {/* Note list panel */}
       {sidebarView === "notes" && (
         <>
           <div
             className={`shrink-0 overflow-hidden ${noteListResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-            style={{ width: focusMode ? 0 : noteListResize.size }}
+            style={{ width: focusMode || collapseNoteList ? 0 : noteListResize.size }}
           >
             <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <NoteListPanel
@@ -2903,13 +2924,15 @@ export function NotesPage() {
               />
             </DndContext>
           </div>
-          <div className="flex" style={{ pointerEvents: focusMode ? "none" : "auto", width: focusMode ? 0 : "auto" }}>
-            <ResizeDivider
-              direction="vertical"
-              isDragging={noteListResize.isDragging}
-              onPointerDown={noteListResize.onPointerDown}
-            />
-          </div>
+          {!focusMode && !collapseNoteList && (
+            <div className="flex">
+              <ResizeDivider
+                direction="vertical"
+                isDragging={noteListResize.isDragging}
+                onPointerDown={noteListResize.onPointerDown}
+              />
+            </div>
+          )}
         </>
       )}
 
