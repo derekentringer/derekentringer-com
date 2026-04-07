@@ -301,6 +301,8 @@ export function NotesPage() {
   const [qaOpen, setQaOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const focusModeDrawerRef = useRef(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [noteListHidden, setNoteListHidden] = useState(false);
 
   // Responsive panel collapse
   const [collapseNoteList, setCollapseNoteList] = useState(false);
@@ -1531,12 +1533,50 @@ export function NotesPage() {
     requestAnimationFrame(() => searchInputRef.current?.focus());
   }, []);
 
+  const viewModes: ViewMode[] = ["editor", "split", "live", "preview"];
+  const cycleViewMode = useCallback(() => {
+    setViewMode((cur) => viewModes[(viewModes.indexOf(cur) + 1) % viewModes.length]);
+  }, []);
+
+  const cycleTab = useCallback((direction: -1 | 1) => {
+    if (openTabs.length <= 1) return;
+    const idx = selectedId ? openTabs.indexOf(selectedId) : 0;
+    const next = (idx + direction + openTabs.length) % openTabs.length;
+    const note = notes.find((n) => n.id === openTabs[next]);
+    if (note) openNoteAsTab(note);
+  }, [openTabs, selectedId, notes, openNoteAsTab]);
+
   useCommands({
-    "note:save": () => { handleSave(); },
-    "nav:search": focusSearch,
-    "view:focus-mode": toggleFocusMode,
+    // Core
     "palette:open": () => setPaletteOpen(true),
     "switcher:open": () => setSwitcherOpen(true),
+
+    // Note
+    "note:save": () => { handleSave(); },
+    "note:new": () => { void handleCreate(); },
+
+    // View & Navigation
+    "view:cycle-mode": cycleViewMode,
+    "view:focus-mode": toggleFocusMode,
+    "nav:settings": () => { navigate("/settings"); },
+    "nav:search": focusSearch,
+
+    // Sidebar & Panels
+    "sidebar:toggle": () => setSidebarHidden((p) => !p),
+    "notelist:toggle": () => setNoteListHidden((p) => !p),
+    "sidebar:explorer": () => setSidebarPanel("explorer"),
+    "sidebar:search": () => setSidebarPanel("search"),
+    "sidebar:favorites": () => setSidebarPanel("favorites"),
+    "sidebar:tags": () => setSidebarPanel("tags"),
+
+    // Drawer
+    "drawer:assistant": () => handleDrawerTabClick("assistant"),
+    "drawer:history": () => handleDrawerTabClick("history"),
+    "drawer:toc": () => handleDrawerTabClick("toc"),
+
+    // Tab Navigation
+    "tab:prev": () => cycleTab(-1),
+    "tab:next": () => cycleTab(1),
   });
 
   // Autosave: debounce after changes
@@ -1975,7 +2015,7 @@ export function NotesPage() {
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-        style={{ width: focusMode || collapseSidebar ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
+        style={{ width: focusMode || collapseSidebar || sidebarHidden ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
       >
 
         {sidebarView === "notes" ? (
@@ -2313,7 +2353,7 @@ export function NotesPage() {
 
       </aside>
 
-      {!focusMode && !collapseSidebar && (
+      {!focusMode && !collapseSidebar && !sidebarHidden && (
         <div className="flex">
           <ResizeDivider
             direction="vertical"
@@ -2328,7 +2368,7 @@ export function NotesPage() {
         <>
           <div
             className={`shrink-0 overflow-hidden ${noteListResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-            style={{ width: focusMode || collapseNoteList ? 0 : noteListResize.size }}
+            style={{ width: focusMode || collapseNoteList || noteListHidden ? 0 : noteListResize.size }}
           >
             <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <NoteListPanel
@@ -2349,7 +2389,7 @@ export function NotesPage() {
               />
             </DndContext>
           </div>
-          {!focusMode && !collapseNoteList && (
+          {!focusMode && !collapseNoteList && !noteListHidden && (
             <div className="flex">
               <ResizeDivider
                 direction="vertical"
