@@ -175,7 +175,7 @@
 
 - [x] Preview Click-to-Edit (Phase 6) — Double-click in Preview/Split navigates editor to source line: sourceMap.ts utility maps DOM elements to source lines via heading slug matching, text-content matching (paragraphs, code blocks, blockquotes, list items), URL matching (images), index matching (tables, HRs, list items); handles all markdown element types including checkboxes, images, and code blocks wrapped in component divs; split mode scrolls editor without switching view, preview mode switches to editor; minimal-diff value sync preserves cursor/scroll on external content changes (checkbox toggle); wiki-link click fix (#wiki: URL scheme for reliable react-markdown v10 pipeline), wiki-link dashed underline styling (.markdown-preview a.wiki-link), editor link underline removed; mirrored to ns-desktop with tests
 
-- [ ] Phase 7 — Polish (planned): sidebar tab animations, responsive breakpoints, focus mode, performance profiling, accessibility pass, desktop verification
+- [x] Phase 7 — Polish: sidebar tab content fade-in animation (0.15s ease-out), responsive breakpoints (<900px stacks note list below sidebar, <600px collapses sidebar), focus mode fix (resize dividers fully unmounted to eliminate ghost cells), ARIA accessibility (role="tablist"/role="tab"/aria-selected on sidebar tabs, aria-label on all ribbon buttons, semantic `<nav>` on ribbon), wiki-link click fix (#wiki: URL scheme for react-markdown v10), wiki-link dashed underline (.markdown-preview a.wiki-link), editor link underline removed, all changes mirrored to ns-desktop
 
 ## Extension Ideas (Future)
 

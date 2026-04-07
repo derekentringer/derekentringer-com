@@ -164,7 +164,13 @@ packages/
 - `src/components/SyncSwarmGame.tsx` — Hidden Galaga-style ASCII space shooter
 - `src/components/Dashboard.tsx` — Rich dashboard with quick actions, recent notes, favorites
 - `src/components/NsLogo.tsx` — Inline SVG logo component (lime-yellow rounded square with `+`)
+- `src/components/EditorToolbar.tsx` — Editor toolbar with view mode tabs (Editor, Split, Live, Preview), formatting buttons, line number toggle
+- `src/components/MarkdownEditor.tsx` — CodeMirror 6 editor with live preview compartment, table auto-format, minimal-diff value sync
 - `src/components/ResizeDivider.tsx` — Draggable divider for resizable sidebar panels
+- `src/editor/livePreview.ts` — Obsidian-style live preview: inline markdown rendering, rendered HTML table widget with click-to-edit, ARIA-accessible checkbox/bullet/table widgets, CSS variable theming
+- `src/editor/tableAutoFormat.ts` — Auto-format table column spacing on cursor leave
+- `src/lib/sourceMap.ts` — Maps clicked DOM elements in preview to source line numbers (headings, paragraphs, code blocks, tables, lists, blockquotes, images, HRs)
+- `src/lib/remarkWikiLink.ts` — Remark plugin for `[[wiki-link]]` syntax with `#wiki:` URL scheme for react-markdown v10 compatibility
 - `src/hooks/useResizable.ts` — Custom hook for drag-resize with localStorage persistence
 - `src/context/AuthContext.tsx` — JWT auth state management (no PIN layer)
 - `src/api/client.ts` — `apiFetch()` with Bearer token, 401 refresh retry

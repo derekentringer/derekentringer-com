@@ -1968,7 +1968,7 @@ export function NotesPage() {
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-        style={{ width: focusMode || collapseSidebar ? 0 : sidebarResize.size }}
+        style={{ width: focusMode || collapseSidebar ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
       >
 
         {sidebarView === "notes" ? (
@@ -1981,7 +1981,7 @@ export function NotesPage() {
             />
 
             {/* Sidebar panel content — switches based on active tab */}
-            <div key={sidebarPanel} className="flex-1 flex flex-col min-h-0 animate-fade-in">
+            <div key={sidebarPanel} className={`${collapseNoteList ? "shrink-0 h-1/2" : "flex-1"} flex flex-col min-h-0 animate-fade-in`}>
               {sidebarPanel === "explorer" && (
                 <div className="flex-1 overflow-y-auto">
                   <FolderTree
@@ -2191,6 +2191,37 @@ export function NotesPage() {
                 </div>
               )}
             </div>
+
+            {/* Stacked note list — shown inside sidebar when viewport is narrow */}
+            {collapseNoteList && !focusMode && (
+              <>
+                <ResizeDivider
+                  direction="horizontal"
+                  isDragging={false}
+                  onPointerDown={() => {}}
+                />
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <NoteListPanel
+                      notes={notes}
+                      selectedId={selectedId}
+                      isLoading={isLoading}
+                      isSearchResults={false}
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
+                      onSortByChange={setSortBy}
+                      onSortOrderChange={setSortOrder}
+                      onSelect={handleNoteSelect}
+                      onDoubleClick={openNoteAsTab}
+                      onDeleteNote={handleDeleteNoteById}
+                      onExportNote={handleExportNote}
+                      onToggleFavorite={handleToggleNoteFavorite}
+                      onCreate={handleCreate}
+                    />
+                  </DndContext>
+                </div>
+              </>
+            )}
           </DndContext>
         ) : (
           <>
