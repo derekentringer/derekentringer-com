@@ -7,7 +7,7 @@
 
 ## Summary
 
-Centralized keyboard shortcut registry, Command Palette (Cmd+P), Quick Switcher (Cmd+O), and ~24 shortcuts for NoteSync. Inspired by Obsidian's keyboard-first UX. Replaces the current scattered shortcut implementation (inline event listeners in NotesPage.tsx, CodeMirror keymaps, hardcoded Settings page array) with a unified command system.
+Centralized keyboard shortcut registry, Command Palette (Cmd+P), Quick Switcher (Cmd+O), and ~25 shortcuts for NoteSync. Inspired by Obsidian's keyboard-first UX. Replaces the current scattered shortcut implementation (inline event listeners in NotesPage.tsx, CodeMirror keymaps, hardcoded Settings page array) with a unified command system.
 
 ## Current State
 
@@ -108,7 +108,8 @@ When a key is pressed: CodeMirror processes first if editor is focused → globa
 
 | Command | Shortcut | Category | Notes |
 |---|---|---|---|
-| `sidebar:toggle` | `Mod-\` | Sidebar | Toggle sidebar visibility |
+| `sidebar:toggle` | `Mod-\` | Sidebar | Toggle sidebar (folders) visibility |
+| `notelist:toggle` | `Mod-Shift-\` | Sidebar | Toggle note list panel visibility |
 | `sidebar:explorer` | `Mod-1` | Sidebar | Switch to Explorer tab |
 | `sidebar:search` | `Mod-2` | Sidebar | Switch to Search tab |
 | `sidebar:favorites` | `Mod-3` | Sidebar | Switch to Favorites tab |
@@ -150,7 +151,7 @@ When a key is pressed: CodeMirror processes first if editor is focused → globa
 | `ai:continue-writing` | `Mod-Shift-Space` | AI | Already in CodeMirror — register for display |
 | `ai:rewrite` | `Mod-Shift-r` | AI | Already in CodeMirror — register for display |
 
-**Total: ~30 commands (~24 with shortcuts, ~6 palette-only)**
+**Total: ~31 commands (~25 with shortcuts, ~6 palette-only)**
 
 ## Components
 
@@ -244,8 +245,9 @@ packages/ns-desktop/src/commands/               # Mirror with desktop-specific c
 1. `Mod-n` — new note
 2. `Mod-e` — cycle view mode (Editor → Split → Live → Preview)
 3. `Mod-,` — navigate to settings
-4. `Mod-\` — toggle sidebar
-5. `Mod-1/2/3/4` — switch sidebar tabs (Explorer, Search, Favorites, Tags)
+4. `Mod-\` — toggle sidebar (folders)
+5. `Mod-Shift-\` — toggle note list panel
+6. `Mod-1/2/3/4` — switch sidebar tabs (Explorer, Search, Favorites, Tags)
 6. `Mod-Alt-a/h/t` — toggle drawer tabs (AI Assistant, History, TOC)
 7. `Mod-Alt-Left/Right` — previous/next tab
 8. `Mod-Enter` — toggle checkbox
