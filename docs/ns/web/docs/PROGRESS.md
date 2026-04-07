@@ -153,6 +153,30 @@
 
 - [x] [24 — SyncSwarm Game](features/24-syncswarm-game.md) — Hidden Galaga-style ASCII space shooter: enemy formations with bezier entry animations, diving attacks, boss tractor beam capture, dual fighter mode, challenge stages every 3 levels, parallax starfield with 3 grey-toned depth layers (speed varies by game phase), per-character color rendering via RenderSegment spans, high score persistence, launched from rocket icon in ribbon
 
+### Live Preview & Editor Polish (on `develop-ui-update`)
+
+- [x] Live Preview Mode 5a — Obsidian-style inline markdown rendering via CM6 ViewPlugin + Decoration.replace() + atomicRanges; hides syntax on non-active lines for bold, italic, strikethrough, inline code, headings (h1-h6), horizontal rules, blockquote markers; "Live" added to view mode switcher and settings; GFM extensions enabled in CM6 parser for strikethrough; code block background fix (--color-subtle for visibility)
+
+- [x] Live Preview Mode 5c/5d — Links `[text](url)` hide syntax and show styled text (blue underline); wiki-links `[[title]]` hide brackets and show accent-colored dotted underline; images `![alt](url)` hide syntax and show alt text with image icon prefix; wiki-links detected via regex (not in Lezer tree)
+
+- [x] Toolbar formatting buttons — Strikethrough (~~), Inline Code (`), Heading (cycle h1-h6), Link ([text](url) template), Image (![alt](url) template), Wiki-Link ([[title]] template), Bullet List (- ), Numbered List (1. ), Checkbox (- [ ] ), Blockquote (> ), Code Block (``` template), Table (3-column template); smart selection support; line number toggle moved above gutter; all line-prefix buttons toggle
+
+- [x] Live Preview Mode 5e — Unordered list markers (- or *) replaced with bullet dot (•); task list checkboxes ([ ] and [x]) replaced with clickable checkbox widgets that toggle source markdown; bullet hidden for task items; ordered list markers left as-is; CheckboxWidget with eq() and accent color
+
+- [x] Live Preview Mode 5f — Fenced code blocks: opening/closing fences hidden and collapsed via cm-lp-hidden-line CSS, code content lines styled with subtle background, language label floated right on first code line; block-level cursor detection reveals entire block as raw markdown
+
+- [x] Live Preview Mode 5g — Blockquote lines styled with accent-colored left border, italic text, muted color via Decoration.line(); `>` marker and trailing space hidden; matches Split/Preview appearance
+
+- [x] Live Preview Mode 5h — Tables: header row bold + background, delimiter row content replaced + collapsed to thin border, data rows with subtle background + bottom border; per-line cursor reveal (not block-level); auto-format column spacing on cursor leave and on switch to Live mode via shared `formatTableChanges`/`formatTableAtLine` helpers in tableMarkdown.ts
+
+- [x] Preview list fixes — Restored list-style-type (disc/decimal) stripped by Tailwind v4 reset; task lists use list-style: none with no left padding; code block backgrounds use --color-subtle for visibility
+
+- [x] Live Preview Mode 5i — Polish and integration: viewport-optimized wiki-link iteration, CSS variable theming (--color-primary, --color-subtle), ARIA accessibility on widgets (checkbox labels, bullet aria-hidden, table region), smooth CSS transitions on headings and table widget, rendered HTML table widget restored (click-to-edit with block-level cursor reveal), line numbers hidden in Live mode, toolbar selected color changed to bg-foreground/10, livePreview.ts + tableAutoFormat.ts mirrored to ns-desktop with GFM parser, full toolbar + all formatting buttons on desktop, comprehensive test suites (livePreview.test.ts, tableAutoFormat.test.ts) for both packages
+
+- [x] Preview Click-to-Edit (Phase 6) — Double-click in Preview/Split navigates editor to source line: sourceMap.ts utility maps DOM elements to source lines via heading slug matching, text-content matching (paragraphs, code blocks, blockquotes, list items), URL matching (images), index matching (tables, HRs, list items); handles all markdown element types including checkboxes, images, and code blocks wrapped in component divs; split mode scrolls editor without switching view, preview mode switches to editor; minimal-diff value sync preserves cursor/scroll on external content changes (checkbox toggle); wiki-link click fix (#wiki: URL scheme for reliable react-markdown v10 pipeline), wiki-link dashed underline styling (.markdown-preview a.wiki-link), editor link underline removed; mirrored to ns-desktop with tests
+
+- [x] Phase 7 — Polish: sidebar tab content fade-in animation (0.15s ease-out), responsive breakpoints (<900px stacks note list below sidebar, <600px collapses sidebar), focus mode fix (resize dividers fully unmounted to eliminate ghost cells), ARIA accessibility (role="tablist"/role="tab"/aria-selected on sidebar tabs, aria-label on all ribbon buttons, semantic `<nav>` on ribbon), wiki-link click fix (#wiki: URL scheme for react-markdown v10), wiki-link dashed underline (.markdown-preview a.wiki-link), editor link underline removed, all changes mirrored to ns-desktop
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

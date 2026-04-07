@@ -695,7 +695,7 @@ describe("NotesPage", () => {
       await screen.findByText("No notes yet");
 
       // Switch to tags tab to see tags
-      const tagsTab = screen.getByRole("button", { name: "Tags" });
+      const tagsTab = screen.getByRole("tab", { name: "Tags" });
       await user.click(tagsTab);
 
       expect(screen.getByText("javascript")).toBeInTheDocument();
@@ -709,7 +709,7 @@ describe("NotesPage", () => {
       await screen.findByText("No notes yet");
 
       // Switch to tags tab
-      const tagsTab = screen.getByRole("button", { name: "Tags" });
+      const tagsTab = screen.getByRole("tab", { name: "Tags" });
       await user.click(tagsTab);
 
       expect(screen.queryByText("javascript")).not.toBeInTheDocument();
@@ -766,7 +766,7 @@ describe("NotesPage", () => {
       await screen.findByText("Test Note");
 
       // Sidebar should be visible (width > 0)
-      const sidebar = screen.getByRole("button", { name: "File Explorer" }).closest("aside")!;
+      const sidebar = screen.getByRole("tab", { name: "File Explorer" }).closest("aside")!;
       expect(sidebar.style.width).not.toBe("0px");
 
       // Press Cmd+Shift+D to enter focus mode

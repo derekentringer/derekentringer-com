@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 
 export type ThemeMode = "dark" | "light" | "system";
-export type ViewModeDefault = "editor" | "split" | "preview";
+export type ViewModeDefault = "editor" | "live" | "split" | "preview";
 export type TabSizeOption = 2 | 4;
 export type CursorStyle = "line" | "block" | "underline";
 export type AccentColorPreset = "lime" | "blue" | "cyan" | "purple" | "orange" | "teal" | "pink" | "red" | "amber" | "black" | "white";
@@ -42,7 +42,7 @@ export interface EditorSettings {
 
 const STORAGE_KEY = "ns-editor-settings";
 
-const VALID_VIEW_MODES: ViewModeDefault[] = ["editor", "split", "preview"];
+const VALID_VIEW_MODES: ViewModeDefault[] = ["editor", "live", "split", "preview"];
 const VALID_THEMES: ThemeMode[] = ["dark", "light", "system"];
 const VALID_TAB_SIZES: TabSizeOption[] = [2, 4];
 const VALID_CURSOR_STYLES: CursorStyle[] = ["line", "block", "underline"];

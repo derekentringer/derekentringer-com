@@ -449,6 +449,7 @@ export function SettingsPage() {
                 <label className="text-sm text-foreground mb-1 block">Default view mode</label>
                 <div className="flex gap-4" role="radiogroup" aria-label="Default view mode">
                   <RadioOption name="defaultViewMode" value={"editor" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Editor" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
+                  <RadioOption name="defaultViewMode" value={"live" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Live" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
                   <RadioOption name="defaultViewMode" value={"split" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Split" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
                   <RadioOption name="defaultViewMode" value={"preview" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Preview" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
                 </div>

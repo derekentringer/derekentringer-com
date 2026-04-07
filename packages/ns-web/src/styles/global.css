@@ -159,13 +159,13 @@
 .markdown-preview code {
   font-family: "Roboto Mono", monospace;
   font-size: 0.9em;
-  background-color: var(--color-input);
+  background-color: var(--color-subtle);
   padding: 0.15em 0.4em;
   border-radius: 3px;
 }
 
 .markdown-preview pre {
-  background-color: var(--color-input);
+  background-color: var(--color-subtle);
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 12px 16px;
@@ -311,14 +311,25 @@
   font-style: italic;
 }
 
-.markdown-preview ul,
+.markdown-preview ul {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+  list-style-type: disc;
+}
+
 .markdown-preview ol {
   padding-left: 1.5em;
   margin: 0.5em 0;
+  list-style-type: decimal;
 }
 
 .markdown-preview li {
   margin: 0.25em 0;
+}
+
+.markdown-preview ul.contains-task-list {
+  list-style-type: none;
+  padding-left: 0;
 }
 
 .markdown-preview table {
@@ -462,14 +473,13 @@
 }
 
 /* Wiki-link styles */
-.wiki-link {
-  color: var(--color-primary);
+.markdown-preview a.wiki-link {
   text-decoration: underline dashed;
   text-underline-offset: 2px;
   cursor: pointer;
 }
 
-.wiki-link:hover {
+.markdown-preview a.wiki-link:hover {
   color: var(--color-primary-hover);
 }
 
@@ -542,4 +552,13 @@
   display: inline-block;
   vertical-align: top;
   margin: 4px;
+}
+
+/* Sidebar tab content fade-in */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
 }

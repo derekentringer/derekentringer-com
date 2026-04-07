@@ -488,13 +488,12 @@
 }
 
 /* Wiki-link styles */
-.wiki-link {
-  color: var(--color-primary);
+.markdown-preview a.wiki-link {
   text-decoration: underline dashed;
   text-underline-offset: 2px;
   cursor: pointer;
 }
-.wiki-link:hover {
+.markdown-preview a.wiki-link:hover {
   color: var(--color-primary-hover);
 }
 .wiki-link-broken {
@@ -558,4 +557,13 @@
   display: inline-block;
   vertical-align: top;
   margin: 4px;
+}
+
+/* Sidebar tab content fade-in */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
 }
