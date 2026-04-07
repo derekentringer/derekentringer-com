@@ -3,10 +3,11 @@
 **Status:** Planned
 **Phase:** UI Enhancement
 **Priority:** Medium
+**Updated:** 2026-04-07 (revised for feature plan 25 UI changes)
 
 ## Summary
 
-Centralized keyboard shortcut registry, Command Palette (Cmd+P), Quick Switcher (Cmd+O), and ~14 new shortcuts for NoteSync. Inspired by Obsidian's keyboard-first UX. Replaces the current scattered shortcut implementation (inline event listeners in NotesPage.tsx, CodeMirror keymaps, hardcoded Settings page array) with a unified command system.
+Centralized keyboard shortcut registry, Command Palette (Cmd+P), Quick Switcher (Cmd+O), and ~24 shortcuts for NoteSync. Inspired by Obsidian's keyboard-first UX. Replaces the current scattered shortcut implementation (inline event listeners in NotesPage.tsx, CodeMirror keymaps, hardcoded Settings page array) with a unified command system.
 
 ## Current State
 
@@ -25,7 +26,17 @@ Centralized keyboard shortcut registry, Command Palette (Cmd+P), Quick Switcher 
 | Tab | Accept AI completion | ghostText.ts (CodeMirror) |
 | Escape | Dismiss AI completion/rewrite | ghostText.ts / rewriteMenu.ts |
 
-Settings page has a hardcoded `KEYBOARD_SHORTCUTS` array (SettingsPage.tsx lines 136-147).
+Settings page has a hardcoded `KEYBOARD_SHORTCUTS` array (SettingsPage.tsx).
+
+### UI Context (Post Feature Plan 25)
+
+The navigation layout has been restructured with:
+- **Ribbon** — always-visible vertical strip on far left (new note, audio, sync, trash, import, settings, admin, sign out)
+- **Sidebar tabs** — Explorer, Search, Favorites, Tags (switch sidebar content)
+- **Note list panel** — separate resizable column between sidebar and editor (stacks below sidebar on narrow viewports)
+- **Editor toolbar** — view mode tabs (Editor, Split, Live, Preview), formatting buttons, line number toggle
+- **Drawer tabs** — right-side panel with AI Assistant, Version History, TOC
+- **Focus mode** — Cmd+Shift+D hides sidebar, note list, drawer; keeps ribbon visible
 
 ## Architecture
 
@@ -46,7 +57,7 @@ type CommandScope = "global" | "editor" | "sidebar";
 interface CommandDefinition {
   id: string;                              // e.g. "note:save", "editor:bold", "palette:open"
   label: string;                           // Human-readable: "Save Note"
-  category: string;                        // "Note", "Editor", "Navigation", "AI", "View"
+  category: string;                        // "Note", "Editor", "Navigation", "AI", "View", "Sidebar", "Drawer"
   scope: CommandScope;
   defaultBinding: ShortcutBinding | null;  // null = palette-only, no default shortcut
   desktopOnly?: boolean;
@@ -71,26 +82,75 @@ Three scopes with clear priority:
 
 When a key is pressed: CodeMirror processes first if editor is focused → global listener catches everything else.
 
-## New Shortcuts
+## Commands & Shortcuts
 
-| Command | Shortcut | Notes |
-|---|---|---|
-| `palette:open` | `Mod-p` | Command Palette |
-| `switcher:open` | `Mod-o` | Quick Switcher (fuzzy note search) |
-| `note:new` | `Mod-n` | Wire to existing `handleCreate()` |
-| `view:toggle-preview` | `Mod-e` | Cycle editor/preview/split |
-| `nav:settings` | `Mod-,` | Navigate to settings |
-| `nav:back` | `Mod-Alt-ArrowLeft` | Tab history back |
-| `nav:forward` | `Mod-Alt-ArrowRight` | Tab history forward |
-| `editor:toggle-checkbox` | `Mod-Enter` | Toggle markdown checkbox |
-| `editor:strikethrough` | `Mod-Shift-x` | Wrap with `~~` |
-| `editor:code` | `Mod-Shift-c` | Wrap with backticks |
-| `editor:link` | — | No default (Cmd+K stays as search) |
-| `sidebar:toggle` | `Mod-\` | Toggle sidebar visibility |
-| `note:delete` | — | Palette-only, no shortcut |
-| `note:export-md` | — | Palette-only |
+### Core Commands
 
-All existing shortcuts preserved as-is.
+| Command | Shortcut | Category | Notes |
+|---|---|---|---|
+| `palette:open` | `Mod-p` | Navigation | Command Palette |
+| `switcher:open` | `Mod-o` | Navigation | Quick Switcher (fuzzy note search) |
+| `note:new` | `Mod-n` | Note | Wire to existing `handleCreate()` |
+| `note:save` | `Mod-s` | Note | Already implemented — migrate to registry |
+| `note:delete` | — | Note | Palette-only, no shortcut |
+| `note:export-md` | — | Note | Palette-only |
+
+### View & Navigation
+
+| Command | Shortcut | Category | Notes |
+|---|---|---|---|
+| `view:cycle-mode` | `Mod-e` | View | Cycle: Editor → Split → Live → Preview |
+| `view:focus-mode` | `Mod-Shift-d` | View | Already implemented — migrate to registry |
+| `nav:settings` | `Mod-,` | Navigation | Navigate to settings |
+| `nav:search` | `Mod-k` | Navigation | Already implemented — migrate to registry |
+
+### Sidebar & Panels
+
+| Command | Shortcut | Category | Notes |
+|---|---|---|---|
+| `sidebar:toggle` | `Mod-\` | Sidebar | Toggle sidebar visibility |
+| `sidebar:explorer` | `Mod-1` | Sidebar | Switch to Explorer tab |
+| `sidebar:search` | `Mod-2` | Sidebar | Switch to Search tab |
+| `sidebar:favorites` | `Mod-3` | Sidebar | Switch to Favorites tab |
+| `sidebar:tags` | `Mod-4` | Sidebar | Switch to Tags tab |
+
+### Drawer
+
+| Command | Shortcut | Category | Notes |
+|---|---|---|---|
+| `drawer:assistant` | `Mod-Alt-a` | Drawer | Toggle AI Assistant panel |
+| `drawer:history` | `Mod-Alt-h` | Drawer | Toggle Version History panel |
+| `drawer:toc` | `Mod-Alt-t` | Drawer | Toggle Table of Contents panel |
+
+### Tab Navigation
+
+| Command | Shortcut | Category | Notes |
+|---|---|---|---|
+| `tab:close` | `Mod-w` | Navigation | Desktop only — close active tab |
+| `tab:prev` | `Mod-Alt-ArrowLeft` | Navigation | Switch to previous open tab |
+| `tab:next` | `Mod-Alt-ArrowRight` | Navigation | Switch to next open tab |
+
+### Editor Formatting
+
+| Command | Shortcut | Category | Notes |
+|---|---|---|---|
+| `editor:bold` | `Mod-b` | Editor | Already in CodeMirror — register for display |
+| `editor:italic` | `Mod-i` | Editor | Already in CodeMirror — register for display |
+| `editor:strikethrough` | `Mod-Shift-x` | Editor | Wrap with `~~` |
+| `editor:code` | `Mod-Shift-c` | Editor | Wrap with backticks |
+| `editor:heading` | `Mod-Shift-h` | Editor | Cycle heading level |
+| `editor:link` | — | Editor | No default (Cmd+K stays as search); palette-only |
+| `editor:wiki-link` | `Mod-Shift-k` | Editor | Insert `[[]]` template |
+| `editor:toggle-checkbox` | `Mod-Enter` | Editor | Toggle markdown checkbox |
+
+### AI
+
+| Command | Shortcut | Category | Notes |
+|---|---|---|---|
+| `ai:continue-writing` | `Mod-Shift-Space` | AI | Already in CodeMirror — register for display |
+| `ai:rewrite` | `Mod-Shift-r` | AI | Already in CodeMirror — register for display |
+
+**Total: ~30 commands (~24 with shortcuts, ~6 palette-only)**
 
 ## Components
 
@@ -140,8 +200,8 @@ packages/ns-desktop/src/commands/               # Mirror with desktop-specific c
 
 ### Unchanged files
 
-- `MarkdownEditor.tsx` — CodeMirror keymaps stay as-is
-- `ghostText.ts`, `rewriteMenu.ts` — editor extensions stay as-is
+- `MarkdownEditor.tsx` — CodeMirror keymaps stay as-is (dual-registered for display)
+- `ghostText.ts`, `rewriteMenu.ts` — editor extensions stay as-is (dual-registered for display)
 
 ## Implementation Phases
 
@@ -149,7 +209,7 @@ packages/ns-desktop/src/commands/               # Mirror with desktop-specific c
 
 1. Create `ns-shared/src/commands.ts` with types
 2. Export from `ns-shared/src/index.ts`
-3. Create `ns-web/src/commands/registry.ts` — `CommandRegistry` class with `register()`, `unregister()`, `execute()`, `getAllCommands()`, `getBinding()` + `DEFAULT_COMMANDS` array
+3. Create `ns-web/src/commands/registry.ts` — `CommandRegistry` class with `register()`, `unregister()`, `execute()`, `getAllCommands()`, `getBinding()` + `DEFAULT_COMMANDS` array (all ~30 commands)
 4. Create `ns-web/src/commands/formatShortcut.ts`
 5. Create `ns-web/src/commands/fuzzyMatch.ts`
 6. Create `ns-web/src/commands/CommandContext.tsx` + `useCommands.ts`
@@ -159,7 +219,7 @@ packages/ns-desktop/src/commands/               # Mirror with desktop-specific c
 
 ### Phase 2: Migrate Existing Shortcuts
 
-1. In `NotesPage.tsx`, use `useCommands()` to register handlers for `note:save`, `note:search`, `view:focus-mode`
+1. In `NotesPage.tsx`, use `useCommands()` to register handlers for `note:save`, `nav:search`, `view:focus-mode`
 2. Remove the inline `useEffect` keydown listener
 3. Verify all existing shortcuts work identically
 4. Update `SettingsPage.tsx` to render from `registry.getAllCommands()`
@@ -182,13 +242,17 @@ packages/ns-desktop/src/commands/               # Mirror with desktop-specific c
 ### Phase 5: New Shortcuts
 
 1. `Mod-n` — new note
-2. `Mod-e` — toggle view mode
+2. `Mod-e` — cycle view mode (Editor → Split → Live → Preview)
 3. `Mod-,` — navigate to settings
-4. `Mod-Enter` — toggle checkbox
-5. `Mod-\` — toggle sidebar
-6. `Mod-Shift-x` — strikethrough
-7. `Mod-Shift-c` — inline code
-8. `Mod-Alt-ArrowLeft/Right` — tab history navigation
+4. `Mod-\` — toggle sidebar
+5. `Mod-1/2/3/4` — switch sidebar tabs (Explorer, Search, Favorites, Tags)
+6. `Mod-Alt-a/h/t` — toggle drawer tabs (AI Assistant, History, TOC)
+7. `Mod-Alt-Left/Right` — previous/next tab
+8. `Mod-Enter` — toggle checkbox
+9. `Mod-Shift-x` — strikethrough
+10. `Mod-Shift-c` — inline code
+11. `Mod-Shift-h` — cycle heading
+12. `Mod-Shift-k` — insert wiki-link
 
 ### Phase 6: Polish & Desktop Sync
 
@@ -204,14 +268,21 @@ packages/ns-desktop/src/commands/               # Mirror with desktop-specific c
 2. **Command Palette**: Cmd+P opens, fuzzy search filters, Enter executes, Escape closes, shortcuts shown inline
 3. **Quick Switcher**: Cmd+O opens, fuzzy matches note titles, Enter navigates to note
 4. **New shortcuts**: Each new shortcut triggers its action
-5. **Settings page**: Shows all shortcuts from registry (not hardcoded), matches between web and desktop
-6. **Type check**: `npx turbo run type-check` passes
-7. **Tests**: `npx turbo run test` passes
-8. **Build**: `npx turbo run build` succeeds
+5. **Sidebar tabs**: Mod-1 through Mod-4 switch tabs correctly
+6. **Drawer tabs**: Mod-Alt-A/H/T toggle drawer panels
+7. **View cycle**: Mod-E cycles through all 4 view modes
+8. **Tab navigation**: Mod-Alt-Left/Right cycles through open tabs
+9. **Settings page**: Shows all shortcuts from registry (not hardcoded), matches between web and desktop
+10. **Type check**: `npx turbo run type-check` passes
+11. **Tests**: `npx turbo run test` passes
+12. **Build**: `npx turbo run build` succeeds
 
 ## Key Design Decisions
 
-- **Why not a shared component package?** No shared React component package exists between ns-web and ns-desktop. Creating one would require significant build tooling changes. The `commands/` directory (~7 files, ~400 lines) is mirrored across both packages. Types in `ns-shared` keep them in sync.
+- **Why not a shared component package?** No shared React component package exists between ns-web and ns-desktop. Creating one would require significant build tooling changes. The `commands/` directory (~8 files, ~500 lines) is mirrored across both packages. Types in `ns-shared` keep them in sync.
 - **Why a class-based registry?** Must be accessible from both React hooks (palette UI) and raw DOM/CodeMirror handlers. A class singleton with a React context wrapper gives both worlds access.
 - **Why keep CodeMirror keybindings separate?** CodeMirror has sophisticated key handling for input composition and editor-specific event ordering. Dual-registration (CodeMirror handles keystroke, registry knows about command for display) is how VS Code and Obsidian both work.
 - **Why Cmd+K stays as search?** NoteSync convention. Obsidian uses Cmd+K for insert link. Users who want Obsidian behavior can rebind later when custom hotkeys are added.
+- **Why Mod-1/2/3/4 for sidebar tabs?** Matches VS Code convention (Cmd+1 for first editor group). Sidebar tabs are the primary navigation — number keys provide the fastest access.
+- **Why Mod-e cycles instead of toggles?** With 4 view modes (Editor, Split, Live, Preview), a simple toggle would only switch between 2. Cycling through all 4 gives full keyboard access to every mode.
+- **Why Mod-Alt for drawer tabs?** Keeps them distinct from sidebar tabs (Mod-number) and editor shortcuts (Mod-Shift). Alt modifier signals "secondary panel" — matching the drawer's role as a secondary right-side panel.
