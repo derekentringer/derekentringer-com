@@ -77,94 +77,6 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
-// Rendered table widget — parses markdown table and renders as HTML <table>
-class TableWidget extends WidgetType {
-  constructor(readonly source: string, readonly sourceFrom: number) { super(); }
-  eq(other: TableWidget) { return this.source === other.source; }
-  toDOM(view: EditorView) {
-    const wrapper = document.createElement("div");
-    wrapper.className = "cm-lp-table-widget";
-
-    const rawLines = this.source.split("\n");
-    const lines = rawLines.filter((l) => l.trim());
-    if (lines.length < 2) { wrapper.textContent = this.source; return wrapper; }
-
-    const parseRow = (line: string): string[] =>
-      line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
-
-    const headers = parseRow(lines[0]);
-
-    // Parse alignment from delimiter row
-    const delimCells = parseRow(lines[1]);
-    const aligns: ("left" | "center" | "right" | "")[] = delimCells.map((c) => {
-      const left = c.startsWith(":");
-      const right = c.endsWith(":");
-      if (left && right) return "center";
-      if (right) return "right";
-      return "";
-    });
-
-    // Build source line offset map: row index → character offset in source
-    const lineOffsets: number[] = [];
-    let offset = 0;
-    for (const rl of rawLines) {
-      lineOffsets.push(offset);
-      offset += rl.length + 1; // +1 for newline
-    }
-
-    const table = document.createElement("table");
-    table.className = "cm-lp-table";
-
-    // Header (source line 0)
-    const thead = document.createElement("thead");
-    const headerRow = document.createElement("tr");
-    headerRow.dataset.sourceLine = "0";
-    headers.forEach((h, i) => {
-      const th = document.createElement("th");
-      th.textContent = h;
-      if (aligns[i]) th.style.textAlign = aligns[i];
-      headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    // Body rows (source lines 2+, skipping delimiter at line 1)
-    const tbody = document.createElement("tbody");
-    for (let r = 2; r < lines.length; r++) {
-      const cells = parseRow(lines[r]);
-      const tr = document.createElement("tr");
-      tr.dataset.sourceLine = String(r);
-      headers.forEach((_, i) => {
-        const td = document.createElement("td");
-        td.textContent = cells[i] ?? "";
-        if (aligns[i]) td.style.textAlign = aligns[i];
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    wrapper.appendChild(table);
-
-    // Click anywhere on the table → move cursor to the corresponding source line
-    const sourceFrom = this.sourceFrom;
-    wrapper.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      // Find which row was clicked
-      const tr = (e.target as HTMLElement).closest("tr");
-      let targetLine = 0;
-      if (tr?.dataset.sourceLine) {
-        targetLine = parseInt(tr.dataset.sourceLine, 10);
-      }
-      const targetPos = sourceFrom + (lineOffsets[targetLine] ?? 0);
-      const clampedPos = Math.min(targetPos, view.state.doc.length);
-      view.dispatch({ selection: { anchor: clampedPos } });
-      view.focus();
-    });
-
-    return wrapper;
-  }
-}
-
 // Horizontal rule mark
 const hrMark = Decoration.mark({ class: "cm-lp-hr" });
 
@@ -316,32 +228,26 @@ function buildDecorations(view: EditorView): DecorationSet {
         }
 
         case "Table": {
-          // Block-level reveal: if cursor is on ANY line of the table, show raw
-          const tblStartLine = view.state.doc.lineAt(node.from).number;
-          const tblEndLine = view.state.doc.lineAt(node.to).number;
-          let cursorInTable = false;
-          for (let n = tblStartLine; n <= tblEndLine; n++) {
-            if (activeLines.has(n)) { cursorInTable = true; break; }
-          }
-          if (cursorInTable) return false;
+          // Line-level styling: header bold + background, delimiter hidden, rows styled
+          const tblCursor = node.node.cursor();
+          if (tblCursor.firstChild()) {
+            do {
+              const childLine = view.state.doc.lineAt(tblCursor.from);
+              // Skip active lines
+              if (activeLines.has(childLine.number)) continue;
 
-          const tableSource = view.state.sliceDoc(node.from, node.to);
-
-          // Replace first line content with rendered table widget (inline replace)
-          const firstLine = view.state.doc.lineAt(node.from);
-          if (firstLine.to > firstLine.from) {
-            decorations.push(
-              Decoration.replace({ widget: new TableWidget(tableSource, node.from) }).range(firstLine.from, firstLine.to),
-            );
-          }
-
-          // Collapse all subsequent table lines
-          for (let n = tblStartLine + 1; n <= tblEndLine; n++) {
-            const line = view.state.doc.line(n);
-            if (line.to > line.from) {
-              decorations.push(Decoration.replace({}).range(line.from, line.to));
-            }
-            decorations.push(Decoration.line({ class: "cm-lp-hidden-line" }).range(line.from));
+              if (tblCursor.type.name === "TableHeader") {
+                decorations.push(Decoration.line({ class: "cm-lp-table-header" }).range(childLine.from));
+              } else if (tblCursor.type.name === "TableDelimiter" && tblCursor.from === childLine.from) {
+                // Delimiter row — replace content with thin line, keep the line visible for numbering
+                if (childLine.to > childLine.from) {
+                  decorations.push(Decoration.replace({}).range(childLine.from, childLine.to));
+                }
+                decorations.push(Decoration.line({ class: "cm-lp-table-delimiter" }).range(childLine.from));
+              } else if (tblCursor.type.name === "TableRow") {
+                decorations.push(Decoration.line({ class: "cm-lp-table-row" }).range(childLine.from));
+              }
+            } while (tblCursor.nextSibling());
           }
           return false;
         }
@@ -584,30 +490,20 @@ const livePreviewTheme = EditorView.baseTheme({
     height: "0",
     overflow: "hidden",
   },
-  ".cm-lp-table-widget": {
-    margin: "4px 0",
-    overflow: "auto",
-    cursor: "pointer",
-  },
-  ".cm-lp-table": {
-    borderCollapse: "collapse",
-    width: "100%",
-    fontSize: "inherit",
-    fontFamily: "inherit",
-  },
-  ".cm-lp-table th": {
+  ".cm-lp-table-header": {
     fontWeight: "bold",
-    borderBottom: "2px solid var(--color-border, #1e2028)",
-    padding: "6px 12px",
-    textAlign: "left",
     backgroundColor: "var(--color-subtle, #1a1c24)",
+    borderBottom: "2px solid var(--color-border, #1e2028)",
   },
-  ".cm-lp-table td": {
+  ".cm-lp-table-row": {
+    backgroundColor: "var(--color-subtle, #1a1c24)",
     borderBottom: "1px solid var(--color-border, #1e2028)",
-    padding: "6px 12px",
   },
-  ".cm-lp-table tbody tr:hover": {
-    backgroundColor: "var(--color-accent, rgba(255,255,255,0.03))",
+  ".cm-lp-table-delimiter": {
+    borderBottom: "1px solid var(--color-border, #1e2028)",
+    height: "4px",
+    lineHeight: "0",
+    fontSize: "0",
   },
   ".cm-lp-codeblock-line": {
     backgroundColor: "var(--color-subtle, #1a1c24)",
