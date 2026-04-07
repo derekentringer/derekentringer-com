@@ -13,7 +13,7 @@ import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import type { Note, NoteVersion, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
-import { useCommands } from "../commands/index.ts";
+import { useCommands, CommandPalette } from "../commands/index.ts";
 import {
   fetchNotes,
   createNote,
@@ -258,6 +258,7 @@ export function NotesPage() {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [showGame, setShowGame] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -1533,6 +1534,7 @@ export function NotesPage() {
     "note:save": () => { handleSave(); },
     "nav:search": focusSearch,
     "view:focus-mode": toggleFocusMode,
+    "palette:open": () => setPaletteOpen(true),
   });
 
   // Autosave: debounce after changes
@@ -2938,6 +2940,9 @@ export function NotesPage() {
 
     {/* SyncSwarm mini game */}
     {showGame && <SyncSwarmGame onExit={() => setShowGame(false)} />}
+
+    {/* Command Palette */}
+    <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
