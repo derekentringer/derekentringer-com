@@ -67,14 +67,15 @@ function splitWikiLinks(
 
     if (noteId) {
       // Resolved link → <a> with data attribute
+      // Encode noteId in a custom URL scheme so it survives the
+      // remark → rehype → react-markdown pipeline reliably
       result.push({
         type: "link",
-        url: "#",
+        url: `#wiki:${noteId}`,
         data: {
           hProperties: {
-            "data-wiki-link": noteId,
-            className: "wiki-link",
-            onClick: "event.preventDefault()",
+            dataWikiLink: noteId,
+            class: "wiki-link",
           },
         },
         children: [{ type: "text", value: linkText }],

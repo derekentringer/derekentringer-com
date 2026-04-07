@@ -157,6 +157,53 @@ export function serializeTable(table: ParsedTable): string {
   return [headerLine, separatorLine, ...bodyLines].join("\n");
 }
 
+/**
+ * Returns text changes to reformat all tables in the document.
+ * Each change has { from, to, insert } suitable for CodeMirror dispatch.
+ */
+export function formatTableChanges(
+  doc: string,
+): { from: number; to: number; insert: string }[] {
+  const tables = findTables(doc);
+  if (tables.length === 0) return [];
+  const lines = doc.split("\n");
+  const changes: { from: number; to: number; insert: string }[] = [];
+  for (const table of tables) {
+    const formatted = serializeTable(table);
+    const fromOffset =
+      lines.slice(0, table.startLine).join("\n").length +
+      (table.startLine > 0 ? 1 : 0);
+    const toOffset = lines.slice(0, table.endLine + 1).join("\n").length;
+    const original = doc.slice(fromOffset, toOffset);
+    if (formatted !== original) {
+      changes.push({ from: fromOffset, to: toOffset, insert: formatted });
+    }
+  }
+  return changes;
+}
+
+/**
+ * Returns text changes to reformat a single table identified by its start
+ * line (0-indexed) in the document. Returns an empty array if no change needed.
+ */
+export function formatTableAtLine(
+  doc: string,
+  startLine: number,
+): { from: number; to: number; insert: string }[] {
+  const tables = findTables(doc);
+  const table = tables.find((t) => t.startLine === startLine);
+  if (!table) return [];
+  const lines = doc.split("\n");
+  const formatted = serializeTable(table);
+  const fromOffset =
+    lines.slice(0, table.startLine).join("\n").length +
+    (table.startLine > 0 ? 1 : 0);
+  const toOffset = lines.slice(0, table.endLine + 1).join("\n").length;
+  const original = doc.slice(fromOffset, toOffset);
+  if (formatted === original) return [];
+  return [{ from: fromOffset, to: toOffset, insert: formatted }];
+}
+
 export function updateCell(
   markdown: string,
   tableIndex: number,

@@ -8,7 +8,11 @@ import {
 import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { imageUploadExtension } from "../editor/imageUpload.ts";
+import { livePreview } from "../editor/livePreview.ts";
+import { tableAutoFormat } from "../editor/tableAutoFormat.ts";
+import { formatTableChanges } from "../lib/tableMarkdown.ts";
 import { markdown } from "@codemirror/lang-markdown";
+import { GFM } from "@lezer/markdown";
 import { languages } from "@codemirror/language-data";
 import {
   defaultKeymap,
@@ -27,6 +31,18 @@ export interface MarkdownEditorHandle {
   focus: () => void;
   insertBold: () => void;
   insertItalic: () => void;
+  insertStrikethrough: () => void;
+  insertInlineCode: () => void;
+  cycleHeading: () => void;
+  insertLink: () => void;
+  insertImage: () => void;
+  insertWikiLink: () => void;
+  insertBulletList: () => void;
+  insertNumberedList: () => void;
+  insertCheckbox: () => void;
+  insertBlockquote: () => void;
+  insertCodeBlock: () => void;
+  insertTable: () => void;
   scrollToLine: (line: number) => void;
   getEditorState: () => { cursor: number; scrollTop: number };
 }
@@ -50,6 +66,123 @@ interface MarkdownEditorProps {
   accentColor?: string;
   cursorStyle?: "line" | "block" | "underline";
   cursorBlink?: boolean;
+  enableLivePreview?: boolean;
+  viewMode?: string;
+}
+
+function cycleHeadingLevel(view: EditorView) {
+  const { head } = view.state.selection.main;
+  const line = view.state.doc.lineAt(head);
+  const text = line.text;
+  const match = text.match(/^(#{1,6})\s/);
+  if (match) {
+    const level = match[1].length;
+    if (level >= 6) {
+      // Remove heading prefix entirely
+      const prefixLen = level + 1; // "######" + space
+      view.dispatch({
+        changes: { from: line.from, to: line.from + prefixLen, insert: "" },
+      });
+    } else {
+      // Add one more #
+      view.dispatch({
+        changes: { from: line.from, to: line.from, insert: "#" },
+      });
+    }
+  } else {
+    // Add h1 prefix
+    view.dispatch({
+      changes: { from: line.from, to: line.from, insert: "# " },
+    });
+  }
+}
+
+function insertLinkTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  if (selected) {
+    // Wrap selection as link text
+    const insert = `[${selected}](url)`;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + selected.length + 3, head: from + selected.length + 6 }, // select "url"
+    });
+  } else {
+    const insert = "[text](url)";
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + 1, head: from + 5 }, // select "text"
+    });
+  }
+}
+
+function insertImageTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  if (selected) {
+    const insert = `![${selected}](url)`;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + selected.length + 4, head: from + selected.length + 7 },
+    });
+  } else {
+    const insert = "![alt](url)";
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: { anchor: from + 2, head: from + 5 }, // select "alt"
+    });
+  }
+}
+
+function insertWikiLinkTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  const insert = `[[${selected || "note title"}]]`;
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: selected
+      ? { anchor: from + insert.length }
+      : { anchor: from + 2, head: from + 2 + "note title".length },
+  });
+}
+
+function insertLinePrefix(view: EditorView, prefix: string) {
+  const { head } = view.state.selection.main;
+  const line = view.state.doc.lineAt(head);
+  // If line already starts with this prefix, remove it (toggle)
+  if (line.text.startsWith(prefix)) {
+    view.dispatch({
+      changes: { from: line.from, to: line.from + prefix.length, insert: "" },
+    });
+  } else {
+    view.dispatch({
+      changes: { from: line.from, to: line.from, insert: prefix },
+    });
+  }
+}
+
+function insertCodeBlockTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const selected = view.state.sliceDoc(from, to);
+  const insert = selected
+    ? `\`\`\`\n${selected}\n\`\`\``
+    : "```\n\n```";
+  const cursorPos = selected
+    ? from + 4 + selected.length // after closing ```
+    : from + 4; // on the empty line between fences
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: cursorPos },
+  });
+}
+
+function insertTableTemplate(view: EditorView) {
+  const { from, to } = view.state.selection.main;
+  const table = "| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n|          |          |          |";
+  view.dispatch({
+    changes: { from, to, insert: table },
+    selection: { anchor: from + 2, head: from + 10 }, // select "Column 1"
+  });
 }
 
 function wrapSelection(view: EditorView, marker: string) {
@@ -130,7 +263,7 @@ function createDarkHighlightStyle(accent: string) {
     { tag: tags.strong, fontWeight: "bold" },
     { tag: tags.emphasis, fontStyle: "italic" },
     { tag: [tags.monospace, tags.processingInstruction], color: "#999999", fontFamily: "'Roboto Mono', monospace" },
-    { tag: tags.link, color: accent, textDecoration: "underline" },
+    { tag: tags.link, color: accent },
     { tag: tags.url, color: "#999999" },
     { tag: tags.quote, color: "#999999", fontStyle: "italic" },
     { tag: tags.strikethrough, textDecoration: "line-through" },
@@ -195,7 +328,7 @@ function createLightHighlightStyle(accent: string) {
     { tag: tags.strong, fontWeight: "bold" },
     { tag: tags.emphasis, fontStyle: "italic" },
     { tag: [tags.monospace, tags.processingInstruction], color: "#666666", fontFamily: "'Roboto Mono', monospace" },
-    { tag: tags.link, color: accent, textDecoration: "underline" },
+    { tag: tags.link, color: accent },
     { tag: tags.url, color: "#666666" },
     { tag: tags.quote, color: "#666666", fontStyle: "italic" },
     { tag: tags.strikethrough, textDecoration: "line-through" },
@@ -262,6 +395,8 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     accentColor,
     cursorStyle = "line",
     cursorBlink = true,
+    enableLivePreview = false,
+    viewMode,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -274,6 +409,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
   const cursorCompartment = useRef(new Compartment());
+  const livePreviewCompartment = useRef(new Compartment());
   const onMountRef = useRef(onMount);
 
   onChangeRef.current = onChange;
@@ -288,6 +424,42 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     },
     insertItalic: () => {
       if (viewRef.current) wrapSelection(viewRef.current, "*");
+    },
+    insertStrikethrough: () => {
+      if (viewRef.current) wrapSelection(viewRef.current, "~~");
+    },
+    insertInlineCode: () => {
+      if (viewRef.current) wrapSelection(viewRef.current, "`");
+    },
+    cycleHeading: () => {
+      if (viewRef.current) cycleHeadingLevel(viewRef.current);
+    },
+    insertLink: () => {
+      if (viewRef.current) insertLinkTemplate(viewRef.current);
+    },
+    insertImage: () => {
+      if (viewRef.current) insertImageTemplate(viewRef.current);
+    },
+    insertWikiLink: () => {
+      if (viewRef.current) insertWikiLinkTemplate(viewRef.current);
+    },
+    insertBulletList: () => {
+      if (viewRef.current) insertLinePrefix(viewRef.current, "- ");
+    },
+    insertNumberedList: () => {
+      if (viewRef.current) insertLinePrefix(viewRef.current, "1. ");
+    },
+    insertCheckbox: () => {
+      if (viewRef.current) insertLinePrefix(viewRef.current, "- [ ] ");
+    },
+    insertBlockquote: () => {
+      if (viewRef.current) insertLinePrefix(viewRef.current, "> ");
+    },
+    insertCodeBlock: () => {
+      if (viewRef.current) insertCodeBlockTemplate(viewRef.current);
+    },
+    insertTable: () => {
+      if (viewRef.current) insertTableTemplate(viewRef.current);
     },
     scrollToLine: (line: number) => {
       const view = viewRef.current;
@@ -316,7 +488,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
       state: EditorState.create({
         doc: value,
         extensions: [
-          markdown({ codeLanguages: languages }),
+          markdown({ codeLanguages: languages, extensions: GFM }),
           themeCompartment.current.of([
             isDark ? createDarkTheme(accent) : createLightTheme(accent),
             syntaxHighlighting(isDark ? createDarkHighlightStyle(accent) : createLightHighlightStyle(accent)),
@@ -374,6 +546,10 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             }
             return onImageUploadRef.current(file);
           }),
+          livePreviewCompartment.current.of(
+            enableLivePreview ? livePreview() : [],
+          ),
+          tableAutoFormat(),
           ...extraExtensions,
         ],
       }),
@@ -391,16 +567,31 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync in-place value changes (e.g. auto-refresh from sync)
+  // Sync in-place value changes (e.g. auto-refresh from sync, checkbox toggle in preview)
+  // Uses minimal diff to avoid resetting cursor/scroll position.
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
-    if (current !== value) {
-      view.dispatch({
-        changes: { from: 0, to: current.length, insert: value },
-      });
-    }
+    if (current === value) return;
+
+    // Find common prefix length
+    let prefixLen = 0;
+    const minLen = Math.min(current.length, value.length);
+    while (prefixLen < minLen && current[prefixLen] === value[prefixLen]) prefixLen++;
+
+    // Find common suffix length (not overlapping with prefix)
+    let suffixLen = 0;
+    while (
+      suffixLen < minLen - prefixLen &&
+      current[current.length - 1 - suffixLen] === value[value.length - 1 - suffixLen]
+    ) suffixLen++;
+
+    const from = prefixLen;
+    const to = current.length - suffixLen;
+    const insert = value.slice(prefixLen, value.length - suffixLen);
+
+    view.dispatch({ changes: { from, to, insert } });
   }, [value]);
 
   // Toggle line numbers
@@ -465,6 +656,27 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
       ),
     });
   }, [cursorStyle, cursorBlink, theme, accentColor]);
+
+  // Toggle live preview
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: livePreviewCompartment.current.reconfigure(
+        enableLivePreview ? livePreview() : [],
+      ),
+    });
+  }, [enableLivePreview]);
+
+  // Format all tables when switching view modes
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const changes = formatTableChanges(view.state.doc.toString());
+    if (changes.length > 0) {
+      view.dispatch({ changes });
+    }
+  }, [viewMode]);
 
   const containerStyle: React.CSSProperties = {
     ...styleProp,
