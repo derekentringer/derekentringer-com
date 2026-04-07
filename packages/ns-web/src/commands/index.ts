@@ -4,3 +4,4 @@ export { useCommands } from "./useCommands.ts";
 export { formatShortcut } from "./formatShortcut.ts";
 export { fuzzyMatch, fuzzyFilter } from "./fuzzyMatch.ts";
 export { CommandPalette } from "./CommandPalette.tsx";
+export { QuickSwitcher } from "./QuickSwitcher.tsx";

@@ -13,7 +13,7 @@ import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import type { Note, NoteVersion, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
-import { useCommands, CommandPalette } from "../commands/index.ts";
+import { useCommands, CommandPalette, QuickSwitcher } from "../commands/index.ts";
 import {
   fetchNotes,
   createNote,
@@ -259,6 +259,7 @@ export function NotesPage() {
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [showGame, setShowGame] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -1535,6 +1536,7 @@ export function NotesPage() {
     "nav:search": focusSearch,
     "view:focus-mode": toggleFocusMode,
     "palette:open": () => setPaletteOpen(true),
+    "switcher:open": () => setSwitcherOpen(true),
   });
 
   // Autosave: debounce after changes
@@ -1603,6 +1605,16 @@ export function NotesPage() {
     }
     return map;
   }, [noteTitles]);
+
+  // Quick Switcher note entries with folder names
+  const switcherNotes = useMemo(() => {
+    const folderMap = new Map(folders.map((f) => [f.id, f.name]));
+    return notes.map((n) => ({
+      id: n.id,
+      title: n.title || "Untitled",
+      folderName: n.folderId ? folderMap.get(n.folderId) : undefined,
+    }));
+  }, [notes, folders]);
 
   // Wiki-link autocomplete extension (stable, reads from ref)
   const wikiLinkExt = useMemo(
@@ -2943,6 +2955,17 @@ export function NotesPage() {
 
     {/* Command Palette */}
     <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+    {/* Quick Switcher */}
+    <QuickSwitcher
+      open={switcherOpen}
+      onClose={() => setSwitcherOpen(false)}
+      notes={switcherNotes}
+      onSelect={(noteId) => {
+        const note = notes.find((n) => n.id === noteId);
+        if (note) openNoteAsTab(note);
+      }}
+    />
     </div>
   );
 }
