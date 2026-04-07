@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext.tsx";
+import { useCommands, CommandPalette, QuickSwitcher } from "../commands/index.ts";
 import {
   DndContext,
   closestCenter,
@@ -753,19 +754,7 @@ export function NotesPage() {
     };
   }, [searchQuery, effectiveSearchMode]);
 
-  // --- Cmd+K to focus search ---
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setSidebarPanel("search");
-        requestAnimationFrame(() => searchInputRef.current?.focus());
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  // Keyboard shortcuts are now handled via the command registry (useCommands below)
 
   // --- Note selection & editing ---
 
@@ -924,36 +913,84 @@ export function NotesPage() {
     };
   }, [title, content, selectedId, handleSave, editorSettings.autoSaveDelay]);
 
-  // --- Cmd+S to save, Cmd+Shift+D for focus mode, Cmd+W to close tab ---
+  // --- Command registry shortcuts ---
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [noteListHidden, setNoteListHidden] = useState(false);
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        handleSave();
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((prev) => {
+      if (!prev) {
+        focusModeDrawerRef.current = drawerOpen;
+        if (drawerOpen) setDrawerOpen(false);
+      } else {
+        if (focusModeDrawerRef.current) setDrawerOpen(true);
       }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D")) {
-        e.preventDefault();
-        setFocusMode((prev) => {
-          if (!prev) {
-            focusModeDrawerRef.current = drawerOpen;
-            if (drawerOpen) setDrawerOpen(false);
-          } else {
-            if (focusModeDrawerRef.current) setDrawerOpen(true);
-          }
-          return !prev;
-        });
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === "w") {
-        e.preventDefault();
-        if (selectedId) {
-          closeTab(selectedId);
-        }
-      }
+      return !prev;
+    });
+  }, [drawerOpen]);
+
+  const focusSearch = useCallback(() => {
+    setSidebarPanel("search");
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
+  const viewModes: ViewMode[] = ["editor", "split", "live", "preview"];
+  const cycleViewMode = useCallback(() => {
+    setViewMode((cur) => viewModes[(viewModes.indexOf(cur) + 1) % viewModes.length]);
+  }, []);
+
+  const cycleTab = useCallback((direction: -1 | 1) => {
+    if (openTabs.length <= 1) return;
+    const idx = selectedId ? openTabs.indexOf(selectedId) : 0;
+    const next = (idx + direction + openTabs.length) % openTabs.length;
+    const note = notes.find((n) => n.id === openTabs[next]);
+    if (note) openNoteAsTab(note);
+  }, [openTabs, selectedId, notes, openNoteAsTab]);
+
+  const handleDrawerToggle = useCallback((tab: "assistant" | "history" | "toc") => {
+    if (drawerOpen && drawerTab === tab) {
+      setDrawerOpen(false);
+    } else {
+      setDrawerTab(tab);
+      setDrawerOpen(true);
     }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, drawerOpen, selectedId]);
+  }, [drawerOpen, drawerTab]);
+
+  useCommands({
+    // Core
+    "palette:open": () => setPaletteOpen(true),
+    "switcher:open": () => setSwitcherOpen(true),
+
+    // Note
+    "note:save": () => { handleSave(); },
+    "note:new": () => { void handleCreate(); },
+
+    // View & Navigation
+    "view:cycle-mode": cycleViewMode,
+    "view:focus-mode": toggleFocusMode,
+    "nav:settings": () => setShowSettings(true),
+    "nav:search": focusSearch,
+
+    // Sidebar & Panels
+    "sidebar:toggle": () => setSidebarHidden((p) => !p),
+    "notelist:toggle": () => setNoteListHidden((p) => !p),
+    "sidebar:explorer": () => setSidebarPanel("explorer"),
+    "sidebar:search": () => setSidebarPanel("search"),
+    "sidebar:favorites": () => setSidebarPanel("favorites"),
+    "sidebar:tags": () => setSidebarPanel("tags"),
+
+    // Drawer
+    "drawer:assistant": () => handleDrawerToggle("assistant"),
+    "drawer:history": () => handleDrawerToggle("history"),
+    "drawer:toc": () => handleDrawerToggle("toc"),
+
+    // Tab Navigation
+    "tab:close": () => { if (selectedId) closeTab(selectedId); },
+    "tab:prev": () => cycleTab(-1),
+    "tab:next": () => cycleTab(1),
+  });
 
   // Auto-refresh editor content when notes array updates (e.g. after sync)
   useEffect(() => {
@@ -2259,6 +2296,15 @@ export function NotesPage() {
     return map;
   }, [noteTitles]);
 
+  const switcherNotes = useMemo(() => {
+    const folderMap = new Map(folders.map((f) => [f.id, f.name]));
+    return notes.map((n) => ({
+      id: n.id,
+      title: n.title || "Untitled",
+      folderName: n.folderId ? folderMap.get(n.folderId) : undefined,
+    }));
+  }, [notes, folders]);
+
   const wikiLinkExt = useMemo(
     () => wikiLinkAutocomplete(() => noteTitlesRef.current),
     [],
@@ -2556,7 +2602,7 @@ export function NotesPage() {
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-        style={{ width: focusMode || collapseSidebar ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
+        style={{ width: focusMode || collapseSidebar || sidebarHidden ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
       >
 
         {sidebarView === "notes" ? (
@@ -2912,7 +2958,7 @@ export function NotesPage() {
         {/* Sidebar bottom bar */}
       </aside>
 
-      {!focusMode && !collapseSidebar && (
+      {!focusMode && !collapseSidebar && !sidebarHidden && (
         <div className="flex">
           <ResizeDivider
             direction="vertical"
@@ -2927,7 +2973,7 @@ export function NotesPage() {
         <>
           <div
             className={`shrink-0 overflow-hidden ${noteListResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-            style={{ width: focusMode || collapseNoteList ? 0 : noteListResize.size }}
+            style={{ width: focusMode || collapseNoteList || noteListHidden ? 0 : noteListResize.size }}
           >
             <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <NoteListPanel
@@ -2954,7 +3000,7 @@ export function NotesPage() {
               />
             </DndContext>
           </div>
-          {!focusMode && !collapseNoteList && (
+          {!focusMode && !collapseNoteList && !noteListHidden && (
             <div className="flex">
               <ResizeDivider
                 direction="vertical"
@@ -3636,6 +3682,20 @@ export function NotesPage() {
 
     {/* SyncSwarm mini game */}
     {showGame && <SyncSwarmGame onExit={() => setShowGame(false)} />}
+
+    {/* Command Palette */}
+    <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+    {/* Quick Switcher */}
+    <QuickSwitcher
+      open={switcherOpen}
+      onClose={() => setSwitcherOpen(false)}
+      notes={switcherNotes}
+      onSelect={(noteId) => {
+        const note = notes.find((n) => n.id === noteId);
+        if (note) openNoteAsTab(note);
+      }}
+    />
     </div>
   );
 }

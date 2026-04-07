@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NotesPage } from "./pages/NotesPage.tsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.tsx";
+import { CommandProvider } from "./commands/index.ts";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { RegisterPage } from "./pages/RegisterPage.tsx";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage.tsx";
@@ -87,8 +88,10 @@ export function App() {
   useThemeAttribute();
 
   return (
+    <CommandProvider>
     <AuthProvider>
       <AppContent />
     </AuthProvider>
+    </CommandProvider>
   );
 }
