@@ -18,6 +18,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
+import { findTables, serializeTable } from "../lib/tableMarkdown.ts";
 
 // --- Mark decorations for styled text ---
 const boldMark = Decoration.mark({ class: "cm-lp-bold" });
@@ -412,12 +413,30 @@ function buildDecorations(view: EditorView): DecorationSet {
   return RangeSet.of(decorations);
 }
 
+// --- Helper: find Table node range containing a position ---
+function findTableAt(view: EditorView, pos: number): { from: number; to: number } | null {
+  const tree = syntaxTree(view.state);
+  let result: { from: number; to: number } | null = null;
+  tree.iterate({
+    from: pos, to: pos,
+    enter: (node) => {
+      if (node.type.name === "Table") {
+        result = { from: node.from, to: node.to };
+        return false;
+      }
+    },
+  });
+  return result;
+}
+
 // --- ViewPlugin ---
 class LivePreviewPlugin {
   decorations: DecorationSet;
+  prevTableRange: { from: number; to: number } | null = null;
 
   constructor(view: EditorView) {
     this.decorations = buildDecorations(view);
+    this.prevTableRange = findTableAt(view, view.state.selection.main.head);
   }
 
   update(update: ViewUpdate) {
@@ -426,7 +445,41 @@ class LivePreviewPlugin {
       update.selectionSet ||
       update.viewportChanged
     ) {
-      this.decorations = buildDecorations(update.view);
+      const view = update.view;
+      const cursorPos = view.state.selection.main.head;
+      const currentTable = findTableAt(view, cursorPos);
+
+      // If cursor was in a table and now isn't (or in a different table), reformat the old table
+      if (
+        this.prevTableRange &&
+        !update.docChanged && // don't reformat during typing
+        (!currentTable || currentTable.from !== this.prevTableRange.from)
+      ) {
+        const oldRange = this.prevTableRange;
+        // Use queueMicrotask to avoid dispatch during update
+        queueMicrotask(() => {
+          const doc = view.state.doc.toString();
+          const tables = findTables(doc);
+          // Find the table that starts at the old range's line
+          const oldStartLine = view.state.doc.lineAt(oldRange.from).number - 1; // 0-indexed
+          const table = tables.find((t) => t.startLine === oldStartLine);
+          if (table) {
+            const formatted = serializeTable(table);
+            const lines = doc.split("\n");
+            const fromOffset = lines.slice(0, table.startLine).join("\n").length + (table.startLine > 0 ? 1 : 0);
+            const toOffset = lines.slice(0, table.endLine + 1).join("\n").length;
+            const original = doc.slice(fromOffset, toOffset);
+            if (formatted !== original) {
+              view.dispatch({
+                changes: { from: fromOffset, to: toOffset, insert: formatted },
+              });
+            }
+          }
+        });
+      }
+
+      this.prevTableRange = currentTable;
+      this.decorations = buildDecorations(view);
     }
   }
 }
