@@ -18,7 +18,6 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
-import { formatTableAtLine } from "../lib/tableMarkdown.ts";
 
 // --- Mark decorations for styled text ---
 const boldMark = Decoration.mark({ class: "cm-lp-bold" });
@@ -413,30 +412,12 @@ function buildDecorations(view: EditorView): DecorationSet {
   return RangeSet.of(decorations);
 }
 
-// --- Helper: find Table node range containing a position ---
-function findTableAt(view: EditorView, pos: number): { from: number; to: number } | null {
-  const tree = syntaxTree(view.state);
-  let result: { from: number; to: number } | null = null;
-  tree.iterate({
-    from: pos, to: pos,
-    enter: (node) => {
-      if (node.type.name === "Table") {
-        result = { from: node.from, to: node.to };
-        return false;
-      }
-    },
-  });
-  return result;
-}
-
 // --- ViewPlugin ---
 class LivePreviewPlugin {
   decorations: DecorationSet;
-  prevTableRange: { from: number; to: number } | null = null;
 
   constructor(view: EditorView) {
     this.decorations = buildDecorations(view);
-    this.prevTableRange = findTableAt(view, view.state.selection.main.head);
   }
 
   update(update: ViewUpdate) {
@@ -445,29 +426,7 @@ class LivePreviewPlugin {
       update.selectionSet ||
       update.viewportChanged
     ) {
-      const view = update.view;
-      const cursorPos = view.state.selection.main.head;
-      const currentTable = findTableAt(view, cursorPos);
-
-      // If cursor was in a table and now isn't (or in a different table), reformat the old table
-      if (
-        this.prevTableRange &&
-        !update.docChanged && // don't reformat during typing
-        (!currentTable || currentTable.from !== this.prevTableRange.from)
-      ) {
-        const oldRange = this.prevTableRange;
-        queueMicrotask(() => {
-          const doc = view.state.doc.toString();
-          const startLine = view.state.doc.lineAt(oldRange.from).number - 1; // 0-indexed
-          const changes = formatTableAtLine(doc, startLine);
-          if (changes.length > 0) {
-            view.dispatch({ changes });
-          }
-        });
-      }
-
-      this.prevTableRange = currentTable;
-      this.decorations = buildDecorations(view);
+      this.decorations = buildDecorations(update.view);
     }
   }
 }

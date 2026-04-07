@@ -9,6 +9,7 @@ import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@co
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { imageUploadExtension } from "../editor/imageUpload.ts";
 import { livePreview } from "../editor/livePreview.ts";
+import { tableAutoFormat } from "../editor/tableAutoFormat.ts";
 import { formatTableChanges } from "../lib/tableMarkdown.ts";
 import { markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
@@ -66,6 +67,7 @@ interface MarkdownEditorProps {
   cursorStyle?: "line" | "block" | "underline";
   cursorBlink?: boolean;
   enableLivePreview?: boolean;
+  viewMode?: string;
 }
 
 function cycleHeadingLevel(view: EditorView) {
@@ -394,6 +396,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     cursorStyle = "line",
     cursorBlink = true,
     enableLivePreview = false,
+    viewMode,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -546,6 +549,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
           livePreviewCompartment.current.of(
             enableLivePreview ? livePreview() : [],
           ),
+          tableAutoFormat(),
           ...extraExtensions,
         ],
       }),
@@ -647,14 +651,17 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         enableLivePreview ? livePreview() : [],
       ),
     });
-    // Format all tables on entering live mode
-    if (enableLivePreview) {
-      const changes = formatTableChanges(view.state.doc.toString());
-      if (changes.length > 0) {
-        view.dispatch({ changes });
-      }
-    }
   }, [enableLivePreview]);
+
+  // Format all tables when switching view modes
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const changes = formatTableChanges(view.state.doc.toString());
+    if (changes.length > 0) {
+      view.dispatch({ changes });
+    }
+  }, [viewMode]);
 
   const containerStyle: React.CSSProperties = {
     ...styleProp,
