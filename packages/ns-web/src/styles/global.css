@@ -473,14 +473,13 @@
 }
 
 /* Wiki-link styles */
-.wiki-link {
-  color: var(--color-primary);
+.markdown-preview a.wiki-link {
   text-decoration: underline dashed;
   text-underline-offset: 2px;
   cursor: pointer;
 }
 
-.wiki-link:hover {
+.markdown-preview a.wiki-link:hover {
   color: var(--color-primary-hover);
 }
 

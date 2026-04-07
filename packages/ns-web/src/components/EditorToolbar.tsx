@@ -51,12 +51,12 @@ export function EditorToolbar({
   return (
     <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border shrink-0">
       {/* Line numbers toggle — positioned over the gutter */}
-      {viewMode !== "preview" && (
+      {viewMode !== "preview" && viewMode !== "live" && (
         <button
           onClick={onToggleLineNumbers}
           className={`px-2 py-0.5 text-xs rounded transition-colors cursor-pointer ${
             showLineNumbers
-              ? "bg-primary/20 text-primary"
+              ? "bg-foreground/10 text-foreground"
               : "text-muted-foreground hover:text-foreground hover:bg-accent"
           }`}
           title="Toggle line numbers"
@@ -73,7 +73,7 @@ export function EditorToolbar({
             onClick={() => onViewModeChange(mode.value)}
             className={`px-2.5 py-0.5 text-xs transition-colors cursor-pointer ${
               viewMode === mode.value
-                ? "bg-primary/20 text-primary font-medium"
+                ? "bg-foreground/10 text-foreground font-medium"
                 : "text-muted-foreground hover:text-foreground hover:bg-accent"
             }`}
           >

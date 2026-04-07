@@ -12,6 +12,7 @@ import { remarkWikiLink } from "../lib/remarkWikiLink.ts";
 import { findTables } from "../lib/tableMarkdown.ts";
 import { toggleCheckbox } from "../lib/toggleCheckbox.ts";
 import { findImages, parseAltDimensions } from "../lib/imageMarkdown.ts";
+import { findSourceLine } from "../lib/sourceMap.ts";
 
 interface MarkdownPreviewProps {
   content: string;
@@ -19,6 +20,7 @@ interface MarkdownPreviewProps {
   wikiLinkTitleMap?: Map<string, string>;
   onWikiLinkClick?: (noteId: string) => void;
   onContentChange?: (newContent: string) => void;
+  onEditAtLine?: (lineNumber: number) => void;
 }
 
 export function MarkdownPreview({
@@ -27,6 +29,7 @@ export function MarkdownPreview({
   wikiLinkTitleMap,
   onWikiLinkClick,
   onContentChange,
+  onEditAtLine,
 }: MarkdownPreviewProps) {
   // Refs keep component overrides stable across content changes,
   // preventing React from remounting InteractiveTable (which would lose sort state)
@@ -61,6 +64,14 @@ export function MarkdownPreview({
   const markdownComponents = useMemo(() => {
     const components: Record<string, React.ElementType> = {
       pre: CodeBlock,
+      a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<"a">) => {
+        const isWiki = href?.startsWith("#wiki:");
+        return (
+          <a href={href} className={isWiki ? "wiki-link" : undefined} {...props}>
+            {children}
+          </a>
+        );
+      },
       img: ({ src, alt, node, ...props }: React.ComponentPropsWithoutRef<"img"> & { node?: { position?: { start: { offset?: number } } } }) => {
         const parsedAlt = parseAltDimensions(alt ?? "");
         if (onContentChangeRef.current && src) {
@@ -155,16 +166,56 @@ export function MarkdownPreview({
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement;
+
+      // Check for wiki-link via data attribute
       const link = target.closest("[data-wiki-link]");
       if (link && onWikiLinkClick) {
         e.preventDefault();
         const noteId = link.getAttribute("data-wiki-link");
         if (noteId) {
           onWikiLinkClick(noteId);
+          return;
+        }
+      }
+
+      // Fallback: check for wiki-link via #wiki: URL scheme
+      const anchor = target.closest("a") as HTMLAnchorElement | null;
+      if (anchor && onWikiLinkClick) {
+        const href = anchor.getAttribute("href") ?? "";
+        const wikiMatch = href.match(/^#wiki:(.+)$/);
+        if (wikiMatch) {
+          e.preventDefault();
+          onWikiLinkClick(wikiMatch[1]);
+          return;
         }
       }
     },
     [onWikiLinkClick],
+  );
+
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!onEditAtLine) return;
+      const target = e.target as HTMLElement;
+      const container = target.closest(".markdown-preview") as HTMLElement;
+      if (!container) return;
+
+      let line = findSourceLine(contentRef.current, target, container);
+      // Fallback: check if an <hr> is near the click Y position
+      // (browsers often report the parent as the target for void elements)
+      if (line === 0) {
+        const hrs = container.querySelectorAll("hr");
+        for (const hr of hrs) {
+          const rect = hr.getBoundingClientRect();
+          if (Math.abs(e.clientY - (rect.top + rect.height / 2)) < 15) {
+            line = findSourceLine(contentRef.current, hr as HTMLElement, container);
+            break;
+          }
+        }
+      }
+      if (line > 0) onEditAtLine(line);
+    },
+    [onEditAtLine],
   );
 
   return (
@@ -172,6 +223,7 @@ export function MarkdownPreview({
       <div
         className={`markdown-preview ${className ?? ""}`}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
       >
         <ReactMarkdown remarkPlugins={plugins} rehypePlugins={[rehypeSlug, rehypeHighlight]} components={markdownComponents}>{content}</ReactMarkdown>
       </div>

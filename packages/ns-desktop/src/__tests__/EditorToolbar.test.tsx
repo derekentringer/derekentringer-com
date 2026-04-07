@@ -8,6 +8,18 @@ describe("EditorToolbar", () => {
     onViewModeChange: vi.fn(),
     onBold: vi.fn(),
     onItalic: vi.fn(),
+    onStrikethrough: vi.fn(),
+    onInlineCode: vi.fn(),
+    onHeading: vi.fn(),
+    onLink: vi.fn(),
+    onImage: vi.fn(),
+    onWikiLink: vi.fn(),
+    onBulletList: vi.fn(),
+    onNumberedList: vi.fn(),
+    onCheckbox: vi.fn(),
+    onBlockquote: vi.fn(),
+    onCodeBlock: vi.fn(),
+    onTable: vi.fn(),
     showLineNumbers: true,
     onToggleLineNumbers: vi.fn(),
   };
@@ -16,11 +28,12 @@ describe("EditorToolbar", () => {
     vi.clearAllMocks();
   });
 
-  it("renders all three view mode buttons", () => {
+  it("renders all four view mode buttons", () => {
     render(<EditorToolbar {...defaultProps} />);
 
     expect(screen.getByText("Editor")).toBeInTheDocument();
     expect(screen.getByText("Split")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
     expect(screen.getByText("Preview")).toBeInTheDocument();
   });
 
@@ -74,6 +87,14 @@ describe("EditorToolbar", () => {
   it("shows formatting buttons in split mode", () => {
     render(<EditorToolbar {...defaultProps} viewMode="split" />);
 
+    expect(screen.getByText("B")).toBeInTheDocument();
+    expect(screen.getByText("I")).toBeInTheDocument();
+  });
+
+  it("hides line number toggle in live mode but shows formatting buttons", () => {
+    render(<EditorToolbar {...defaultProps} viewMode="live" />);
+
+    expect(screen.queryByText("#")).not.toBeInTheDocument();
     expect(screen.getByText("B")).toBeInTheDocument();
     expect(screen.getByText("I")).toBeInTheDocument();
   });

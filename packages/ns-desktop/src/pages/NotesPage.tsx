@@ -2275,13 +2275,34 @@ export function NotesPage() {
       const heading = previewContainer.querySelector(`#${CSS.escape(slug)}`);
       if (heading) {
         heading.scrollIntoView({ behavior: "smooth", block: "start" });
-        if (viewMode !== "editor") return;
+        if (viewMode !== "editor" && viewMode !== "live") return;
       }
     }
     // In editor mode (or if preview heading not found), scroll the editor
     if (editorRef.current && lineNumber > 0) {
       editorRef.current.scrollToLine(lineNumber);
     }
+  }
+
+  function handleEditAtLine(lineNumber: number) {
+    if (viewMode === "split") {
+      // In split mode: scroll editor without switching view
+      if (editorRef.current && lineNumber > 0) {
+        editorRef.current.scrollToLine(lineNumber);
+        editorRef.current.focus();
+      }
+      return;
+    }
+    // In preview mode: switch to editor and scroll to the line
+    setViewMode("editor");
+    requestAnimationFrame(() => {
+      if (editorRef.current) {
+        if (lineNumber > 0) {
+          editorRef.current.scrollToLine(lineNumber);
+        }
+        editorRef.current.focus();
+      }
+    });
   }
 
   function handleDrawerTabClick(tab: DrawerTab) {
@@ -3213,6 +3234,18 @@ export function NotesPage() {
                   onViewModeChange={setViewMode}
                   onBold={() => editorRef.current?.insertBold()}
                   onItalic={() => editorRef.current?.insertItalic()}
+                  onStrikethrough={() => editorRef.current?.insertStrikethrough()}
+                  onInlineCode={() => editorRef.current?.insertInlineCode()}
+                  onHeading={() => editorRef.current?.cycleHeading()}
+                  onLink={() => editorRef.current?.insertLink()}
+                  onImage={() => editorRef.current?.insertImage()}
+                  onWikiLink={() => editorRef.current?.insertWikiLink()}
+                  onBulletList={() => editorRef.current?.insertBulletList()}
+                  onNumberedList={() => editorRef.current?.insertNumberedList()}
+                  onCheckbox={() => editorRef.current?.insertCheckbox()}
+                  onBlockquote={() => editorRef.current?.insertBlockquote()}
+                  onCodeBlock={() => editorRef.current?.insertCodeBlock()}
+                  onTable={() => editorRef.current?.insertTable()}
                   showLineNumbers={showLineNumbers}
                   onToggleLineNumbers={() => setShowLineNumbers((prev) => !prev)}
                 />
@@ -3268,7 +3301,7 @@ export function NotesPage() {
                         await enqueueSyncAction("create", imageId, "image", localPath);
                         return placeholderUrl;
                       } : undefined}
-                      showLineNumbers={showLineNumbers}
+                      showLineNumbers={viewMode === "live" ? false : showLineNumbers}
                       wordWrap={editorSettings.wordWrap}
                       tabSize={editorSettings.tabSize}
                       fontSize={editorSettings.editorFontSize}
@@ -3276,6 +3309,8 @@ export function NotesPage() {
                       accentColor={accentHex}
                       cursorStyle={editorSettings.cursorStyle}
                       cursorBlink={editorSettings.cursorBlink}
+                      enableLivePreview={viewMode === "live"}
+                      viewMode={viewMode}
                       extensions={[wikiLinkExt, ...aiExtensions]}
                       className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                       style={viewMode === "split" ? { width: splitResize.size } : undefined}
@@ -3288,13 +3323,14 @@ export function NotesPage() {
                       onPointerDown={splitResize.onPointerDown}
                     />
                   )}
-                  {viewMode !== "editor" && (
+                  {(viewMode === "split" || viewMode === "preview") && (
                     <MarkdownPreview
                       content={content}
                       className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
                       wikiLinkTitleMap={wikiLinkTitleMap}
                       onWikiLinkClick={handleWikiLinkClick}
                       onContentChange={(newContent) => setContent(newContent)}
+                      onEditAtLine={handleEditAtLine}
                     />
                   )}
                 </div>

@@ -153,7 +153,7 @@
 
 - [x] [24 — SyncSwarm Game](features/24-syncswarm-game.md) — Hidden Galaga-style ASCII space shooter: enemy formations with bezier entry animations, diving attacks, boss tractor beam capture, dual fighter mode, challenge stages every 3 levels, parallax starfield with 3 grey-toned depth layers (speed varies by game phase), per-character color rendering via RenderSegment spans, high score persistence, launched from rocket icon in ribbon
 
-### Live Preview (in progress on `develop-ui-update`)
+### Live Preview & Editor Polish (on `develop-ui-update`)
 
 - [x] Live Preview Mode 5a — Obsidian-style inline markdown rendering via CM6 ViewPlugin + Decoration.replace() + atomicRanges; hides syntax on non-active lines for bold, italic, strikethrough, inline code, headings (h1-h6), horizontal rules, blockquote markers; "Live" added to view mode switcher and settings; GFM extensions enabled in CM6 parser for strikethrough; code block background fix (--color-subtle for visibility)
 
@@ -171,7 +171,11 @@
 
 - [x] Preview list fixes — Restored list-style-type (disc/decimal) stripped by Tailwind v4 reset; task lists use list-style: none with no left padding; code block backgrounds use --color-subtle for visibility
 
-- [ ] Live Preview Mode 5i — Polish and integration (planned): desktop mirror, performance, tests
+- [x] Live Preview Mode 5i — Polish and integration: viewport-optimized wiki-link iteration, CSS variable theming (--color-primary, --color-subtle), ARIA accessibility on widgets (checkbox labels, bullet aria-hidden, table region), smooth CSS transitions on headings and table widget, rendered HTML table widget restored (click-to-edit with block-level cursor reveal), line numbers hidden in Live mode, toolbar selected color changed to bg-foreground/10, livePreview.ts + tableAutoFormat.ts mirrored to ns-desktop with GFM parser, full toolbar + all formatting buttons on desktop, comprehensive test suites (livePreview.test.ts, tableAutoFormat.test.ts) for both packages
+
+- [x] Preview Click-to-Edit (Phase 6) — Double-click in Preview/Split navigates editor to source line: sourceMap.ts utility maps DOM elements to source lines via heading slug matching, text-content matching (paragraphs, code blocks, blockquotes, list items), URL matching (images), index matching (tables, HRs, list items); handles all markdown element types including checkboxes, images, and code blocks wrapped in component divs; split mode scrolls editor without switching view, preview mode switches to editor; minimal-diff value sync preserves cursor/scroll on external content changes (checkbox toggle); wiki-link click fix (#wiki: URL scheme for reliable react-markdown v10 pipeline), wiki-link dashed underline styling (.markdown-preview a.wiki-link), editor link underline removed; mirrored to ns-desktop with tests
+
+- [ ] Phase 7 — Polish (planned): sidebar tab animations, responsive breakpoints, focus mode, performance profiling, accessibility pass, desktop verification
 
 ## Extension Ideas (Future)
 

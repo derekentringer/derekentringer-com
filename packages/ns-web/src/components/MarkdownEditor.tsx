@@ -263,7 +263,7 @@ function createDarkHighlightStyle(accent: string) {
     { tag: tags.strong, fontWeight: "bold" },
     { tag: tags.emphasis, fontStyle: "italic" },
     { tag: [tags.monospace, tags.processingInstruction], color: "#999999", fontFamily: "'Roboto Mono', monospace" },
-    { tag: tags.link, color: accent, textDecoration: "underline" },
+    { tag: tags.link, color: accent },
     { tag: tags.url, color: "#999999" },
     { tag: tags.quote, color: "#999999", fontStyle: "italic" },
     { tag: tags.strikethrough, textDecoration: "line-through" },
@@ -328,7 +328,7 @@ function createLightHighlightStyle(accent: string) {
     { tag: tags.strong, fontWeight: "bold" },
     { tag: tags.emphasis, fontStyle: "italic" },
     { tag: [tags.monospace, tags.processingInstruction], color: "#666666", fontFamily: "'Roboto Mono', monospace" },
-    { tag: tags.link, color: accent, textDecoration: "underline" },
+    { tag: tags.link, color: accent },
     { tag: tags.url, color: "#666666" },
     { tag: tags.quote, color: "#666666", fontStyle: "italic" },
     { tag: tags.strikethrough, textDecoration: "line-through" },
@@ -567,16 +567,31 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync in-place value changes (e.g. auto-refresh from sync)
+  // Sync in-place value changes (e.g. auto-refresh from sync, checkbox toggle in preview)
+  // Uses minimal diff to avoid resetting cursor/scroll position.
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
-    if (current !== value) {
-      view.dispatch({
-        changes: { from: 0, to: current.length, insert: value },
-      });
-    }
+    if (current === value) return;
+
+    // Find common prefix length
+    let prefixLen = 0;
+    const minLen = Math.min(current.length, value.length);
+    while (prefixLen < minLen && current[prefixLen] === value[prefixLen]) prefixLen++;
+
+    // Find common suffix length (not overlapping with prefix)
+    let suffixLen = 0;
+    while (
+      suffixLen < minLen - prefixLen &&
+      current[current.length - 1 - suffixLen] === value[value.length - 1 - suffixLen]
+    ) suffixLen++;
+
+    const from = prefixLen;
+    const to = current.length - suffixLen;
+    const insert = value.slice(prefixLen, value.length - suffixLen);
+
+    view.dispatch({ changes: { from, to, insert } });
   }, [value]);
 
   // Toggle line numbers

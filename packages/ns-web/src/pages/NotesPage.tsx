@@ -1825,6 +1825,27 @@ export function NotesPage() {
     }
   }
 
+  function handleEditAtLine(lineNumber: number) {
+    if (viewMode === "split") {
+      // In split mode: scroll editor without switching view
+      if (editorRef.current && lineNumber > 0) {
+        editorRef.current.scrollToLine(lineNumber);
+        editorRef.current.focus();
+      }
+      return;
+    }
+    // In preview mode: switch to editor and scroll to the line
+    setViewMode("editor");
+    requestAnimationFrame(() => {
+      if (editorRef.current) {
+        if (lineNumber > 0) {
+          editorRef.current.scrollToLine(lineNumber);
+        }
+        editorRef.current.focus();
+      }
+    });
+  }
+
   function handleDrawerTabClick(tab: DrawerTab) {
     if (qaOpen && drawerTab === tab) {
       setQaOpen(false);
@@ -2596,7 +2617,7 @@ export function NotesPage() {
                     const result = await uploadImage(selectedId, file);
                     return result.r2Url;
                   } : undefined}
-                  showLineNumbers={showLineNumbers}
+                  showLineNumbers={viewMode === "live" ? false : showLineNumbers}
                   wordWrap={editorSettings.wordWrap}
                   tabSize={editorSettings.tabSize}
                   fontSize={editorSettings.editorFontSize}
@@ -2628,6 +2649,7 @@ export function NotesPage() {
                     setContent(newContent);
                     if (newContent !== loadedContentRef.current) setIsDirty(true);
                   }}
+                  onEditAtLine={handleEditAtLine}
                 />
               )}
             </div>
