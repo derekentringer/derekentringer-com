@@ -13,6 +13,7 @@ import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import type { Note, NoteVersion, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
+import { useCommands } from "../commands/index.ts";
 import {
   fetchNotes,
   createNote,
@@ -1510,37 +1511,29 @@ export function NotesPage() {
     }
   }
 
-  // Keyboard shortcuts: Cmd/Ctrl+S (save), Cmd/Ctrl+K (search), Cmd/Ctrl+Shift+D (focus mode)
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        handleSave();
+  // Register keyboard shortcuts with the command registry
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((prev) => {
+      if (!prev) {
+        focusModeDrawerRef.current = qaOpen;
+        if (qaOpen) setQaOpen(false);
+      } else {
+        if (focusModeDrawerRef.current) setQaOpen(true);
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setSidebarPanel("search");
-        // Allow the search panel to render before focusing
-        requestAnimationFrame(() => searchInputRef.current?.focus());
-      }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D")) {
-        e.preventDefault();
-        setFocusMode((prev) => {
-          if (!prev) {
-            // Entering focus mode — capture drawer state and close it
-            focusModeDrawerRef.current = qaOpen;
-            if (qaOpen) setQaOpen(false);
-          } else {
-            // Exiting focus mode — restore drawer state
-            if (focusModeDrawerRef.current) setQaOpen(true);
-          }
-          return !prev;
-        });
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, qaOpen]);
+      return !prev;
+    });
+  }, [qaOpen]);
+
+  const focusSearch = useCallback(() => {
+    setSidebarPanel("search");
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
+  useCommands({
+    "note:save": () => { handleSave(); },
+    "nav:search": focusSearch,
+    "view:focus-mode": toggleFocusMode,
+  });
 
   // Autosave: debounce after changes
   useEffect(() => {

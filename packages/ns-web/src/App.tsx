@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext.tsx";
-import { CommandProvider, useShortcuts } from "./commands/index.ts";
+import { CommandProvider } from "./commands/index.ts";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { RegisterPage } from "./pages/RegisterPage.tsx";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage.tsx";
@@ -77,17 +77,11 @@ function useThemeAttribute() {
   }, []);
 }
 
-function ShortcutDispatcher({ children }: { children: React.ReactNode }) {
-  useShortcuts();
-  return <>{children}</>;
-}
-
 export function App() {
   useThemeAttribute();
 
   return (
     <CommandProvider>
-    <ShortcutDispatcher>
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -137,7 +131,6 @@ export function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
-    </ShortcutDispatcher>
     </CommandProvider>
   );
 }
