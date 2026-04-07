@@ -9,7 +9,7 @@ import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@co
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { imageUploadExtension } from "../editor/imageUpload.ts";
 import { livePreview } from "../editor/livePreview.ts";
-import { findTables, serializeTable } from "../lib/tableMarkdown.ts";
+import { formatTableChanges } from "../lib/tableMarkdown.ts";
 import { markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import { languages } from "@codemirror/language-data";
@@ -649,23 +649,9 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     });
     // Format all tables on entering live mode
     if (enableLivePreview) {
-      const doc = view.state.doc.toString();
-      const tables = findTables(doc);
-      if (tables.length > 0) {
-        const lines = doc.split("\n");
-        const changes: { from: number; to: number; insert: string }[] = [];
-        for (const table of tables) {
-          const formatted = serializeTable(table);
-          const fromOffset = lines.slice(0, table.startLine).join("\n").length + (table.startLine > 0 ? 1 : 0);
-          const toOffset = lines.slice(0, table.endLine + 1).join("\n").length;
-          const original = doc.slice(fromOffset, toOffset);
-          if (formatted !== original) {
-            changes.push({ from: fromOffset, to: toOffset, insert: formatted });
-          }
-        }
-        if (changes.length > 0) {
-          view.dispatch({ changes });
-        }
+      const changes = formatTableChanges(view.state.doc.toString());
+      if (changes.length > 0) {
+        view.dispatch({ changes });
       }
     }
   }, [enableLivePreview]);
