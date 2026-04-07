@@ -23,8 +23,8 @@ interface EditorToolbarProps {
 
 const modes: { value: ViewMode; label: string }[] = [
   { value: "editor", label: "Editor" },
-  { value: "live", label: "Live" },
   { value: "split", label: "Split" },
+  { value: "live", label: "Live" },
   { value: "preview", label: "Preview" },
 ];
 
