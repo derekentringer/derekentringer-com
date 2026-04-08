@@ -540,7 +540,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
               },
             },
             {
-              key: "Mod-Shift-c",
+              key: "Mod-Shift-e",
               run: (v) => {
                 wrapSelection(v, "`");
                 return true;

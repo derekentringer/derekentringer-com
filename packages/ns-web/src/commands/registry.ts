@@ -7,7 +7,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   { id: "switcher:open", label: "Quick Switcher", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-o" } },
 
   // Note
-  { id: "note:new", label: "New Note", category: "Note", scope: "global", defaultBinding: { key: "Mod-n" } },
+  { id: "note:new", label: "New Note", category: "Note", scope: "global", defaultBinding: { key: "Alt-n" } },
   { id: "note:save", label: "Save Note", category: "Note", scope: "global", defaultBinding: { key: "Mod-s" } },
   { id: "note:delete", label: "Delete Note", category: "Note", scope: "global", defaultBinding: null },
   { id: "note:export-md", label: "Export as Markdown", category: "Note", scope: "global", defaultBinding: null },
@@ -15,20 +15,20 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   // View & Navigation
   { id: "view:cycle-mode", label: "Cycle View Mode", category: "View", scope: "global", defaultBinding: { key: "Mod-e" } },
   { id: "view:focus-mode", label: "Toggle Focus Mode", category: "View", scope: "global", defaultBinding: { key: "Mod-Shift-d" } },
-  { id: "nav:settings", label: "Open Settings", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-," } },
+  { id: "nav:settings", label: "Open Settings", category: "Navigation", scope: "global", defaultBinding: { key: "Alt-s" } },
   { id: "nav:search", label: "Focus Search", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-k" } },
 
   // Sidebar & Panels
   { id: "sidebar:toggle", label: "Toggle Sidebar", category: "Sidebar", scope: "global", defaultBinding: { key: "Mod-\\" } },
   { id: "notelist:toggle", label: "Toggle Note List", category: "Sidebar", scope: "global", defaultBinding: { key: "Mod-Shift-\\" } },
-  { id: "sidebar:explorer", label: "Explorer Tab", category: "Sidebar", scope: "global", defaultBinding: { key: "Mod-1" } },
-  { id: "sidebar:search", label: "Search Tab", category: "Sidebar", scope: "global", defaultBinding: { key: "Mod-2" } },
-  { id: "sidebar:favorites", label: "Favorites Tab", category: "Sidebar", scope: "global", defaultBinding: { key: "Mod-3" } },
-  { id: "sidebar:tags", label: "Tags Tab", category: "Sidebar", scope: "global", defaultBinding: { key: "Mod-4" } },
+  { id: "sidebar:explorer", label: "Explorer Tab", category: "Sidebar", scope: "global", defaultBinding: { key: "Alt-1" } },
+  { id: "sidebar:search", label: "Search Tab", category: "Sidebar", scope: "global", defaultBinding: { key: "Alt-2" } },
+  { id: "sidebar:favorites", label: "Favorites Tab", category: "Sidebar", scope: "global", defaultBinding: { key: "Alt-3" } },
+  { id: "sidebar:tags", label: "Tags Tab", category: "Sidebar", scope: "global", defaultBinding: { key: "Alt-4" } },
 
   // Drawer
   { id: "drawer:assistant", label: "Toggle AI Assistant", category: "Drawer", scope: "global", defaultBinding: { key: "Mod-Alt-a" } },
-  { id: "drawer:history", label: "Toggle Version History", category: "Drawer", scope: "global", defaultBinding: { key: "Mod-Alt-h" } },
+  { id: "drawer:history", label: "Toggle Version History", category: "Drawer", scope: "global", defaultBinding: { key: "Mod-Alt-v" } },
   { id: "drawer:toc", label: "Toggle Table of Contents", category: "Drawer", scope: "global", defaultBinding: { key: "Mod-Alt-t" } },
 
   // Tab Navigation
@@ -39,7 +39,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   { id: "editor:bold", label: "Bold", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-b" } },
   { id: "editor:italic", label: "Italic", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-i" } },
   { id: "editor:strikethrough", label: "Strikethrough", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-Shift-x" } },
-  { id: "editor:code", label: "Inline Code", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-Shift-c" } },
+  { id: "editor:code", label: "Inline Code", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-Shift-e" } },
   { id: "editor:heading", label: "Cycle Heading", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-Shift-h" } },
   { id: "editor:link", label: "Insert Link", category: "Editor", scope: "editor", defaultBinding: null },
   { id: "editor:wiki-link", label: "Insert Wiki-Link", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-Shift-k" } },
