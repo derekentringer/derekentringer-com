@@ -45,6 +45,7 @@ function SortableFavoriteNoteItem({
   onContextMenu: (e: React.MouseEvent) => void;
   sortByManual: boolean;
 }) {
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     attributes,
     listeners,
@@ -73,8 +74,15 @@ function SortableFavoriteNoteItem({
         </span>
       )}
       <button
-        onClick={() => onSelect(note.id)}
-        onDoubleClick={(e) => { e.preventDefault(); onDoubleClick?.(note.id); }}
+        onClick={() => {
+          if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+          clickTimerRef.current = setTimeout(() => { clickTimerRef.current = null; onSelect(note.id); }, 200);
+        }}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; }
+          onDoubleClick?.(note.id);
+        }}
         onContextMenu={onContextMenu}
         className={`flex-1 text-left px-2 py-1.5 rounded-md text-sm transition-colors truncate cursor-pointer ${
           isSelected

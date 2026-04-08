@@ -917,17 +917,15 @@ export function NotesPage() {
   }
 
   const tabsForDisplay: Tab[] = useMemo(() => {
-    return openTabs
-      .map((id) => {
-        const isPreview = id === previewTabId;
-        if (id === selectedId) {
-          return { id, title: title || "Untitled", isDirty, isPreview };
-        }
-        const note = notes.find((n) => n.id === id) ?? tabNoteCacheRef.current.get(id);
-        if (!note) return null;
-        return { id, title: note.title || "Untitled", isDirty: false, isPreview };
-      })
-      .filter((t): t is Tab => t !== null);
+    return openTabs.map((id) => {
+      const isPreview = id === previewTabId;
+      if (id === selectedId) {
+        return { id, title: title || "Untitled", isDirty, isPreview };
+      }
+      const note = notes.find((n) => n.id === id) ?? tabNoteCacheRef.current.get(id);
+      // Always show the tab — even if the note isn't in the current folder's list
+      return { id, title: note?.title || "Untitled", isDirty: false, isPreview };
+    });
   }, [openTabs, selectedId, title, isDirty, notes, previewTabId]);
 
   async function handleCreate() {

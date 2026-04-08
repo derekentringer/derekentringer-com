@@ -1116,19 +1116,17 @@ export function NotesPage() {
   }
 
   const tabsForDisplay: Tab[] = useMemo(() => {
-    return openTabs
-      .map((id) => {
-        const isPreview = id === previewTabId;
-        const note = notes.find((n) => n.id === id) ?? tabNoteCacheRef.current.get(id);
-        const isLocalFile = note?.isLocalFile ?? false;
-        const localFileStatus = localFileStatuses.get(id);
-        if (id === selectedId) {
-          return { id, title: title || "Untitled", isDirty: isDirtyValue, isPreview, isLocalFile, localFileStatus };
-        }
-        if (!note) return null;
-        return { id, title: note.title || "Untitled", isDirty: false, isPreview, isLocalFile, localFileStatus };
-      })
-      .filter((t) => t !== null) as Tab[];
+    return openTabs.map((id) => {
+      const isPreview = id === previewTabId;
+      const note = notes.find((n) => n.id === id) ?? tabNoteCacheRef.current.get(id);
+      const isLocalFile = note?.isLocalFile ?? false;
+      const localFileStatus = localFileStatuses.get(id);
+      if (id === selectedId) {
+        return { id, title: title || "Untitled", isDirty: isDirtyValue, isPreview, isLocalFile, localFileStatus };
+      }
+      // Always show the tab — even if the note isn't in the current folder's list
+      return { id, title: note?.title || "Untitled", isDirty: false, isPreview, isLocalFile, localFileStatus };
+    });
   }, [openTabs, selectedId, title, isDirtyValue, notes, previewTabId, localFileStatuses]);
 
   // --- CRUD handlers ---
