@@ -669,6 +669,10 @@ export function NotesPage() {
       if (requestId === reloadNotesCounterRef.current) {
         setNotes(result);
         setAllNotesCount(totalCount);
+        // Cache all loaded notes for tab persistence across folder switches
+        for (const note of result) {
+          tabNoteCacheRef.current.set(note.id, note);
+        }
       }
     } catch (err) {
       console.error("Failed to reload notes:", err);

@@ -191,9 +191,10 @@
 
 ### Bug Fixes
 
-- [x] Tabs persist across folder navigation — `tabsForDisplay` no longer filters out tabs from other folders
+- [x] Tabs persist across folder navigation — `tabsForDisplay` no longer filters out tabs from other folders; all loaded notes cached in `tabNoteCacheRef` so tab titles and content survive folder switches after page refresh
 - [x] Favorites double-click no longer creates duplicate tabs — single-click debounced 200ms, cancelled on double-click
 - [x] Desktop markdown preview — added missing `list-style-type` (disc/decimal) for ul/ol, task list `none` override, aligned code block backgrounds and search highlight styling to match web
+- [x] Desktop meeting recording fix — ribbon trigger now directly calls `handleMeetingRecord()` instead of relying on prop round-trip for `useMeeting` flag
 
 ## Extension Ideas (Future)
 

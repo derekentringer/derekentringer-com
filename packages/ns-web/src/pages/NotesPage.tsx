@@ -425,6 +425,10 @@ export function NotesPage() {
           filtered = filtered.filter((n) => !n.folderId);
         }
         setNotes(filtered);
+        // Cache all loaded notes for tab persistence across folder switches
+        for (const note of filtered) {
+          tabNoteCacheRef.current.set(note.id, note);
+        }
       } catch {
         showError("Failed to load notes");
       } finally {
