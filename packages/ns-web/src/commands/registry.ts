@@ -32,9 +32,8 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   { id: "drawer:toc", label: "Toggle Table of Contents", category: "Drawer", scope: "global", defaultBinding: { key: "Mod-Alt-t" } },
 
   // Tab Navigation
-  { id: "tab:close", label: "Close Tab", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-w" }, desktopOnly: true },
-  { id: "tab:prev", label: "Previous Tab", category: "Navigation", scope: "global", defaultBinding: null },
-  { id: "tab:next", label: "Next Tab", category: "Navigation", scope: "global", defaultBinding: null },
+  { id: "tab:prev", label: "Previous Tab", category: "Navigation", scope: "global", defaultBinding: { key: "Alt-," } },
+  { id: "tab:next", label: "Next Tab", category: "Navigation", scope: "global", defaultBinding: { key: "Alt-." } },
 
   // Editor Formatting
   { id: "editor:bold", label: "Bold", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-b" } },
