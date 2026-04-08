@@ -2549,8 +2549,8 @@ export function NotesPage() {
     <div
       className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out shrink-0"
       style={{
-        maxHeight: recordingState && recordingState.state === "recording" ? "36px" : "0px",
-        opacity: recordingState && recordingState.state === "recording" ? 1 : 0,
+        maxHeight: recordingState && (recordingState.state === "recording" || recordingState.state === "processing") ? "36px" : "0px",
+        opacity: recordingState && (recordingState.state === "recording" || recordingState.state === "processing") ? 1 : 0,
       }}
     >
       {recordingState && (

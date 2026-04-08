@@ -187,7 +187,13 @@
 
 ### Audio Recording Ribbon Refactor
 
-- [x] Audio Recording Ribbon — Replaced single mic icon with four dedicated recording buttons: Meeting (two-people icon), Lecture (graduation cap), Voice Memo (mic), Verbatim (document). Each button triggers recording with the appropriate mode. AudioRecorder runs headless (no visible UI) and is triggered programmatically via `triggerMode`/`triggerKey` props. Recording icons hide during active recording (RecordingBar takes over). Platform-specific hover hints: web shows "(Ambient)" for meeting/lecture, desktop shows "(System)" indicating system audio capture. Stop button styled with destructive red (dim default, full on hover). All changes mirrored to ns-desktop with native meeting mode auto-selection for meeting/lecture modes.
+- [x] Audio Recording Ribbon — Replaced single mic icon with four dedicated recording buttons: Meeting (two-people icon), Lecture (graduation cap), Voice Memo (mic), Verbatim (document). Each button triggers recording with the appropriate mode. AudioRecorder runs headless (no visible UI) and is triggered programmatically via `triggerMode`/`triggerKey` props. Recording icons hide during active recording (RecordingBar takes over). Platform-specific hover hints: web shows "(Ambient)" for meeting/lecture, desktop shows "(System)" indicating system audio capture. Stop button styled with destructive red (dim default, full on hover). Processing state shows animated step-by-step status in the recording bar (Preparing → Whisper → Transcribing → Structuring → Tags → Saving). All changes mirrored to ns-desktop with native meeting mode auto-selection for meeting/lecture modes.
+
+### Bug Fixes
+
+- [x] Tabs persist across folder navigation — `tabsForDisplay` no longer filters out tabs from other folders
+- [x] Favorites double-click no longer creates duplicate tabs — single-click debounced 200ms, cancelled on double-click
+- [x] Desktop markdown preview — added missing `list-style-type` (disc/decimal) for ul/ol, task list `none` override, aligned code block backgrounds and search highlight styling to match web
 
 ## Extension Ideas (Future)
 

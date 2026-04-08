@@ -240,13 +240,13 @@
 .markdown-preview code {
   font-family: "Roboto Mono", monospace;
   font-size: 0.9em;
-  background-color: var(--color-input);
+  background-color: var(--color-subtle);
   padding: 0.15em 0.4em;
   border-radius: 3px;
 }
 
 .markdown-preview pre {
-  background-color: var(--color-input);
+  background-color: var(--color-subtle);
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 12px 16px;
@@ -392,14 +392,25 @@
   font-style: italic;
 }
 
-.markdown-preview ul,
+.markdown-preview ul {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+  list-style-type: disc;
+}
+
 .markdown-preview ol {
   padding-left: 1.5em;
   margin: 0.5em 0;
+  list-style-type: decimal;
 }
 
 .markdown-preview li {
   margin: 0.25em 0;
+}
+
+.markdown-preview ul.contains-task-list {
+  list-style-type: none;
+  padding-left: 0;
 }
 
 .markdown-preview table {
@@ -481,8 +492,8 @@
 
 /* Search highlight */
 .search-highlight mark {
-  background-color: var(--color-primary);
-  color: var(--color-primary-contrast, #000);
+  background-color: rgba(212, 225, 87, 0.3);
+  color: var(--color-primary);
   border-radius: 2px;
   padding: 0 1px;
 }

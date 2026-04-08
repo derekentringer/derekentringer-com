@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import type { AudioMode } from "../hooks/useAiSettings.ts";
 import { AudioWaveform } from "./AudioWaveform.tsx";
 
@@ -23,17 +24,41 @@ function formatTime(ms: number): string {
   return `${min}:${sec.toString().padStart(2, "0")}`;
 }
 
+const PROCESSING_STEPS = [
+  "Preparing audio for transcription...",
+  "Sending audio to Whisper AI...",
+  "Transcribing speech to text...",
+  "Structuring transcript with AI...",
+  "Generating title and tags...",
+  "Saving note...",
+];
+
+function ProcessingStatus() {
+  const [stepIndex, setStepIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setStepIndex((i) => Math.min(i + 1, PROCESSING_STEPS.length - 1));
+    }, 3000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="h-9 px-4 bg-sidebar border-b border-border flex items-center gap-3 shrink-0">
+      <svg className="animate-spin h-4 w-4 text-primary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+        <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+      </svg>
+      <span key={stepIndex} className="text-xs text-muted-foreground animate-fade-in">
+        {PROCESSING_STEPS[stepIndex]}
+      </span>
+    </div>
+  );
+}
+
 export function RecordingBar({ state, elapsed, mode, stream, onStop }: RecordingBarProps) {
   if (state === "processing") {
-    return (
-      <div className="h-9 px-4 bg-sidebar border-b border-border flex items-center gap-3 shrink-0">
-        <svg className="animate-spin h-4 w-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-          <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-        </svg>
-        <span className="text-xs text-muted-foreground">Processing transcription...</span>
-      </div>
-    );
+    return <ProcessingStatus />;
   }
 
   return (
@@ -49,8 +74,6 @@ export function RecordingBar({ state, elapsed, mode, stream, onStop }: Recording
 
       {/* Mode label */}
       <span className="text-[10px] text-muted-foreground shrink-0">{MODE_LABELS[mode]}</span>
-
-      <div className="flex-1" />
 
       {/* Stop button */}
       <button
