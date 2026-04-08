@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use keyring::Entry;
 use tauri::{Emitter, Manager, RunEvent};
+use tauri::menu::{MenuBuilder, SubmenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg(target_os = "macos")]
@@ -178,14 +179,143 @@ fn force_legacy_scrollbars() {
     }
 }
 
+/// Update enabled state of menu items by ID
+#[tauri::command]
+fn set_menu_items_enabled(app: tauri::AppHandle, ids: Vec<String>, enabled: bool) {
+    for id in ids {
+        if let Some(item) = app.menu().and_then(|m| m.get(&id)) {
+            match item {
+                tauri::menu::MenuItemKind::MenuItem(mi) => { let _ = mi.set_enabled(enabled); },
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Menu item IDs that require an open note
+const NOTE_MENU_IDS: &[&str] = &["save", "export-md", "close-tab"];
+
+/// Menu item IDs that require editor focus
+const EDITOR_MENU_IDS: &[&str] = &["bold", "italic", "strikethrough", "inline-code", "heading"];
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+fn build_menu(app: &tauri::App) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn std::error::Error>> {
+    let handle = app.handle();
+
+    // --- File menu ---
+    let mut file_builder = SubmenuBuilder::new(handle, "File");
+    file_builder = file_builder
+        .item(&MenuItemBuilder::with_id("new-note", "New Note").accelerator("CmdOrCtrl+N").build(handle)?)
+        .item(&MenuItemBuilder::with_id("quick-switcher", "Quick Switcher").accelerator("CmdOrCtrl+O").build(handle)?)
+        .item(&MenuItemBuilder::with_id("close-tab", "Close Tab").accelerator("CmdOrCtrl+W").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("save", "Save").accelerator("CmdOrCtrl+S").build(handle)?)
+        .item(&MenuItemBuilder::with_id("export-md", "Export as Markdown...").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("import-files", "Import Files...").build(handle)?)
+        .item(&MenuItemBuilder::with_id("import-folder", "Import Folder...").build(handle)?);
+    // On Windows/Linux, add Settings to File menu (macOS has it in App menu)
+    #[cfg(not(target_os = "macos"))]
+    {
+        file_builder = file_builder
+            .separator()
+            .item(&MenuItemBuilder::with_id("settings", "Settings").accelerator("CmdOrCtrl+,").build(handle)?);
+    }
+    let file_menu = file_builder.build()?;
+
+    // --- Edit menu ---
+    let edit_menu = SubmenuBuilder::new(handle, "Edit")
+        .item(&PredefinedMenuItem::undo(handle, None)?)
+        .item(&PredefinedMenuItem::redo(handle, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(handle, None)?)
+        .item(&PredefinedMenuItem::copy(handle, None)?)
+        .item(&PredefinedMenuItem::paste(handle, None)?)
+        .item(&PredefinedMenuItem::select_all(handle, None)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("find", "Find").accelerator("CmdOrCtrl+K").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("bold", "Bold").accelerator("CmdOrCtrl+B").build(handle)?)
+        .item(&MenuItemBuilder::with_id("italic", "Italic").accelerator("CmdOrCtrl+I").build(handle)?)
+        .item(&MenuItemBuilder::with_id("strikethrough", "Strikethrough").accelerator("CmdOrCtrl+Shift+X").build(handle)?)
+        .item(&MenuItemBuilder::with_id("inline-code", "Inline Code").accelerator("CmdOrCtrl+Shift+C").build(handle)?)
+        .item(&MenuItemBuilder::with_id("heading", "Cycle Heading").accelerator("CmdOrCtrl+Shift+H").build(handle)?)
+        .build()?;
+
+    // --- View menu ---
+    let view_menu = SubmenuBuilder::new(handle, "View")
+        .item(&MenuItemBuilder::with_id("view-editor", "Editor").build(handle)?)
+        .item(&MenuItemBuilder::with_id("view-split", "Split").build(handle)?)
+        .item(&MenuItemBuilder::with_id("view-live", "Live Preview").build(handle)?)
+        .item(&MenuItemBuilder::with_id("view-preview", "Preview").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("cycle-view", "Cycle View Mode").accelerator("CmdOrCtrl+E").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("toggle-sidebar", "Toggle Sidebar").accelerator("CmdOrCtrl+\\").build(handle)?)
+        .item(&MenuItemBuilder::with_id("toggle-notelist", "Toggle Note List").accelerator("CmdOrCtrl+Shift+\\").build(handle)?)
+        .item(&MenuItemBuilder::with_id("focus-mode", "Toggle Focus Mode").accelerator("CmdOrCtrl+Shift+D").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("command-palette", "Command Palette").accelerator("CmdOrCtrl+P").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("toggle-fullscreen", "Toggle Full Screen").accelerator("Ctrl+CmdOrCtrl+F").build(handle)?)
+        .build()?;
+
+    // --- Window menu ---
+    let window_menu = SubmenuBuilder::new(handle, "Window")
+        .item(&PredefinedMenuItem::minimize(handle, None)?)
+        .item(&PredefinedMenuItem::maximize(handle, None)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("prev-tab", "Previous Tab").accelerator("CmdOrCtrl+Shift+[").build(handle)?)
+        .item(&MenuItemBuilder::with_id("next-tab", "Next Tab").accelerator("CmdOrCtrl+Shift+]").build(handle)?)
+        .build()?;
+
+    // --- Help menu ---
+    let mut help_builder = SubmenuBuilder::new(handle, "Help");
+    help_builder = help_builder
+        .item(&MenuItemBuilder::with_id("keyboard-shortcuts", "Keyboard Shortcuts").build(handle)?);
+    // On Windows/Linux, add About to Help menu (macOS has it in App menu)
+    #[cfg(not(target_os = "macos"))]
+    {
+        help_builder = help_builder
+            .separator()
+            .item(&MenuItemBuilder::with_id("about", "About NoteSync").build(handle)?);
+    }
+    let help_menu = help_builder.build()?;
+
+    // --- macOS App menu ---
+    #[cfg(target_os = "macos")]
+    let app_menu = SubmenuBuilder::new(handle, "NoteSync")
+        .item(&MenuItemBuilder::with_id("about", "About NoteSync").build(handle)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("settings", "Settings...").accelerator("CmdOrCtrl+,").build(handle)?)
+        .separator()
+        .item(&PredefinedMenuItem::hide(handle, None)?)
+        .item(&PredefinedMenuItem::hide_others(handle, None)?)
+        .item(&PredefinedMenuItem::show_all(handle, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::quit(handle, None)?)
+        .build()?;
+
+    #[cfg(target_os = "macos")]
+    let menu = MenuBuilder::new(handle)
+        .items(&[&app_menu, &file_menu, &edit_menu, &view_menu, &window_menu, &help_menu])
+        .build()?;
+
+    #[cfg(not(target_os = "macos"))]
+    let menu = MenuBuilder::new(handle)
+        .items(&[&file_menu, &edit_menu, &view_menu, &window_menu, &help_menu])
+        .build()?;
+
+    Ok(menu)
+}
+
 pub fn run() {
     #[cfg(target_os = "macos")]
     force_legacy_scrollbars();
 
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
-        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording])
+        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, set_menu_items_enabled])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:notesync.db", get_migrations())
@@ -195,6 +325,26 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Build and set custom menu
+            if let Ok(menu) = build_menu(app) {
+                app.set_menu(menu)?;
+            }
+
+            // Disable editor and note menu items until a note is open / editor focused
+            let handle = app.handle().clone();
+            for id in NOTE_MENU_IDS.iter().chain(EDITOR_MENU_IDS.iter()) {
+                if let Some(item) = handle.menu().and_then(|m| m.get(*id)) {
+                    if let tauri::menu::MenuItemKind::MenuItem(mi) = item {
+                        let _ = mi.set_enabled(false);
+                    }
+                }
+            }
+
+            // Handle menu events — emit to frontend for command registry dispatch
+            app.on_menu_event(move |app_handle, event| {
+                let _ = app_handle.emit("menu-event", event.id().0.as_str());
+            });
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

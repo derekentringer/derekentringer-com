@@ -1,7 +1,13 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { CommandRegistry } from "./registry.ts";
+import { useMenuEvents } from "./useMenuEvents.ts";
 
 const CommandCtx = createContext<CommandRegistry | null>(null);
+
+function MenuEventDispatcher({ children }: { children: ReactNode }) {
+  useMenuEvents();
+  return <>{children}</>;
+}
 
 export function CommandProvider({ children }: { children: ReactNode }) {
   const registryRef = useRef(new CommandRegistry());
@@ -26,7 +32,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
 
   return (
     <CommandCtx.Provider value={registryRef.current}>
-      {children}
+      <MenuEventDispatcher>{children}</MenuEventDispatcher>
     </CommandCtx.Provider>
   );
 }

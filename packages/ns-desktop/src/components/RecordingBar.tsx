@@ -71,7 +71,7 @@ export function RecordingBar({ state, elapsed, mode, stream, audioLevel, onStop 
       <span className="text-xs text-foreground tabular-nums shrink-0">{formatTime(elapsed)}</span>
 
       {/* Waveform */}
-      <AudioWaveform stream={stream} isRecording={true} width={80} height={20} />
+      <AudioWaveform stream={stream} isRecording={true} audioLevel={audioLevel} width={80} height={20} />
 
       {/* Mode label */}
       <span className="text-[10px] text-muted-foreground shrink-0">{MODE_LABELS[mode]}</span>

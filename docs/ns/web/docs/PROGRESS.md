@@ -195,6 +195,11 @@
 - [x] Favorites double-click no longer creates duplicate tabs — single-click debounced 200ms, cancelled on double-click
 - [x] Desktop markdown preview — added missing `list-style-type` (disc/decimal) for ul/ol, task list `none` override, aligned code block backgrounds and search highlight styling to match web
 - [x] Desktop meeting recording fix — ribbon trigger now directly calls `handleMeetingRecord()` instead of relying on prop round-trip for `useMeeting` flag
+- [x] Desktop meeting waveform fix — `audioLevel` prop now passed through RecordingBar to AudioWaveform for native RMS visualization
+
+### Native Desktop Menus
+
+- [x] Native macOS/Windows Menu Bar — Full menu bar with File (New Note, Quick Switcher, Close Tab, Save, Export, Import), Edit (Undo/Redo/Cut/Copy/Paste, Find, Bold/Italic/Strikethrough/Code/Heading), View (Editor/Split/Live/Preview, Cycle View, Toggle Sidebar/Note List/Focus Mode, Command Palette, Full Screen), Window (Minimize, Maximize, Previous/Next Tab), Help (Keyboard Shortcuts, About). macOS App menu with About, Settings, Hide/Quit. Platform-conditional placement (Settings in App menu on Mac, File on Windows). Contextual menu items: formatting grayed out when editor not focused, note items grayed out when no note open. Menu events dispatched to command registry via Tauri events. Editor formatting commands wired through editorRef.
 
 ## Extension Ideas (Future)
 
