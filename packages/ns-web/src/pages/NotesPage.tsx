@@ -58,7 +58,7 @@ import { TagBrowser, type TagLayout, type TagSort } from "../components/TagBrows
 import { TagInput } from "../components/TagInput.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
-import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
+import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
 import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
@@ -257,6 +257,7 @@ export function NotesPage() {
 
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
+  const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
   const [showGame, setShowGame] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -1985,16 +1986,9 @@ export function NotesPage() {
       {/* Ribbon — always visible */}
       <Ribbon
         onNewNote={handleCreate}
-        audioSlot={settings.masterAiEnabled && settings.audioNotes ? (
-          <AudioRecorder
-            defaultMode={settings.audioMode}
-            folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
-            onNoteCreated={handleAudioNoteCreated}
-            onError={showError}
-            onRecordingStateChange={setRecordingState}
-            onModeChange={(m) => updateAiSetting("audioMode", m)}
-          />
-        ) : undefined}
+        showAudio={settings.masterAiEnabled && settings.audioNotes}
+        onRecord={(mode) => setRecordTrigger({ mode, key: Date.now() })}
+        recorderState={recordingState?.state ?? "idle"}
         syncStatus={syncStatus}
         syncError={syncError}
         onSync={handleManualSync}
@@ -2995,6 +2989,21 @@ export function NotesPage() {
 
     {/* SyncSwarm mini game */}
     {showGame && <SyncSwarmGame onExit={() => setShowGame(false)} />}
+
+    {/* Audio Recorder (hidden — triggered by ribbon buttons) */}
+    {settings.masterAiEnabled && settings.audioNotes && (
+      <AudioRecorder
+        headless
+        defaultMode={settings.audioMode}
+        folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+        onNoteCreated={handleAudioNoteCreated}
+        onError={showError}
+        onRecordingStateChange={setRecordingState}
+        onModeChange={(m) => updateAiSetting("audioMode", m)}
+        triggerMode={recordTrigger?.mode}
+        triggerKey={recordTrigger?.key}
+      />
+    )}
 
     {/* Command Palette */}
     <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

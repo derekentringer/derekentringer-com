@@ -135,7 +135,7 @@ function SortableNoteItem({
         {note.headline ? (
           <SearchSnippet headline={note.headline} />
         ) : snippet ? (
-          <p className="text-xs text-muted-foreground truncate mt-0.5">{snippet}</p>
+          <p className="text-xs text-foreground/40 truncate mt-0.5">{snippet}</p>
         ) : null}
         {/* Metadata row */}
         <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">

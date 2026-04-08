@@ -56,7 +56,7 @@ export function RecordingBar({ state, elapsed, mode, stream, audioLevel, onStop 
       {/* Stop button */}
       <button
         onClick={onStop}
-        className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-border text-xs text-muted-foreground hover:text-foreground hover:border-foreground transition-colors cursor-pointer"
+        className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-destructive/40 text-xs text-destructive/60 hover:text-destructive hover:border-destructive transition-colors cursor-pointer"
         title="Stop recording"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none">

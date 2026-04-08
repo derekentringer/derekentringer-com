@@ -44,9 +44,14 @@ interface AudioRecorderProps {
   onError: (message: string) => void;
   onRecordingStateChange?: (recordingState: AudioRecordingState | null) => void;
   onModeChange?: (mode: AudioMode) => void;
+  /** When set, auto-starts recording with this mode. Change `triggerKey` to re-trigger. */
+  triggerMode?: AudioMode;
+  triggerKey?: number;
+  /** When true, renders no UI — only responds to triggerMode/triggerKey */
+  headless?: boolean;
 }
 
-export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, onRecordingStateChange, onModeChange }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -79,6 +84,19 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       return () => document.removeEventListener("mousedown", handleClick);
     }
   }, [showModes]);
+
+  // Auto-start recording when triggered from ribbon
+  useEffect(() => {
+    if (triggerKey && triggerMode && state === "idle") {
+      setMode(triggerMode);
+      onModeChange?.(triggerMode);
+      // Defer to next tick so mode state is set
+      requestAnimationFrame(() => handleRecordRef.current?.());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerKey]);
+
+  const handleRecordRef = useRef<(() => void) | null>(null);
 
   const cleanup = useCallback(() => {
     if (timerRef.current) {
@@ -178,6 +196,7 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
 
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPressRef = useRef(false);
+  handleRecordRef.current = handleRecord;
 
   function handlePointerDown() {
     if (state !== "idle") return;
@@ -208,6 +227,8 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       longPressTimerRef.current = null;
     }
   }
+
+  if (headless) return null;
 
   // Idle state — click to record, long-press for mode selector
   return (

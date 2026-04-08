@@ -86,7 +86,7 @@ import { DiffView } from "../components/DiffView.tsx";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSettings.ts";
-import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
+import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
 import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
@@ -297,6 +297,7 @@ export function NotesPage() {
 
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
+  const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
   const [showGame, setShowGame] = useState(false);
 
   // AI state
@@ -2569,18 +2570,9 @@ export function NotesPage() {
       {/* Ribbon — always visible */}
       <Ribbon
         onNewNote={handleCreate}
-        audioSlot={aiSettings.masterAiEnabled && aiSettings.audioNotes ? (
-          <AudioRecorder
-            defaultMode={aiSettings.audioMode}
-            folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
-            recordingSource={aiSettings.recordingSource}
-            onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
-            onNoteCreated={handleAudioNoteCreated}
-            onError={showError}
-            onRecordingStateChange={setRecordingState}
-            onModeChange={(m) => updateAiSetting("audioMode", m)}
-          />
-        ) : undefined}
+        showAudio={aiSettings.masterAiEnabled && aiSettings.audioNotes}
+        onRecord={(mode) => setRecordTrigger({ mode, key: Date.now() })}
+        recorderState={recordingState?.state ?? "idle"}
         syncStatus={syncStatusState}
         syncError={syncErrorState}
         onSync={manualSync}
@@ -3685,6 +3677,23 @@ export function NotesPage() {
 
     {/* SyncSwarm mini game */}
     {showGame && <SyncSwarmGame onExit={() => setShowGame(false)} />}
+
+    {/* Audio Recorder (hidden — triggered by ribbon buttons) */}
+    {aiSettings.masterAiEnabled && aiSettings.audioNotes && (
+      <AudioRecorder
+        headless
+        defaultMode={aiSettings.audioMode}
+        folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+        recordingSource={aiSettings.recordingSource}
+        onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
+        onNoteCreated={handleAudioNoteCreated}
+        onError={showError}
+        onRecordingStateChange={setRecordingState}
+        onModeChange={(m) => updateAiSetting("audioMode", m)}
+        triggerMode={recordTrigger?.mode}
+        triggerKey={recordTrigger?.key}
+      />
+    )}
 
     {/* Command Palette */}
     <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

@@ -55,9 +55,12 @@ interface AudioRecorderProps {
   onError: (message: string) => void;
   onRecordingStateChange?: (recordingState: AudioRecordingState | null) => void;
   onModeChange?: (mode: AudioMode) => void;
+  triggerMode?: AudioMode;
+  triggerKey?: number;
+  headless?: boolean;
 }
 
-export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecordingSourceChange, onNoteCreated, onError, onRecordingStateChange, onModeChange }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecordingSourceChange, onNoteCreated, onError, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -244,6 +247,24 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     }
   }
 
+  // Auto-start recording when triggered from ribbon
+  const handleRecordRef = useRef<(() => void) | null>(null);
+  handleRecordRef.current = handleRecord;
+  useEffect(() => {
+    if (triggerKey && triggerMode && state === "idle") {
+      setMode(triggerMode);
+      onModeChange?.(triggerMode);
+      // For meeting/lecture, use system audio if available
+      if ((triggerMode === "meeting" || triggerMode === "lecture") && meetingSupported) {
+        onRecordingSourceChange("meeting");
+      } else {
+        onRecordingSourceChange("microphone");
+      }
+      requestAnimationFrame(() => handleRecordRef.current?.());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerKey]);
+
   const handleStop = useCallback(() => {
     if (isMeetingRef.current) {
       handleMeetingStop();
@@ -313,6 +334,8 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     const sec = totalSec % 60;
     return `${min}:${sec.toString().padStart(2, "0")}`;
   }
+
+  if (headless) return null;
 
   // Ribbon-style UI — click to record, long-press for options
   return (

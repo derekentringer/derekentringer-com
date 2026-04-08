@@ -183,7 +183,11 @@
 
 ### UI Polish
 
-- [x] UI Polish — Sliding tab indicators (sidebar tabs, view mode tabs, note tabs with dnd-kit drag awareness), new note "+" button in tab bar (sticky when overflowing), tab bar auto-scroll on new tab, fade-in animations (note list, search results, editor content, drawer tabs, dashboard, toolbar buttons), ConfirmDialog Enter/Escape keyboard support, ribbon rocket icon reordered below settings, toolbar line number toggle repositioned after view mode tabs, tab indicator font-loading resilience (double-RAF + document.fonts.ready), no-animation on untitled flash fix (tabs hidden during initial load)
+- [x] UI Polish — Sliding tab indicators (sidebar tabs, view mode tabs, note tabs with dnd-kit drag awareness), new note "+" button in tab bar (sticky when overflowing), tab bar auto-scroll on new tab, fade-in animations (note list, search results, editor content, drawer tabs, dashboard, toolbar buttons), ConfirmDialog Enter/Escape keyboard support, ribbon rocket icon reordered below settings, toolbar line number toggle repositioned after view mode tabs, tab indicator font-loading resilience (double-RAF + document.fonts.ready), no-animation on untitled flash fix (tabs hidden during initial load), note snippet text brightened (text-foreground/40)
+
+### Audio Recording Ribbon Refactor
+
+- [x] Audio Recording Ribbon — Replaced single mic icon with four dedicated recording buttons: Meeting (two-people icon), Lecture (graduation cap), Voice Memo (mic), Verbatim (document). Each button triggers recording with the appropriate mode. AudioRecorder runs headless (no visible UI) and is triggered programmatically via `triggerMode`/`triggerKey` props. Recording icons hide during active recording (RecordingBar takes over). Platform-specific hover hints: web shows "(Ambient)" for meeting/lecture, desktop shows "(System)" indicating system audio capture. Stop button styled with destructive red (dim default, full on hover). All changes mirrored to ns-desktop with native meeting mode auto-selection for meeting/lecture modes.
 
 ## Extension Ideas (Future)
 

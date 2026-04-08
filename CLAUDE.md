@@ -156,9 +156,9 @@ packages/
 - `src/pages/LoginPage.tsx` — Login form with NoteSync branding and logo
 - `src/pages/NotesPage.tsx` — Notes view with sidebar + editor shell
 - `src/components/SidebarTabs.tsx` — Tabbed sidebar (Explorer, Search, Favorites, Tags)
-- `src/components/Ribbon.tsx` — Vertical utility strip (new note, audio record, settings, game)
+- `src/components/Ribbon.tsx` — Vertical utility strip (new note, 4 audio recording buttons, settings, game, sync)
 - `src/components/NoteListPanel.tsx` — Separate resizable note list panel
-- `src/components/AudioRecorder.tsx` — Ribbon-integrated audio recording with mode selector
+- `src/components/AudioRecorder.tsx` — Headless audio recording with `triggerMode`/`triggerKey` props; supports mic (web) and system+mic (desktop meeting mode)
 - `src/components/RecordingBar.tsx` — Floating top bar during recording with waveform
 - `src/components/AudioWaveform.tsx` — Real-time audio visualization via Web Audio API
 - `src/components/SyncSwarmGame.tsx` — Hidden Galaga-style ASCII space shooter
