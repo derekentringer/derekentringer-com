@@ -1,3 +1,5 @@
+import { useRef, useEffect, useState } from "react";
+
 export type ViewMode = "editor" | "live" | "split" | "preview";
 
 interface EditorToolbarProps {
@@ -50,41 +52,27 @@ export function EditorToolbar({
 }: EditorToolbarProps) {
   return (
     <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border shrink-0">
-      {/* Line numbers toggle — hidden in preview and live modes */}
-      {viewMode !== "preview" && viewMode !== "live" && (
-        <button
-          onClick={onToggleLineNumbers}
-          className={`px-2 py-0.5 text-xs rounded transition-colors cursor-pointer ${
-            showLineNumbers
-              ? "bg-foreground/10 text-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-accent"
-          }`}
-          title="Toggle line numbers"
-        >
-          #
-        </button>
-      )}
-
       {/* View mode toggle */}
-      <div className="flex rounded-md border border-border overflow-hidden">
-        {modes.map((mode) => (
-          <button
-            key={mode.value}
-            onClick={() => onViewModeChange(mode.value)}
-            className={`px-2.5 py-0.5 text-xs transition-colors cursor-pointer ${
-              viewMode === mode.value
-                ? "bg-foreground/10 text-foreground font-medium"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent"
-            }`}
-          >
-            {mode.label}
-          </button>
-        ))}
-      </div>
+      <ViewModeTabs viewMode={viewMode} onViewModeChange={onViewModeChange} />
 
       {/* Formatting buttons — only when editor is visible */}
       {viewMode !== "preview" && (
-        <>
+        <div key={viewMode === "live" ? "live" : "edit"} className="flex items-center gap-2 animate-fade-in">
+          {/* Line numbers toggle — hidden in live mode (no line numbers) */}
+          {viewMode !== "live" && (
+            <button
+              onClick={onToggleLineNumbers}
+              className={`px-2 py-0.5 text-xs rounded transition-colors cursor-pointer ${
+                showLineNumbers
+                  ? "bg-foreground/10 text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
+              title="Toggle line numbers"
+            >
+              #
+            </button>
+          )}
+
           <div className="w-px h-4 bg-border mx-1" />
           <button
             onClick={onBold}
@@ -210,8 +198,46 @@ export function EditorToolbar({
               <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" />
             </svg>
           </button>
-        </>
+        </div>
       )}
+    </div>
+  );
+}
+
+function ViewModeTabs({ viewMode, onViewModeChange }: { viewMode: ViewMode; onViewModeChange: (mode: ViewMode) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState({ left: 0, width: 0 });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const idx = modes.findIndex((m) => m.value === viewMode);
+    const btn = container.children[idx] as HTMLElement | undefined;
+    if (btn) {
+      setIndicator({ left: btn.offsetLeft, width: btn.offsetWidth });
+    }
+  }, [viewMode]);
+
+  return (
+    <div ref={containerRef} className="relative flex rounded-md border border-border overflow-hidden">
+      {modes.map((mode) => (
+        <button
+          key={mode.value}
+          onClick={() => onViewModeChange(mode.value)}
+          className={`relative z-10 px-2.5 py-0.5 text-xs transition-colors cursor-pointer ${
+            viewMode === mode.value
+              ? "text-foreground font-medium"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {mode.label}
+        </button>
+      ))}
+      {/* Sliding highlight */}
+      <div
+        className="absolute top-0 bottom-0 bg-foreground/10 transition-all duration-200 ease-out"
+        style={{ left: indicator.left, width: indicator.width }}
+      />
     </div>
   );
 }

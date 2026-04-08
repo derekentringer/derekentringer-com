@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsPage } from "../pages/SettingsPage.tsx";
+import { CommandProvider } from "../commands/index.ts";
 import { useEditorSettings } from "../hooks/useEditorSettings.ts";
 import { useAiSettings } from "../hooks/useAiSettings.ts";
 
@@ -44,15 +45,17 @@ function SettingsPageWrapper(props: {
   const { settings, updateSetting } = useEditorSettings();
   const { settings: aiSettings, updateSetting: updateAiSetting } = useAiSettings();
   return (
-    <SettingsPage
-      onBack={props.onBack}
-      onChangePassword={props.onChangePassword}
-      onTrashRetentionChange={props.onTrashRetentionChange}
-      editorSettings={settings}
-      updateEditorSetting={updateSetting}
-      aiSettings={aiSettings}
-      updateAiSetting={updateAiSetting}
-    />
+    <CommandProvider>
+      <SettingsPage
+        onBack={props.onBack}
+        onChangePassword={props.onChangePassword}
+        onTrashRetentionChange={props.onTrashRetentionChange}
+        editorSettings={settings}
+        updateEditorSetting={updateSetting}
+        aiSettings={aiSettings}
+        updateAiSetting={updateAiSetting}
+      />
+    </CommandProvider>
   );
 }
 
@@ -321,12 +324,13 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
   });
 
-  it("displays all shortcut descriptions", () => {
+  it("displays all shortcut descriptions from command registry", () => {
     renderSettingsPage();
-    expect(screen.getByText("Save note")).toBeInTheDocument();
+    expect(screen.getByText("Save Note")).toBeInTheDocument();
     expect(screen.getByText("Bold")).toBeInTheDocument();
     expect(screen.getByText("Italic")).toBeInTheDocument();
-    expect(screen.getByText("Focus search")).toBeInTheDocument();
+    expect(screen.getByText("Focus Search")).toBeInTheDocument();
+    expect(screen.getByText("Command Palette")).toBeInTheDocument();
   });
 
   // --- Navigation ---
@@ -403,20 +407,19 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
   });
 
-  it("displays AI Rewrite keyboard shortcuts", () => {
+  it("displays AI Rewrite keyboard shortcut", () => {
     renderSettingsPage();
-    const rewriteEntries = screen.getAllByText("AI Rewrite (with selection)");
-    expect(rewriteEntries.length).toBe(2);
+    expect(screen.getByText("AI Rewrite")).toBeInTheDocument();
   });
 
-  it("displays dismiss AI completion / rewrite menu shortcut", () => {
+  it("displays continue writing shortcut", () => {
     renderSettingsPage();
-    expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
+    expect(screen.getByText("Continue Writing")).toBeInTheDocument();
   });
 
-  it("displays continue writing / suggest structure shortcut", () => {
+  it("displays toggle focus mode shortcut", () => {
     renderSettingsPage();
-    expect(screen.getByText("Continue writing / suggest structure")).toBeInTheDocument();
+    expect(screen.getByText("Toggle Focus Mode")).toBeInTheDocument();
   });
 
   it("renders Audio notes toggle", () => {

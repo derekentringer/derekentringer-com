@@ -532,6 +532,41 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
                 return true;
               },
             },
+            {
+              key: "Mod-Shift-x",
+              run: (v) => {
+                wrapSelection(v, "~~");
+                return true;
+              },
+            },
+            {
+              key: "Mod-Shift-c",
+              run: (v) => {
+                wrapSelection(v, "`");
+                return true;
+              },
+            },
+            {
+              key: "Mod-Shift-h",
+              run: (v) => {
+                cycleHeadingLevel(v);
+                return true;
+              },
+            },
+            {
+              key: "Mod-Shift-k",
+              run: (v) => {
+                insertWikiLinkTemplate(v);
+                return true;
+              },
+            },
+            {
+              key: "Mod-Enter",
+              run: (v) => {
+                insertLinePrefix(v, "- [ ] ");
+                return true;
+              },
+            },
           ]),
           placeholder(placeholderText),
           EditorView.updateListener.of((update) => {

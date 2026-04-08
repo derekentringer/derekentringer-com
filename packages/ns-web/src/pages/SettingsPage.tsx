@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.tsx";
+import { useRegistry, formatShortcut } from "../commands/index.ts";
 import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
 import { useEditorSettings, ACCENT_PRESETS, type ThemeMode, type ViewModeDefault, type TabSizeOption, type CursorStyle, type AccentColorPreset } from "../hooks/useEditorSettings.ts";
 
@@ -133,18 +134,8 @@ const AUDIO_MODE_OPTIONS: { value: AudioMode; label: string; info: string }[] = 
   { value: "verbatim", label: "Verbatim", info: "Minimal processing — adds punctuation and paragraphs but keeps your exact words." },
 ];
 
-const KEYBOARD_SHORTCUTS: { shortcut: string; macShortcut: string; description: string }[] = [
-  { shortcut: "Ctrl + S", macShortcut: "Cmd + S", description: "Save note" },
-  { shortcut: "Ctrl + B", macShortcut: "Cmd + B", description: "Bold" },
-  { shortcut: "Ctrl + I", macShortcut: "Cmd + I", description: "Italic" },
-  { shortcut: "Ctrl + K", macShortcut: "Cmd + K", description: "Focus search" },
-  { shortcut: "Ctrl + Shift + R", macShortcut: "Cmd + Shift + R", description: "AI Rewrite (with selection)" },
-  { shortcut: "Right-click", macShortcut: "Right-click", description: "AI Rewrite (with selection)" },
-  { shortcut: "Ctrl + Shift + Space", macShortcut: "Cmd + Shift + Space", description: "Continue writing / suggest structure" },
-  { shortcut: "Tab", macShortcut: "Tab", description: "Accept AI completion" },
-  { shortcut: "Escape", macShortcut: "Escape", description: "Dismiss AI completion / rewrite menu" },
-  { shortcut: "Ctrl + Shift + D", macShortcut: "Cmd + Shift + D", description: "Toggle focus mode (hide panels)" },
-];
+// Keyboard shortcuts are now driven by the command registry.
+// Commands with no defaultBinding (palette-only) are excluded from display.
 
 const AUTO_SAVE_OPTIONS: { value: number; label: string }[] = [
   { value: 500, label: "500ms" },
@@ -327,6 +318,12 @@ export function SettingsPage() {
     document.documentElement.style.setProperty("--color-ring", isLight ? colors.light : colors.dark);
     document.documentElement.style.setProperty("--color-primary-contrast", preset === "black" ? "#ffffff" : "#000000");
   }
+
+  const registry = useRegistry();
+  const shortcutCommands = useMemo(
+    () => registry.getAllCommands().filter((c) => c.defaultBinding != null),
+    [registry],
+  );
 
   const isMac = useMemo(
     () => typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform),
@@ -887,11 +884,11 @@ export function SettingsPage() {
           {/* Keyboard Shortcuts */}
           <SectionCard title="Keyboard Shortcuts">
             <div className="space-y-2">
-              {KEYBOARD_SHORTCUTS.map(({ shortcut, macShortcut, description }) => (
-                <div key={`${shortcut}-${description}`} className="flex items-center justify-between py-1">
-                  <span className="text-sm text-foreground">{description}</span>
+              {shortcutCommands.map((cmd) => (
+                <div key={cmd.id} className="flex items-center justify-between py-1">
+                  <span className="text-sm text-foreground">{cmd.label}</span>
                   <kbd className="px-2 py-0.5 rounded bg-background border border-border text-xs text-muted-foreground font-mono whitespace-nowrap ml-3">
-                    {isMac ? macShortcut : shortcut}
+                    {formatShortcut(cmd.defaultBinding)}
                   </kbd>
                 </div>
               ))}

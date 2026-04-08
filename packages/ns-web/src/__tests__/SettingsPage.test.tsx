@@ -4,6 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { SettingsPage } from "../pages/SettingsPage.tsx";
+import { CommandProvider } from "../commands/index.ts";
 
 vi.mock("../context/AuthContext.tsx", () => ({
   useAuth: () => ({ isAuthenticated: true, isLoading: false }),
@@ -42,9 +43,11 @@ beforeEach(() => {
 
 function renderSettingsPage() {
   return render(
-    <MemoryRouter>
-      <SettingsPage />
-    </MemoryRouter>,
+    <CommandProvider>
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>
+    </CommandProvider>,
   );
 }
 
@@ -350,15 +353,15 @@ describe("SettingsPage", () => {
     expect(mockSetTrashRetention).toHaveBeenCalledWith(14);
   });
 
-  it("displays all shortcut descriptions", () => {
+  it("displays all shortcut descriptions from command registry", () => {
     renderSettingsPage();
-    expect(screen.getByText("Save note")).toBeInTheDocument();
+    expect(screen.getByText("Save Note")).toBeInTheDocument();
     expect(screen.getByText("Bold")).toBeInTheDocument();
     expect(screen.getByText("Italic")).toBeInTheDocument();
-    expect(screen.getAllByText("AI Rewrite (with selection)")).toHaveLength(2);
-    expect(screen.getByText("Continue writing / suggest structure")).toBeInTheDocument();
-    expect(screen.getByText("Accept AI completion")).toBeInTheDocument();
-    expect(screen.getByText("Dismiss AI completion / rewrite menu")).toBeInTheDocument();
+    expect(screen.getByText("AI Rewrite")).toBeInTheDocument();
+    expect(screen.getByText("Continue Writing")).toBeInTheDocument();
+    expect(screen.getByText("Toggle Focus Mode")).toBeInTheDocument();
+    expect(screen.getByText("Command Palette")).toBeInTheDocument();
   });
 
   // --- Version History ---

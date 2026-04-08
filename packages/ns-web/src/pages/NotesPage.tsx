@@ -13,6 +13,7 @@ import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import type { Note, NoteVersion, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
+import { useCommands, CommandPalette, QuickSwitcher } from "../commands/index.ts";
 import {
   fetchNotes,
   createNote,
@@ -257,6 +258,8 @@ export function NotesPage() {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [showGame, setShowGame] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -298,6 +301,8 @@ export function NotesPage() {
   const [qaOpen, setQaOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const focusModeDrawerRef = useRef(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [noteListHidden, setNoteListHidden] = useState(false);
 
   // Responsive panel collapse
   const [collapseNoteList, setCollapseNoteList] = useState(false);
@@ -1510,37 +1515,69 @@ export function NotesPage() {
     }
   }
 
-  // Keyboard shortcuts: Cmd/Ctrl+S (save), Cmd/Ctrl+K (search), Cmd/Ctrl+Shift+D (focus mode)
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        handleSave();
+  // Register keyboard shortcuts with the command registry
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((prev) => {
+      if (!prev) {
+        focusModeDrawerRef.current = qaOpen;
+        if (qaOpen) setQaOpen(false);
+      } else {
+        if (focusModeDrawerRef.current) setQaOpen(true);
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setSidebarPanel("search");
-        // Allow the search panel to render before focusing
-        requestAnimationFrame(() => searchInputRef.current?.focus());
-      }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "d" || e.key === "D")) {
-        e.preventDefault();
-        setFocusMode((prev) => {
-          if (!prev) {
-            // Entering focus mode — capture drawer state and close it
-            focusModeDrawerRef.current = qaOpen;
-            if (qaOpen) setQaOpen(false);
-          } else {
-            // Exiting focus mode — restore drawer state
-            if (focusModeDrawerRef.current) setQaOpen(true);
-          }
-          return !prev;
-        });
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave, qaOpen]);
+      return !prev;
+    });
+  }, [qaOpen]);
+
+  const focusSearch = useCallback(() => {
+    setSidebarPanel("search");
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
+  const viewModes: ViewMode[] = ["editor", "split", "live", "preview"];
+  const cycleViewMode = useCallback(() => {
+    setViewMode((cur) => viewModes[(viewModes.indexOf(cur) + 1) % viewModes.length]);
+  }, []);
+
+  const cycleTab = useCallback((direction: -1 | 1) => {
+    if (openTabs.length <= 1) return;
+    const idx = selectedId ? openTabs.indexOf(selectedId) : 0;
+    const next = (idx + direction + openTabs.length) % openTabs.length;
+    const note = notes.find((n) => n.id === openTabs[next]);
+    if (note) openNoteAsTab(note);
+  }, [openTabs, selectedId, notes, openNoteAsTab]);
+
+  useCommands({
+    // Core
+    "palette:open": () => setPaletteOpen(true),
+    "switcher:open": () => setSwitcherOpen(true),
+
+    // Note
+    "note:save": () => { handleSave(); },
+    "note:new": () => { void handleCreate(); },
+
+    // View & Navigation
+    "view:cycle-mode": cycleViewMode,
+    "view:focus-mode": toggleFocusMode,
+    "nav:settings": () => { navigate("/settings"); },
+    "nav:search": focusSearch,
+
+    // Sidebar & Panels
+    "sidebar:toggle": () => setSidebarHidden((p) => !p),
+    "notelist:toggle": () => setNoteListHidden((p) => !p),
+    "sidebar:explorer": () => setSidebarPanel("explorer"),
+    "sidebar:search": () => setSidebarPanel("search"),
+    "sidebar:favorites": () => setSidebarPanel("favorites"),
+    "sidebar:tags": () => setSidebarPanel("tags"),
+
+    // Drawer
+    "drawer:assistant": () => handleDrawerTabClick("assistant"),
+    "drawer:history": () => handleDrawerTabClick("history"),
+    "drawer:toc": () => handleDrawerTabClick("toc"),
+
+    // Tab Navigation
+    "tab:prev": () => cycleTab(-1),
+    "tab:next": () => cycleTab(1),
+  });
 
   // Autosave: debounce after changes
   useEffect(() => {
@@ -1608,6 +1645,16 @@ export function NotesPage() {
     }
     return map;
   }, [noteTitles]);
+
+  // Quick Switcher note entries with folder names
+  const switcherNotes = useMemo(() => {
+    const folderMap = new Map(folders.map((f) => [f.id, f.name]));
+    return notes.map((n) => ({
+      id: n.id,
+      title: n.title || "Untitled",
+      folderName: n.folderId ? folderMap.get(n.folderId) : undefined,
+    }));
+  }, [notes, folders]);
 
   // Wiki-link autocomplete extension (stable, reads from ref)
   const wikiLinkExt = useMemo(
@@ -1968,7 +2015,7 @@ export function NotesPage() {
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-        style={{ width: focusMode || collapseSidebar ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
+        style={{ width: focusMode || collapseSidebar || sidebarHidden ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
       >
 
         {sidebarView === "notes" ? (
@@ -2050,7 +2097,7 @@ export function NotesPage() {
                   </div>
                   {/* Search results */}
                   {debouncedSearch && (
-                    <nav className="flex-1 overflow-y-auto px-2 pb-2">
+                    <nav className="flex-1 overflow-y-auto px-2 pb-2 animate-fade-in">
                       {searchResults === null ? (
                         <div className="px-1 py-2 text-xs text-muted-foreground">Searching...</div>
                       ) : searchResults.length === 0 ? (
@@ -2306,7 +2353,7 @@ export function NotesPage() {
 
       </aside>
 
-      {!focusMode && !collapseSidebar && (
+      {!focusMode && !collapseSidebar && !sidebarHidden && (
         <div className="flex">
           <ResizeDivider
             direction="vertical"
@@ -2321,7 +2368,7 @@ export function NotesPage() {
         <>
           <div
             className={`shrink-0 overflow-hidden ${noteListResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
-            style={{ width: focusMode || collapseNoteList ? 0 : noteListResize.size }}
+            style={{ width: focusMode || collapseNoteList || noteListHidden ? 0 : noteListResize.size }}
           >
             <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <NoteListPanel
@@ -2342,7 +2389,7 @@ export function NotesPage() {
               />
             </DndContext>
           </div>
-          {!focusMode && !collapseNoteList && (
+          {!focusMode && !collapseNoteList && !noteListHidden && (
             <div className="flex">
               <ResizeDivider
                 direction="vertical"
@@ -2368,7 +2415,7 @@ export function NotesPage() {
           </div>
         )}
         <div className="flex-1 flex flex-col min-w-0">
-        {openTabs.length > 0 && sidebarView === "notes" && (
+        {openTabs.length > 0 && sidebarView === "notes" && !isLoading && (
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} modifiers={[restrictToHorizontalAxis]} onDragEnd={handleTabDragEnd}>
             <TabBar
               tabs={tabsForDisplay}
@@ -2376,11 +2423,12 @@ export function NotesPage() {
               onSelectTab={switchTab}
               onCloseTab={closeTab}
               onPinTab={pinTab}
+              onCreate={handleCreate}
             />
           </DndContext>
         )}
         {selectedNote && sidebarView === "notes" ? (
-          <>
+          <div className="flex flex-col flex-1 min-h-0">
             {/* Toolbar */}
             <div className="flex items-center gap-1.5 px-4 py-1 border-b border-border shrink-0">
               <span className="text-[11px] text-muted-foreground">
@@ -2641,7 +2689,7 @@ export function NotesPage() {
             )}
 
             {/* Content */}
-            <div className="flex-1 flex min-h-0">
+            <div key={selectedId} className="flex-1 flex min-h-0 animate-fade-in">
               {viewMode !== "preview" && (
                 <MarkdownEditor
                   key={selectedId ?? ""}
@@ -2717,7 +2765,7 @@ export function NotesPage() {
             )}
             </>
             )}
-          </>
+          </div>
         ) : selectedNote && sidebarView === "trash" ? (
           <>
             {/* Trash toolbar */}
@@ -2783,14 +2831,16 @@ export function NotesPage() {
             </p>
           </div>
         ) : (
-          <Dashboard
-            refreshKey={dashboardKey}
-            onSelectNote={handleDashboardSelectNote}
-            onCreateNote={handleCreate}
-            onStartRecording={handleDashboardStartRecording}
-            onImportFile={handleDashboardImportFile}
-            audioNotesEnabled={settings.masterAiEnabled && settings.audioNotes}
-          />
+          <div className="flex-1 animate-fade-in">
+            <Dashboard
+              refreshKey={dashboardKey}
+              onSelectNote={handleDashboardSelectNote}
+              onCreateNote={handleCreate}
+              onStartRecording={handleDashboardStartRecording}
+              onImportFile={handleDashboardImportFile}
+              audioNotesEnabled={settings.masterAiEnabled && settings.audioNotes}
+            />
+          </div>
         )}
         </div>
 
@@ -2868,7 +2918,7 @@ export function NotesPage() {
               isDragging={qaResize.isDragging}
               onPointerDown={qaResize.onPointerDown}
             />
-            <div className="flex-1 min-w-0 h-full">
+            <div key={drawerTab} className="flex-1 min-w-0 h-full animate-fade-in">
               {drawerTab === "assistant" && settings.masterAiEnabled && settings.qaAssistant ? (
                 <QAPanel onSelectNote={handleQaSelectNote} isOpen={qaOpen} />
               ) : drawerTab === "history" && selectedId ? (
@@ -2945,6 +2995,20 @@ export function NotesPage() {
 
     {/* SyncSwarm mini game */}
     {showGame && <SyncSwarmGame onExit={() => setShowGame(false)} />}
+
+    {/* Command Palette */}
+    <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+    {/* Quick Switcher */}
+    <QuickSwitcher
+      open={switcherOpen}
+      onClose={() => setSwitcherOpen(false)}
+      notes={switcherNotes}
+      onSelect={(noteId) => {
+        const note = notes.find((n) => n.id === noteId);
+        if (note) openNoteAsTab(note);
+      }}
+    />
     </div>
   );
 }
