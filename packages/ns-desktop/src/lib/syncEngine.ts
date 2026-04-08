@@ -327,9 +327,13 @@ async function triggerSync(): Promise<void> {
   try {
     const id = await getOrCreateDeviceId();
     await pushChanges(id);
+    const hadRejections = syncStatus === "error";
     await pullChanges(id);
     backoffMs = 1000;
-    setStatus("idle");
+    // Don't clear error if push had rejections — keep it visible
+    if (!hadRejections) {
+      setStatus("idle");
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setStatus("error", message);

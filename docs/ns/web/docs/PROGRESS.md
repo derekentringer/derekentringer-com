@@ -196,6 +196,9 @@
 - [x] Desktop markdown preview — added missing `list-style-type` (disc/decimal) for ul/ol, task list `none` override, aligned code block backgrounds and search highlight styling to match web
 - [x] Desktop meeting recording fix — ribbon trigger now directly calls `handleMeetingRecord()` instead of relying on prop round-trip for `useMeeting` flag
 - [x] Desktop meeting waveform fix — `audioLevel` prop now passed through RecordingBar to AudioWaveform for native RMS visualization
+- [x] Sync error persistence — rejection error no longer cleared by subsequent pull; stays visible until resolved
+- [x] Sync Issues Dialog redesign — human-readable conflict descriptions, "Use My Version" / "Use Server Version" buttons, item type icons, action badges, neutral button styling
+- [x] Drag-and-drop fix — shared DndContext wraps sidebar + note list for cross-panel dragging; DragOverlay renders floating card above all panels (both web and desktop)
 
 ### Native Desktop Menus
 

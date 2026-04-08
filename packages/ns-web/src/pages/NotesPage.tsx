@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
@@ -343,6 +345,8 @@ export function NotesPage() {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
+
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchPanelRef = useRef<HTMLDivElement>(null);
@@ -2008,6 +2012,15 @@ export function NotesPage() {
         onSignOut={logout}
       />
 
+      {/* Shared DndContext for sidebar + note list (enables drag from notes to folders) */}
+      <DndContext
+        sensors={dndSensors}
+        collisionDetection={closestCenter}
+        onDragStart={(event: DragStartEvent) => setActiveDragId(String(event.active.id))}
+        onDragEnd={(event: DragEndEvent) => { setActiveDragId(null); handleDragEnd(event); }}
+        onDragCancel={() => setActiveDragId(null)}
+      >
+
       {/* Sidebar */}
       <aside
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
@@ -2015,7 +2028,7 @@ export function NotesPage() {
       >
 
         {sidebarView === "notes" ? (
-          <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <>
             {/* Sidebar tabs */}
             <SidebarTabs
               activePanel={sidebarPanel}
@@ -2244,7 +2257,6 @@ export function NotesPage() {
                   onPointerDown={() => {}}
                 />
                 <div className="flex-1 min-h-0 overflow-hidden">
-                  <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                     <NoteListPanel
                       notes={notes}
                       selectedId={selectedId}
@@ -2261,11 +2273,10 @@ export function NotesPage() {
                       onToggleFavorite={handleToggleNoteFavorite}
                       onCreate={handleCreate}
                     />
-                  </DndContext>
                 </div>
               </>
             )}
-          </DndContext>
+          </>
         ) : (
           <>
             <div className="p-2 pb-4">
@@ -2366,7 +2377,6 @@ export function NotesPage() {
             className={`shrink-0 overflow-hidden ${noteListResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
             style={{ width: focusMode || collapseNoteList || noteListHidden ? 0 : noteListResize.size }}
           >
-            <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <NoteListPanel
                 notes={notes}
                 selectedId={selectedId}
@@ -2383,7 +2393,6 @@ export function NotesPage() {
                 onToggleFavorite={handleToggleNoteFavorite}
                 onCreate={handleCreate}
               />
-            </DndContext>
           </div>
           {!focusMode && !collapseNoteList && !noteListHidden && (
             <div className="flex">
@@ -2396,6 +2405,21 @@ export function NotesPage() {
           )}
         </>
       )}
+
+      <DragOverlay dropAnimation={null}>
+        {activeDragId && (() => {
+          const note = notes.find((n) => n.id === activeDragId);
+          if (note) {
+            return (
+              <div className="px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground truncate max-w-[200px] opacity-90">
+                {note.title || "Untitled"}
+              </div>
+            );
+          }
+          return null;
+        })()}
+      </DragOverlay>
+      </DndContext>
 
       {/* Editor area */}
       <main
