@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { CommandProvider } from "../commands/index.ts";
 import { NotesPage } from "../pages/NotesPage.tsx";
 
 vi.mock("../components/MarkdownEditor.tsx", () => ({
@@ -171,9 +172,11 @@ const mockTrashedNote = {
 
 function renderNotesPage() {
   return render(
-    <MemoryRouter>
-      <NotesPage />
-    </MemoryRouter>,
+    <CommandProvider>
+      <MemoryRouter>
+        <NotesPage />
+      </MemoryRouter>
+    </CommandProvider>,
   );
 }
 
@@ -732,11 +735,13 @@ describe("NotesPage", () => {
       mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
 
       render(
-        <MemoryRouter initialEntries={["/notes/note-1"]}>
-          <Routes>
-            <Route path="/notes/:noteId" element={<NotesPage />} />
-          </Routes>
-        </MemoryRouter>,
+        <CommandProvider>
+          <MemoryRouter initialEntries={["/notes/note-1"]}>
+            <Routes>
+              <Route path="/notes/:noteId" element={<NotesPage />} />
+            </Routes>
+          </MemoryRouter>
+        </CommandProvider>,
       );
 
       // Should show the note content since it was found in the list

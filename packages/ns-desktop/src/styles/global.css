@@ -565,5 +565,5 @@
   to { opacity: 1; }
 }
 .animate-fade-in {
-  animation: fade-in 0.15s ease-out;
+  animation: fade-in 0.1s ease-out;
 }

@@ -2,6 +2,7 @@ import { vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Note } from "@derekentringer/ns-shared";
+import { CommandProvider } from "../commands/index.ts";
 
 // Mock Tauri APIs (not available in jsdom)
 vi.mock("@tauri-apps/api/core", () => ({
@@ -238,7 +239,7 @@ async function renderAndOpenTrash(trashNotes: Note[] = []) {
   mockFetchTrash.mockResolvedValue(trashNotes);
   const user = userEvent.setup();
 
-  render(<NotesPage />);
+  render(<CommandProvider><NotesPage /></CommandProvider>);
 
   // Wait for initial load
   await screen.findAllByTitle("Trash");
@@ -562,7 +563,7 @@ describe("TrashView — trash count badge", () => {
     ];
     mockFetchTrash.mockResolvedValue(notes);
 
-    render(<NotesPage />);
+    render(<CommandProvider><NotesPage /></CommandProvider>);
     await screen.findAllByTitle("Trash");
 
     // Wait for trash count to load — badge should show "2"
@@ -576,7 +577,7 @@ describe("TrashView — trash count badge", () => {
   it("does not show trash count badge when trash is empty", async () => {
     mockFetchTrash.mockResolvedValue([]);
 
-    render(<NotesPage />);
+    render(<CommandProvider><NotesPage /></CommandProvider>);
     await screen.findAllByTitle("Trash");
 
     // Wait a tick for the effect to settle

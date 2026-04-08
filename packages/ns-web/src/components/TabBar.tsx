@@ -1,9 +1,10 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import {
   SortableContext,
   horizontalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
+import { useDndMonitor } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
 export interface Tab {
@@ -19,6 +20,7 @@ interface TabBarProps {
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onPinTab?: (tabId: string) => void;
+  onCreate?: () => void;
 }
 
 interface SortableTabProps {
@@ -66,8 +68,8 @@ function SortableTab({ tab, isActive, onSelectTab, onCloseTab, onPinTab }: Sorta
       }}
       className={`group relative flex items-center gap-1.5 min-w-[120px] max-w-[200px] px-3 py-1.5 text-sm transition-colors shrink-0 cursor-pointer ${
         isActive
-          ? "bg-card text-foreground border-t-2 border-primary"
-          : "bg-background text-muted-foreground hover:bg-accent border-t-2 border-transparent"
+          ? "bg-card text-foreground"
+          : "bg-background text-muted-foreground hover:bg-accent"
       }`}
     >
       <span className={`truncate flex-1 text-left pl-[5px] ${tab.isPreview ? "italic" : ""}`}>
@@ -91,22 +93,58 @@ function SortableTab({ tab, isActive, onSelectTab, onCloseTab, onPinTab }: Sorta
   );
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onPinTab }: TabBarProps) {
+export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onPinTab, onCreate }: TabBarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState({ left: 0, width: 0, visible: false });
+  const [isDraggingTab, setIsDraggingTab] = useState(false);
 
-  // Scroll active tab into view when it changes
-  useEffect(() => {
+  // Update indicator position when active tab changes
+  const updateIndicator = useCallback(() => {
     if (!activeTabId || !containerRef.current) return;
-    const activeEl = containerRef.current.querySelector(`[data-tab-id="${activeTabId}"]`);
-    if (activeEl && typeof activeEl.scrollIntoView === "function") {
-      activeEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    const activeEl = containerRef.current.querySelector(`[data-tab-id="${activeTabId}"]`) as HTMLElement | null;
+    if (activeEl) {
+      setIndicator({ left: activeEl.offsetLeft, width: activeEl.offsetWidth, visible: true });
+      activeEl.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    } else {
+      setIndicator((prev) => ({ ...prev, visible: false }));
     }
   }, [activeTabId]);
+
+  useDndMonitor({
+    onDragStart: () => setIsDraggingTab(true),
+    onDragEnd: () => {
+      setIsDraggingTab(false);
+      requestAnimationFrame(() => requestAnimationFrame(updateIndicator));
+    },
+    onDragCancel: () => {
+      setIsDraggingTab(false);
+      requestAnimationFrame(() => requestAnimationFrame(updateIndicator));
+    },
+  });
+
+  useEffect(() => {
+    // Double-RAF to ensure layout is fully settled after render
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(updateIndicator);
+    });
+    // Also recalculate after fonts finish loading
+    document.fonts?.ready?.then(updateIndicator);
+    return () => cancelAnimationFrame(raf);
+  }, [activeTabId, tabs.length, updateIndicator]);
+
+  // Scroll to end when a new tab is added
+  const prevTabCount = useRef(tabs.length);
+  useEffect(() => {
+    if (tabs.length > prevTabCount.current && containerRef.current) {
+      containerRef.current.scrollLeft = containerRef.current.scrollWidth;
+    }
+    prevTabCount.current = tabs.length;
+  }, [tabs.length]);
 
   return (
     <div
       ref={containerRef}
-      className="flex border-b border-border bg-background overflow-x-auto shrink-0"
+      className="relative flex border-b border-border bg-background overflow-x-auto shrink-0"
       style={{ scrollbarWidth: "none" }}
     >
       <SortableContext items={tabs.map((t) => t.id)} strategy={horizontalListSortingStrategy}>
@@ -121,6 +159,26 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onPinTab }:
           />
         ))}
       </SortableContext>
+      {/* New note button — flows after tabs, sticks to right when overflowing */}
+      {onCreate && (
+        <div className="sticky right-0 shrink-0 flex items-center px-1.5 bg-background">
+          <button
+            onClick={onCreate}
+            className="w-6 h-6 flex items-center justify-center rounded bg-subtle text-sm text-muted-foreground hover:text-primary hover:bg-foreground/10 transition-colors cursor-pointer"
+            title="New note"
+            aria-label="New note"
+          >
+            +
+          </button>
+        </div>
+      )}
+      {/* Sliding indicator */}
+      {indicator.visible && !isDraggingTab && (
+        <div
+          className="absolute top-0 h-0.5 bg-primary transition-all duration-200 ease-out"
+          style={{ left: indicator.left, width: indicator.width }}
+        />
+      )}
     </div>
   );
 }

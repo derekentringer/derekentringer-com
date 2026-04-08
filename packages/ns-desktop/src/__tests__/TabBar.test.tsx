@@ -76,7 +76,7 @@ describe("TabBar", () => {
 
     const activeTab = screen.getByText("Note Two").closest("button")!;
     expect(activeTab.className).toContain("bg-card");
-    expect(activeTab.className).toContain("border-primary");
+    expect(activeTab.className).toContain("text-foreground");
   });
 
   it("applies inactive styling to non-active tabs", () => {
@@ -84,7 +84,7 @@ describe("TabBar", () => {
 
     const inactiveTab = screen.getByText("Note One").closest("button")!;
     expect(inactiveTab.className).toContain("bg-background");
-    expect(inactiveTab.className).toContain("border-transparent");
+    expect(inactiveTab.className).toContain("text-muted-foreground");
   });
 
   it("closes tab on middle-click", () => {

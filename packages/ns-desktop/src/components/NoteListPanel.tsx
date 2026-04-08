@@ -126,7 +126,7 @@ export function NoteListPanel({
       </div>
 
       {/* Note list */}
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2" data-testid="note-list">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2 animate-fade-in" data-testid="note-list" key={isSearchResults ? "search" : "notes"}>
         {isLoading ? (
           <div className="px-3 py-2 text-sm text-muted-foreground">
             Loading...
