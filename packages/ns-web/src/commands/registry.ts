@@ -33,8 +33,8 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
 
   // Tab Navigation
   { id: "tab:close", label: "Close Tab", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-w" }, desktopOnly: true },
-  { id: "tab:prev", label: "Previous Tab", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-Alt-ArrowLeft" } },
-  { id: "tab:next", label: "Next Tab", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-Alt-ArrowRight" } },
+  { id: "tab:prev", label: "Previous Tab", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-Shift-[" } },
+  { id: "tab:next", label: "Next Tab", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-Shift-]" } },
 
   // Editor Formatting
   { id: "editor:bold", label: "Bold", category: "Editor", scope: "editor", defaultBinding: { key: "Mod-b" } },

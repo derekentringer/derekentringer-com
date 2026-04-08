@@ -128,8 +128,8 @@ When a key is pressed: CodeMirror processes first if editor is focused → globa
 | Command | Shortcut | Category | Notes |
 |---|---|---|---|
 | `tab:close` | `Mod-w` | Navigation | Desktop only — close active tab |
-| `tab:prev` | `Mod-Alt-ArrowLeft` | Navigation | Switch to previous open tab |
-| `tab:next` | `Mod-Alt-ArrowRight` | Navigation | Switch to next open tab |
+| `tab:prev` | `Mod-Shift-[` | Navigation | Switch to previous open tab |
+| `tab:next` | `Mod-Shift-]` | Navigation | Switch to next open tab |
 
 ### Editor Formatting
 
@@ -249,7 +249,7 @@ packages/ns-desktop/src/commands/               # Mirror with desktop-specific c
 5. `Mod-Shift-\` — toggle note list panel
 6. `Mod-1/2/3/4` — switch sidebar tabs (Explorer, Search, Favorites, Tags)
 6. `Mod-Alt-a/h/t` — toggle drawer tabs (AI Assistant, History, TOC)
-7. `Mod-Alt-Left/Right` — previous/next tab
+7. `Mod-Shift-[/]` — previous/next tab
 8. `Mod-Enter` — toggle checkbox
 9. `Mod-Shift-x` — strikethrough
 10. `Mod-Shift-c` — inline code
@@ -273,7 +273,7 @@ packages/ns-desktop/src/commands/               # Mirror with desktop-specific c
 5. **Sidebar tabs**: Mod-1 through Mod-4 switch tabs correctly
 6. **Drawer tabs**: Mod-Alt-A/H/T toggle drawer panels
 7. **View cycle**: Mod-E cycles through all 4 view modes
-8. **Tab navigation**: Mod-Alt-Left/Right cycles through open tabs
+8. **Tab navigation**: Mod-Shift-[/] cycles through open tabs
 9. **Settings page**: Shows all shortcuts from registry (not hardcoded), matches between web and desktop
 10. **Type check**: `npx turbo run type-check` passes
 11. **Tests**: `npx turbo run test` passes
