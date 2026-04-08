@@ -248,19 +248,24 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   }
 
   // Auto-start recording when triggered from ribbon
-  const handleRecordRef = useRef<(() => void) | null>(null);
-  handleRecordRef.current = handleRecord;
+  const handleMeetingRecordRef = useRef<(() => void) | null>(null);
+  const handleMicRecordRef = useRef<(() => void) | null>(null);
+  handleMeetingRecordRef.current = handleMeetingRecord;
+  handleMicRecordRef.current = handleMicRecord;
   useEffect(() => {
     if (triggerKey && triggerMode && state === "idle") {
       setMode(triggerMode);
       onModeChange?.(triggerMode);
-      // For meeting/lecture, use system audio if available
-      if ((triggerMode === "meeting" || triggerMode === "lecture") && meetingSupported) {
-        onRecordingSourceChange("meeting");
-      } else {
-        onRecordingSourceChange("microphone");
-      }
-      requestAnimationFrame(() => handleRecordRef.current?.());
+      const shouldUseMeeting = (triggerMode === "meeting" || triggerMode === "lecture") && meetingSupported;
+      onRecordingSourceChange(shouldUseMeeting ? "meeting" : "microphone");
+      // Call the correct handler directly — don't rely on prop round-trip for useMeeting
+      requestAnimationFrame(() => {
+        if (shouldUseMeeting) {
+          handleMeetingRecordRef.current?.();
+        } else {
+          handleMicRecordRef.current?.();
+        }
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerKey]);
