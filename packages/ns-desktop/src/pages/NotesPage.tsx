@@ -2258,7 +2258,8 @@ export function NotesPage() {
                   const name = imgPath.split("/").pop() || "image";
                   const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
                   const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
-                  const file = new File([data.buffer], name, { type: mimeMap[ext] || "image/png" });
+                  // Use Uint8Array directly — data.buffer can have wrong offset in Tauri WebView
+                  const file = new File([new Uint8Array(data)], name, { type: mimeMap[ext] || "image/png" });
                   const result = await uploadImage(currentNoteId, file);
                   // Insert markdown at cursor position
                   const imgName = name.replace(/\.[^.]+$/, "");
@@ -2273,7 +2274,7 @@ export function NotesPage() {
                 }
               } catch (err) {
                 console.error("Image drop upload failed:", err);
-                showError("Failed to upload dropped image");
+                showError("Failed to upload image");
               }
             })();
           }
