@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAuth } from "../context/AuthContext.tsx";
 import { useCommands, CommandPalette, QuickSwitcher } from "../commands/index.ts";
+import { useMenuState } from "../hooks/useMenuState.ts";
 import {
   DndContext,
   closestCenter,
@@ -963,6 +964,8 @@ export function NotesPage() {
     }
   }, [drawerOpen, drawerTab]);
 
+  useMenuState(selectedId !== null && sidebarView === "notes");
+
   useCommands({
     // Core
     "palette:open": () => setPaletteOpen(true),
@@ -995,6 +998,42 @@ export function NotesPage() {
     "tab:close": () => { if (selectedId) closeTab(selectedId); },
     "tab:prev": () => cycleTab(-1),
     "tab:next": () => cycleTab(1),
+
+    // View mode (from native menu)
+    "view:set-editor": () => setViewMode("editor"),
+    "view:set-split": () => setViewMode("split"),
+    "view:set-live": () => setViewMode("live"),
+    "view:set-preview": () => setViewMode("preview"),
+
+    // Import (from native menu)
+    "import:files": () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.accept = ".md,.txt,.markdown";
+      input.onchange = () => { if (input.files) handleImportFiles(input.files); };
+      input.click();
+    },
+    "import:folder": () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.setAttribute("webkitdirectory", "");
+      input.onchange = () => { if (input.files) handleImportFiles(input.files); };
+      input.click();
+    },
+
+    // Editor formatting (triggered from native menu)
+    "editor:bold": () => editorRef.current?.insertBold(),
+    "editor:italic": () => editorRef.current?.insertItalic(),
+    "editor:strikethrough": () => editorRef.current?.insertStrikethrough(),
+    "editor:code": () => editorRef.current?.insertInlineCode(),
+    "editor:heading": () => editorRef.current?.cycleHeading(),
+    "editor:wiki-link": () => editorRef.current?.insertWikiLink(),
+    "editor:toggle-checkbox": () => editorRef.current?.insertCheckbox(),
+
+    // Help
+    "nav:shortcuts": () => setShowSettings(true),
+    "app:about": () => { /* TODO: about dialog */ },
   });
 
   // Auto-refresh editor content when notes array updates (e.g. after sync)

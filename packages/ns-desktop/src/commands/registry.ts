@@ -14,9 +14,17 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
 
   // View & Navigation
   { id: "view:cycle-mode", label: "Cycle View Mode", category: "View", scope: "global", defaultBinding: { key: "Mod-e" } },
+  { id: "view:set-editor", label: "Editor View", category: "View", scope: "global", defaultBinding: null },
+  { id: "view:set-split", label: "Split View", category: "View", scope: "global", defaultBinding: null },
+  { id: "view:set-live", label: "Live Preview", category: "View", scope: "global", defaultBinding: null },
+  { id: "view:set-preview", label: "Preview", category: "View", scope: "global", defaultBinding: null },
   { id: "view:focus-mode", label: "Toggle Focus Mode", category: "View", scope: "global", defaultBinding: { key: "Mod-Shift-d" } },
   { id: "nav:settings", label: "Open Settings", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-," } },
   { id: "nav:search", label: "Focus Search", category: "Navigation", scope: "global", defaultBinding: { key: "Mod-k" } },
+  { id: "nav:shortcuts", label: "Keyboard Shortcuts", category: "Navigation", scope: "global", defaultBinding: null },
+  { id: "app:about", label: "About NoteSync", category: "Navigation", scope: "global", defaultBinding: null },
+  { id: "import:files", label: "Import Files", category: "Note", scope: "global", defaultBinding: null },
+  { id: "import:folder", label: "Import Folder", category: "Note", scope: "global", defaultBinding: null },
 
   // Sidebar & Panels
   { id: "sidebar:toggle", label: "Toggle Sidebar", category: "Sidebar", scope: "global", defaultBinding: { key: "Mod-\\" } },
