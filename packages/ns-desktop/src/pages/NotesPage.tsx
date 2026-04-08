@@ -2689,7 +2689,7 @@ export function NotesPage() {
                   </div>
                   {/* Search results */}
                   {searchQuery && (
-                    <nav className="flex-1 overflow-y-auto px-2 pb-2">
+                    <nav className="flex-1 overflow-y-auto px-2 pb-2 animate-fade-in">
                       {searchResults === null ? (
                         <div className="px-1 py-2 text-xs text-muted-foreground">Searching...</div>
                       ) : searchResults.length === 0 ? (
@@ -3025,7 +3025,7 @@ export function NotesPage() {
         </div>
       )}
       <div className="flex-1 flex flex-col min-w-0">
-        {openTabs.length > 0 && sidebarView === "notes" && (
+        {openTabs.length > 0 && sidebarView === "notes" && !isLoading && (
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} modifiers={[restrictToHorizontalAxis]} onDragEnd={handleTabDragEnd}>
             <TabBar
               tabs={tabsForDisplay}
@@ -3033,6 +3033,7 @@ export function NotesPage() {
               onSelectTab={switchTab}
               onCloseTab={closeTab}
               onPinTab={pinTab}
+              onCreate={() => { void handleCreate(); }}
             />
           </DndContext>
         )}
@@ -3446,14 +3447,16 @@ export function NotesPage() {
             </p>
           </div>
         ) : (
-          <Dashboard
-            refreshKey={dashboardKey}
-            onSelectNote={handleDashboardSelectNote}
-            onCreateNote={handleCreate}
-            onStartRecording={handleDashboardStartRecording}
-            onImportFile={handleDashboardImportFile}
-            audioNotesEnabled={aiSettings.masterAiEnabled && aiSettings.audioNotes}
-          />
+          <div className="flex-1 animate-fade-in">
+            <Dashboard
+              refreshKey={dashboardKey}
+              onSelectNote={handleDashboardSelectNote}
+              onCreateNote={handleCreate}
+              onStartRecording={handleDashboardStartRecording}
+              onImportFile={handleDashboardImportFile}
+              audioNotesEnabled={aiSettings.masterAiEnabled && aiSettings.audioNotes}
+            />
+          </div>
         )}
       </div>
 
@@ -3528,7 +3531,7 @@ export function NotesPage() {
               isDragging={drawerResize.isDragging}
               onPointerDown={drawerResize.onPointerDown}
             />
-            <div className="flex-1 min-w-0 h-full">
+            <div key={drawerTab} className="flex-1 min-w-0 h-full animate-fade-in">
               {drawerTab === "assistant" && aiSettings.masterAiEnabled && aiSettings.qaAssistant ? (
                 <QAPanel onSelectNote={handleQaSelectNote} isOpen={drawerOpen} />
               ) : drawerTab === "history" && selectedId ? (

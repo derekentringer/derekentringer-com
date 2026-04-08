@@ -177,6 +177,14 @@
 
 - [x] Phase 7 — Polish: sidebar tab content fade-in animation (0.15s ease-out), responsive breakpoints (<900px stacks note list below sidebar, <600px collapses sidebar), focus mode fix (resize dividers fully unmounted to eliminate ghost cells), ARIA accessibility (role="tablist"/role="tab"/aria-selected on sidebar tabs, aria-label on all ribbon buttons, semantic `<nav>` on ribbon), wiki-link click fix (#wiki: URL scheme for react-markdown v10), wiki-link dashed underline (.markdown-preview a.wiki-link), editor link underline removed, all changes mirrored to ns-desktop
 
+### Command Palette & Shortcut System (Feature Plan 24)
+
+- [x] Command Palette & Shortcuts — Centralized command registry (31 commands, 25 with shortcuts), Command Palette (Cmd+P) with fuzzy search + category tags + shortcut badges + recent commands, Quick Switcher (Cmd+O) with fuzzy note title search + folder paths, inline keydown listeners replaced with `useCommands()` hook, SettingsPage renders shortcuts from registry, sidebar tab shortcuts (Cmd+1/2/3/4), drawer tab shortcuts (Cmd+Alt+A/H/T), view mode cycle (Cmd+E), sidebar/notelist toggle (Cmd+\/Cmd+Shift+\), tab cycling (Cmd+Alt+Left/Right), editor formatting shortcuts (strikethrough, code, heading, wiki-link, checkbox), all mirrored to ns-desktop
+
+### UI Polish
+
+- [x] UI Polish — Sliding tab indicators (sidebar tabs, view mode tabs, note tabs with dnd-kit drag awareness), new note "+" button in tab bar (sticky when overflowing), tab bar auto-scroll on new tab, fade-in animations (note list, search results, editor content, drawer tabs, dashboard, toolbar buttons), ConfirmDialog Enter/Escape keyboard support, ribbon rocket icon reordered below settings, toolbar line number toggle repositioned after view mode tabs, tab indicator font-loading resilience (double-RAF + document.fonts.ready), no-animation on untitled flash fix (tabs hidden during initial load)
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

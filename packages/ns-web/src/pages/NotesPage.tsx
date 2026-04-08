@@ -2097,7 +2097,7 @@ export function NotesPage() {
                   </div>
                   {/* Search results */}
                   {debouncedSearch && (
-                    <nav className="flex-1 overflow-y-auto px-2 pb-2">
+                    <nav className="flex-1 overflow-y-auto px-2 pb-2 animate-fade-in">
                       {searchResults === null ? (
                         <div className="px-1 py-2 text-xs text-muted-foreground">Searching...</div>
                       ) : searchResults.length === 0 ? (
@@ -2415,7 +2415,7 @@ export function NotesPage() {
           </div>
         )}
         <div className="flex-1 flex flex-col min-w-0">
-        {openTabs.length > 0 && sidebarView === "notes" && (
+        {openTabs.length > 0 && sidebarView === "notes" && !isLoading && (
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} modifiers={[restrictToHorizontalAxis]} onDragEnd={handleTabDragEnd}>
             <TabBar
               tabs={tabsForDisplay}
@@ -2423,11 +2423,12 @@ export function NotesPage() {
               onSelectTab={switchTab}
               onCloseTab={closeTab}
               onPinTab={pinTab}
+              onCreate={handleCreate}
             />
           </DndContext>
         )}
         {selectedNote && sidebarView === "notes" ? (
-          <>
+          <div className="flex flex-col flex-1 min-h-0">
             {/* Toolbar */}
             <div className="flex items-center gap-1.5 px-4 py-1 border-b border-border shrink-0">
               <span className="text-[11px] text-muted-foreground">
@@ -2688,7 +2689,7 @@ export function NotesPage() {
             )}
 
             {/* Content */}
-            <div className="flex-1 flex min-h-0">
+            <div key={selectedId} className="flex-1 flex min-h-0 animate-fade-in">
               {viewMode !== "preview" && (
                 <MarkdownEditor
                   key={selectedId ?? ""}
@@ -2764,7 +2765,7 @@ export function NotesPage() {
             )}
             </>
             )}
-          </>
+          </div>
         ) : selectedNote && sidebarView === "trash" ? (
           <>
             {/* Trash toolbar */}
@@ -2830,14 +2831,16 @@ export function NotesPage() {
             </p>
           </div>
         ) : (
-          <Dashboard
-            refreshKey={dashboardKey}
-            onSelectNote={handleDashboardSelectNote}
-            onCreateNote={handleCreate}
-            onStartRecording={handleDashboardStartRecording}
-            onImportFile={handleDashboardImportFile}
-            audioNotesEnabled={settings.masterAiEnabled && settings.audioNotes}
-          />
+          <div className="flex-1 animate-fade-in">
+            <Dashboard
+              refreshKey={dashboardKey}
+              onSelectNote={handleDashboardSelectNote}
+              onCreateNote={handleCreate}
+              onStartRecording={handleDashboardStartRecording}
+              onImportFile={handleDashboardImportFile}
+              audioNotesEnabled={settings.masterAiEnabled && settings.audioNotes}
+            />
+          </div>
         )}
         </div>
 
@@ -2915,7 +2918,7 @@ export function NotesPage() {
               isDragging={qaResize.isDragging}
               onPointerDown={qaResize.onPointerDown}
             />
-            <div className="flex-1 min-w-0 h-full">
+            <div key={drawerTab} className="flex-1 min-w-0 h-full animate-fade-in">
               {drawerTab === "assistant" && settings.masterAiEnabled && settings.qaAssistant ? (
                 <QAPanel onSelectNote={handleQaSelectNote} isOpen={qaOpen} />
               ) : drawerTab === "history" && selectedId ? (

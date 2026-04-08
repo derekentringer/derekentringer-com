@@ -75,13 +75,6 @@ export function NoteListPanel({
               >
                 {sortOrder === "asc" ? "\u2191" : "\u2193"}
               </button>
-              <button
-                onClick={onCreate}
-                className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                title="New note"
-              >
-                +
-              </button>
             </div>
           )}
         </div>
@@ -111,7 +104,7 @@ export function NoteListPanel({
       </div>
 
       {/* Note list */}
-      <nav className="flex-1 overflow-y-auto px-2 pb-2" data-testid="note-list">
+      <nav className="flex-1 overflow-y-auto px-2 pb-2 animate-fade-in" data-testid="note-list" key={isSearchResults ? "search" : "notes"}>
         {isLoading ? (
           <div className="px-3 py-2 text-sm text-muted-foreground">
             Loading...

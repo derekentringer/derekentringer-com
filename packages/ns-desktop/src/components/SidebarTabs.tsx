@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, useEffect, useState, type ReactNode } from "react";
 
 export type SidebarPanel = "explorer" | "search" | "favorites" | "tags";
 
@@ -51,9 +51,22 @@ const tabs: { id: SidebarPanel; label: string; icon: ReactNode }[] = [
 
 export function SidebarTabs({ activePanel, onPanelChange, showFavorites }: SidebarTabsProps) {
   const visibleTabs = showFavorites ? tabs : tabs.filter((t) => t.id !== "favorites");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState({ left: 0, width: 0 });
+
+  // Update indicator position when active tab changes
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const idx = visibleTabs.findIndex((t) => t.id === activePanel);
+    const btn = container.children[idx] as HTMLElement | undefined;
+    if (btn) {
+      setIndicator({ left: btn.offsetLeft, width: btn.offsetWidth });
+    }
+  }, [activePanel, visibleTabs.length]);
 
   return (
-    <div className="flex items-center border-b border-border shrink-0" role="tablist" aria-label="Sidebar panels">
+    <div ref={containerRef} className="relative flex items-center border-b border-border shrink-0" role="tablist" aria-label="Sidebar panels">
       {visibleTabs.map((tab) => (
         <button
           key={tab.id}
@@ -61,7 +74,7 @@ export function SidebarTabs({ activePanel, onPanelChange, showFavorites }: Sideb
           onClick={() => onPanelChange(tab.id)}
           className={`flex-1 flex items-center justify-center py-2 transition-colors cursor-pointer ${
             activePanel === tab.id
-              ? "text-foreground border-b-2 border-primary"
+              ? "text-foreground"
               : "text-muted-foreground hover:text-foreground"
           }`}
           title={tab.label}
@@ -71,6 +84,11 @@ export function SidebarTabs({ activePanel, onPanelChange, showFavorites }: Sideb
           {tab.icon}
         </button>
       ))}
+      {/* Sliding indicator */}
+      <div
+        className="absolute bottom-0 h-0.5 bg-primary transition-all duration-200 ease-out"
+        style={{ left: indicator.left, width: indicator.width }}
+      />
     </div>
   );
 }
