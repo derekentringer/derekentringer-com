@@ -107,6 +107,7 @@ describe("FavoritesPanel", () => {
   });
 
   it("calls onSelectNote when note is clicked", () => {
+    vi.useFakeTimers();
     const onSelectNote = vi.fn();
     renderWithDnd(
       <FavoritesPanel
@@ -116,7 +117,9 @@ describe("FavoritesPanel", () => {
       />,
     );
     fireEvent.click(screen.getByText("Favorite Note"));
+    vi.advanceTimersByTime(200);
     expect(onSelectNote).toHaveBeenCalledWith("note-1");
+    vi.useRealTimers();
   });
 
   it("shows Unfavorite context menu on right-click", () => {
