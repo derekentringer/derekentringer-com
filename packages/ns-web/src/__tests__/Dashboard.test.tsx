@@ -151,13 +151,13 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Audio Notes")).not.toBeInTheDocument();
   });
 
-  it("shows loading spinner initially", () => {
+  it("shows skeleton placeholders while loading", () => {
     mockFetchDashboardData.mockReturnValue(new Promise(() => {})); // never resolves
 
     const { container } = render(<Dashboard {...defaultProps} />);
 
-    const spinner = container.querySelector(".animate-spin");
-    expect(spinner).toBeInTheDocument();
+    const skeleton = container.querySelector(".animate-pulse");
+    expect(skeleton).toBeInTheDocument();
   });
 
   it("calls onImportFile when Import File quick action clicked", async () => {
