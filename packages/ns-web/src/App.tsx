@@ -105,6 +105,14 @@ export function App() {
           }
         />
         <Route
+          path="/trash"
+          element={
+            <ProtectedRoute>
+              <NotesPage initialView="trash" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/notes/:noteId"
           element={
             <ProtectedRoute>

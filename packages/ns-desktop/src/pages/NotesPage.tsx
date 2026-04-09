@@ -258,7 +258,16 @@ export function NotesPage() {
   });
 
   // Trash
-  const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
+  const [sidebarView, setSidebarView] = useState<SidebarView>(() => {
+    try {
+      const stored = localStorage.getItem("ns-sidebar-view");
+      if (stored === "trash") return "trash";
+    } catch {}
+    return "notes";
+  });
+  useEffect(() => {
+    try { localStorage.setItem("ns-sidebar-view", sidebarView); } catch {}
+  }, [sidebarView]);
   const [trashNotes, setTrashNotes] = useState<Note[]>([]);
   const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<"all" | "selected" | null>(null);

@@ -106,7 +106,7 @@ function validateSortOrder(value: string | null, fallback: SortOrder): SortOrder
   return value && validSortOrders.includes(value as SortOrder) ? value as SortOrder : fallback;
 }
 
-export function NotesPage() {
+export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { noteId: routeNoteId } = useParams<{ noteId?: string }>();
@@ -192,7 +192,7 @@ export function NotesPage() {
   });
 
   // Trash state
-  const [sidebarView, setSidebarView] = useState<SidebarView>("notes");
+  const [sidebarView, setSidebarView] = useState<SidebarView>(initialView ?? "notes");
   const [trashNotes, setTrashNotes] = useState<Note[]>([]);
   const [trashTotal, setTrashTotal] = useState(0);
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
@@ -1319,8 +1319,7 @@ export function NotesPage() {
     setContent("");
     setIsDirty(false);
     setConfirmDelete(false);
-    setSelectedTrashIds(new Set());
-    navigate("/", { replace: true });
+    navigate("/trash", { replace: true });
   }
 
   function switchToNotes() {
