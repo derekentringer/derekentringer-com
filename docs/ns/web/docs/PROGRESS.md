@@ -199,6 +199,8 @@
 - [x] Sync error persistence — rejection error no longer cleared by subsequent pull; stays visible until resolved
 - [x] Sync Issues Dialog redesign — human-readable conflict descriptions, "Use My Version" / "Use Server Version" buttons, item type icons, action badges, neutral button styling
 - [x] Drag-and-drop fix — shared DndContext wraps sidebar + note list for cross-panel dragging; DragOverlay renders floating card above all panels (both web and desktop)
+- [x] Desktop image drag-and-drop fix — use Uint8Array directly instead of data.buffer for Tauri readFile (fixes corrupted uploads in prod)
+- [x] Color hierarchy improvement — muted-foreground brightened from #666666 to #888888, note snippet text bumped to text-foreground/50 for three-tier hierarchy (title > snippet > metadata)
 
 ### Native Desktop Menus
 
