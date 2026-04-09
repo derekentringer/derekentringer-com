@@ -56,27 +56,72 @@ export function Dashboard({
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <svg
-          className="animate-spin h-6 w-6 text-primary"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          />
-        </svg>
+      <div className="flex-1 overflow-y-auto min-w-0 p-4 space-y-4 animate-pulse">
+        {/* Quick Actions skeleton */}
+        <div>
+          <div className="h-4 w-24 bg-subtle rounded mb-2" />
+          <div className="flex gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-card rounded-md border border-border p-4 min-w-[100px] flex flex-col items-center gap-2">
+                <div className="w-5 h-5 bg-subtle rounded" />
+                <div className="h-3 w-14 bg-subtle rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Resume Editing skeleton */}
+        <div>
+          <div className="h-4 w-28 bg-subtle rounded mb-2" />
+          <div className="bg-card rounded-md border border-border p-3 w-full">
+            <div className="h-4 w-40 bg-subtle rounded mb-2" />
+            <div className="space-y-1.5">
+              <div className="h-3 w-full bg-subtle rounded" />
+              <div className="h-3 w-4/5 bg-subtle rounded" />
+              <div className="h-3 w-3/5 bg-subtle rounded" />
+            </div>
+            <div className="flex gap-1 mt-2">
+              <div className="h-4 w-12 bg-subtle rounded-full" />
+              <div className="h-4 w-14 bg-subtle rounded-full" />
+            </div>
+          </div>
+        </div>
+
+        {/* Card row skeleton */}
+        <div>
+          <div className="h-4 w-20 bg-subtle rounded mb-2" />
+          <div className="flex gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-card rounded-md border border-border p-3 w-[220px] flex-shrink-0">
+                <div className="h-4 w-28 bg-subtle rounded mb-2" />
+                <div className="space-y-1.5">
+                  <div className="h-3 w-full bg-subtle rounded" />
+                  <div className="h-3 w-3/4 bg-subtle rounded" />
+                </div>
+                <div className="flex gap-1 mt-2">
+                  <div className="h-4 w-10 bg-subtle rounded-full" />
+                  <div className="h-4 w-12 bg-subtle rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Second card row skeleton */}
+        <div>
+          <div className="h-4 w-32 bg-subtle rounded mb-2" />
+          <div className="flex gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-card rounded-md border border-border p-3 w-[220px] flex-shrink-0">
+                <div className="h-4 w-24 bg-subtle rounded mb-2" />
+                <div className="space-y-1.5">
+                  <div className="h-3 w-full bg-subtle rounded" />
+                  <div className="h-3 w-2/3 bg-subtle rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }

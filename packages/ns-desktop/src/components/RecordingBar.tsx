@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { AudioMode } from "../hooks/useAiSettings.ts";
 import { AudioWaveform } from "./AudioWaveform.tsx";
+import { FolderPicker, type FolderOption } from "./FolderPicker.tsx";
 
 const MODE_LABELS: Record<AudioMode, string> = {
   meeting: "Meeting",
@@ -15,6 +16,9 @@ interface RecordingBarProps {
   mode: AudioMode;
   stream: MediaStream | null;
   audioLevel?: number;
+  folderId?: string;
+  folders?: FolderOption[];
+  onFolderChange?: (folderId: string | null) => void;
   onStop: () => void;
 }
 
@@ -57,7 +61,7 @@ function ProcessingStatus() {
   );
 }
 
-export function RecordingBar({ state, elapsed, mode, stream, audioLevel, onStop }: RecordingBarProps) {
+export function RecordingBar({ state, elapsed, mode, stream, audioLevel, folderId, folders, onFolderChange, onStop }: RecordingBarProps) {
   if (state === "processing") {
     return <ProcessingStatus />;
   }
@@ -75,6 +79,21 @@ export function RecordingBar({ state, elapsed, mode, stream, audioLevel, onStop 
 
       {/* Mode label */}
       <span className="text-[10px] text-muted-foreground shrink-0">{MODE_LABELS[mode]}</span>
+
+      {/* Folder picker */}
+      {folders && onFolderChange && (
+        <FolderPicker
+          selectedId={folderId ?? null}
+          folders={folders}
+          onChange={onFolderChange}
+          emptyLabel="All Notes"
+          iconSize={10}
+          textSize="text-[10px]"
+          showLabel
+          className="text-muted-foreground/70"
+          ariaLabel="Recording folder"
+        />
+      )}
 
       {/* Stop button */}
       <button

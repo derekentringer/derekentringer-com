@@ -68,6 +68,7 @@ import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
 import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
 import { RecordingBar } from "../components/RecordingBar.tsx";
+import { FolderPicker } from "../components/FolderPicker.tsx";
 import { QAPanel } from "../components/QAPanel.tsx";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
@@ -227,22 +228,6 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     } catch {}
     return "count";
   });
-
-  // Folder dropdown state
-  const [showFolderDropdown, setShowFolderDropdown] = useState(false);
-  const folderDropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (folderDropdownRef.current && !folderDropdownRef.current.contains(e.target as Node)) {
-        setShowFolderDropdown(false);
-      }
-    }
-    if (showFolderDropdown) {
-      document.addEventListener("mousedown", handleClick);
-      return () => document.removeEventListener("mousedown", handleClick);
-    }
-  }, [showFolderDropdown]);
 
   // Import/export state
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
@@ -1972,7 +1957,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     <div className="flex flex-col h-full">
     {/* Recording bar — top of window, animated */}
     <div
-      className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out shrink-0"
+      className="transition-[max-height,opacity] duration-300 ease-in-out shrink-0"
       style={{
         maxHeight: recordingState && (recordingState.state === "recording" || recordingState.state === "processing") ? "36px" : "0px",
         opacity: recordingState && (recordingState.state === "recording" || recordingState.state === "processing") ? 1 : 0,
@@ -1984,6 +1969,9 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
           elapsed={recordingState.elapsed}
           mode={recordingState.mode}
           stream={recordingState.stream}
+          folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+          folders={flatFolders}
+          onFolderChange={(id) => setActiveFolder(id ?? null)}
           onStop={recordingState.onStop}
         />
       )}
@@ -2465,49 +2453,27 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-2 bottom-1.5" ref={folderDropdownRef}>
-                <button
-                  onClick={() => setShowFolderDropdown((v) => !v)}
-                  className="w-8 h-4 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  title={selectedNote?.folderId ? flatFolders.find((f) => f.id === selectedNote.folderId)?.displayName ?? "Unfiled" : "Unfiled"}
-                  aria-label="Note folder"
-                  data-testid="note-folder-select"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                  </svg>
-                </button>
-                {showFolderDropdown && (
-                  <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-md shadow-lg py-1 z-50 min-w-[140px]">
-                    {[{ id: "", displayName: "Unfiled" }, ...flatFolders].map((f) => (
-                      <button
-                        key={f.id}
-                        onClick={async () => {
-                          const folderId = f.id || null;
-                          setShowFolderDropdown(false);
-                          if (!selectedId) return;
-                          try {
-                            const updated = await updateNote(selectedId, { folderId });
-                            setNotes((prev) =>
-                              prev.map((n) => (n.id === updated.id ? updated : n)),
-                            );
-                            loadNotes();
-                            loadFolders();
-                          } catch {
-                            showError("Failed to move note");
-                          }
-                        }}
-                        className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
-                          (selectedNote?.folderId ?? "") === f.id
-                            ? "text-foreground bg-accent"
-                            : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                        }`}
-                      >
-                        {f.displayName}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <div className="absolute left-2 bottom-1.5">
+                <FolderPicker
+                  selectedId={selectedNote?.folderId ?? null}
+                  folders={flatFolders}
+                  onChange={async (folderId) => {
+                    if (!selectedId) return;
+                    try {
+                      const updated = await updateNote(selectedId, { folderId });
+                      setNotes((prev) =>
+                        prev.map((n) => (n.id === updated.id ? updated : n)),
+                      );
+                      loadNotes();
+                      loadFolders();
+                    } catch {
+                      showError("Failed to move note");
+                    }
+                  }}
+                  className="w-8 h-4 flex items-center justify-center"
+                  ariaLabel="Note folder"
+                  testId="note-folder-select"
+                />
               </div>
               <input
                 type="text"
