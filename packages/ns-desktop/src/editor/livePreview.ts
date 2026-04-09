@@ -89,6 +89,113 @@ class CheckboxWidget extends WidgetType {
   }
 }
 
+// Rendered image widget — shows actual <img> element in live preview
+class ImageWidget extends WidgetType {
+  constructor(readonly src: string, readonly alt: string, readonly lineFrom: number, readonly lineTo: number) { super(); }
+  eq(other: ImageWidget) { return this.src === other.src && this.alt === other.alt; }
+  toDOM(view: EditorView) {
+    // Parse existing dimensions from alt text (format: "alt|WIDTHxHEIGHT")
+    const pipeIdx = this.alt.lastIndexOf("|");
+    let cleanAlt = this.alt;
+    let initialWidth: number | null = null;
+    let initialHeight: number | null = null;
+    if (pipeIdx !== -1) {
+      const dimStr = this.alt.slice(pipeIdx + 1).trim();
+      cleanAlt = this.alt.slice(0, pipeIdx);
+      const wxh = dimStr.match(/^(\d+)x(\d+)$/);
+      const wOnly = dimStr.match(/^(\d+)$/);
+      if (wxh) { initialWidth = parseInt(wxh[1], 10); initialHeight = parseInt(wxh[2], 10); }
+      else if (wOnly) { initialWidth = parseInt(wOnly[1], 10); }
+      else { cleanAlt = this.alt; } // not valid dims, treat as plain alt
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "cm-lp-image-widget";
+
+    const img = document.createElement("img");
+    img.src = this.src;
+    img.alt = cleanAlt;
+    img.loading = "lazy";
+    img.className = "cm-lp-image-rendered";
+    if (initialWidth) img.style.width = `${initialWidth}px`;
+    if (initialHeight) img.style.height = `${initialHeight}px`;
+    else if (initialWidth) img.style.height = "auto";
+    img.onerror = () => {
+      wrapper.textContent = `[Image: ${cleanAlt || "failed to load"}]`;
+      wrapper.className = "cm-lp-image-error";
+    };
+    wrapper.appendChild(img);
+
+    // Resize handle (bottom-right corner)
+    const handle = document.createElement("div");
+    handle.className = "cm-lp-image-resize-handle";
+    handle.title = "Drag to resize";
+    wrapper.appendChild(handle);
+
+    // Click on image → reveal raw markdown for editing
+    const lineFrom = this.lineFrom;
+    const lineTo = this.lineTo;
+    const fullAlt = this.alt;
+    const src = this.src;
+
+    img.addEventListener("mousedown", (e) => {
+      // Only handle left click, not on the resize handle
+      if (e.button !== 0 || (e.target as HTMLElement).closest(".cm-lp-image-resize-handle")) return;
+      e.preventDefault();
+      view.dispatch({ selection: { anchor: lineFrom } });
+      view.focus();
+    });
+
+    // Resize drag
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+    let startHeight = 0;
+
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isResizing = true;
+      startX = e.clientX;
+      startWidth = img.offsetWidth;
+      startHeight = img.offsetHeight;
+      wrapper.classList.add("cm-lp-image-resizing");
+
+      function onMouseMove(e: MouseEvent) {
+        if (!isResizing) return;
+        const dx = e.clientX - startX;
+        const newWidth = Math.max(50, startWidth + dx);
+        const ratio = startHeight / startWidth;
+        const newHeight = Math.round(newWidth * ratio);
+        img.style.width = `${newWidth}px`;
+        img.style.height = `${newHeight}px`;
+      }
+
+      function onMouseUp(e: MouseEvent) {
+        if (!isResizing) return;
+        isResizing = false;
+        wrapper.classList.remove("cm-lp-image-resizing");
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+
+        // Update the markdown source with new dimensions
+        const newWidth = img.offsetWidth;
+        const newHeight = img.offsetHeight;
+        const newAlt = newWidth && newHeight ? `${cleanAlt}|${newWidth}x${newHeight}` : cleanAlt;
+        const newMarkdown = `![${newAlt}](${src})`;
+        view.dispatch({
+          changes: { from: lineFrom, to: lineTo, insert: newMarkdown },
+        });
+      }
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+
+    return wrapper;
+  }
+}
+
 // Rendered table widget — parses markdown table and renders as HTML <table>
 class TableWidget extends WidgetType {
   constructor(readonly source: string, readonly sourceFrom: number) { super(); }
@@ -211,6 +318,40 @@ function buildDecorations(view: EditorView): DecorationSet {
     from: vpFrom,
     to: vpTo,
     enter: (node) => {
+      // Images render even on the active line (click to reveal raw markdown)
+      if (node.type.name === "Image") {
+        const imgText = view.state.sliceDoc(node.from, node.to);
+        const closeBracket = imgText.indexOf("](");
+        if (closeBracket !== -1) {
+          const alt = imgText.slice(2, closeBracket);
+          const url = imgText.slice(closeBracket + 2, -1);
+          if (url) {
+            const imgLine = view.state.doc.lineAt(node.from);
+            const isBlockImage = imgLine.text.trim() === imgText.trim();
+            // Only render as widget if cursor is NOT on this exact line
+            const cursorOnImage = activeLines.has(imgLine.number);
+            if (isBlockImage && !cursorOnImage) {
+              decorations.push(
+                Decoration.replace({ widget: new ImageWidget(url, alt, imgLine.from, imgLine.to) }).range(imgLine.from, imgLine.to),
+              );
+              decorations.push(Decoration.line({ class: "cm-lp-image-host" }).range(imgLine.from));
+              return false;
+            } else if (!isBlockImage && !cursorOnImage) {
+              const altStart = node.from + 2;
+              const altEnd = node.from + closeBracket;
+              if (altEnd > altStart) {
+                decorations.push(
+                  Decoration.replace({}).range(node.from, altStart),
+                  Decoration.mark({ class: "cm-lp-image" }).range(altStart, altEnd),
+                  Decoration.replace({}).range(altEnd, node.to),
+                );
+              }
+            }
+          }
+        }
+        return false;
+      }
+
       const lineStart = view.state.doc.lineAt(node.from);
       const lineEnd = view.state.doc.lineAt(node.to);
 
@@ -313,21 +454,7 @@ function buildDecorations(view: EditorView): DecorationSet {
           return false;
         }
 
-        case "Image": {
-          // ![alt](url) → hide ![ and ](url), style alt as image label
-          const imgText = view.state.sliceDoc(node.from, node.to);
-          const closeBracket = imgText.indexOf("](");
-          if (closeBracket === -1) return false;
-          const altStart = node.from + 2; // after ![
-          const altEnd = node.from + closeBracket;
-          if (altEnd <= altStart) return false;
-          decorations.push(
-            Decoration.replace({}).range(node.from, altStart), // hide ![
-            Decoration.mark({ class: "cm-lp-image" }).range(altStart, altEnd), // style alt
-            Decoration.replace({}).range(altEnd, node.to), // hide ](url)
-          );
-          return false;
-        }
+        // Image is handled above (before active-line check)
 
         case "Table": {
           // Block-level reveal: if cursor is on ANY line of the table, show raw
@@ -553,12 +680,12 @@ const livePreviewTheme = EditorView.baseTheme({
     borderRadius: "3px",
     padding: "1px 4px",
   },
-  ".cm-lp-h1": { fontSize: "1.8em", fontWeight: "bold", lineHeight: "1.3", transition: "font-size 0.15s ease-out" },
-  ".cm-lp-h2": { fontSize: "1.5em", fontWeight: "bold", lineHeight: "1.3", transition: "font-size 0.15s ease-out" },
-  ".cm-lp-h3": { fontSize: "1.3em", fontWeight: "bold", lineHeight: "1.3", transition: "font-size 0.15s ease-out" },
-  ".cm-lp-h4": { fontSize: "1.15em", fontWeight: "bold", lineHeight: "1.3", transition: "font-size 0.15s ease-out" },
-  ".cm-lp-h5": { fontSize: "1.05em", fontWeight: "bold", lineHeight: "1.3", transition: "font-size 0.15s ease-out" },
-  ".cm-lp-h6": { fontSize: "1em", fontWeight: "bold", lineHeight: "1.3", transition: "font-size 0.15s ease-out" },
+  ".cm-lp-h1": { fontSize: "1.8em", fontWeight: "bold", lineHeight: "1.3" },
+  ".cm-lp-h2": { fontSize: "1.5em", fontWeight: "bold", lineHeight: "1.3" },
+  ".cm-lp-h3": { fontSize: "1.3em", fontWeight: "bold", lineHeight: "1.3" },
+  ".cm-lp-h4": { fontSize: "1.15em", fontWeight: "bold", lineHeight: "1.3" },
+  ".cm-lp-h5": { fontSize: "1.05em", fontWeight: "bold", lineHeight: "1.3" },
+  ".cm-lp-h6": { fontSize: "1em", fontWeight: "bold", lineHeight: "1.3" },
   ".cm-lp-hr": {
     display: "inline-block",
     width: "100%",
@@ -583,6 +710,49 @@ const livePreviewTheme = EditorView.baseTheme({
     color: "var(--color-primary, #58a6ff)",
     fontStyle: "italic",
     "&::before": { content: "'\\1F5BC\\FE0E '", fontSize: "0.9em" },
+  },
+  ".cm-lp-image-host": {
+    lineHeight: "0",
+    padding: "0",
+    fontSize: "0",
+    overflow: "hidden",
+  },
+  ".cm-lp-image-widget": {
+    lineHeight: "normal",
+    fontSize: "14px",
+    position: "relative",
+    display: "inline-block",
+  },
+  ".cm-lp-image-widget:hover .cm-lp-image-resize-handle": {
+    opacity: "1",
+  },
+  ".cm-lp-image-resizing .cm-lp-image-resize-handle": {
+    opacity: "1",
+  },
+  ".cm-lp-image-rendered": {
+    maxWidth: "100%",
+    height: "auto",
+    borderRadius: "6px",
+    display: "block",
+    cursor: "pointer",
+  },
+  ".cm-lp-image-resize-handle": {
+    position: "absolute",
+    bottom: "4px",
+    right: "4px",
+    width: "12px",
+    height: "12px",
+    background: "var(--color-primary, #d4e157)",
+    borderRadius: "2px",
+    cursor: "nwse-resize",
+    opacity: "0",
+    transition: "opacity 0.15s",
+  },
+  ".cm-lp-image-error": {
+    color: "var(--color-muted-foreground, #888)",
+    fontStyle: "italic",
+    fontSize: "0.85em",
+    padding: "4px 0",
   },
   ".cm-lp-bullet": {
     color: "rgba(128, 128, 128, 0.7)",

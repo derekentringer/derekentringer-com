@@ -200,7 +200,10 @@
 - [x] Sync Issues Dialog redesign — human-readable conflict descriptions, "Use My Version" / "Use Server Version" buttons, item type icons, action badges, neutral button styling
 - [x] Drag-and-drop fix — shared DndContext wraps sidebar + note list for cross-panel dragging; DragOverlay renders floating card above all panels (both web and desktop)
 - [x] Desktop image drag-and-drop fix — use Uint8Array directly instead of data.buffer for Tauri readFile (fixes corrupted uploads in prod)
-- [x] Color hierarchy improvement — muted-foreground brightened from #666666 to #888888, note snippet text bumped to text-foreground/50 for three-tier hierarchy (title > snippet > metadata)
+- [x] Color hierarchy improvement — muted-foreground brightened from #666666 to #888888, note snippet text bumped to text-foreground/50; note list titles use text-foreground/70 (unselected) vs text-foreground (selected) with font-medium for three-tier hierarchy
+- [x] Live preview image rendering — block images render as actual `<img>` elements via ImageWidget with click-to-edit (reveals raw markdown); resizable via corner drag handle that updates alt text dimensions (`![alt|WIDTHxHEIGHT](url)`); inline images show alt text with icon; images render regardless of cursor position (click to edit)
+- [x] Heading transition removed — font-size CSS transition caused visible animation when switching notes in Live view
+- [x] Tab indicator ResizeObserver — recalculates position on any container layout change (fixes misposition on refresh); isDirty change also triggers recalculation
 
 ### Native Desktop Menus
 

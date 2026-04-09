@@ -161,21 +161,21 @@ function SortableNoteItem({
         }}
         className={`flex-1 text-left px-2 py-1.5 rounded-md overflow-hidden transition-colors cursor-pointer ${
           isSelected
-            ? "bg-accent text-foreground"
-            : "text-muted hover:bg-accent hover:text-foreground"
+            ? "bg-accent"
+            : "hover:bg-accent"
         }`}
       >
         {/* Title row */}
         <span className="flex items-center gap-1 overflow-hidden">
           {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
-          <span className="text-sm font-medium truncate">{note.title || "Untitled"}</span>
+          <span className={`text-sm font-medium truncate ${isSelected ? "text-foreground" : "text-foreground/70"}`}>{note.title || "Untitled"}</span>
           {localFileStatus && <LocalFileIndicator status={localFileStatus} />}
         </span>
         {/* Content preview */}
         {searchNote.headline ? (
           <SearchSnippet headline={searchNote.headline} />
         ) : snippet ? (
-          <p className="text-xs text-foreground/50 truncate mt-0.5">{snippet}</p>
+          <p className="text-xs text-foreground/45 truncate mt-0.5">{snippet}</p>
         ) : null}
         {/* Metadata row */}
         <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">

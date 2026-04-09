@@ -101,11 +101,11 @@ describe("livePreview", () => {
       view.destroy();
     });
 
-    it("applies image decoration", () => {
+    it("applies image widget decoration for block images", () => {
       const doc = "line 1\n![alt text](https://example.com/img.png)\nline 3";
       const view = createView(doc, 0);
       const classes = getDecoClasses(view);
-      expect(classes).toContain("cm-lp-image");
+      expect(classes).toContain("ImageWidget");
       view.destroy();
     });
 

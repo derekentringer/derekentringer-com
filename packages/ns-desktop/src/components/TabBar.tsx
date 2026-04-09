@@ -133,7 +133,17 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onPinTab, o
     // Also recalculate after fonts finish loading
     document.fonts?.ready?.then(updateIndicator);
     return () => cancelAnimationFrame(raf);
-  }, [activeTabId, tabs.length, updateIndicator]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId, tabs.length, updateIndicator, tabs.find((t) => t.id === activeTabId)?.isDirty]);
+
+  // ResizeObserver: recalculate indicator whenever tab container layout changes
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => updateIndicator());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [updateIndicator]);
 
   // Scroll to end when a new tab is added
   const prevTabCount = useRef(tabs.length);
