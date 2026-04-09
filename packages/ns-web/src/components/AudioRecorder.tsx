@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { AudioMode } from "../hooks/useAiSettings.ts";
 import type { Note } from "@derekentringer/shared/ns";
-import { transcribeAudio, transcribeChunk, structureAndCreateNote } from "../api/ai.ts";
+import { transcribeAudio, transcribeChunk } from "../api/ai.ts";
 
 const MODE_LABELS: Record<AudioMode, string> = {
   meeting: "Meeting",
@@ -238,29 +238,15 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       };
 
       recorder.onstop = async () => {
-        // Send any remaining audio as a final chunk
-        await sendChunk();
-
         const blobType = recorder.mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type: blobType });
-        const accumulatedTranscript = getOrderedTranscript();
         cleanup();
         setState("processing");
 
         try {
-          if (accumulatedTranscript && accumulatedTranscript.trim().length > 0) {
-            // Use the already-transcribed chunks — skip re-transcription, just structure + create note
-            const result = await structureAndCreateNote(
-              accumulatedTranscript,
-              modeRef.current,
-              folderIdRef.current,
-            );
-            onNoteCreatedRef.current(result.note);
-          } else {
-            // Fallback: no live chunks succeeded, transcribe the full blob
-            const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
-            onNoteCreatedRef.current(result.note);
-          }
+          // Always transcribe the full audio for highest quality final note
+          const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
+          onNoteCreatedRef.current(result.note);
         } catch (err) {
           onErrorRef.current(err instanceof Error ? err.message : "Transcription failed");
         } finally {

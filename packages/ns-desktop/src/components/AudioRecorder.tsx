@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { AudioMode, RecordingSource } from "../hooks/useAiSettings.ts";
 import type { Note } from "@derekentringer/ns-shared";
-import { transcribeAudio, transcribeChunk, structureAndCreateNote } from "../api/ai.ts";
+import { transcribeAudio, transcribeChunk } from "../api/ai.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { readFile } from "@tauri-apps/plugin-fs";
@@ -276,27 +276,15 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       };
 
       recorder.onstop = async () => {
-        // Send any remaining audio as a final chunk
-        await sendChunk();
-
         const blobType = recorder.mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type: blobType });
-        const accumulatedTranscript = getOrderedTranscript();
         cleanup();
         setState("processing");
 
         try {
-          if (accumulatedTranscript && accumulatedTranscript.trim().length > 0) {
-            const result = await structureAndCreateNote(
-              accumulatedTranscript,
-              modeRef.current,
-              folderIdRef.current,
-            );
-            onNoteCreatedRef.current(result.note);
-          } else {
-            const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
-            onNoteCreatedRef.current(result.note);
-          }
+          // Always transcribe the full audio for highest quality final note
+          const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
+          onNoteCreatedRef.current(result.note);
         } catch (err) {
           onErrorRef.current(err instanceof Error ? err.message : "Transcription failed");
         } finally {
