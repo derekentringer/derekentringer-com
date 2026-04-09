@@ -1215,9 +1215,24 @@ export function NotesPage() {
 
   async function handleAudioNoteCreated(serverNote: Note) {
     try {
-      await upsertNoteFromRemote(serverNote);
-      setNotes((prev) => [serverNote, ...prev]);
-      openNoteAsTab(serverNote);
+      // Append referenced notes from Meeting Assistant if any were surfaced
+      let finalNote = serverNote;
+      const surfacedNotes = meetingContext.relevantNotes;
+      if (surfacedNotes.length > 0) {
+        const referencesSection = "\n\n## Related Notes Referenced\n" +
+          surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
+        try {
+          finalNote = await updateNote(serverNote.id, {
+            content: (serverNote.content || "") + referencesSection,
+          });
+        } catch {
+          // If update fails, use the note without references
+        }
+      }
+
+      await upsertNoteFromRemote(finalNote);
+      setNotes((prev) => [finalNote, ...prev]);
+      openNoteAsTab(finalNote);
       await refreshSidebarData();
       loadNoteTitles();
       setDashboardKey((k) => k + 1);

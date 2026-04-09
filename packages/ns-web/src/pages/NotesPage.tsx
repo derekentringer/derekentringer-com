@@ -1866,9 +1866,27 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     setSuggestedTags((prev) => prev.filter((t) => t !== tag));
   }
 
-  function handleAudioNoteCreated(note: Note) {
-    setNotes((prev) => [note, ...prev]);
-    openNoteAsTab(note);
+  async function handleAudioNoteCreated(note: Note) {
+    // Append referenced notes from Meeting Assistant if any were surfaced
+    const surfacedNotes = meetingContext.relevantNotes;
+    if (surfacedNotes.length > 0) {
+      const referencesSection = "\n\n## Related Notes Referenced\n" +
+        surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
+      try {
+        const updated = await updateNote(note.id, {
+          content: (note.content || "") + referencesSection,
+        });
+        setNotes((prev) => [updated, ...prev]);
+        openNoteAsTab(updated);
+      } catch {
+        // If update fails, still show the note without references
+        setNotes((prev) => [note, ...prev]);
+        openNoteAsTab(note);
+      }
+    } else {
+      setNotes((prev) => [note, ...prev]);
+      openNoteAsTab(note);
+    }
     loadFolders();
     setDashboardKey((k) => k + 1);
   }
