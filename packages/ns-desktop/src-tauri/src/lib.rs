@@ -166,6 +166,18 @@ fn stop_meeting_recording() -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+fn get_meeting_audio_chunk() -> Result<Vec<u8>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        audio_capture::get_audio_chunk()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Meeting recording is only supported on macOS".into())
+    }
+}
+
 /// Force legacy (non-overlay) scrollbars so CSS ::-webkit-scrollbar styling
 /// is always respected. macOS overlay scrollbars bypass custom CSS on hover.
 #[cfg(target_os = "macos")]
@@ -315,7 +327,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
-        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, set_menu_items_enabled])
+        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:notesync.db", get_migrations())

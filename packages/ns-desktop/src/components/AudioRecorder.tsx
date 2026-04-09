@@ -193,58 +193,43 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
 
   const useMeeting = meetingSupported && recordingSource === "meeting";
 
-  async function startMeetingChunkCapture() {
-    // Open a parallel mic stream just for live transcription chunking
-    // (the native Rust recording captures system+mic for the final note)
+  async function sendNativeChunk() {
+    // Get mixed system+mic audio chunk from the Rust recording
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      const wavBytes = await invoke<number[]>("get_meeting_audio_chunk");
+      if (!wavBytes || wavBytes.length === 0) return;
 
-      const mimeType = getSupportedMimeType();
-      const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      allAudioChunksRef.current = [];
-      lastChunkSentRef.current = 0;
-      transcriptChunksRef.current = new Map();
-      sessionIdRef.current = generateSessionId();
-      chunkIndexRef.current = 0;
-      setLiveTranscript("");
+      const blob = new Blob([new Uint8Array(wavBytes)], { type: "audio/wav" });
+      if (blob.size < 1024) return; // Skip tiny chunks
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          allAudioChunksRef.current.push(e.data);
-        }
-      };
+      const idx = chunkIndexRef.current++;
+      const sid = sessionIdRef.current;
 
-      recorder.onstop = () => {
-        // Just cleanup — the native recording handles the final transcription
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((t) => t.stop());
-          streamRef.current = null;
-        }
-        mediaRecorderRef.current = null;
-      };
-
-      recorder.start(1000);
-
-      chunkTimerRef.current = setInterval(() => {
-        sendChunk();
-      }, CHUNK_INTERVAL_MS);
-    } catch {
-      // Non-fatal — meeting recording works without live transcription
-      console.warn("Could not start mic capture for live transcription");
+      const result = await transcribeChunk(blob, sid, idx);
+      if (result.text && result.text.trim()) {
+        transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
+        setLiveTranscript(getOrderedTranscript());
+      }
+    } catch (err) {
+      console.warn("Native chunk transcription failed:", err);
     }
+  }
+
+  function startMeetingChunkCapture() {
+    transcriptChunksRef.current = new Map();
+    sessionIdRef.current = generateSessionId();
+    chunkIndexRef.current = 0;
+    setLiveTranscript("");
+
+    chunkTimerRef.current = setInterval(() => {
+      sendNativeChunk();
+    }, CHUNK_INTERVAL_MS);
   }
 
   function stopMeetingChunkCapture() {
     if (chunkTimerRef.current) {
       clearInterval(chunkTimerRef.current);
       chunkTimerRef.current = null;
-    }
-    if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
     }
   }
 
