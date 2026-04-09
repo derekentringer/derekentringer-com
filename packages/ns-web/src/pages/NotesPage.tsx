@@ -74,6 +74,7 @@ import { TocPanel } from "../components/TocPanel.tsx";
 import { DiffView } from "../components/DiffView.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
+import { TrashPanel } from "../components/TrashPanel.tsx";
 import { connectSseStream } from "../api/sse.ts";
 import { Dashboard } from "../components/Dashboard.tsx";
 import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
@@ -1066,17 +1067,19 @@ export function NotesPage() {
     }
   }
 
-  async function handleRestore() {
-    if (!selectedId) return;
-
+  async function handleRestoreBatch(ids: string[]) {
     try {
-      const restored = await apiRestoreNote(selectedId);
-      setTrashNotes((prev) => prev.filter((n) => n.id !== selectedId));
-      setTrashTotal((prev) => prev - 1);
-      setNotes((prev) => [restored, ...prev]);
-      setSelectedId(null);
-      setTitle("");
-      setContent("");
+      for (const id of ids) {
+        const restored = await apiRestoreNote(id);
+        setTrashNotes((prev) => prev.filter((n) => n.id !== id));
+        setTrashTotal((prev) => prev - 1);
+        setNotes((prev) => [restored, ...prev]);
+      }
+      if (selectedId && ids.includes(selectedId)) {
+        setSelectedId(null);
+        setTitle("");
+        setContent("");
+      }
       loadFolders();
       loadFavoriteNotes();
       setDashboardKey((k) => k + 1);
@@ -1374,19 +1377,17 @@ export function NotesPage() {
     }
   }
 
-  async function handleDeleteSelected() {
+  async function handleDeleteSelected(ids: string[]) {
     try {
-      const ids = [...selectedTrashIds];
+      const idSet = new Set(ids);
       const result = await apiEmptyTrash(ids);
-      setTrashNotes((prev) => prev.filter((n) => !selectedTrashIds.has(n.id)));
+      setTrashNotes((prev) => prev.filter((n) => !idSet.has(n.id)));
       setTrashTotal((prev) => prev - result.deleted);
-      if (selectedId && selectedTrashIds.has(selectedId)) {
+      if (selectedId && idSet.has(selectedId)) {
         setSelectedId(null);
         setTitle("");
         setContent("");
       }
-      setSelectedTrashIds(new Set());
-      setConfirmBulkDelete(null);
     } catch {
       showError("Failed to delete selected notes");
     }
@@ -2278,84 +2279,20 @@ export function NotesPage() {
             )}
           </>
         ) : (
-          <>
-            <div className="p-2 pb-4">
-              <button
-                onClick={switchToNotes}
-                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <span>&larr;</span> Back
-              </button>
-            </div>
-
-            {trashNotes.length > 0 && (
-              <div className="px-2 pb-1 flex items-center gap-2">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={selectedTrashIds.size === trashNotes.length}
-                    onChange={toggleSelectAll}
-                    className="mr-1.5 accent-primary"
-                    aria-label="Select all"
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    {selectedTrashIds.size > 0
-                      ? `${selectedTrashIds.size} selected`
-                      : `${trashNotes.length} items`}
-                  </span>
-                </label>
-                <div className="flex-1" />
-                {selectedTrashIds.size > 0 ? (
-                  <button
-                    onClick={() => setConfirmBulkDelete("selected")}
-                    className="text-xs text-destructive hover:text-destructive-hover transition-colors cursor-pointer"
-                  >
-                    Delete Selected ({selectedTrashIds.size})
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setConfirmBulkDelete("all")}
-                    className="text-xs text-destructive hover:text-destructive-hover transition-colors cursor-pointer"
-                  >
-                    Delete All
-                  </button>
-                )}
-              </div>
-            )}
-
-            <nav className="flex-1 overflow-y-auto p-2">
-              {trashNotes.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  Trash is empty
-                </div>
-              ) : (
-                trashNotes.map((note) => (
-                  <div
-                    key={note.id}
-                    className={`flex items-center gap-1.5 rounded-md text-sm transition-colors ${
-                      note.id === selectedId
-                        ? "bg-accent text-foreground"
-                        : "text-muted hover:bg-accent hover:text-foreground"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedTrashIds.has(note.id)}
-                      onChange={() => toggleTrashSelect(note.id)}
-                      className="ml-2 shrink-0 accent-primary"
-                      aria-label={`Select ${note.title || "Untitled"}`}
-                    />
-                    <button
-                      onClick={() => selectNote(note)}
-                      className="flex-1 text-left px-1 py-2 truncate"
-                    >
-                      {note.title || "Untitled"}
-                    </button>
-                  </div>
-                ))
-              )}
-            </nav>
-          </>
+          <TrashPanel
+            notes={trashNotes}
+            selectedId={selectedId}
+            onSelect={selectNote}
+            onRestore={handleRestoreBatch}
+            onDelete={(ids) => {
+              if (ids.length === trashNotes.length) {
+                void handleEmptyTrash();
+              } else {
+                void handleDeleteSelected(ids);
+              }
+            }}
+            onBack={switchToNotes}
+          />
         )}
 
       </aside>
@@ -2798,7 +2735,7 @@ export function NotesPage() {
               </span>
               <div className="flex-1" />
               <button
-                onClick={handleRestore}
+                onClick={() => selectedId && handleRestoreBatch([selectedId])}
                 className="px-3 py-1 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary-hover transition-colors cursor-pointer"
               >
                 Restore
@@ -2986,18 +2923,7 @@ export function NotesPage() {
       )}
 
       {/* Bulk delete confirm dialog */}
-      {confirmBulkDelete && (
-        <ConfirmDialog
-          title={confirmBulkDelete === "all" ? "Empty Trash" : "Delete Selected"}
-          message={
-            confirmBulkDelete === "all"
-              ? `Permanently delete all ${trashNotes.length} trashed note${trashNotes.length === 1 ? "" : "s"}? This cannot be undone.`
-              : `Permanently delete ${selectedTrashIds.size} selected note${selectedTrashIds.size === 1 ? "" : "s"}? This cannot be undone.`
-          }
-          onConfirm={confirmBulkDelete === "all" ? handleEmptyTrash : handleDeleteSelected}
-          onCancel={() => setConfirmBulkDelete(null)}
-        />
-      )}
+      {/* Trash bulk delete confirmation is now handled inline by TrashPanel */}
 
       {/* Error toast */}
       {error && (

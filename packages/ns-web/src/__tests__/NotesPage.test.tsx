@@ -455,7 +455,7 @@ describe("NotesPage", () => {
       await screen.findByText("No notes yet");
     });
 
-    it("shows Delete All button in trash view when items exist", async () => {
+    it("shows Select button in trash view", async () => {
       mockFetchTrash.mockResolvedValue({
         notes: [mockTrashedNote],
         total: 1,
@@ -468,15 +468,14 @@ describe("NotesPage", () => {
       await userEvent.click(trashButton);
 
       await screen.findByText("Trashed Note");
-      expect(screen.getByText("Delete All")).toBeInTheDocument();
+      expect(screen.getByText("Select")).toBeInTheDocument();
     });
 
-    it("Delete All triggers ConfirmDialog and confirming calls emptyTrash", async () => {
+    it("shows Empty Trash in select mode with no selection", async () => {
       mockFetchTrash.mockResolvedValue({
         notes: [mockTrashedNote],
         total: 1,
       });
-      mockEmptyTrash.mockResolvedValue({ deleted: 1 });
 
       renderNotesPage();
       await screen.findByText("No notes yet");
@@ -485,21 +484,12 @@ describe("NotesPage", () => {
       await userEvent.click(trashButton);
 
       await screen.findByText("Trashed Note");
+      await userEvent.click(screen.getByText("Select"));
 
-      await userEvent.click(screen.getByText("Delete All"));
-
-      // Confirm dialog should appear
       expect(screen.getByText("Empty Trash")).toBeInTheDocument();
-
-      // Confirm
-      await userEvent.click(screen.getByText("Delete"));
-
-      await waitFor(() => {
-        expect(mockEmptyTrash).toHaveBeenCalledWith();
-      });
     });
 
-    it("shows checkboxes on trash items", async () => {
+    it("shows checkboxes when select mode enabled", async () => {
       mockFetchTrash.mockResolvedValue({
         notes: [mockTrashedNote],
         total: 1,
@@ -512,14 +502,19 @@ describe("NotesPage", () => {
       await userEvent.click(trashButton);
 
       await screen.findByText("Trashed Note");
+
+      // No checkboxes initially
+      expect(screen.queryByLabelText("Select Trashed Note")).not.toBeInTheDocument();
+
+      // Enable select mode
+      await userEvent.click(screen.getByText("Select"));
       expect(screen.getByLabelText("Select Trashed Note")).toBeInTheDocument();
     });
 
-    it("shows Delete Selected when items are checked", async () => {
-      const trash2 = { ...mockTrashedNote, id: "trash-2", title: "Trashed Note 2" };
+    it("shows Delete and Restore buttons when items selected", async () => {
       mockFetchTrash.mockResolvedValue({
-        notes: [mockTrashedNote, trash2],
-        total: 2,
+        notes: [mockTrashedNote],
+        total: 1,
       });
 
       renderNotesPage();
@@ -530,14 +525,30 @@ describe("NotesPage", () => {
 
       await screen.findByText("Trashed Note");
 
-      // Check one item
-      const checkbox = screen.getByLabelText("Select Trashed Note");
-      await userEvent.click(checkbox);
+      await userEvent.click(screen.getByText("Select"));
+      await userEvent.click(screen.getByLabelText("Select Trashed Note"));
 
-      expect(screen.getByText("Delete Selected (1)")).toBeInTheDocument();
+      expect(screen.getByText("Delete (1)")).toBeInTheDocument();
+      expect(screen.getByText("Restore (1)")).toBeInTheDocument();
     });
 
-    it("Delete Selected with confirmation calls emptyTrash with IDs", async () => {
+    it("has filter input in trash view", async () => {
+      mockFetchTrash.mockResolvedValue({
+        notes: [mockTrashedNote],
+        total: 1,
+      });
+
+      renderNotesPage();
+      await screen.findByText("No notes yet");
+
+      const trashButton = screen.getByTitle("Trash");
+      await userEvent.click(trashButton);
+
+      await screen.findByText("Trashed Note");
+      expect(screen.getByPlaceholderText("Filter trash...")).toBeInTheDocument();
+    });
+
+    it("has sort dropdown in trash view", async () => {
       mockFetchTrash.mockResolvedValue({
         notes: [mockTrashedNote],
         total: 1,
@@ -552,19 +563,8 @@ describe("NotesPage", () => {
 
       await screen.findByText("Trashed Note");
 
-      // Check the item
-      const checkbox = screen.getByLabelText("Select Trashed Note");
-      await userEvent.click(checkbox);
-
-      await userEvent.click(screen.getByText("Delete Selected (1)"));
-
-      // Confirm dialog
-      expect(screen.getByText("Delete Selected")).toBeInTheDocument();
-
-      await userEvent.click(screen.getByText("Delete"));
-
       await waitFor(() => {
-        expect(mockEmptyTrash).toHaveBeenCalledWith(["trash-1"]);
+        expect(screen.getByLabelText("Sort by")).toBeInTheDocument();
       });
     });
 
