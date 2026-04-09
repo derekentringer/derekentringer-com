@@ -1,593 +1,162 @@
-import { vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import React from "react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Note } from "@derekentringer/ns-shared";
-import { CommandProvider } from "../commands/index.ts";
+import { TrashPanel } from "../components/TrashPanel.tsx";
 
-// Mock Tauri APIs (not available in jsdom)
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn().mockResolvedValue(vi.fn()),
-}));
-
-// Mock sync engine
-vi.mock("../lib/syncEngine.ts", () => ({
-  initSyncEngine: vi.fn().mockResolvedValue(undefined),
-  destroySyncEngine: vi.fn(),
-  notifyLocalChange: vi.fn(),
-  manualSync: vi.fn(),
-  setSyncSemanticSearchEnabled: vi.fn(),
-  getSyncStatus: vi.fn().mockReturnValue({ status: "idle", error: null }),
-}));
-
-// Mock db module
-const mockFetchNotes = vi.fn().mockResolvedValue([]);
-const mockFetchFolders = vi.fn().mockResolvedValue([]);
-const mockFetchTags = vi.fn().mockResolvedValue([]);
-const mockFetchTrash = vi.fn().mockResolvedValue([]);
-const mockInitFts = vi.fn().mockResolvedValue(undefined);
-const mockBulkHardDelete = vi.fn().mockResolvedValue(0);
-const mockEmptyTrash = vi.fn().mockResolvedValue(0);
-const mockPurgeOldTrash = vi.fn().mockResolvedValue(0);
-const mockHardDeleteNote = vi.fn().mockResolvedValue(undefined);
-const mockRestoreNote = vi.fn().mockResolvedValue(undefined);
-const mockCreateNote = vi.fn().mockResolvedValue({
-  id: "new",
-  title: "",
-  content: "",
-  folder: null,
-  folderId: null,
-  folderPath: null,
-  tags: [],
-  summary: null,
-  favorite: false,
-  sortOrder: 0,
-  favoriteSortOrder: 0,
-  isLocalFile: false,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  deletedAt: null,
-});
-
-vi.mock("../lib/db.ts", () => ({
-  fetchNotes: (...args: unknown[]) => mockFetchNotes(...args),
-  countAllNotes: vi.fn().mockResolvedValue(0),
-  fetchNoteById: vi.fn().mockResolvedValue(null),
-  createNote: (...args: unknown[]) => mockCreateNote(...args),
-  updateNote: vi.fn().mockResolvedValue({}),
-  softDeleteNote: vi.fn().mockResolvedValue(undefined),
-  hardDeleteNote: (...args: unknown[]) => mockHardDeleteNote(...args),
-  searchNotes: vi.fn().mockResolvedValue([]),
-  fetchFolders: (...args: unknown[]) => mockFetchFolders(...args),
-  createFolder: vi.fn().mockResolvedValue({}),
-  renameFolder: vi.fn().mockResolvedValue(undefined),
-  deleteFolder: vi.fn().mockResolvedValue(undefined),
-  fetchTags: (...args: unknown[]) => mockFetchTags(...args),
-  renameTag: vi.fn().mockResolvedValue(undefined),
-  deleteTag: vi.fn().mockResolvedValue(undefined),
-  fetchTrash: (...args: unknown[]) => mockFetchTrash(...args),
-  restoreNote: (...args: unknown[]) => mockRestoreNote(...args),
-  bulkHardDelete: (...args: unknown[]) => mockBulkHardDelete(...args),
-  emptyTrash: (...args: unknown[]) => mockEmptyTrash(...args),
-  purgeOldTrash: (...args: unknown[]) => mockPurgeOldTrash(...args),
-  initFts: (...args: unknown[]) => mockInitFts(...args),
-  reorderNotes: vi.fn().mockResolvedValue(undefined),
-  moveFolderParent: vi.fn().mockResolvedValue(undefined),
-  syncNoteLinks: vi.fn().mockResolvedValue(undefined),
-  listNoteTitles: vi.fn().mockResolvedValue([]),
-  captureVersion: vi.fn().mockResolvedValue(undefined),
-  restoreVersion: vi.fn().mockResolvedValue(undefined),
-  fetchFavoriteNotes: vi.fn().mockResolvedValue([]),
-  reorderFavoriteNotes: vi.fn().mockResolvedValue(undefined),
-  toggleFolderFavorite: vi.fn().mockResolvedValue(undefined),
-  upsertNoteFromRemote: vi.fn().mockResolvedValue(undefined),
-  linkNoteToLocalFile: vi.fn().mockResolvedValue(undefined),
-  unlinkLocalFile: vi.fn().mockResolvedValue(undefined),
-  updateLocalFileHash: vi.fn().mockResolvedValue(undefined),
-  fetchLocalFileNotes: vi.fn().mockResolvedValue([]),
-  findNoteByLocalPath: vi.fn().mockResolvedValue(null),
-  getNoteLocalPath: vi.fn().mockResolvedValue(null),
-  getNoteLocalFileHash: vi.fn().mockResolvedValue(null),
-  fetchRecentlyEditedNotes: vi.fn().mockResolvedValue([]),
-  fetchAudioNotes: vi.fn().mockResolvedValue([]),
-  enqueueSyncAction: vi.fn().mockResolvedValue(undefined),
-}));
-
-// Mock localFileService
-vi.mock("../lib/localFileService.ts", () => ({
-  readLocalFile: vi.fn().mockResolvedValue(""),
-  writeLocalFile: vi.fn().mockResolvedValue("hash"),
-  computeContentHash: vi.fn().mockResolvedValue("hash"),
-  fileExists: vi.fn().mockResolvedValue(false),
-  getFileStat: vi.fn().mockResolvedValue(null),
-  validateFileSize: vi.fn().mockReturnValue(true),
-  deleteLocalFile: vi.fn().mockResolvedValue(undefined),
-  pickSaveLocation: vi.fn().mockResolvedValue(null),
-  startWatching: vi.fn().mockResolvedValue(undefined),
-  stopWatching: vi.fn(),
-  stopAllWatchers: vi.fn(),
-  reestablishWatchers: vi.fn().mockResolvedValue([]),
-  startPollTimer: vi.fn(),
-  stopPollTimer: vi.fn(),
-  collectFilePaths: vi.fn().mockResolvedValue([]),
-  isDirectory: vi.fn().mockResolvedValue(false),
-}));
-
-// Mock @tauri-apps/api/webview
-vi.mock("@tauri-apps/api/webview", () => ({
-  getCurrentWebview: () => ({
-    onDragDropEvent: vi.fn().mockResolvedValue(vi.fn()),
-  }),
-}));
-
-// Mock useEditorSettings
-vi.mock("../hooks/useEditorSettings.ts", () => ({
-  useEditorSettings: () => ({
-    settings: {
-      defaultViewMode: "editor",
-      showLineNumbers: true,
-      wordWrap: true,
-      tabSize: 2,
-      editorFontSize: 14,
-      autoSaveDelay: 1000,
-      theme: "dark",
-      accentColor: "blue",
-    },
-  }),
-  resolveAccentColor: () => "#3b82f6",
-}));
-
-// Mock useResizable
-vi.mock("../hooks/useResizable.ts", () => ({
-  useResizable: () => ({
-    size: 256,
-    isDragging: false,
-    onPointerDown: vi.fn(),
-  }),
-}));
-
-// Mock MarkdownEditor (uses CodeMirror which doesn't work in jsdom)
-vi.mock("../components/MarkdownEditor.tsx", () => ({
-  MarkdownEditor: vi.fn(() => <div data-testid="mock-editor" />),
-}));
-
-// Mock MarkdownPreview (render content so tests can verify read-only display)
-vi.mock("../components/MarkdownPreview.tsx", () => ({
-  MarkdownPreview: vi.fn(({ content }: { content: string }) => (
-    <div data-testid="mock-preview">{content}</div>
-  )),
-}));
-
-// Mock @dnd-kit
-vi.mock("@dnd-kit/core", () => ({
-  DndContext: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DragOverlay: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  closestCenter: vi.fn(),
-  KeyboardSensor: vi.fn(),
-  PointerSensor: vi.fn(),
-  useSensor: vi.fn(),
-  useSensors: vi.fn().mockReturnValue([]),
-  useDroppable: vi.fn().mockReturnValue({ isOver: false, setNodeRef: vi.fn() }),
-  useDraggable: vi.fn().mockReturnValue({
-    attributes: {},
-    listeners: {},
-    setNodeRef: vi.fn(),
-    transform: null,
-    isDragging: false,
-  }),
-}));
-
-vi.mock("@dnd-kit/sortable", () => ({
-  sortableKeyboardCoordinates: vi.fn(),
-  useSortable: vi.fn().mockReturnValue({
-    attributes: {},
-    listeners: {},
-    setNodeRef: vi.fn(),
-    transform: null,
-    transition: null,
-    isDragging: false,
-  }),
-  SortableContext: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  verticalListSortingStrategy: vi.fn(),
-}));
-
-vi.mock("@dnd-kit/utilities", () => ({
-  CSS: { Transform: { toString: vi.fn().mockReturnValue("") } },
-}));
-
-// Mock AuthContext
-vi.mock("../context/AuthContext.tsx", () => ({
-  useAuth: () => ({
-    user: { id: "1", email: "test@test.com", role: "user" },
-    isAuthenticated: true,
-    isLoading: false,
-    login: vi.fn(),
-    register: vi.fn(),
-    logout: vi.fn(),
-    setUserFromLogin: vi.fn(),
-  }),
-  AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
-import { NotesPage } from "../pages/NotesPage.tsx";
-
-function makeTrashNote(overrides: Partial<Note> = {}): Note {
+function makeNote(id: string, title: string): Note {
   return {
-    id: "trash-1",
-    title: "Trashed Note",
-    content: "content",
-    folder: null,
+    id,
+    title,
+    content: `Content of ${title}`,
+    tags: ["tag1"],
     folderId: null,
-    folderPath: null,
-    tags: [],
-    summary: null,
-    favorite: false,
+    folder: null,
+    folderPath: "",
+    summary: "",
     sortOrder: 0,
+    favorite: false,
     favoriteSortOrder: 0,
     isLocalFile: false,
     audioMode: null,
-    createdAt: "2024-01-01T00:00:00.000Z",
-    updatedAt: "2024-01-01T00:00:00.000Z",
-    deletedAt: "2024-06-01T00:00:00.000Z",
-    ...overrides,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-15T00:00:00Z",
+    deletedAt: "2026-03-15T10:30:00Z",
   };
 }
 
-async function renderAndOpenTrash(trashNotes: Note[] = []) {
-  mockFetchTrash.mockResolvedValue(trashNotes);
-  const user = userEvent.setup();
-
-  render(<CommandProvider><NotesPage /></CommandProvider>);
-
-  // Wait for initial load
-  await screen.findAllByTitle("Trash");
-
-  // Click trash button
-  const trashButton = screen.getByTitle("Trash");
-  await user.click(trashButton);
-
-  // Wait for trash view (Back button appears when in trash view)
-  await screen.findByText("Back");
-
-  return user;
-}
+const defaultProps = {
+  notes: [makeNote("1", "Note A"), makeNote("2", "Note B")],
+  selectedId: null,
+  onSelect: vi.fn(),
+  onRestore: vi.fn(),
+  onDelete: vi.fn(),
+  onBack: vi.fn(),
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
-  localStorage.clear();
 });
 
-describe("TrashView — bulk operations", () => {
-  it("renders select-all checkbox with item count", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    await renderAndOpenTrash(notes);
+describe("TrashPanel", () => {
+  it("renders back button", () => {
+    render(<TrashPanel {...defaultProps} />);
+    expect(screen.getByText("Back")).toBeInTheDocument();
+  });
 
-    expect(screen.getByLabelText("Select all")).toBeInTheDocument();
+  it("calls onBack when back button clicked", async () => {
+    render(<TrashPanel {...defaultProps} />);
+    await userEvent.click(screen.getByText("Back"));
+    expect(defaultProps.onBack).toHaveBeenCalled();
+  });
+
+  it("shows item count", () => {
+    render(<TrashPanel {...defaultProps} />);
     expect(screen.getByText("2 items")).toBeInTheDocument();
   });
 
-  it("toggles individual trash item selection", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    const checkbox = screen.getByLabelText("Select Note A");
-    await user.click(checkbox);
-
-    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  it("shows note titles", () => {
+    render(<TrashPanel {...defaultProps} />);
+    expect(screen.getByText("Note A")).toBeInTheDocument();
+    expect(screen.getByText("Note B")).toBeInTheDocument();
   });
 
-  it("select-all selects all items", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    const selectAll = screen.getByLabelText("Select all");
-    await user.click(selectAll);
-
-    expect(screen.getByText("2 selected")).toBeInTheDocument();
+  it("shows note content snippets", () => {
+    render(<TrashPanel {...defaultProps} />);
+    expect(screen.getByText("Content of Note A")).toBeInTheDocument();
   });
 
-  it("select-all deselects when all are already selected", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    // Select all
-    const selectAll = screen.getByLabelText("Select all");
-    await user.click(selectAll);
-    expect(screen.getByText("2 selected")).toBeInTheDocument();
-
-    // Deselect all
-    await user.click(selectAll);
-    expect(screen.getByText("2 items")).toBeInTheDocument();
+  it("shows deletion date", () => {
+    render(<TrashPanel {...defaultProps} />);
+    const deletedLabels = screen.getAllByText(/Deleted/);
+    expect(deletedLabels.length).toBeGreaterThan(0);
   });
 
-  it("shows 'Delete Selected (N)' when items selected", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    await user.click(screen.getByLabelText("Select Note A"));
-
-    expect(screen.getByText("Delete Selected (1)")).toBeInTheDocument();
-  });
-
-  it("shows 'Delete All' when no items selected", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-    ];
-    await renderAndOpenTrash(notes);
-
-    expect(screen.getByText("Delete All")).toBeInTheDocument();
-  });
-
-  it("confirmation dialog appears on Delete All click", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    await user.click(screen.getByText("Delete All"));
-
-    expect(screen.getByText("Empty Trash")).toBeInTheDocument();
-    expect(screen.getByText(/Permanently delete all 2 trashed notes/)).toBeInTheDocument();
-  });
-
-  it("confirmation dialog appears on Delete Selected click", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    await user.click(screen.getByLabelText("Select Note A"));
-    await user.click(screen.getByText("Delete Selected (1)"));
-
-    expect(screen.getByText("Delete Selected")).toBeInTheDocument();
-    expect(screen.getByText(/Permanently delete 1 selected note\?/)).toBeInTheDocument();
-  });
-
-  it("calls emptyTrash after confirming empty all", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    await user.click(screen.getByText("Delete All"));
-    // Click the "Delete" button in the dialog
-    const dialog = screen.getByText("Empty Trash").closest("div")!.parentElement!;
-    const deleteBtn = within(dialog).getAllByText("Delete").find((el) => el.tagName === "BUTTON")!;
-    await user.click(deleteBtn);
-
-    expect(mockEmptyTrash).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls bulkHardDelete after confirming selected delete", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    await user.click(screen.getByLabelText("Select Note A"));
-    await user.click(screen.getByText("Delete Selected (1)"));
-
-    const dialog = screen.getByText("Delete Selected").closest("div")!.parentElement!;
-    const deleteBtn = within(dialog).getAllByText("Delete").find((el) => el.tagName === "BUTTON")!;
-    await user.click(deleteBtn);
-
-    expect(mockBulkHardDelete).toHaveBeenCalledWith(["t1"]);
-  });
-
-  it("cancel hides confirmation dialog", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    await user.click(screen.getByText("Delete All"));
-    expect(screen.getByText("Empty Trash")).toBeInTheDocument();
-
-    await user.click(screen.getByText("Cancel"));
-    expect(screen.queryByText("Empty Trash")).not.toBeInTheDocument();
-  });
-
-  it("shows 'Trash is empty' when no trashed notes", async () => {
-    await renderAndOpenTrash([]);
-
+  it("shows empty state when no notes", () => {
+    render(<TrashPanel {...defaultProps} notes={[]} />);
     expect(screen.getByText("Trash is empty")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Select all")).not.toBeInTheDocument();
   });
 
-  it("does not show bulk actions when trash is empty", async () => {
-    await renderAndOpenTrash([]);
-
-    expect(screen.queryByText("Delete All")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Select all")).not.toBeInTheDocument();
-  });
-});
-
-describe("TrashView — note selection & editor", () => {
-  it("clicking a trashed note title shows read-only content in editor area", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "My Trashed Note", content: "Hello world" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    // Click the note title button
-    await user.click(screen.getByRole("button", { name: "My Trashed Note" }));
-
-    // Should show read-only title as a div (not an input)
-    const titleElements = screen.getAllByText("My Trashed Note");
-    // One in sidebar list, one in editor title area
-    expect(titleElements.length).toBeGreaterThanOrEqual(2);
-    // The editor title should be a div, not an input
-    expect(screen.queryByPlaceholderText("Note title")).not.toBeInTheDocument();
-
-    // Should show read-only content via MarkdownPreview
-    expect(screen.getByTestId("mock-preview")).toHaveTextContent("Hello world");
-
-    // Should NOT show the editable editor
-    expect(screen.queryByTestId("mock-editor")).not.toBeInTheDocument();
+  it("has sort dropdown", () => {
+    render(<TrashPanel {...defaultProps} />);
+    expect(screen.getByLabelText("Sort by")).toBeInTheDocument();
   });
 
-  it("trash toolbar shows formatted deletion date", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A", deletedAt: "2024-06-15T10:30:00.000Z" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    await user.click(screen.getByRole("button", { name: "Note A" }));
-
-    // Should show the formatted date
-    const expectedDate = new Date("2024-06-15T10:30:00.000Z").toLocaleDateString();
-    expect(screen.getByText(`Deleted ${expectedDate}`)).toBeInTheDocument();
+  it("has filter input", () => {
+    render(<TrashPanel {...defaultProps} />);
+    expect(screen.getByPlaceholderText("Filter trash...")).toBeInTheDocument();
   });
 
-  it("trash toolbar Restore button calls restoreNote and clears editor", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A", content: "content A" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    // Select the note
-    await user.click(screen.getByRole("button", { name: "Note A" }));
-    expect(screen.getByTestId("mock-preview")).toBeInTheDocument();
-
-    // Click Restore
-    await user.click(screen.getByRole("button", { name: "Restore" }));
-
-    expect(mockRestoreNote).toHaveBeenCalledWith("t1");
-
-    // Editor should be cleared — back to placeholder
-    await screen.findByText("Select a note to preview");
+  it("filters notes by title", async () => {
+    render(<TrashPanel {...defaultProps} />);
+    const input = screen.getByPlaceholderText("Filter trash...");
+    await userEvent.type(input, "Note A");
+    expect(screen.getByText("Note A")).toBeInTheDocument();
+    expect(screen.queryByText("Note B")).not.toBeInTheDocument();
   });
 
-  it("Delete Permanently shows inline confirmation on first click", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
-
-    await user.click(screen.getByRole("button", { name: "Note A" }));
-
-    // Click Delete Permanently
-    await user.click(screen.getByRole("button", { name: "Delete Permanently" }));
-
-    // Should show inline confirmation
-    expect(screen.getByText("Delete forever?")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-
-    // Should NOT have called hardDeleteNote yet
-    expect(mockHardDeleteNote).not.toHaveBeenCalled();
+  it("has select toggle button", () => {
+    render(<TrashPanel {...defaultProps} />);
+    expect(screen.getByText("Select")).toBeInTheDocument();
   });
 
-  it("confirming permanent delete calls hardDeleteNote and clears editor", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
+  it("shows checkboxes when select mode enabled", async () => {
+    render(<TrashPanel {...defaultProps} />);
+    expect(screen.queryByLabelText("Select Note A")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Note A" }));
-
-    // First click — shows confirmation
-    await user.click(screen.getByRole("button", { name: "Delete Permanently" }));
-
-    // Second click — confirm
-    await user.click(screen.getByRole("button", { name: "Confirm" }));
-
-    expect(mockHardDeleteNote).toHaveBeenCalledWith("t1");
-
-    // Editor should be cleared
-    await screen.findByText("Select a note to preview");
+    await userEvent.click(screen.getByText("Select"));
+    expect(screen.getByLabelText("Select Note A")).toBeInTheDocument();
+    expect(screen.getByLabelText("Select Note B")).toBeInTheDocument();
   });
 
-  it("cancel hides inline permanent delete confirmation", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
+  it("hides checkboxes when select mode disabled", async () => {
+    render(<TrashPanel {...defaultProps} />);
+    await userEvent.click(screen.getByText("Select"));
+    expect(screen.getByLabelText("Select Note A")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Note A" }));
-
-    // Show confirmation
-    await user.click(screen.getByRole("button", { name: "Delete Permanently" }));
-    expect(screen.getByText("Delete forever?")).toBeInTheDocument();
-
-    // Cancel
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-
-    // Confirmation should be hidden, Delete Permanently button should be back
-    expect(screen.queryByText("Delete forever?")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete Permanently" })).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Done"));
+    expect(screen.queryByLabelText("Select Note A")).not.toBeInTheDocument();
   });
 
-  it("selected note is highlighted in trash list", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    const user = await renderAndOpenTrash(notes);
+  it("selects note on click when not in select mode", async () => {
+    render(<TrashPanel {...defaultProps} />);
+    await userEvent.click(screen.getByText("Note A"));
+    expect(defaultProps.onSelect).toHaveBeenCalled();
+  });
 
-    await user.click(screen.getByRole("button", { name: "Note A" }));
+  it("shows empty trash button in select mode with no selection", async () => {
+    render(<TrashPanel {...defaultProps} />);
+    await userEvent.click(screen.getByText("Select"));
+    expect(screen.getByText("Empty Trash")).toBeInTheDocument();
+  });
 
-    // The parent container of the selected note should have highlight class
-    const noteBtn = screen.getByRole("button", { name: "Note A" });
-    const container = noteBtn.closest("div");
-    expect(container?.className).toContain("bg-accent");
-    expect(container?.className).toContain("text-foreground");
+  it("shows restore and delete buttons when items selected", async () => {
+    render(<TrashPanel {...defaultProps} />);
+    await userEvent.click(screen.getByText("Select"));
+    await userEvent.click(screen.getByLabelText("Select Note A"));
+
+    expect(screen.getByText("Restore (1)")).toBeInTheDocument();
+    expect(screen.getByText("Delete (1)")).toBeInTheDocument();
+  });
+
+  it("calls onRestore with selected ids", async () => {
+    render(<TrashPanel {...defaultProps} />);
+    await userEvent.click(screen.getByText("Select"));
+    await userEvent.click(screen.getByLabelText("Select Note A"));
+    await userEvent.click(screen.getByText("Restore (1)"));
+
+    expect(defaultProps.onRestore).toHaveBeenCalledWith(["1"]);
+  });
+
+  it("highlights selected note", () => {
+    render(<TrashPanel {...defaultProps} selectedId="1" />);
+    const noteA = screen.getByText("Note A");
+    expect(noteA.className).toContain("text-foreground");
+  });
+
+  it("shows singular item count for one note", () => {
+    render(<TrashPanel {...defaultProps} notes={[makeNote("1", "Only Note")]} />);
+    expect(screen.getByText("1 item")).toBeInTheDocument();
   });
 });
-
-describe("TrashView — trash count badge", () => {
-  it("shows trash count badge when trash has items", async () => {
-    const notes = [
-      makeTrashNote({ id: "t1", title: "Note A" }),
-      makeTrashNote({ id: "t2", title: "Note B" }),
-    ];
-    mockFetchTrash.mockResolvedValue(notes);
-
-    render(<CommandProvider><NotesPage /></CommandProvider>);
-    await screen.findAllByTitle("Trash");
-
-    // Wait for trash count to load — badge should show "2"
-    const trashButton = screen.getByTitle("Trash");
-    await vi.waitFor(() => {
-      const badge = trashButton.querySelector("span");
-      expect(badge).toHaveTextContent("2");
-    });
-  });
-
-  it("does not show trash count badge when trash is empty", async () => {
-    mockFetchTrash.mockResolvedValue([]);
-
-    render(<CommandProvider><NotesPage /></CommandProvider>);
-    await screen.findAllByTitle("Trash");
-
-    // Wait a tick for the effect to settle
-    await vi.waitFor(() => {
-      const trashButton = screen.getByTitle("Trash");
-      // The badge span should not exist
-      const badge = trashButton.querySelector("span");
-      expect(badge).toBeNull();
-    });
-  });
-});
-
