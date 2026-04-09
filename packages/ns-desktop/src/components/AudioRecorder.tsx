@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { AudioMode, RecordingSource } from "../hooks/useAiSettings.ts";
 import type { Note } from "@derekentringer/ns-shared";
-import { transcribeAudio } from "../api/ai.ts";
+import { transcribeAudio, transcribeChunk, structureAndCreateNote } from "../api/ai.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { readFile } from "@tauri-apps/plugin-fs";
@@ -20,6 +20,7 @@ const SOURCE_LABELS: Record<RecordingSource, string> = {
 
 const MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 const MAX_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
+const CHUNK_INTERVAL_MS = 20_000; // Send a chunk every 20 seconds
 
 const PREFERRED_MIME_TYPES = [
   "audio/webm;codecs=opus",
@@ -43,7 +44,12 @@ export interface AudioRecordingState {
   mode: AudioMode;
   stream: MediaStream | null;
   audioLevel: number;
+  liveTranscript: string;
   onStop: () => void;
+}
+
+function generateSessionId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 interface AudioRecorderProps {
@@ -66,10 +72,19 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   const [showModes, setShowModes] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState("");
   const [meetingSupported, setMeetingSupported] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  // Chunked transcription state
+  const sessionIdRef = useRef("");
+  const chunkIndexRef = useRef(0);
+  const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const transcriptChunksRef = useRef<Map<number, string>>(new Map());
+  const allAudioChunksRef = useRef<Blob[]>([]);
+  const lastChunkSentRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
@@ -110,6 +125,10 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (chunkTimerRef.current) {
+      clearInterval(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -120,11 +139,57 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     }
     mediaRecorderRef.current = null;
     chunksRef.current = [];
+    allAudioChunksRef.current = [];
+    lastChunkSentRef.current = 0;
+    transcriptChunksRef.current = new Map();
+    sessionIdRef.current = "";
+    chunkIndexRef.current = 0;
     isMeetingRef.current = false;
   }, []);
 
   // Cleanup on unmount
   useEffect(() => cleanup, [cleanup]);
+
+  // Build the full transcript from ordered chunks
+  function getOrderedTranscript(): string {
+    const map = transcriptChunksRef.current;
+    if (map.size === 0) return "";
+    const maxIdx = Math.max(...map.keys());
+    const parts: string[] = [];
+    for (let i = 0; i <= maxIdx; i++) {
+      const text = map.get(i);
+      if (text) parts.push(text);
+    }
+    return parts.join(" ");
+  }
+
+  // Send accumulated audio as a chunk for transcription
+  async function sendChunk() {
+    const allChunks = allAudioChunksRef.current;
+    const lastSent = lastChunkSentRef.current;
+    if (allChunks.length <= lastSent) return;
+
+    const newChunks = allChunks.slice(lastSent);
+    lastChunkSentRef.current = allChunks.length;
+
+    const mimeType = mediaRecorderRef.current?.mimeType || "audio/webm";
+    const chunkBlob = new Blob(newChunks, { type: mimeType });
+
+    if (chunkBlob.size < 1024) return;
+
+    const idx = chunkIndexRef.current++;
+    const sid = sessionIdRef.current;
+
+    try {
+      const result = await transcribeChunk(chunkBlob, sid, idx);
+      if (result.text && result.text.trim()) {
+        transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
+        setLiveTranscript(getOrderedTranscript());
+      }
+    } catch (err) {
+      console.warn("Chunk transcription failed:", err);
+    }
+  }
 
   const useMeeting = meetingSupported && recordingSource === "meeting";
 
@@ -196,25 +261,48 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
+      allAudioChunksRef.current = [];
+      lastChunkSentRef.current = 0;
+      transcriptChunksRef.current = new Map();
+      sessionIdRef.current = generateSessionId();
+      chunkIndexRef.current = 0;
+      setLiveTranscript("");
 
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+          allAudioChunksRef.current.push(e.data);
+        }
       };
 
       recorder.onstop = async () => {
+        // Send any remaining audio as a final chunk
+        await sendChunk();
+
         const blobType = recorder.mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type: blobType });
+        const accumulatedTranscript = getOrderedTranscript();
         cleanup();
         setState("processing");
 
         try {
-          const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
-          onNoteCreatedRef.current(result.note);
+          if (accumulatedTranscript && accumulatedTranscript.trim().length > 0) {
+            const result = await structureAndCreateNote(
+              accumulatedTranscript,
+              modeRef.current,
+              folderIdRef.current,
+            );
+            onNoteCreatedRef.current(result.note);
+          } else {
+            const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
+            onNoteCreatedRef.current(result.note);
+          }
         } catch (err) {
           onErrorRef.current(err instanceof Error ? err.message : "Transcription failed");
         } finally {
           setState("idle");
           setElapsed(0);
+          setLiveTranscript("");
         }
       };
 
@@ -229,6 +317,11 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
           handleStop();
         }
       }, 1000);
+
+      // Chunk transcription timer
+      chunkTimerRef.current = setInterval(() => {
+        sendChunk();
+      }, CHUNK_INTERVAL_MS);
     } catch (err) {
       cleanup();
       if (err instanceof DOMException && err.name === "NotAllowedError") {
@@ -282,6 +375,10 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (chunkTimerRef.current) {
+      clearInterval(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
   }, []);
 
   // Notify parent of recording state changes
@@ -295,10 +392,11 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         mode,
         stream: streamRef.current,
         audioLevel,
+        liveTranscript,
         onStop: handleStop,
       });
     }
-  }, [state, elapsed, mode, audioLevel, handleStop, onRecordingStateChange]);
+  }, [state, elapsed, mode, audioLevel, liveTranscript, handleStop, onRecordingStateChange]);
 
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPressRef = useRef(false);
