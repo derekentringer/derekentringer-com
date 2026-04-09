@@ -193,12 +193,70 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
 
   const useMeeting = meetingSupported && recordingSource === "meeting";
 
+  async function startMeetingChunkCapture() {
+    // Open a parallel mic stream just for live transcription chunking
+    // (the native Rust recording captures system+mic for the final note)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const mimeType = getSupportedMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      allAudioChunksRef.current = [];
+      lastChunkSentRef.current = 0;
+      transcriptChunksRef.current = new Map();
+      sessionIdRef.current = generateSessionId();
+      chunkIndexRef.current = 0;
+      setLiveTranscript("");
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          allAudioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        // Just cleanup — the native recording handles the final transcription
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+        }
+        mediaRecorderRef.current = null;
+      };
+
+      recorder.start(1000);
+
+      chunkTimerRef.current = setInterval(() => {
+        sendChunk();
+      }, CHUNK_INTERVAL_MS);
+    } catch {
+      // Non-fatal — meeting recording works without live transcription
+      console.warn("Could not start mic capture for live transcription");
+    }
+  }
+
+  function stopMeetingChunkCapture() {
+    if (chunkTimerRef.current) {
+      clearInterval(chunkTimerRef.current);
+      chunkTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  }
+
   async function handleMeetingRecord() {
     try {
       await invoke("start_meeting_recording");
       isMeetingRef.current = true;
       setState("recording");
       setElapsed(0);
+
+      // Start parallel mic capture for live transcription
+      startMeetingChunkCapture();
 
       // Listen for tick events from Rust (payload is [elapsed_secs, rms_level])
       const unlisten = await listen<[number, number]>("meeting-recording-tick", (event) => {
@@ -218,6 +276,9 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
 
   async function handleMeetingStop() {
     try {
+      // Stop live transcription chunk capture
+      stopMeetingChunkCapture();
+
       const wavPath = await invoke<string>("stop_meeting_recording");
 
       // Unlisten ticks
