@@ -41,16 +41,16 @@ function relativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Displays transcript text with a typing animation for new characters */
+/** Displays transcript text with a typing animation for new characters, auto-scrolling to bottom */
 function LiveTranscript({ text }: { text: string }) {
   const [displayLen, setDisplayLen] = useState(text.length);
   const targetLen = text.length;
   const prevTextRef = useRef(text);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // If text changed and got longer, animate the new characters
     if (text.length > prevTextRef.current.length) {
-      // Start from where the old text ended
       setDisplayLen(prevTextRef.current.length);
     }
     prevTextRef.current = text;
@@ -59,7 +59,6 @@ function LiveTranscript({ text }: { text: string }) {
   useEffect(() => {
     if (displayLen >= targetLen) return;
     const remaining = targetLen - displayLen;
-    // Type faster when there's more to catch up (batch 3 chars at a time for long gaps)
     const batch = remaining > 20 ? 3 : 1;
     const speed = remaining > 50 ? 10 : 30;
     const timer = setTimeout(() => {
@@ -68,16 +67,29 @@ function LiveTranscript({ text }: { text: string }) {
     return () => clearTimeout(timer);
   }, [displayLen, targetLen]);
 
+  // Auto-scroll to bottom as text appears
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [displayLen]);
+
   const displayed = text.slice(0, displayLen);
   const isTyping = displayLen < targetLen;
 
   return (
-    <span>
-      {displayed}
-      {isTyping && <span className="animate-pulse">▎</span>}
-    </span>
+    <div ref={scrollRef} className="overflow-y-auto h-full">
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        {displayed}
+        {isTyping && <span className="animate-pulse">▎</span>}
+      </p>
+    </div>
   );
 }
+
+const TRANSCRIPT_MIN_HEIGHT = 60;
+const TRANSCRIPT_MAX_HEIGHT = 400;
+const TRANSCRIPT_DEFAULT_HEIGHT = 120;
 
 interface Message {
   role: "user" | "assistant";
@@ -100,6 +112,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [meetingCollapsed, setMeetingCollapsed] = useState(false);
+  const [transcriptHeight, setTranscriptHeight] = useState(TRANSCRIPT_DEFAULT_HEIGHT);
+  const transcriptResizing = useRef(false);
+  const transcriptStartY = useRef(0);
+  const transcriptStartH = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,6 +144,27 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       setMeetingCollapsed(false);
     }
   }, [isRecording]);
+
+  // Transcript area resize via drag
+  const handleTranscriptResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    transcriptResizing.current = true;
+    transcriptStartY.current = e.clientY;
+    transcriptStartH.current = transcriptHeight;
+
+    function onMove(ev: PointerEvent) {
+      if (!transcriptResizing.current) return;
+      const delta = ev.clientY - transcriptStartY.current;
+      setTranscriptHeight(Math.min(TRANSCRIPT_MAX_HEIGHT, Math.max(TRANSCRIPT_MIN_HEIGHT, transcriptStartH.current + delta)));
+    }
+    function onUp() {
+      transcriptResizing.current = false;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    }
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }, [transcriptHeight]);
 
   async function handleAsk() {
     const question = input.trim();
@@ -317,11 +354,21 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 </div>
               ) : null}
 
-              {/* Live transcript preview */}
+              {/* Live transcript — resizable, scrollable */}
               {isRecording && hasTranscript && (
-                <p className="text-xs text-muted-foreground mt-3 pt-2.5 border-t border-border/50 leading-relaxed line-clamp-4">
-                  <LiveTranscript text={liveTranscript!.slice(-300)} />
-                </p>
+                <div className="mt-2 border-t border-border/50">
+                  {/* Resize handle */}
+                  <div
+                    onPointerDown={handleTranscriptResizeStart}
+                    className="flex items-center justify-center h-3 cursor-row-resize group"
+                  >
+                    <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-muted-foreground transition-colors" />
+                  </div>
+                  {/* Scrollable transcript area */}
+                  <div style={{ height: transcriptHeight }}>
+                    <LiveTranscript text={liveTranscript!} />
+                  </div>
+                </div>
               )}
             </div>
           )}
