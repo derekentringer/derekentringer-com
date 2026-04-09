@@ -154,8 +154,7 @@ import { AudioRecorder, type AudioRecordingState } from "../components/AudioReco
 import { RecordingBar } from "../components/RecordingBar.tsx";
 import { FolderPicker } from "../components/FolderPicker.tsx";
 import { SyncSwarmGame } from "../components/SyncSwarmGame.tsx";
-import { QAPanel } from "../components/QAPanel.tsx";
-import { MeetingAssistant } from "../components/MeetingAssistant.tsx";
+import { AIAssistantPanel } from "../components/AIAssistantPanel.tsx";
 import { useMeetingContext } from "../hooks/useMeetingContext.ts";
 import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
@@ -167,7 +166,7 @@ import { NoteListPanel } from "../components/NoteListPanel.tsx";
 
 type SaveStatus = "idle" | "saving" | "saved";
 type SidebarView = "notes" | "trash";
-type DrawerTab = "assistant" | "history" | "toc" | "meeting";
+type DrawerTab = "assistant" | "history" | "toc";
 
 const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
 
@@ -912,11 +911,11 @@ export function NotesPage() {
     }
   }, [selectedId, title, content, reloadNotes, loadFavoriteNotes, loadNoteTitles, semanticEnabled]);
 
-  // Auto-open Meeting Assistant drawer when recording starts
+  // Auto-open AI Assistant drawer when recording starts
   const prevIsRecordingRef = useRef(false);
   useEffect(() => {
     if (isRecording && !prevIsRecordingRef.current) {
-      setDrawerTab("meeting");
+      setDrawerTab("assistant");
       setDrawerOpen(true);
     }
     prevIsRecordingRef.current = isRecording ?? false;
@@ -3455,27 +3454,6 @@ export function NotesPage() {
       <div className="relative h-full shrink-0 overflow-visible">
         {/* Tab buttons on left edge, above backlinks panel */}
         {!focusMode && <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
-          {/* Meeting Assistant tab — visible during recording or when results exist */}
-          {(isRecording || meetingContext.relevantNotes.length > 0) && (
-            <button
-              onClick={() => handleDrawerTabClick("meeting")}
-              className={`flex items-center justify-center w-8 h-10 rounded-l-md shadow-md transition-colors cursor-pointer ${
-                drawerOpen && drawerTab === "meeting"
-                  ? "bg-primary text-primary-contrast"
-                  : "bg-card text-muted-foreground border border-r-0 border-border hover:text-foreground hover:bg-muted"
-              }`}
-              title="Meeting Assistant"
-              data-testid="drawer-tab-meeting"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              </svg>
-              {isRecording && (
-                <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-destructive" />
-              )}
-            </button>
-          )}
           {/* AI Assistant tab — always visible when setting enabled */}
           {aiSettings.masterAiEnabled && aiSettings.qaAssistant && (
             <button
@@ -3544,16 +3522,15 @@ export function NotesPage() {
               onPointerDown={drawerResize.onPointerDown}
             />
             <div key={drawerTab} className="flex-1 min-w-0 h-full animate-fade-in">
-              {drawerTab === "meeting" ? (
-                <MeetingAssistant
+              {drawerTab === "assistant" && aiSettings.masterAiEnabled && aiSettings.qaAssistant ? (
+                <AIAssistantPanel
+                  onSelectNote={handleQaSelectNote}
+                  isOpen={drawerOpen}
                   isRecording={isRecording ?? false}
-                  isSearching={meetingContext.isSearching}
+                  isSearchingContext={meetingContext.isSearching}
                   liveTranscript={recordingState?.liveTranscript ?? ""}
                   relevantNotes={meetingContext.relevantNotes}
-                  onSelectNote={handleQaSelectNote}
                 />
-              ) : drawerTab === "assistant" && aiSettings.masterAiEnabled && aiSettings.qaAssistant ? (
-                <QAPanel onSelectNote={handleQaSelectNote} isOpen={drawerOpen} />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
                   noteId={selectedId}
