@@ -315,3 +315,42 @@ export async function transcribeAudio(
 
   throw lastError ?? new Error("Transcription failed");
 }
+
+// --- Meeting Context ---
+
+export interface MeetingContextNote {
+  id: string;
+  title: string;
+  snippet: string;
+  score: number;
+  updatedAt: string;
+}
+
+export interface MeetingContextResult {
+  relevantNotes: MeetingContextNote[];
+}
+
+export async function fetchMeetingContext(
+  transcript: string,
+  excludeNoteIds?: string[],
+  threshold?: number,
+): Promise<MeetingContextResult> {
+  const response = await apiFetch("/ai/meeting-context", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transcript, excludeNoteIds, threshold }),
+  });
+
+  if (!response.ok) {
+    let message = `Meeting context failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data.message) message = data.message;
+    } catch {
+      // Use default message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}

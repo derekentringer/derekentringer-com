@@ -9,7 +9,7 @@ import {
   answerQuestion,
 } from "../services/aiService.js";
 import { transcribeAudio, transcribeAudioChunked } from "../services/whisperService.js";
-import { getNote, updateNote, createNote, findRelevantNotes } from "../store/noteStore.js";
+import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
@@ -433,6 +433,59 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         tags: structured.tags,
         note,
       });
+    },
+  );
+
+  // POST /ai/meeting-context — find notes relevant to live meeting transcript
+  fastify.post<{ Body: { transcript: string; excludeNoteIds?: string[]; threshold?: number } }>(
+    "/meeting-context",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["transcript"],
+          additionalProperties: false,
+          properties: {
+            transcript: { type: "string", minLength: 10 },
+            excludeNoteIds: { type: "array", items: { type: "string" } },
+            threshold: { type: "number", minimum: 0, maximum: 1 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const { transcript, excludeNoteIds, threshold } = request.body;
+
+      try {
+        request.log.info(
+          { transcriptLength: transcript.length },
+          "Finding meeting context notes",
+        );
+
+        const results = await findMeetingContextNotes(
+          userId,
+          transcript,
+          10,
+          threshold ?? 0.65,
+        );
+
+        // Filter out excluded notes (already shown to the user)
+        const excludeSet = new Set(excludeNoteIds ?? []);
+        const filtered = results.filter((n) => !excludeSet.has(n.id));
+
+        return reply.send({
+          relevantNotes: filtered,
+        });
+      } catch (err) {
+        request.log.error(err, "Meeting context search failed");
+        const message = err instanceof Error ? err.message : "Context search failed";
+        return reply.status(502).send({
+          statusCode: 502,
+          error: "Bad Gateway",
+          message,
+        });
+      }
     },
   );
 

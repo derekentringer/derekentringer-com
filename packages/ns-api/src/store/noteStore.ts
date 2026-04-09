@@ -970,6 +970,64 @@ export async function findRelevantNotes(
   return notes;
 }
 
+export interface MeetingContextNote {
+  id: string;
+  title: string;
+  snippet: string;
+  score: number;
+  updatedAt: Date;
+}
+
+export async function findMeetingContextNotes(
+  userId: string,
+  query: string,
+  limit: number = 8,
+  threshold: number = 0.65,
+): Promise<MeetingContextNote[]> {
+  const prisma = getPrisma();
+  const queryEmbedding = await generateQueryEmbedding(query);
+  const vectorStr = `[${queryEmbedding.join(",")}]`;
+
+  const MIN_CONTENT_LEN = 20;
+
+  const notes = await prisma.$queryRawUnsafe<
+    { id: string; title: string; content: string; score: number; updatedAt: Date }[]
+  >(
+    `SELECT "id", "title", "content", (1 - ("embedding" <=> $2::vector)) AS score, "updatedAt"
+     FROM "notes"
+     WHERE "deletedAt" IS NULL
+       AND "userId" = $1
+       AND "embedding" IS NOT NULL
+       AND LENGTH("content") >= ${MIN_CONTENT_LEN}
+       AND (1 - ("embedding" <=> $2::vector)) > $3
+     ORDER BY "embedding" <=> $2::vector ASC
+     LIMIT $4`,
+    userId,
+    vectorStr,
+    threshold,
+    limit,
+  );
+
+  return notes.map((n) => ({
+    id: n.id,
+    title: n.title || "Untitled",
+    snippet: extractSnippet(n.content, 150),
+    score: Math.round(Number(n.score) * 100) / 100,
+    updatedAt: n.updatedAt,
+  }));
+}
+
+function extractSnippet(content: string, maxLen: number): string {
+  // Strip markdown formatting for a clean snippet
+  const cleaned = content
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/[*_~`>|[\]()!]/g, "")
+    .replace(/\n+/g, " ")
+    .trim();
+  if (cleaned.length <= maxLen) return cleaned;
+  return cleaned.slice(0, maxLen).replace(/\s\S*$/, "") + "...";
+}
+
 export async function removeTag(userId: string, name: string): Promise<number> {
   const prisma = getPrisma();
   const notes = await prisma.note.findMany({
