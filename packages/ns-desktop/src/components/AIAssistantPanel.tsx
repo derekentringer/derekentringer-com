@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -39,6 +39,44 @@ function relativeTime(dateStr: string): string {
   const weeks = Math.floor(days / 7);
   if (weeks < 4) return `${weeks}w ago`;
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Displays transcript text with a typing animation for new characters */
+function LiveTranscript({ text }: { text: string }) {
+  const [displayLen, setDisplayLen] = useState(text.length);
+  const targetLen = text.length;
+  const prevTextRef = useRef(text);
+
+  useEffect(() => {
+    // If text changed and got longer, animate the new characters
+    if (text.length > prevTextRef.current.length) {
+      // Start from where the old text ended
+      setDisplayLen(prevTextRef.current.length);
+    }
+    prevTextRef.current = text;
+  }, [text]);
+
+  useEffect(() => {
+    if (displayLen >= targetLen) return;
+    const remaining = targetLen - displayLen;
+    // Type faster when there's more to catch up (batch 3 chars at a time for long gaps)
+    const batch = remaining > 20 ? 3 : 1;
+    const speed = remaining > 50 ? 10 : 30;
+    const timer = setTimeout(() => {
+      setDisplayLen((prev) => Math.min(prev + batch, targetLen));
+    }, speed);
+    return () => clearTimeout(timer);
+  }, [displayLen, targetLen]);
+
+  const displayed = text.slice(0, displayLen);
+  const isTyping = displayLen < targetLen;
+
+  return (
+    <span>
+      {displayed}
+      {isTyping && <span className="animate-pulse">▎</span>}
+    </span>
+  );
 }
 
 interface Message {
@@ -281,8 +319,8 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
               {/* Live transcript preview */}
               {isRecording && hasTranscript && (
-                <p className="text-[10px] text-muted-foreground/50 mt-2 line-clamp-2 border-t border-border/50 pt-1.5">
-                  {liveTranscript!.slice(-200)}
+                <p className="text-xs text-muted-foreground mt-3 pt-2.5 border-t border-border/50 leading-relaxed line-clamp-4">
+                  <LiveTranscript text={liveTranscript!.slice(-300)} />
                 </p>
               )}
             </div>
