@@ -261,6 +261,13 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     isRecording ?? false,
     recordingState?.liveTranscript ?? "",
   );
+
+  // Capture liveTranscript in a ref so it survives the recording state reset
+  const lastLiveTranscriptRef = useRef("");
+  useEffect(() => {
+    const t = recordingState?.liveTranscript ?? "";
+    if (t.length > 0) lastLiveTranscriptRef.current = t;
+  }, [recordingState?.liveTranscript]);
   const [showGame, setShowGame] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -1875,7 +1882,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
   async function handleAudioNoteCreated(note: Note) {
     const surfacedNotes = meetingContext.relevantNotes;
-    const liveText = recordingState?.liveTranscript ?? "";
+    const liveText = lastLiveTranscriptRef.current;
     const hasRefs = surfacedNotes.length > 0;
     const hasLiveTranscript = liveText.trim().length > 0;
 
@@ -1908,6 +1915,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
     loadFolders();
     setDashboardKey((k) => k + 1);
+    lastLiveTranscriptRef.current = "";
   }
 
   // Clear suggested tags when switching notes

@@ -328,6 +328,13 @@ export function NotesPage() {
     recordingState?.liveTranscript ?? "",
   );
 
+  // Capture liveTranscript in a ref so it survives the recording state reset
+  const lastLiveTranscriptRef = useRef("");
+  useEffect(() => {
+    const t = recordingState?.liveTranscript ?? "";
+    if (t.length > 0) lastLiveTranscriptRef.current = t;
+  }, [recordingState?.liveTranscript]);
+
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSuggestingTags, setIsSuggestingTags] = useState(false);
@@ -1223,7 +1230,7 @@ export function NotesPage() {
     try {
       let finalNote = serverNote;
       const surfacedNotes = meetingContext.relevantNotes;
-      const liveText = recordingState?.liveTranscript ?? "";
+      const liveText = lastLiveTranscriptRef.current;
       const hasRefs = surfacedNotes.length > 0;
       const hasLiveTranscript = liveText.trim().length > 0;
 
@@ -1254,6 +1261,7 @@ export function NotesPage() {
       loadNoteTitles();
       setDashboardKey((k) => k + 1);
       notifyLocalChange();
+      lastLiveTranscriptRef.current = "";
     } catch (err) {
       console.error("Failed to save audio note:", err);
       showError(`Failed to save audio note: ${err instanceof Error ? err.message : String(err)}`);
