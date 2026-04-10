@@ -72,10 +72,15 @@ export interface AskQuestionEvent {
 export async function* askQuestion(
   question: string,
   signal: AbortSignal,
+  transcript?: string,
 ): AsyncGenerator<AskQuestionEvent> {
+  const body: { question: string; transcript?: string } = { question };
+  if (transcript && transcript.trim().length > 0) {
+    body.transcript = transcript;
+  }
   const response = await apiFetch("/ai/ask", {
     method: "POST",
-    body: JSON.stringify({ question }),
+    body: JSON.stringify(body),
     signal,
   });
 

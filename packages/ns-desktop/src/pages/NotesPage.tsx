@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { apiFetch } from "../api/client.ts";
 import { useAuth } from "../context/AuthContext.tsx";
 import { useCommands, CommandPalette, QuickSwitcher } from "../commands/index.ts";
 import { useMenuState } from "../hooks/useMenuState.ts";
@@ -319,6 +320,7 @@ export function NotesPage() {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
+  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string } | null>(null);
   const [showGame, setShowGame] = useState(false);
 
   // Meeting Assistant — surface relevant notes during recording
@@ -342,6 +344,12 @@ export function NotesPage() {
       lastRelevantNotesRef.current = meetingContext.relevantNotes;
     }
   }, [meetingContext.relevantNotes]);
+
+  // Capture recording mode in a ref so it survives the recording state reset
+  const lastRecordingModeRef = useRef<string>("meeting");
+  useEffect(() => {
+    if (recordingState?.mode) lastRecordingModeRef.current = recordingState.mode;
+  }, [recordingState?.mode]);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -1243,25 +1251,35 @@ export function NotesPage() {
       const hasLiveTranscript = liveText.trim().length > 0;
 
       if (hasRefs || hasLiveTranscript) {
-        const updateData: { content?: string; transcript?: string } = {};
+        const patchData: { content?: string; transcript?: string } = {};
 
         if (hasRefs) {
           const referencesSection = "\n\n## Related Notes Referenced\n" +
             surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
-          updateData.content = (serverNote.content || "") + referencesSection;
+          patchData.content = (serverNote.content || "") + referencesSection;
         }
 
         if (hasLiveTranscript) {
-          updateData.transcript = liveText;
+          patchData.transcript = liveText;
         }
 
+        // PATCH the server note directly (note doesn't exist locally yet)
         try {
-          finalNote = await updateNote(serverNote.id, updateData);
+          const resp = await apiFetch(`/notes/${serverNote.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patchData),
+          });
+          if (resp.ok) {
+            const result = await resp.json();
+            finalNote = result.note;
+          }
         } catch {
-          // If update fails, use the note without extras
+          // Non-fatal — use the note without extras
         }
       }
 
+      // Now insert the final note (with wiki-links) into local SQLite
       await upsertNoteFromRemote(finalNote);
       setNotes((prev) => [finalNote, ...prev]);
       openNoteAsTab(finalNote);
@@ -1269,6 +1287,12 @@ export function NotesPage() {
       loadNoteTitles();
       setDashboardKey((k) => k + 1);
       notifyLocalChange();
+      setCompletedAudioNote({
+        id: finalNote.id,
+        title: finalNote.title,
+        content: finalNote.content,
+        mode: lastRecordingModeRef.current,
+      });
       lastLiveTranscriptRef.current = "";
       lastRelevantNotesRef.current = [];
     } catch (err) {
@@ -3604,6 +3628,7 @@ export function NotesPage() {
                   liveTranscript={recordingState?.liveTranscript ?? ""}
                   relevantNotes={meetingContext.relevantNotes}
                   recordingMode={recordingState?.mode}
+                  completedNote={completedAudioNote}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel

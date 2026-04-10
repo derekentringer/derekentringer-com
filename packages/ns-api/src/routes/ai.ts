@@ -7,6 +7,7 @@ import {
   rewriteText,
   structureTranscript,
   answerQuestion,
+  answerMeetingQuestion,
 } from "../services/aiService.js";
 import { transcribeAudio, transcribeAudioChunked } from "../services/whisperService.js";
 import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
@@ -45,6 +46,7 @@ const askSchema = {
     additionalProperties: false,
     properties: {
       question: { type: "string", minLength: 1, maxLength: 2000 },
+      transcript: { type: "string", maxLength: 50000 },
     },
   },
 };
@@ -199,15 +201,16 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   );
 
   // POST /ai/ask — SSE streaming Q&A
-  fastify.post<{ Body: { question: string } }>(
+  fastify.post<{ Body: { question: string; transcript?: string } }>(
     "/ask",
     { schema: askSchema },
     async (
-      request: FastifyRequest<{ Body: { question: string } }>,
+      request: FastifyRequest<{ Body: { question: string; transcript?: string } }>,
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
-      const { question } = request.body;
+      const { question, transcript } = request.body;
+      const hasMeetingTranscript = transcript && transcript.trim().length > 0;
 
       const abortController = new AbortController();
       const passthrough = new PassThrough();
@@ -218,47 +221,65 @@ export default async function aiRoutes(fastify: FastifyInstance) {
 
       (async () => {
         try {
-          const relevantNotes = await findRelevantNotes(userId, question, 5);
-
-          // Enrich with image descriptions for AI context
-          if (relevantNotes.length > 0) {
-            const noteIds = relevantNotes.map((n) => n.id);
-            const images = await getImagesByNoteIds(userId, noteIds);
-            const descByNote = new Map<string, string[]>();
-            for (const img of images) {
-              if (img.aiDescription) {
-                const arr = descByNote.get(img.noteId) ?? [];
-                arr.push(img.aiDescription);
-                descByNote.set(img.noteId, arr);
-              }
-            }
-            for (const note of relevantNotes) {
-              (note as { imageDescriptions?: string[] }).imageDescriptions = descByNote.get(note.id);
-            }
-          }
-
-          const sources = relevantNotes.map((n) => ({
-            id: n.id,
-            title: n.title,
-          }));
-          passthrough.write(
-            `data: ${JSON.stringify({ sources })}\n\n`,
-          );
-
-          if (relevantNotes.length === 0) {
+          // When a live transcript is provided, use it as primary context
+          if (hasMeetingTranscript) {
             passthrough.write(
-              `data: ${JSON.stringify({ text: "I couldn't find any relevant notes to answer your question. Try adding more notes or rephrasing your question." })}\n\n`,
+              `data: ${JSON.stringify({ sources: [] })}\n\n`,
             );
-          } else {
-            for await (const chunk of answerQuestion(
+
+            for await (const chunk of answerMeetingQuestion(
               question,
-              relevantNotes,
+              transcript,
               abortController.signal,
             )) {
               if (abortController.signal.aborted) break;
               passthrough.write(
                 `data: ${JSON.stringify({ text: chunk })}\n\n`,
               );
+            }
+          } else {
+            const relevantNotes = await findRelevantNotes(userId, question, 5);
+
+            // Enrich with image descriptions for AI context
+            if (relevantNotes.length > 0) {
+              const noteIds = relevantNotes.map((n) => n.id);
+              const images = await getImagesByNoteIds(userId, noteIds);
+              const descByNote = new Map<string, string[]>();
+              for (const img of images) {
+                if (img.aiDescription) {
+                  const arr = descByNote.get(img.noteId) ?? [];
+                  arr.push(img.aiDescription);
+                  descByNote.set(img.noteId, arr);
+                }
+              }
+              for (const note of relevantNotes) {
+                (note as { imageDescriptions?: string[] }).imageDescriptions = descByNote.get(note.id);
+              }
+            }
+
+            const sources = relevantNotes.map((n) => ({
+              id: n.id,
+              title: n.title,
+            }));
+            passthrough.write(
+              `data: ${JSON.stringify({ sources })}\n\n`,
+            );
+
+            if (relevantNotes.length === 0) {
+              passthrough.write(
+                `data: ${JSON.stringify({ text: "I couldn't find any relevant notes to answer your question. Try adding more notes or rephrasing your question." })}\n\n`,
+              );
+            } else {
+              for await (const chunk of answerQuestion(
+                question,
+                relevantNotes,
+                abortController.signal,
+              )) {
+                if (abortController.signal.aborted) break;
+                passthrough.write(
+                  `data: ${JSON.stringify({ text: chunk })}\n\n`,
+                );
+              }
             }
           }
         } catch (error) {

@@ -370,6 +370,7 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
             Ok(())
         })
         .build(tauri::generate_context!())

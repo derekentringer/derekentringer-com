@@ -32,11 +32,19 @@ Real-time AI meeting assistant that surfaces relevant notes during audio recordi
 - Resize divider matches app's ResizeDivider style
 - Auto-opens AI Assistant drawer when recording starts
 - Chat placeholder changes to "Ask about this meeting..." during recording
-- When recording stops, "Meeting Ended" card inserted into chat with note pills + collapsible transcript
+- "Catch me up" button above chat input — sends full transcript to Claude for concise meeting summary (visible only during recording with transcript, hidden while streaming)
+- Live Q&A: during recording, chat questions are sent with the live transcript as context via optional `transcript` field on `/ai/ask`; uses `answerMeetingQuestion` with meeting-specific system prompt
+- When recording stops, dynamic "Recording Ended" card inserted into chat:
+  - Header adapts to recording mode: "Meeting Ended", "Lecture Ended", "Memo Saved", "Recording Ended"
+  - Shows bouncing dots + "Generating note..." while processing
+  - Once note is created: clickable note title, up to 3 key topic pills (extracted from mode-specific section headings), related notes, expandable transcript
+  - `completedNote` prop enriches the card when `handleAudioNoteCreated` fires
+- Chat bubble styling: compact `chat-markdown` CSS override (13px, line-height 1.5, no padding), tighter message gaps (8px)
 
 ### Post-Meeting Integration (Phase D)
 - Related notes appended as `## Related Notes Referenced` with wiki-links
 - Related notes captured in `lastRelevantNotesRef` to survive recording state reset (prevents empty refs)
+- Desktop: wiki-links saved via direct server PATCH (not local `updateNote`) to avoid FTS UNIQUE constraint on notes not yet in local SQLite
 - Raw transcript saved to `transcript` database column (nullable text)
 - Transcript saved directly via `apiFetch` PATCH in AudioRecorder's `onstop` handler
 - Transcript button (mic icon) on note toolbar — visible for audio notes with transcript
