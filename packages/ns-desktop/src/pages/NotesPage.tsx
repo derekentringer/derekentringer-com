@@ -155,6 +155,7 @@ import { RecordingBar } from "../components/RecordingBar.tsx";
 import { FolderPicker } from "../components/FolderPicker.tsx";
 import { SyncSwarmGame } from "../components/SyncSwarmGame.tsx";
 import { AIAssistantPanel } from "../components/AIAssistantPanel.tsx";
+import { TranscriptViewer } from "../components/TranscriptViewer.tsx";
 import { useMeetingContext } from "../hooks/useMeetingContext.ts";
 import { TocPanel } from "../components/TocPanel.tsx";
 import { Dashboard } from "../components/Dashboard.tsx";
@@ -218,6 +219,11 @@ export function NotesPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(editorSettings.defaultViewMode);
   const [showLineNumbers, setShowLineNumbers] = useState(editorSettings.showLineNumbers);
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  useEffect(() => {
+    setShowTranscript(false);
+  }, [selectedId]);
 
   // Search
   const [searchQuery, setSearchQuery] = useState("");
@@ -1215,18 +1221,29 @@ export function NotesPage() {
 
   async function handleAudioNoteCreated(serverNote: Note) {
     try {
-      // Append referenced notes from Meeting Assistant if any were surfaced
       let finalNote = serverNote;
       const surfacedNotes = meetingContext.relevantNotes;
-      if (surfacedNotes.length > 0) {
-        const referencesSection = "\n\n## Related Notes Referenced\n" +
-          surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
+      const liveText = recordingState?.liveTranscript ?? "";
+      const hasRefs = surfacedNotes.length > 0;
+      const hasLiveTranscript = liveText.trim().length > 0;
+
+      if (hasRefs || hasLiveTranscript) {
+        const updateData: { content?: string; transcript?: string } = {};
+
+        if (hasRefs) {
+          const referencesSection = "\n\n## Related Notes Referenced\n" +
+            surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
+          updateData.content = (serverNote.content || "") + referencesSection;
+        }
+
+        if (hasLiveTranscript) {
+          updateData.transcript = liveText;
+        }
+
         try {
-          finalNote = await updateNote(serverNote.id, {
-            content: (serverNote.content || "") + referencesSection,
-          });
+          finalNote = await updateNote(serverNote.id, updateData);
         } catch {
-          // If update fails, use the note without references
+          // If update fails, use the note without extras
         }
       }
 
@@ -3164,6 +3181,23 @@ export function NotesPage() {
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                 </button>
               )}
+              {selectedNote?.transcript && (
+                <button
+                  onClick={() => setShowTranscript((v) => !v)}
+                  className={`p-1 rounded transition-colors cursor-pointer ${
+                    showTranscript
+                      ? "bg-foreground/10 text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                  title={showTranscript ? "Close transcript" : "View transcript"}
+                  aria-label="View transcript"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  </svg>
+                </button>
+              )}
               {confirmDelete ? (
                 <div className="flex items-center gap-1">
                   <span className="text-[11px] text-destructive">Delete?</span>
@@ -3323,6 +3357,13 @@ export function NotesPage() {
                 }}
                 onClose={() => setLocalFileDiffView(null)}
               />
+            ) : showTranscript && selectedNote?.transcript ? (
+              <div className="flex-1 min-h-0 animate-fade-in">
+                <TranscriptViewer
+                  transcript={selectedNote.transcript}
+                  onClose={() => setShowTranscript(false)}
+                />
+              </div>
             ) : selectedVersion ? (
               <DiffView
                 version={selectedVersion}

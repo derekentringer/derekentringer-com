@@ -88,10 +88,16 @@ const TRANSCRIPT_MIN_HEIGHT = 60;
 const TRANSCRIPT_MAX_HEIGHT = 400;
 const TRANSCRIPT_DEFAULT_HEIGHT = 140;
 
+interface MeetingSummaryData {
+  relevantNotes: MeetingContextNote[];
+  transcript: string;
+}
+
 interface Message {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "meeting-summary";
   content: string;
   sources?: QASource[];
+  meetingData?: MeetingSummaryData;
 }
 
 interface AIAssistantPanelProps {
@@ -135,11 +141,36 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Auto-expand meeting section when recording starts
   useEffect(() => {
     if (isRecording) {
       setMeetingCollapsed(false);
     }
   }, [isRecording]);
+
+  // Insert meeting summary into chat when recording stops
+  const prevRecordingRef = useRef(isRecording);
+  useEffect(() => {
+    if (prevRecordingRef.current && !isRecording) {
+      // Recording just stopped — capture the meeting context
+      const notes = relevantNotes ?? [];
+      const transcript = liveTranscript ?? "";
+      if (notes.length > 0 || transcript.trim().length > 0) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "meeting-summary",
+            content: "",
+            meetingData: {
+              relevantNotes: [...notes],
+              transcript,
+            },
+          },
+        ]);
+      }
+    }
+    prevRecordingRef.current = isRecording;
+  }, [isRecording, relevantNotes, liveTranscript]);
 
   // Transcript area resize via drag (handle at bottom)
   const handleTranscriptResizeStart = useCallback((e: React.PointerEvent) => {
@@ -431,7 +462,49 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             key={i}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            {msg.role === "user" ? (
+            {msg.role === "meeting-summary" && msg.meetingData ? (
+              <div className="w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  </svg>
+                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                    Meeting Ended
+                  </span>
+                </div>
+
+                {/* Surfaced notes */}
+                {msg.meetingData.relevantNotes.length > 0 && (
+                  <div className="mb-2">
+                    <span className="text-[10px] text-muted-foreground">Related notes:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {msg.meetingData.relevantNotes.map((note) => (
+                        <button
+                          key={note.id}
+                          onClick={() => onSelectNote(note.id)}
+                          className="inline-flex items-center px-2 py-0.5 rounded-md bg-accent text-xs text-foreground border border-border hover:bg-primary hover:text-primary-contrast transition-colors cursor-pointer"
+                        >
+                          {note.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Transcript preview */}
+                {msg.meetingData.transcript.trim().length > 0 && (
+                  <details className="group">
+                    <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+                      View transcript ({Math.round(msg.meetingData.transcript.length / 5)} words)
+                    </summary>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-1.5 max-h-[200px] overflow-y-auto">
+                      {msg.meetingData.transcript}
+                    </p>
+                  </details>
+                )}
+              </div>
+            ) : msg.role === "user" ? (
               <div className="max-w-[85%] px-3 py-2 rounded-lg bg-primary text-primary-contrast text-sm">
                 {msg.content}
               </div>

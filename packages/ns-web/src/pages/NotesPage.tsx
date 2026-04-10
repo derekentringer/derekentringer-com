@@ -70,6 +70,7 @@ import { AudioRecorder, type AudioRecordingState } from "../components/AudioReco
 import { RecordingBar } from "../components/RecordingBar.tsx";
 import { FolderPicker } from "../components/FolderPicker.tsx";
 import { AIAssistantPanel } from "../components/AIAssistantPanel.tsx";
+import { TranscriptViewer } from "../components/TranscriptViewer.tsx";
 import { useMeetingContext } from "../hooks/useMeetingContext.ts";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { TocPanel } from "../components/TocPanel.tsx";
@@ -150,6 +151,12 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(editorSettings.defaultViewMode);
   const [showLineNumbers, setShowLineNumbers] = useState(editorSettings.showLineNumbers);
+  const [showTranscript, setShowTranscript] = useState(false);
+
+  // Close transcript view when switching notes
+  useEffect(() => {
+    setShowTranscript(false);
+  }, [selectedId]);
   const editorRef = useRef<MarkdownEditorHandle>(null);
   const titleRef = useRef(title);
 
@@ -1867,19 +1874,31 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   }
 
   async function handleAudioNoteCreated(note: Note) {
-    // Append referenced notes from Meeting Assistant if any were surfaced
     const surfacedNotes = meetingContext.relevantNotes;
-    if (surfacedNotes.length > 0) {
-      const referencesSection = "\n\n## Related Notes Referenced\n" +
-        surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
+    const liveText = recordingState?.liveTranscript ?? "";
+    const hasRefs = surfacedNotes.length > 0;
+    const hasLiveTranscript = liveText.trim().length > 0;
+
+    if (hasRefs || hasLiveTranscript) {
+      const updateData: { content?: string; transcript?: string } = {};
+
+      // Append related notes wiki-links to content
+      if (hasRefs) {
+        const referencesSection = "\n\n## Related Notes Referenced\n" +
+          surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
+        updateData.content = (note.content || "") + referencesSection;
+      }
+
+      // Save raw transcript as metadata
+      if (hasLiveTranscript) {
+        updateData.transcript = liveText;
+      }
+
       try {
-        const updated = await updateNote(note.id, {
-          content: (note.content || "") + referencesSection,
-        });
+        const updated = await updateNote(note.id, updateData);
         setNotes((prev) => [updated, ...prev]);
         openNoteAsTab(updated);
       } catch {
-        // If update fails, still show the note without references
         setNotes((prev) => [note, ...prev]);
         openNoteAsTab(note);
       }
@@ -2451,6 +2470,23 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                 </button>
               )}
+              {selectedNote?.transcript && (
+                <button
+                  onClick={() => setShowTranscript((v) => !v)}
+                  className={`p-1 rounded transition-colors cursor-pointer ${
+                    showTranscript
+                      ? "bg-foreground/10 text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }`}
+                  title={showTranscript ? "Close transcript" : "View transcript"}
+                  aria-label="View transcript"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  </svg>
+                </button>
+              )}
               <button
                 onClick={handleCopyLink}
                 className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
@@ -2606,7 +2642,14 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               </div>
             )}
 
-            {selectedVersion ? (
+            {showTranscript && selectedNote?.transcript ? (
+              <div className="flex-1 min-h-0 animate-fade-in">
+                <TranscriptViewer
+                  transcript={selectedNote.transcript}
+                  onClose={() => setShowTranscript(false)}
+                />
+              </div>
+            ) : selectedVersion ? (
               <DiffView
                 version={selectedVersion}
                 currentTitle={title}
@@ -2649,6 +2692,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
             {/* Content */}
             <div key={selectedId} className="flex-1 flex min-h-0 animate-fade-in">
               {viewMode !== "preview" && (
+
                 <MarkdownEditor
                   key={selectedId ?? ""}
                   ref={editorRef}
