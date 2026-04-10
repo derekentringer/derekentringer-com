@@ -1880,9 +1880,9 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     setSuggestedTags((prev) => prev.filter((t) => t !== tag));
   }
 
-  async function handleAudioNoteCreated(note: Note) {
+  async function handleAudioNoteCreated(note: Note, capturedTranscript?: string) {
     const surfacedNotes = meetingContext.relevantNotes;
-    const liveText = lastLiveTranscriptRef.current;
+    const liveText = capturedTranscript ?? lastLiveTranscriptRef.current;
     const hasRefs = surfacedNotes.length > 0;
     const hasLiveTranscript = liveText.trim().length > 0;
 

@@ -1226,11 +1226,11 @@ export function NotesPage() {
     }
   }
 
-  async function handleAudioNoteCreated(serverNote: Note) {
+  async function handleAudioNoteCreated(serverNote: Note, capturedTranscript?: string) {
     try {
       let finalNote = serverNote;
       const surfacedNotes = meetingContext.relevantNotes;
-      const liveText = lastLiveTranscriptRef.current;
+      const liveText = capturedTranscript ?? lastLiveTranscriptRef.current;
       const hasRefs = surfacedNotes.length > 0;
       const hasLiveTranscript = liveText.trim().length > 0;
 

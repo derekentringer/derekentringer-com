@@ -42,7 +42,7 @@ export interface AudioRecordingState {
 interface AudioRecorderProps {
   defaultMode: AudioMode;
   folderId?: string;
-  onNoteCreated: (note: Note) => void;
+  onNoteCreated: (note: Note, liveTranscript?: string) => void;
   onError: (message: string) => void;
   onRecordingStateChange?: (recordingState: AudioRecordingState | null) => void;
   onModeChange?: (mode: AudioMode) => void;
@@ -240,13 +240,15 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       recorder.onstop = async () => {
         const blobType = recorder.mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type: blobType });
+        // Capture transcript before cleanup destroys it
+        const capturedTranscript = getOrderedTranscript();
         cleanup();
         setState("processing");
 
         try {
           // Always transcribe the full audio for highest quality final note
           const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
-          onNoteCreatedRef.current(result.note);
+          onNoteCreatedRef.current(result.note, capturedTranscript);
         } catch (err) {
           onErrorRef.current(err instanceof Error ? err.message : "Transcription failed");
         } finally {
