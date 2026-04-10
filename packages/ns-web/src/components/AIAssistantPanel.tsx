@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -49,7 +49,6 @@ function LiveTranscript({ text }: { text: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // If text changed and got longer, animate the new characters
     if (text.length > prevTextRef.current.length) {
       setDisplayLen(prevTextRef.current.length);
     }
@@ -59,15 +58,15 @@ function LiveTranscript({ text }: { text: string }) {
   useEffect(() => {
     if (displayLen >= targetLen) return;
     const remaining = targetLen - displayLen;
-    const batch = remaining > 20 ? 3 : 1;
-    const speed = remaining > 50 ? 10 : 30;
+    // Slightly slower typing: 2 chars at 40ms normally, batch faster for large gaps
+    const batch = remaining > 30 ? 3 : 2;
+    const speed = remaining > 60 ? 15 : 40;
     const timer = setTimeout(() => {
       setDisplayLen((prev) => Math.min(prev + batch, targetLen));
     }, speed);
     return () => clearTimeout(timer);
   }, [displayLen, targetLen]);
 
-  // Auto-scroll to bottom as text appears
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -75,13 +74,11 @@ function LiveTranscript({ text }: { text: string }) {
   }, [displayLen]);
 
   const displayed = text.slice(0, displayLen);
-  const isTyping = displayLen < targetLen;
 
   return (
-    <div ref={scrollRef} className="overflow-y-auto h-full">
-      <p className="text-xs text-muted-foreground leading-relaxed">
+    <div ref={scrollRef} className="overflow-y-auto h-full px-3 pb-2">
+      <p className="text-sm text-muted-foreground leading-relaxed">
         {displayed}
-        {isTyping && <span className="animate-pulse">▎</span>}
       </p>
     </div>
   );
@@ -89,7 +86,7 @@ function LiveTranscript({ text }: { text: string }) {
 
 const TRANSCRIPT_MIN_HEIGHT = 60;
 const TRANSCRIPT_MAX_HEIGHT = 400;
-const TRANSCRIPT_DEFAULT_HEIGHT = 120;
+const TRANSCRIPT_DEFAULT_HEIGHT = 140;
 
 interface Message {
   role: "user" | "assistant";
@@ -100,7 +97,6 @@ interface Message {
 interface AIAssistantPanelProps {
   onSelectNote: (noteId: string) => void;
   isOpen: boolean;
-  /** Meeting context — when provided, shows surfaced notes during recording */
   isRecording?: boolean;
   isSearchingContext?: boolean;
   liveTranscript?: string;
@@ -113,6 +109,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [isStreaming, setIsStreaming] = useState(false);
   const [meetingCollapsed, setMeetingCollapsed] = useState(false);
   const [transcriptHeight, setTranscriptHeight] = useState(TRANSCRIPT_DEFAULT_HEIGHT);
+  const [transcriptDragging, setTranscriptDragging] = useState(false);
   const transcriptResizing = useRef(false);
   const transcriptStartY = useRef(0);
   const transcriptStartH = useRef(0);
@@ -138,19 +135,19 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Auto-expand meeting section when recording starts
   useEffect(() => {
     if (isRecording) {
       setMeetingCollapsed(false);
     }
   }, [isRecording]);
 
-  // Transcript area resize via drag
+  // Transcript area resize via drag (handle at bottom)
   const handleTranscriptResizeStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     transcriptResizing.current = true;
     transcriptStartY.current = e.clientY;
     transcriptStartH.current = transcriptHeight;
+    setTranscriptDragging(true);
 
     function onMove(ev: PointerEvent) {
       if (!transcriptResizing.current) return;
@@ -159,6 +156,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }
     function onUp() {
       transcriptResizing.current = false;
+      setTranscriptDragging(false);
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
     }
@@ -177,7 +175,6 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Add placeholder assistant message
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: "", sources: [] },
@@ -227,7 +224,6 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     } finally {
       setIsStreaming(false);
       abortRef.current = null;
-      // If stream ended with no content, show fallback
       setMessages((prev) => {
         const updated = [...prev];
         const last = updated[updated.length - 1];
@@ -262,117 +258,148 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
   return (
     <div className="flex flex-col h-full bg-background" data-testid="qa-panel">
+      {/* Panel header */}
+      <div className="px-3 py-2 border-b border-border shrink-0 flex items-center gap-1.5">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          AI Assistant
+        </span>
+        {isSearchingContext && (
+          <svg className="animate-spin h-3 w-3 text-muted-foreground shrink-0 ml-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+            <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+          </svg>
+        )}
+      </div>
+
       {/* Meeting context section */}
-      {hasMeetingContext && (
-        <div className="shrink-0 border-b border-border">
-          {/* Meeting header */}
-          <button
-            onClick={() => setMeetingCollapsed((v) => !v)}
-            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-accent/50 transition-colors cursor-pointer"
-          >
-            {isRecording && (
-              <span className="h-2 w-2 rounded-full bg-destructive animate-pulse shrink-0" />
-            )}
-            <span className="text-xs font-semibold text-foreground">
-              {isRecording ? "Meeting Assistant" : "Meeting Notes"}
-            </span>
-            {isSearchingContext && (
-              <svg className="animate-spin h-3 w-3 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+      {hasMeetingContext && !meetingCollapsed && (
+        <div className="shrink-0">
+          {/* Related Notes section */}
+          <div className="px-3 pt-2 pb-1">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
+                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                <polyline points="14 2 14 8 20 8" />
               </svg>
-            )}
-            <span className="ml-auto text-[10px] text-muted-foreground">
-              {hasNotes ? `${relevantNotes!.length} note${relevantNotes!.length !== 1 ? "s" : ""}` : ""}
-            </span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={`text-muted-foreground shrink-0 transition-transform ${meetingCollapsed ? "" : "rotate-180"}`}
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-
-          {/* Meeting content */}
-          {!meetingCollapsed && (
-            <div className="px-3 pb-2 max-h-[40vh] overflow-y-auto">
-              {isRecording && !hasTranscript && !hasNotes ? (
-                <div className="flex items-center gap-2 py-3 animate-fade-in">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40 shrink-0">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  </svg>
-                  <p className="text-xs text-muted-foreground">Listening for conversation context...</p>
-                </div>
-              ) : isRecording && hasTranscript && !hasNotes ? (
-                <div className="flex items-center gap-2 py-3 animate-fade-in">
-                  <svg className="animate-spin h-3.5 w-3.5 text-muted-foreground/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                  </svg>
-                  <p className="text-xs text-muted-foreground">Searching your notes for related content...</p>
-                </div>
-              ) : hasNotes ? (
-                <div className="space-y-1.5 animate-fade-in">
-                  {relevantNotes!.map((note, index) => (
-                    <button
-                      key={note.id}
-                      onClick={() => onSelectNote(note.id)}
-                      className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer animate-fade-in"
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <div className="flex items-start gap-1.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0 mt-0.5">
-                          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                          <polyline points="14 2 14 8 20 8" />
-                        </svg>
-                        <span className="text-xs font-medium text-foreground flex-1 truncate">
-                          {note.title}
-                        </span>
-                        <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
-                          {Math.round(note.score * 100)}%
-                        </span>
-                      </div>
-                      {note.snippet && (
-                        <p className="text-[10px] text-foreground/45 mt-0.5 line-clamp-2 ml-[18px]">
-                          {note.snippet}
-                        </p>
-                      )}
-                      <span className="text-[10px] text-muted-foreground ml-[18px]">
-                        {relativeTime(note.updatedAt)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              {/* Live transcript — resizable, scrollable */}
-              {isRecording && hasTranscript && (
-                <div className="mt-2 border-t border-border/50">
-                  {/* Resize handle */}
-                  <div
-                    onPointerDown={handleTranscriptResizeStart}
-                    className="flex items-center justify-center h-3 cursor-row-resize group"
-                  >
-                    <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-muted-foreground transition-colors" />
-                  </div>
-                  {/* Scrollable transcript area */}
-                  <div style={{ height: transcriptHeight }}>
-                    <LiveTranscript text={liveTranscript!} />
-                  </div>
-                </div>
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                Related Notes
+              </span>
+              {hasNotes && (
+                <span className="ml-auto text-[10px] text-muted-foreground">
+                  {relevantNotes!.length}
+                </span>
               )}
+            </div>
+
+            {isRecording && !hasTranscript && !hasNotes ? (
+              <div className="flex items-center gap-2 py-2 animate-fade-in">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40 shrink-0">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                </svg>
+                <p className="text-xs text-muted-foreground">Listening for conversation context...</p>
+              </div>
+            ) : isRecording && hasTranscript && !hasNotes ? (
+              <div className="flex items-center gap-2 py-2 animate-fade-in">
+                <svg className="animate-spin h-3.5 w-3.5 text-muted-foreground/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                </svg>
+                <p className="text-xs text-muted-foreground">Searching your notes for related content...</p>
+              </div>
+            ) : hasNotes ? (
+              <div className="space-y-1.5 animate-fade-in">
+                {relevantNotes!.map((note, index) => (
+                  <button
+                    key={note.id}
+                    onClick={() => onSelectNote(note.id)}
+                    className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer animate-fade-in"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    <div className="flex items-start gap-1.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0 mt-0.5">
+                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                      <span className="text-xs font-medium text-foreground flex-1 truncate">
+                        {note.title}
+                      </span>
+                      <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
+                        {Math.round(note.score * 100)}%
+                      </span>
+                    </div>
+                    {note.snippet && (
+                      <p className="text-[10px] text-foreground/45 mt-0.5 line-clamp-2 ml-[18px]">
+                        {note.snippet}
+                      </p>
+                    )}
+                    <span className="text-[10px] text-muted-foreground ml-[18px]">
+                      {relativeTime(note.updatedAt)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Transcription section */}
+          {isRecording && hasTranscript && (
+            <div className="flex flex-col">
+              {/* Transcription header */}
+              <div className="px-3 pt-2 pb-1 flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                  Transcription
+                </span>
+              </div>
+
+              {/* Scrollable transcript area */}
+              <div style={{ height: transcriptHeight }}>
+                <LiveTranscript text={liveTranscript!} />
+              </div>
+
+              {/* Resize divider — matches app ResizeDivider style */}
+              <div
+                onPointerDown={handleTranscriptResizeStart}
+                className="shrink-0 flex items-center justify-center h-1.5 cursor-row-resize group"
+                style={{ touchAction: "none" }}
+              >
+                <div className={`h-px w-full ${transcriptDragging ? "bg-ring" : "bg-border group-hover:bg-muted-foreground"} transition-colors`} />
+              </div>
             </div>
           )}
         </div>
+      )}
+
+      {/* Collapse/expand toggle for meeting section */}
+      {hasMeetingContext && (
+        <button
+          onClick={() => setMeetingCollapsed((v) => !v)}
+          className="flex items-center justify-center py-1 hover:bg-accent/50 transition-colors cursor-pointer shrink-0 border-b border-border"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`text-muted-foreground transition-transform ${meetingCollapsed ? "rotate-180" : ""}`}
+          >
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
       )}
 
       {messages.length > 0 && (
