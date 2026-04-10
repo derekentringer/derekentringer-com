@@ -18,6 +18,7 @@ interface NoteRow {
   sort_order: number;
   favorite_sort_order: number;
   audio_mode: string | null;
+  transcript: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -60,6 +61,7 @@ function rowToNote(row: NoteRow): Note {
     favoriteSortOrder: row.favorite_sort_order,
     isLocalFile: false,
     audioMode: row.audio_mode as Note["audioMode"],
+    transcript: row.transcript ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
@@ -269,6 +271,7 @@ export async function createNoteLocal(data: {
     favoriteSortOrder: 0,
     isLocalFile: false,
     audioMode: (data.audioMode as Note["audioMode"]) ?? null,
+    transcript: null,
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
