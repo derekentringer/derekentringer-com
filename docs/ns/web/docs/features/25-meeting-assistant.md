@@ -55,17 +55,28 @@ Real-time AI meeting assistant that surfaces relevant notes during audio recordi
 - API: `GET /ai/chat-history`, `POST /ai/chat-history` (batch append), `DELETE /ai/chat-history`
 - Load on mount, debounced save (1s) after messages change (skipped during streaming)
 - Clear button clears both local state and server
-- SSE real-time sync: `notifyChat()` sends `event: chat` to other devices; `chatRefreshKey` triggers refetch
-- Typing tips animation below chat: cycles through randomized tips, hidden when chat has messages
+- SSE real-time sync: `notifyChat()` sends `event: chat` to other devices; `chatRefreshKey` triggers refetch with `isSavingRef` guard to prevent self-triggered refetch race conditions
+- Note cards persisted to `noteCards JSONB` column on `chat_messages` table
+- Typing tips animation below chat: cycles through randomized tips (AI queries + slash commands), hidden when chat has messages
 
 ### Agentic Tool Use (Phase F)
 - Claude tool_use API for structured note queries and actions (up to 3 tool rounds per question)
-- **Read tools**: `search_notes`, `list_folders`, `list_tags`, `get_note_stats`, `get_recent_notes`, `get_note_content`, `get_backlinks`
+- **Read tools**: `search_notes`, `list_folders`, `list_tags`, `get_note_stats`, `get_recent_notes`, `get_note_content`, `get_backlinks`, `open_note`
 - **Action tools**: `create_note` (with AI-generated template content), `move_note`, `tag_note`, `generate_tags`, `generate_summary`, `delete_note`, `delete_folder`
 - All tools scoped to `request.user.sub` — no cross-user data access
 - Tool activity SSE events: `{ tool: { name, description } }` shown as bouncing dots status in chat
-- Note card SSE events: `{ noteCards: [...] }` rendered as interactive clickable cards below Claude's answer
-- System prompt instructs Claude on when to use tools vs answer directly
+- Note card SSE events: `{ noteCards: [...] }` rendered as interactive clickable cards below Claude's answer; accumulated and re-sent at end of tool loop for persistence; deduplicated by ID on client
+- SSE sync notify after agentic tool completion to refresh UI after write operations
+- System prompt includes slash command reference so Claude can guide users to free alternatives
+- Claude self-awareness: responds to "what can you do?" with full capabilities list
+
+### Slash Commands (Phase G)
+- 14 slash commands executed client-side (no AI cost): `/open`, `/create`, `/move`, `/tag`, `/delete`, `/deletefolder`, `/summarize`, `/gentags`, `/favorites`, `/recent`, `/folders`, `/tags`, `/stats`, `/clear`
+- `/summarize` and `/gentags` call dedicated AI endpoints (single Claude call, not agentic)
+- `chatCommands.ts` module shared between web and desktop with `CommandContext` interface for platform-specific API wiring
+- Autocomplete dropdown: appears on `/` input, filters as user types, arrow keys navigate, Tab/Enter selects, Escape dismisses
+- Slash commands in user messages rendered with `<code>` block in primary color
+- Full parity: every slash command has an equivalent Claude tool (and vice versa)
 
 ## API Endpoints
 

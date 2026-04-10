@@ -211,9 +211,15 @@
 
 ### Chat History & Agentic AI
 
-- [x] Chat history persistence — Server-side `chat_messages` table (PostgreSQL + Prisma), API endpoints (GET/POST/DELETE), debounced save, load on mount, SSE real-time sync across devices (`event: chat`), typing tips animation
-- [x] Agentic tool use — Claude tool_use API with 14 tools (search, list folders/tags, stats, recent, content, backlinks, create, move, tag, generate tags/summary, delete note/folder), tool activity indicators with bouncing dots, interactive note cards in chat responses, max 3 tool rounds per question
+- [x] Chat history persistence — Server-side `chat_messages` table (PostgreSQL + Prisma), API endpoints (GET/POST/DELETE), debounced save with self-refetch guard, load on mount, SSE real-time sync across devices (`event: chat`), note cards persisted to `noteCards JSONB` column, typing tips animation
+- [x] Agentic tool use — Claude tool_use API with 15 tools (search, list folders/tags, stats, recent, content, backlinks, open, create, move, tag, generate tags/summary, delete note/folder), tool activity indicators with bouncing dots, interactive note cards in chat responses (accumulated + re-sent for persistence), SSE sync notify after write operations, system prompt with slash command awareness, max 3 tool rounds per question
+- [x] Slash commands — 14 client-side commands (`/open`, `/create`, `/move`, `/tag`, `/delete`, `/deletefolder`, `/summarize`, `/gentags`, `/favorites`, `/recent`, `/folders`, `/tags`, `/stats`, `/clear`), autocomplete dropdown with arrow keys/Tab/Enter/Escape, full parity with Claude tools, slash commands in messages rendered with code blocks
 - [x] Architecture diagrams — 14 Mermaid diagrams in `docs/ns/architecture/` (system context, packages, ER, deployment, CI/CD, AI mindmap, sync engine, audio pipeline, AI assistant flow, note lifecycle, image upload, API routes/services, editor, Tauri, SQLite, mobile)
+
+### UI Polish
+
+- [x] Chat bubble styling — User messages use `bg-subtle` (lighter), response messages use `bg-card`, matched `py-1.5` padding, compact `chat-markdown` CSS with stripped first/last `<p>` margins
+- [x] Right sidebar persistence — Drawer open/closed state, active tab, and width persisted to localStorage; transition suppressed on initial mount; auto-switch from history/toc to assistant when no note selected (or close if AI disabled)
 
 ### Native Desktop Menus
 

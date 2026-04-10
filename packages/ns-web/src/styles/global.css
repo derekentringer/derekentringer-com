@@ -126,6 +126,12 @@
   font-size: 13px;
   line-height: 1.5;
   padding: 0;
+}
+.markdown-preview.chat-markdown p:first-child {
+  margin-top: 0;
+}
+.markdown-preview.chat-markdown p:last-child {
+  margin-bottom: 0;
   overflow-y: auto;
 }
 
