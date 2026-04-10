@@ -100,6 +100,13 @@ interface Message {
   meetingData?: MeetingSummaryData;
 }
 
+const RECORDING_MODE_LABELS: Record<string, string> = {
+  meeting: "meeting",
+  lecture: "lecture",
+  memo: "memo",
+  verbatim: "recording",
+};
+
 interface AIAssistantPanelProps {
   onSelectNote: (noteId: string) => void;
   isOpen: boolean;
@@ -107,9 +114,10 @@ interface AIAssistantPanelProps {
   isSearchingContext?: boolean;
   liveTranscript?: string;
   relevantNotes?: MeetingContextNote[];
+  recordingMode?: string;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -335,11 +343,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               </div>
             ) : isRecording && hasTranscript && !hasNotes ? (
               <div className="flex items-center gap-2 py-2 animate-fade-in">
-                <svg className="animate-spin h-3.5 w-3.5 text-muted-foreground/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                </svg>
-                <p className="text-xs text-muted-foreground">Searching your notes for related content...</p>
+                <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">
+                  <span className="bounce-dot" />
+                  <span className="bounce-dot" />
+                  <span className="bounce-dot" />
+                </span>
+                <p className="text-xs text-muted-foreground">Monitoring the {RECORDING_MODE_LABELS[recordingMode ?? "meeting"] ?? "recording"} to surface related notes...</p>
               </div>
             ) : hasNotes ? (
               <div className="space-y-1.5 animate-fade-in">

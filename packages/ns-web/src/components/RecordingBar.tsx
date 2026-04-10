@@ -34,7 +34,7 @@ const PROCESSING_STEPS = [
   "Transcribing speech to text...",
   "Structuring transcript with AI...",
   "Generating title and tags...",
-  "Saving note...",
+  "Generating note...",
 ];
 
 function ProcessingStatus() {
@@ -49,11 +49,12 @@ function ProcessingStatus() {
 
   return (
     <div className="h-9 px-4 bg-sidebar border-b border-border flex items-center gap-3 shrink-0">
-      <svg className="animate-spin h-4 w-4 text-primary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-        <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-      </svg>
-      <span key={stepIndex} className="text-xs text-muted-foreground animate-fade-in">
+      <span className="flex items-end gap-0.5 text-primary shrink-0 h-4 w-4 justify-center">
+        <span className="bounce-dot" />
+        <span className="bounce-dot" />
+        <span className="bounce-dot" />
+      </span>
+      <span key={stepIndex} className="text-xs text-foreground animate-fade-in">
         {PROCESSING_STEPS[stepIndex]}
       </span>
     </div>
@@ -77,7 +78,7 @@ export function RecordingBar({ state, elapsed, mode, stream, folderId, folders, 
       <AudioWaveform stream={stream} isRecording={true} width={80} height={20} />
 
       {/* Mode label */}
-      <span className="text-[10px] text-muted-foreground shrink-0">{MODE_LABELS[mode]}</span>
+      <span className="text-xs text-foreground shrink-0">{MODE_LABELS[mode]}</span>
 
       {/* Folder picker */}
       {folders && onFolderChange && (
@@ -87,9 +88,9 @@ export function RecordingBar({ state, elapsed, mode, stream, folderId, folders, 
           onChange={onFolderChange}
           emptyLabel="All Notes"
           iconSize={10}
-          textSize="text-[10px]"
+          textSize="text-xs"
           showLabel
-          className="text-muted-foreground/70"
+          className="text-foreground"
           ariaLabel="Recording folder"
         />
       )}

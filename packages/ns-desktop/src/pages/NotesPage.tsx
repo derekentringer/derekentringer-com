@@ -335,6 +335,14 @@ export function NotesPage() {
     if (t.length > 0) lastLiveTranscriptRef.current = t;
   }, [recordingState?.liveTranscript]);
 
+  // Capture relevant notes in a ref so they survive the recording state reset
+  const lastRelevantNotesRef = useRef<typeof meetingContext.relevantNotes>([]);
+  useEffect(() => {
+    if (meetingContext.relevantNotes.length > 0) {
+      lastRelevantNotesRef.current = meetingContext.relevantNotes;
+    }
+  }, [meetingContext.relevantNotes]);
+
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSuggestingTags, setIsSuggestingTags] = useState(false);
@@ -1229,7 +1237,7 @@ export function NotesPage() {
   async function handleAudioNoteCreated(serverNote: Note, capturedTranscript?: string) {
     try {
       let finalNote = serverNote;
-      const surfacedNotes = meetingContext.relevantNotes;
+      const surfacedNotes = lastRelevantNotesRef.current;
       const liveText = capturedTranscript ?? lastLiveTranscriptRef.current;
       const hasRefs = surfacedNotes.length > 0;
       const hasLiveTranscript = liveText.trim().length > 0;
@@ -1262,6 +1270,7 @@ export function NotesPage() {
       setDashboardKey((k) => k + 1);
       notifyLocalChange();
       lastLiveTranscriptRef.current = "";
+      lastRelevantNotesRef.current = [];
     } catch (err) {
       console.error("Failed to save audio note:", err);
       showError(`Failed to save audio note: ${err instanceof Error ? err.message : String(err)}`);
@@ -3594,6 +3603,7 @@ export function NotesPage() {
                   isSearchingContext={meetingContext.isSearching}
                   liveTranscript={recordingState?.liveTranscript ?? ""}
                   relevantNotes={meetingContext.relevantNotes}
+                  recordingMode={recordingState?.mode}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel

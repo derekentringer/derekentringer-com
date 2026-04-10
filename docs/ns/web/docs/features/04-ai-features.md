@@ -351,7 +351,7 @@ Adds voice-to-notes: users record audio in the browser via `MediaRecorder`, uplo
 #### AI Service (`packages/ns-api/src/services/aiService.ts`)
 - Added `AudioMode` type import from `@derekentringer/shared/ns`
 - Added `TRANSCRIPT_PROMPTS` map with mode-specific system prompts for meeting, lecture, memo, verbatim
-- Added `structureTranscript(transcript, mode)` — non-streaming, `claude-sonnet-4-20250514`, `max_tokens: 2000`, `temperature: 0.3`
+- Added `structureTranscript(transcript, mode)` — non-streaming, `claude-sonnet-4-20250514`, `max_tokens: 8192`, `temperature: 0.3`
 - Returns `{ title, content, tags }` parsed from Claude's JSON response
 - Strips markdown code fences (`\`\`\`json ... \`\`\``) before parsing
 - Graceful fallback: returns raw transcript with "Audio Note" title on parse failure

@@ -27,6 +27,7 @@ Real-time AI meeting assistant that surfaces relevant notes during audio recordi
 - Meeting context section appears in the AI Assistant panel (formerly QA Panel) during recording
 - Collapsible with chevron toggle
 - "RELATED NOTES" header with document icon — note cards with title + score percentage
+- Status text: "Listening for conversation context..." (pre-transcript), "Monitoring the [mode] to surface related notes..." with bouncing dots (searching)
 - "TRANSCRIPTION" header with mic icon — scrollable, resizable (60–400px), typing animation
 - Resize divider matches app's ResizeDivider style
 - Auto-opens AI Assistant drawer when recording starts
@@ -35,6 +36,7 @@ Real-time AI meeting assistant that surfaces relevant notes during audio recordi
 
 ### Post-Meeting Integration (Phase D)
 - Related notes appended as `## Related Notes Referenced` with wiki-links
+- Related notes captured in `lastRelevantNotesRef` to survive recording state reset (prevents empty refs)
 - Raw transcript saved to `transcript` database column (nullable text)
 - Transcript saved directly via `apiFetch` PATCH in AudioRecorder's `onstop` handler
 - Transcript button (mic icon) on note toolbar — visible for audio notes with transcript
