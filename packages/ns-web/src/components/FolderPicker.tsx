@@ -60,7 +60,7 @@ export function FolderPicker({
   }, [open]);
 
   const selectedFolder = selectedId ? folders.find((f) => f.id === selectedId) : null;
-  const displayName = selectedFolder?.displayName ?? emptyLabel;
+  const displayName = selectedFolder?.displayName.replace(/^[·\s]+/, "") ?? emptyLabel;
 
   return (
     <div className="relative" ref={ref}>

@@ -37,6 +37,7 @@ const sampleNote = {
   favoriteSortOrder: 0,
   isLocalFile: false,
   audioMode: null as null,
+  transcript: null as null,
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-03-26T00:00:00Z",
   deletedAt: null,

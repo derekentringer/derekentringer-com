@@ -268,6 +268,14 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     const t = recordingState?.liveTranscript ?? "";
     if (t.length > 0) lastLiveTranscriptRef.current = t;
   }, [recordingState?.liveTranscript]);
+
+  // Capture relevant notes in a ref so they survive the recording state reset
+  const lastRelevantNotesRef = useRef<typeof meetingContext.relevantNotes>([]);
+  useEffect(() => {
+    if (meetingContext.relevantNotes.length > 0) {
+      lastRelevantNotesRef.current = meetingContext.relevantNotes;
+    }
+  }, [meetingContext.relevantNotes]);
   const [showGame, setShowGame] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -1881,7 +1889,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   }
 
   async function handleAudioNoteCreated(note: Note, capturedTranscript?: string) {
-    const surfacedNotes = meetingContext.relevantNotes;
+    const surfacedNotes = lastRelevantNotesRef.current;
     const liveText = capturedTranscript ?? lastLiveTranscriptRef.current;
     const hasRefs = surfacedNotes.length > 0;
     const hasLiveTranscript = liveText.trim().length > 0;
@@ -1916,6 +1924,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     loadFolders();
     setDashboardKey((k) => k + 1);
     lastLiveTranscriptRef.current = "";
+    lastRelevantNotesRef.current = [];
   }
 
   // Clear suggested tags when switching notes
@@ -2937,6 +2946,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   isSearchingContext={meetingContext.isSearching}
                   liveTranscript={recordingState?.liveTranscript ?? ""}
                   relevantNotes={meetingContext.relevantNotes}
+                  recordingMode={recordingState?.mode}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
