@@ -38,6 +38,7 @@ interface NoteRow {
   favorite_sort_order: number;
   is_local_file: number;
   audio_mode: string | null;
+  transcript: string | null;
   local_path: string | null;
   local_file_hash: string | null;
   is_deleted: number;
@@ -68,7 +69,7 @@ function rowToNote(row: NoteRow): Note {
     favoriteSortOrder: row.favorite_sort_order ?? 0,
     isLocalFile: (row.is_local_file ?? 0) === 1,
     audioMode: (row.audio_mode as AudioMode) ?? null,
-    transcript: null,
+    transcript: row.transcript ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at ?? null,
@@ -1252,8 +1253,8 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
       `UPDATE notes SET title = $1, content = $2, folder_id = $3, tags = $4,
        summary = $5, favorite = $6, sort_order = $7, updated_at = $8,
        deleted_at = $9, is_deleted = $10, favorite_sort_order = $11,
-       is_local_file = $12, audio_mode = $13
-       WHERE id = $14`,
+       is_local_file = $12, audio_mode = $13, transcript = $14
+       WHERE id = $15`,
       [
         note.title,
         note.content,
@@ -1268,14 +1269,15 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
         note.favoriteSortOrder,
         note.isLocalFile ? 1 : 0,
         note.audioMode,
+        note.transcript,
         note.id,
       ],
     );
   } else {
     await db.execute(
       `INSERT INTO notes (id, title, content, folder_id, tags, summary, favorite, sort_order,
-       created_at, updated_at, deleted_at, is_deleted, favorite_sort_order, is_local_file, audio_mode)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+       created_at, updated_at, deleted_at, is_deleted, favorite_sort_order, is_local_file, audio_mode, transcript)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       [
         note.id,
         note.title,
@@ -1292,6 +1294,7 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
         note.favoriteSortOrder,
         note.isLocalFile ? 1 : 0,
         note.audioMode,
+        note.transcript,
       ],
     );
   }

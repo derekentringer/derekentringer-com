@@ -78,6 +78,12 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/011.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 12,
+            description: "add transcript column to notes",
+            sql: include_str!("../migrations/012.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
