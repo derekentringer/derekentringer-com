@@ -254,6 +254,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
+  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string } | null>(null);
 
   // Meeting Assistant — surface relevant notes during recording
   const isRecording = recordingState?.state === "recording";
@@ -276,6 +277,12 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       lastRelevantNotesRef.current = meetingContext.relevantNotes;
     }
   }, [meetingContext.relevantNotes]);
+
+  // Capture recording mode in a ref so it survives the recording state reset
+  const lastRecordingModeRef = useRef<string>("meeting");
+  useEffect(() => {
+    if (recordingState?.mode) lastRecordingModeRef.current = recordingState.mode;
+  }, [recordingState?.mode]);
   const [showGame, setShowGame] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -1923,6 +1930,12 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
     loadFolders();
     setDashboardKey((k) => k + 1);
+    setCompletedAudioNote({
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      mode: lastRecordingModeRef.current,
+    });
     lastLiveTranscriptRef.current = "";
     lastRelevantNotesRef.current = [];
   }
@@ -2947,6 +2960,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   liveTranscript={recordingState?.liveTranscript ?? ""}
                   relevantNotes={meetingContext.relevantNotes}
                   recordingMode={recordingState?.mode}
+                  completedNote={completedAudioNote}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel

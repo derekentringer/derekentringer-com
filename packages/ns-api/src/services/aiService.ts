@@ -339,6 +339,58 @@ export async function* answerQuestion(
   throw lastError;
 }
 
+export async function* answerMeetingQuestion(
+  question: string,
+  transcript: string,
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
+  const anthropic = getClient();
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+
+    try {
+      const stream = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        temperature: 0.3,
+        stream: true,
+        system:
+          "You are a meeting assistant. Answer the user's question based on the live meeting transcript provided. Be concise and helpful. If the transcript doesn't contain relevant information, say so.",
+        messages: [
+          {
+            role: "user",
+            content: `Meeting transcript:\n\n${transcript}\n\nQuestion: ${question}`,
+          },
+        ],
+      });
+
+      for await (const event of stream) {
+        if (signal?.aborted) return;
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          yield event.delta.text;
+        }
+      }
+      return;
+    } catch (err: unknown) {
+      lastError = err;
+      const status = (err as { status?: number })?.status;
+      if (status && RETRYABLE_STATUSES.includes(status)) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError;
+}
+
 export async function analyzeImage(
   base64: string,
   mimeType: string,

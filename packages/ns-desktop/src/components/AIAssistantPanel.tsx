@@ -91,6 +91,10 @@ const TRANSCRIPT_DEFAULT_HEIGHT = 140;
 interface MeetingSummaryData {
   relevantNotes: MeetingContextNote[];
   transcript: string;
+  mode?: string;
+  noteId?: string;
+  noteTitle?: string;
+  keyTopics?: string[];
 }
 
 interface Message {
@@ -107,6 +111,47 @@ const RECORDING_MODE_LABELS: Record<string, string> = {
   verbatim: "recording",
 };
 
+const RECORDING_ENDED_LABELS: Record<string, string> = {
+  meeting: "Meeting Ended",
+  lecture: "Lecture Ended",
+  memo: "Memo Saved",
+  verbatim: "Recording Ended",
+};
+
+/** Which heading to extract list items from, per recording mode */
+const MODE_SECTION_HEADING: Record<string, string> = {
+  meeting: "key discussion points",
+  lecture: "key concepts",
+  memo: "key points",
+};
+
+/** Extract up to 3 list items from the target section heading in the note content */
+function extractKeyTopics(content: string, mode?: string): string[] {
+  const heading = MODE_SECTION_HEADING[mode ?? "meeting"];
+  if (!heading) return [];
+  const lines = content.split("\n");
+  let inSection = false;
+  const items: string[] = [];
+  for (const line of lines) {
+    if (/^#{1,3}\s+/i.test(line)) {
+      if (inSection) break;
+      if (line.replace(/^#{1,3}\s+/, "").trim().toLowerCase() === heading) {
+        inSection = true;
+      }
+      continue;
+    }
+    if (inSection) {
+      const match = line.match(/^[-*]\s+\*?\*?(.+?)\*?\*?\s*$/);
+      if (match) {
+        const text = match[1].replace(/\*\*/g, "").split(/[:.–—]/)[0].trim();
+        if (text) items.push(text);
+        if (items.length >= 3) break;
+      }
+    }
+  }
+  return items;
+}
+
 interface AIAssistantPanelProps {
   onSelectNote: (noteId: string) => void;
   isOpen: boolean;
@@ -115,9 +160,10 @@ interface AIAssistantPanelProps {
   liveTranscript?: string;
   relevantNotes?: MeetingContextNote[];
   recordingMode?: string;
+  completedNote?: { id: string; title: string; content: string; mode: string } | null;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, completedNote }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -158,7 +204,11 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
   // Insert meeting summary into chat when recording stops
   const prevRecordingRef = useRef(isRecording);
+  const prevRecordingModeRef = useRef(recordingMode);
   useEffect(() => {
+    if (isRecording) {
+      prevRecordingModeRef.current = recordingMode;
+    }
     if (prevRecordingRef.current && !isRecording) {
       // Recording just stopped — capture the meeting context
       const notes = relevantNotes ?? [];
@@ -172,13 +222,40 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             meetingData: {
               relevantNotes: [...notes],
               transcript,
+              mode: prevRecordingModeRef.current,
             },
           },
         ]);
       }
     }
     prevRecordingRef.current = isRecording;
-  }, [isRecording, relevantNotes, liveTranscript]);
+  }, [isRecording, relevantNotes, liveTranscript, recordingMode]);
+
+  // Enrich meeting-ended card when completed note arrives
+  useEffect(() => {
+    if (!completedNote) return;
+    setMessages((prev) => {
+      let idx = -1;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].role === "meeting-summary" && prev[i].meetingData && !prev[i].meetingData!.noteId) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx === -1) return prev;
+      const updated = [...prev];
+      updated[idx] = {
+        ...updated[idx],
+        meetingData: {
+          ...updated[idx].meetingData!,
+          noteId: completedNote.id,
+          noteTitle: completedNote.title,
+          keyTopics: extractKeyTopics(completedNote.content, completedNote.mode),
+        },
+      };
+      return updated;
+    });
+  }, [completedNote]);
 
   // Transcript area resize via drag (handle at bottom)
   const handleTranscriptResizeStart = useCallback((e: React.PointerEvent) => {
@@ -220,7 +297,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     ]);
 
     try {
-      for await (const event of askQuestion(question, controller.signal)) {
+      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined)) {
         if (controller.signal.aborted) break;
 
         setMessages((prev) => {
@@ -446,7 +523,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {messages.length === 0 && !hasMeetingContext && (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40">
@@ -471,9 +548,40 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                   </svg>
                   <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                    Meeting Ended
+                    {RECORDING_ENDED_LABELS[msg.meetingData.mode ?? "meeting"] ?? "Recording Ended"}
                   </span>
                 </div>
+
+                {/* Note title — clickable link to generated note */}
+                {msg.meetingData.noteId && msg.meetingData.noteTitle ? (
+                  <button
+                    onClick={() => onSelectNote(msg.meetingData!.noteId!)}
+                    className="text-xs font-medium text-foreground hover:text-primary transition-colors cursor-pointer mb-1.5 text-left truncate block w-full"
+                    title={msg.meetingData.noteTitle}
+                  >
+                    {msg.meetingData.noteTitle}
+                  </button>
+                ) : !msg.meetingData.noteId ? (
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3 justify-center">
+                      <span className="bounce-dot" />
+                      <span className="bounce-dot" />
+                      <span className="bounce-dot" />
+                    </span>
+                    <span className="text-xs text-muted-foreground">Generating note...</span>
+                  </div>
+                ) : null}
+
+                {/* Key topics */}
+                {msg.meetingData.keyTopics && msg.meetingData.keyTopics.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {msg.meetingData.keyTopics.map((topic, idx) => (
+                      <span key={idx} className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-muted-foreground">
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {/* Surfaced notes */}
                 {msg.meetingData.relevantNotes.length > 0 && (
@@ -517,14 +625,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 )}
               </div>
             ) : msg.role === "user" ? (
-              <div className="max-w-[85%] px-3 py-2 rounded-lg bg-primary text-primary-contrast text-sm">
+              <div className="max-w-[85%] px-2.5 py-1.5 rounded-lg bg-primary text-primary-contrast text-sm">
                 {msg.content}
               </div>
             ) : (
-              <div className="max-w-[95%] rounded-lg bg-card border border-border p-3">
+              <div className="max-w-[95%] rounded-lg bg-card border border-border px-2.5 py-2">
                 {msg.content ? (
                   <>
-                    <div className="text-sm text-foreground markdown-preview">
+                    <div className="text-sm text-foreground markdown-preview chat-markdown">
                       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ pre: CodeBlock }}>{stripCitations(msg.content)}</ReactMarkdown>
                     </div>
                     {(() => {
@@ -572,6 +680,55 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
       {/* Input */}
       <div className="border-t border-border p-3 shrink-0">
+        {/* Catch me up button */}
+        {isRecording && hasTranscript && !isStreaming && (
+          <button
+            onClick={() => {
+              setInput("");
+              setMessages((prev) => [...prev, { role: "user", content: "Catch me up on this meeting" }]);
+              setIsStreaming(true);
+              const controller = new AbortController();
+              abortRef.current = controller;
+              setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
+              (async () => {
+                try {
+                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript)) {
+                    if (controller.signal.aborted) break;
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      const last = updated[updated.length - 1];
+                      if (last.role !== "assistant") return prev;
+                      if (event.text) {
+                        updated[updated.length - 1] = { ...last, content: last.content + event.text };
+                      }
+                      return updated;
+                    });
+                  }
+                } catch {
+                  if (!controller.signal.aborted) {
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      const last = updated[updated.length - 1];
+                      if (last.role === "assistant" && !last.content) {
+                        updated[updated.length - 1] = { ...last, content: "Something went wrong. Please try again." };
+                      }
+                      return updated;
+                    });
+                  }
+                } finally {
+                  setIsStreaming(false);
+                  abortRef.current = null;
+                }
+              })();
+            }}
+            className="w-full mb-2 px-2.5 py-1.5 rounded-md border border-border hover:border-primary/50 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            Catch me up
+          </button>
+        )}
         <div className="flex gap-2">
           <input
             ref={inputRef}
