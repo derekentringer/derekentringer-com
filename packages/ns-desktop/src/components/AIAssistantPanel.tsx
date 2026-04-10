@@ -551,7 +551,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={isRecording ? "Ask about this meeting..." : "Ask anything about your notes..."}
-            className="flex-1 px-3 py-2 rounded-md bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring focus:border-primary"
+            className="flex-1 px-3 py-2 rounded-md bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
             disabled={isStreaming}
           />
           {isStreaming ? (
