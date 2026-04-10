@@ -72,6 +72,7 @@ model Note {
   favoriteSortOrder  Int                          @default(0)
   isLocalFile        Boolean                      @default(false)
   audioMode          String?
+  transcript         String?
   embedding          Unsupported("vector(512)")?
   embeddingUpdatedAt DateTime?
   createdAt          DateTime                     @default(now())

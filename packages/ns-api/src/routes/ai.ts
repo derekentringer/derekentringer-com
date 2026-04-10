@@ -8,8 +8,8 @@ import {
   structureTranscript,
   answerQuestion,
 } from "../services/aiService.js";
-import { transcribeAudioChunked } from "../services/whisperService.js";
-import { getNote, updateNote, createNote, findRelevantNotes } from "../store/noteStore.js";
+import { transcribeAudio, transcribeAudioChunked } from "../services/whisperService.js";
+import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
@@ -380,6 +380,197 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       );
 
       return reply.send({ text: result });
+    },
+  );
+
+  // POST /ai/structure-transcript — structure pre-transcribed text and create a note
+  fastify.post<{ Body: { transcript: string; mode: string; folderId?: string } }>(
+    "/structure-transcript",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["transcript", "mode"],
+          additionalProperties: false,
+          properties: {
+            transcript: { type: "string", minLength: 1 },
+            mode: { type: "string", enum: ["meeting", "lecture", "memo", "verbatim"] },
+            folderId: { type: "string" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const { transcript, mode, folderId } = request.body;
+
+      let structured: { title: string; content: string; tags: string[] };
+      try {
+        structured = await structureTranscript(transcript, mode as AudioMode);
+      } catch (err) {
+        request.log.error(err, "Transcript structuring failed");
+        const message = err instanceof Error ? err.message : "Failed to structure transcript";
+        return reply.status(502).send({
+          statusCode: 502,
+          error: "Bad Gateway",
+          message,
+        });
+      }
+
+      const noteRow = await createNote(userId, {
+        title: structured.title,
+        content: structured.content,
+        tags: structured.tags,
+        audioMode: mode as AudioMode,
+        folderId,
+      });
+
+      const note = toNote(noteRow);
+
+      return reply.send({
+        title: structured.title,
+        content: structured.content,
+        tags: structured.tags,
+        note,
+      });
+    },
+  );
+
+  // POST /ai/meeting-context — find notes relevant to live meeting transcript
+  fastify.post<{ Body: { transcript: string; excludeNoteIds?: string[]; threshold?: number } }>(
+    "/meeting-context",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["transcript"],
+          additionalProperties: false,
+          properties: {
+            transcript: { type: "string", minLength: 10 },
+            excludeNoteIds: { type: "array", items: { type: "string" } },
+            threshold: { type: "number", minimum: 0, maximum: 1 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const { transcript, excludeNoteIds, threshold } = request.body;
+
+      try {
+        request.log.info(
+          { transcriptLength: transcript.length },
+          "Finding meeting context notes",
+        );
+
+        const results = await findMeetingContextNotes(
+          userId,
+          transcript,
+          10,
+          threshold ?? 0.65,
+        );
+
+        // Filter out excluded notes (already shown to the user)
+        const excludeSet = new Set(excludeNoteIds ?? []);
+        const filtered = results.filter((n) => !excludeSet.has(n.id));
+
+        return reply.send({
+          relevantNotes: filtered,
+        });
+      } catch (err) {
+        request.log.error(err, "Meeting context search failed");
+        const message = err instanceof Error ? err.message : "Context search failed";
+        return reply.status(502).send({
+          statusCode: 502,
+          error: "Bad Gateway",
+          message,
+        });
+      }
+    },
+  );
+
+  // POST /ai/transcribe-chunk — transcribe a single audio chunk (for live meeting transcription)
+  fastify.post(
+    "/transcribe-chunk",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      let file;
+      let sessionId = "";
+      let chunkIndex = -1;
+
+      try {
+        const parts = request.parts();
+        for await (const part of parts) {
+          if (part.type === "field" && part.fieldname === "sessionId") {
+            sessionId = (part.value as string) || "";
+          } else if (part.type === "field" && part.fieldname === "chunkIndex") {
+            const val = parseInt(part.value as string, 10);
+            if (!isNaN(val)) chunkIndex = val;
+          } else if (part.type === "file" && part.fieldname === "file") {
+            file = {
+              buffer: await part.toBuffer(),
+              filename: part.filename,
+              mimetype: part.mimetype,
+            };
+          }
+        }
+      } catch {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid multipart data",
+        });
+      }
+
+      if (!file) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "No audio file provided",
+        });
+      }
+
+      if (!sessionId || chunkIndex < 0) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "sessionId and chunkIndex are required",
+        });
+      }
+
+      if (!VALID_AUDIO_TYPES.has(file.mimetype)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: `Unsupported audio type: ${file.mimetype}`,
+        });
+      }
+
+      if (!validateAudioMagicBytes(file.buffer, file.mimetype)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "File content does not match declared audio type",
+        });
+      }
+
+      let text: string;
+      try {
+        request.log.info(
+          { sessionId, chunkIndex, fileSize: file.buffer.length, mimetype: file.mimetype },
+          "Transcribing audio chunk",
+        );
+        text = await transcribeAudio(file.buffer, file.filename);
+      } catch (err) {
+        request.log.error(err, "Chunk transcription failed");
+        const message = err instanceof Error ? err.message : "Transcription failed";
+        return reply.status(502).send({
+          statusCode: 502,
+          error: "Bad Gateway",
+          message,
+        });
+      }
+
+      return reply.send({ sessionId, chunkIndex, text });
     },
   );
 

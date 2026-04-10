@@ -28,6 +28,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     favoriteSortOrder: 0,
     isLocalFile: false,
     audioMode: null,
+    transcript: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     deletedAt: null,

@@ -158,8 +158,12 @@ packages/
 - `src/components/SidebarTabs.tsx` — Tabbed sidebar (Explorer, Search, Favorites, Tags)
 - `src/components/Ribbon.tsx` — Vertical utility strip (new note, 4 audio recording buttons, settings, game, sync)
 - `src/components/NoteListPanel.tsx` — Separate resizable note list panel
-- `src/components/AudioRecorder.tsx` — Headless audio recording with `triggerMode`/`triggerKey` props; supports mic (web) and system+mic (desktop meeting mode)
-- `src/components/RecordingBar.tsx` — Floating top bar during recording with waveform
+- `src/components/AudioRecorder.tsx` — Headless audio recording with `triggerMode`/`triggerKey` props; supports mic (web) and system+mic (desktop meeting mode); chunked transcription every 20s during recording for live Meeting Assistant; saves transcript directly via API PATCH on recording stop
+- `src/components/RecordingBar.tsx` — Floating top bar during recording with waveform and folder picker
+- `src/components/AIAssistantPanel.tsx` — AI chat + Meeting Assistant (formerly QAPanel); during recording shows collapsible Related Notes + resizable Transcription sections with typing animation; "Meeting Ended" card persisted in chat
+- `src/components/TranscriptViewer.tsx` — Read-only transcript display with close button; replaces editor area when viewing transcript
+- `src/components/FolderPicker.tsx` — Reusable folder dropdown with depth indentation; used in note title area and recording bar
+- `src/hooks/useMeetingContext.ts` — Polls `/ai/meeting-context` every 45s during recording; pgvector semantic search against note embeddings
 - `src/components/AudioWaveform.tsx` — Real-time audio visualization via Web Audio API
 - `src/components/SyncSwarmGame.tsx` — Hidden Galaga-style ASCII space shooter
 - `src/components/Dashboard.tsx` — Rich dashboard with quick actions, recent notes, favorites
@@ -194,7 +198,7 @@ packages/
 - `src/config.ts` — App config with secret enforcement
 - `src/services/whisperService.ts` — OpenAI Whisper transcription with retry on 502/503/504 (up to 2 retries with backoff); chunked transcription for large audio files
 - `src/services/aiService.ts` — Anthropic Claude AI (completions, summaries, tags, rewrite, Q&A); `structureTranscript`, `suggestTags`, and `answerQuestion` all retry on 502/503/504/529 (up to 2 retries with backoff)
-- `src/routes/ai.ts` — AI endpoints (`/ai/complete`, `/ai/ask`, `/ai/summarize`, `/ai/tags`, `/ai/rewrite`, `/ai/transcribe`, `/ai/embeddings/*`); Q&A SSE stream sends `error` event on failure; embeddings text limit 50K chars; Q&A context enriched with image `aiDescription` values
+- `src/routes/ai.ts` — AI endpoints (`/ai/complete`, `/ai/ask`, `/ai/summarize`, `/ai/tags`, `/ai/rewrite`, `/ai/transcribe`, `/ai/transcribe-chunk`, `/ai/structure-transcript`, `/ai/meeting-context`, `/ai/embeddings/*`); Q&A SSE stream sends `error` event on failure; embeddings text limit 50K chars; Q&A context enriched with image `aiDescription` values; `transcribe-chunk` accepts individual audio chunks for live meeting transcription; `meeting-context` generates query embedding and performs pgvector similarity search for note matching
 - `src/routes/images.ts` — Image upload (`POST /images/upload` with multipart, MIME/magic byte validation, 10MB limit), list (`GET /images/note/:noteId`), soft-delete (`DELETE /images/:imageId`); Cloudflare R2 storage via `@aws-sdk/client-s3`; fire-and-forget Claude vision analysis generates `aiDescription` for AI chat and semantic search indexing
 - `src/services/r2Service.ts` — S3-compatible client for Cloudflare R2 (upload, delete, batch delete); key format `{imageId}.{ext}`
 - `src/store/imageStore.ts` — Image CRUD, AI description updates, batch queries for Q&A context, sync pull queries

@@ -26,6 +26,9 @@ struct RecordingState {
     tap_id: u32,
     aggregate_device_id: u32,
     stop_flag: Arc<Mutex<bool>>,
+    /// Track how far we've read for chunked export (byte offset into each PCM file)
+    sys_chunk_read_pos: u64,
+    mic_chunk_read_pos: u64,
 }
 
 unsafe impl Send for RecordingState {}
@@ -790,9 +793,138 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
         tap_id,
         aggregate_device_id,
         stop_flag,
+        sys_chunk_read_pos: 0,
+        mic_chunk_read_pos: 0,
     });
 
     Ok(())
+}
+
+/// Read new audio data since the last chunk request, mix system+mic, return as WAV bytes.
+/// Used for live transcription during meeting recording.
+pub fn get_audio_chunk() -> Result<Vec<u8>, String> {
+    let mut guard = RECORDING.lock().map_err(|e| e.to_string())?;
+    let state = guard.as_mut().ok_or("No recording in progress")?;
+
+    let output_rate: u32 = 16000;
+
+    // Read new bytes from system PCM temp file
+    let sys_new = read_pcm_since(&state.system_temp_path, state.sys_chunk_read_pos)?;
+    let mic_new = read_pcm_since(&state.mic_temp_path, state.mic_chunk_read_pos)?;
+
+    // Update read positions
+    state.sys_chunk_read_pos += (sys_new.len() * 4) as u64;
+    state.mic_chunk_read_pos += (mic_new.len() * 4) as u64;
+
+    if sys_new.is_empty() && mic_new.is_empty() {
+        return Ok(Vec::new()); // No new audio
+    }
+
+    // Downmix to mono
+    let sys_mono = to_mono(&sys_new, state.system_channels);
+    let mic_mono = to_mono(&mic_new, state.mic_channels);
+
+    // Resample to 16kHz
+    let sys_resampled = if state.system_sample_rate != output_rate && !sys_mono.is_empty() {
+        let mut resampler = ChunkResampler::new(state.system_sample_rate, output_rate);
+        resampler.process(&sys_mono)
+    } else {
+        sys_mono
+    };
+
+    let mic_resampled = if state.mic_sample_rate != output_rate && !mic_mono.is_empty() {
+        let mut resampler = ChunkResampler::new(state.mic_sample_rate, output_rate);
+        resampler.process(&mic_mono)
+    } else {
+        mic_mono
+    };
+
+    // Mix
+    let len = sys_resampled.len().max(mic_resampled.len());
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut mixed = Vec::with_capacity(len);
+    for i in 0..len {
+        let sa = if i < sys_resampled.len() { sys_resampled[i] } else { 0.0 };
+        let sb = if i < mic_resampled.len() { mic_resampled[i] } else { 0.0 };
+        mixed.push(((sa + sb) * 0.5).clamp(-1.0, 1.0));
+    }
+
+    // Encode as in-memory WAV
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: output_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+
+    let mut cursor = std::io::Cursor::new(Vec::with_capacity(mixed.len() * 2 + 44));
+    {
+        let mut writer = hound::WavWriter::new(&mut cursor, spec)
+            .map_err(|e| format!("WAV create error: {e}"))?;
+        for &sample in &mixed {
+            writer
+                .write_sample((sample * 32767.0) as i16)
+                .map_err(|e| format!("WAV write error: {e}"))?;
+        }
+        writer.finalize().map_err(|e| format!("WAV finalize error: {e}"))?;
+    }
+
+    log::info!(
+        "Audio chunk: {:.1}s mixed ({} samples at {}Hz)",
+        mixed.len() as f64 / output_rate as f64,
+        mixed.len(),
+        output_rate,
+    );
+
+    Ok(cursor.into_inner())
+}
+
+/// Read f32 samples from a raw PCM file starting at a byte offset.
+fn read_pcm_since(path: &PathBuf, byte_offset: u64) -> Result<Vec<f32>, String> {
+    use std::io::Seek;
+
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return Ok(Vec::new()), // File not yet created
+    };
+
+    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    if file_len <= byte_offset {
+        return Ok(Vec::new()); // No new data
+    }
+
+    let new_bytes = (file_len - byte_offset) as usize;
+    // Truncate to complete f32 values
+    let sample_count = new_bytes / 4;
+    if sample_count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut reader = BufReader::new(file);
+    reader.seek(std::io::SeekFrom::Start(byte_offset))
+        .map_err(|e| format!("Seek error: {e}"))?;
+
+    let mut buf = vec![0u8; sample_count * 4];
+    let mut total_read = 0;
+    while total_read < buf.len() {
+        match reader.read(&mut buf[total_read..]) {
+            Ok(0) => break,
+            Ok(n) => total_read += n,
+            Err(e) => return Err(format!("Read error: {e}")),
+        }
+    }
+
+    let actual_samples = total_read / 4;
+    let mut samples = Vec::with_capacity(actual_samples);
+    for i in 0..actual_samples {
+        let offset = i * 4;
+        let bytes = [buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]];
+        samples.push(f32::from_le_bytes(bytes));
+    }
+    Ok(samples)
 }
 
 pub fn stop_recording() -> Result<String, String> {

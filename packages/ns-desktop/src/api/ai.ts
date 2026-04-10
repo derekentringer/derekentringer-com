@@ -199,6 +199,71 @@ export interface TranscribeResult {
   note: Note;
 }
 
+export interface TranscribeChunkResult {
+  sessionId: string;
+  chunkIndex: number;
+  text: string;
+}
+
+export async function transcribeChunk(
+  audioBlob: Blob,
+  sessionId: string,
+  chunkIndex: number,
+): Promise<TranscribeChunkResult> {
+  const ext = audioBlob.type.includes("wav") ? "wav"
+    : audioBlob.type.includes("mp4") ? "mp4"
+    : audioBlob.type.includes("ogg") ? "ogg"
+    : "webm";
+  const formData = new FormData();
+  formData.append("file", audioBlob, `chunk-${chunkIndex}.${ext}`);
+  formData.append("sessionId", sessionId);
+  formData.append("chunkIndex", String(chunkIndex));
+
+  const response = await apiFetch("/ai/transcribe-chunk", {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let message = `Chunk transcription failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data.message) message = data.message;
+    } catch {
+      // Use default message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+/** Structure an already-transcribed text and create a note (skip audio transcription) */
+export async function structureAndCreateNote(
+  transcript: string,
+  mode: AudioMode,
+  folderId?: string,
+): Promise<TranscribeResult> {
+  const response = await apiFetch("/ai/structure-transcript", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transcript, mode, folderId }),
+  });
+
+  if (!response.ok) {
+    let message = `Structure failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data.message) message = data.message;
+    } catch {
+      // Use default message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
 const TRANSCRIBE_MAX_RETRIES = 2;
 const TRANSCRIBE_RETRY_DELAY_MS = 2000;
 const TRANSCRIBE_RETRYABLE_STATUSES = new Set([502, 503, 504]);
@@ -249,4 +314,43 @@ export async function transcribeAudio(
   }
 
   throw lastError ?? new Error("Transcription failed");
+}
+
+// --- Meeting Context ---
+
+export interface MeetingContextNote {
+  id: string;
+  title: string;
+  snippet: string;
+  score: number;
+  updatedAt: string;
+}
+
+export interface MeetingContextResult {
+  relevantNotes: MeetingContextNote[];
+}
+
+export async function fetchMeetingContext(
+  transcript: string,
+  excludeNoteIds?: string[],
+  threshold?: number,
+): Promise<MeetingContextResult> {
+  const response = await apiFetch("/ai/meeting-context", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transcript, excludeNoteIds, threshold }),
+  });
+
+  if (!response.ok) {
+    let message = `Meeting context failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data.message) message = data.message;
+    } catch {
+      // Use default message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
 }

@@ -22,6 +22,7 @@ export function toNote(row: PrismaNote): Note {
     favoriteSortOrder: row.favoriteSortOrder,
     isLocalFile: row.isLocalFile,
     audioMode: (row.audioMode as AudioMode) ?? null,
+    transcript: row.transcript ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,

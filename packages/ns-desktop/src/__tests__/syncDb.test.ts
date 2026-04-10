@@ -246,6 +246,7 @@ describe("upsertNoteFromRemote", () => {
     favoriteSortOrder: 0,
     isLocalFile: false,
     audioMode: null,
+    transcript: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-06-01T00:00:00.000Z",
     deletedAt: null,
@@ -298,7 +299,8 @@ describe("upsertNoteFromRemote", () => {
     expect(params[10]).toBe(0); // favorite_sort_order
     expect(params[11]).toBe(0); // is_local_file
     expect(params[12]).toBeNull(); // audio_mode
-    expect(params[13]).toBe("remote-note-1"); // WHERE id
+    expect(params[13]).toBeNull(); // transcript
+    expect(params[14]).toBe("remote-note-1"); // WHERE id
   });
 
   it("calls ftsDelete instead of ftsUpdate when note is deleted", async () => {

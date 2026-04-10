@@ -20,6 +20,7 @@ function makeNote(id: string, title: string): Note {
     favoriteSortOrder: 0,
     isLocalFile: false,
     audioMode: null,
+    transcript: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-15T00:00:00Z",
     deletedAt: "2026-03-15T10:30:00Z",
