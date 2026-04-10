@@ -512,12 +512,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                       const sources = msg.sources?.filter((s) => cited.includes(s.title)) ?? [];
                       if (sources.length === 0) return null;
                       return (
-                        <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border">
+                        <div className="flex flex-col gap-0.5 mt-2 pt-2 border-t border-border">
+                          <span className="text-[10px] text-muted-foreground">Related notes:</span>
                           {sources.map((source) => (
                             <button
                               key={source.id}
                               onClick={() => onSelectNote(source.id)}
-                              className="inline-flex items-center text-xs text-foreground/70 hover:text-foreground transition-colors cursor-pointer"
+                              className="text-left text-xs text-foreground/70 hover:text-foreground transition-colors cursor-pointer"
                               data-testid="source-pill"
                             >
                               {source.title}
