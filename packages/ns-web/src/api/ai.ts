@@ -356,6 +356,7 @@ export interface ChatMessageData {
   content: string;
   sources?: QASource[] | null;
   meetingData?: Record<string, unknown> | null;
+  noteCards?: NoteCard[] | null;
   createdAt: string;
 }
 
@@ -367,7 +368,7 @@ export async function fetchChatHistory(): Promise<ChatMessageData[]> {
 }
 
 export async function saveChatMessages(
-  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown }[],
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown }[],
 ): Promise<void> {
   await apiFetch("/ai/chat-history", {
     method: "POST",

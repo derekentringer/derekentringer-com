@@ -84,6 +84,17 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
       required: ["noteTitle"],
     },
   },
+  {
+    name: "open_note",
+    description: "Open a note for the user. Use this when the user asks to open, view, or go to a specific note. Returns a clickable note card.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        noteTitle: { type: "string", description: "The title of the note to open" },
+      },
+      required: ["noteTitle"],
+    },
+  },
 
   // ─── Action Tools ────────────────────────────────────────
 
@@ -115,13 +126,12 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "tag_note",
-    description: "Add or replace tags on a note.",
+    description: "Add tags to a note. Appends to existing tags by default.",
     input_schema: {
       type: "object" as const,
       properties: {
         noteTitle: { type: "string", description: "Title of the note to tag" },
-        tags: { type: "array", items: { type: "string" }, description: "Tags to set on the note" },
-        append: { type: "boolean", description: "If true, add to existing tags. If false (default), replace all tags." },
+        tags: { type: "array", items: { type: "string" }, description: "Tags to add to the note" },
       },
       required: ["noteTitle", "tags"],
     },
@@ -150,7 +160,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "delete_note",
-    description: "Move a note to the trash (soft delete). The user can restore it later from the trash.",
+    description: "Move a note to the trash (soft delete). The user can restore it later.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -161,7 +171,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "delete_folder",
-    description: "Delete a folder. Notes inside will become unfiled.",
+    description: "Delete a folder. Notes inside become unfiled.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -199,6 +209,8 @@ export async function executeTool(
       return executeGetNoteContent(input, userId);
     case "get_backlinks":
       return executeGetBacklinks(input, userId);
+    case "open_note":
+      return executeOpenNote(input, userId);
     case "create_note":
       return executeCreateNote(input, userId);
     case "move_note":
@@ -437,6 +449,12 @@ async function findFolderByName(userId: string, name: string) {
   return search(folders);
 }
 
+async function executeOpenNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  const note = await findNoteByTitle(userId, String(input.noteTitle));
+  if (!note) return { text: `No note found with title "${input.noteTitle}".` };
+  return { text: `Here's "${note.title}":`, noteCards: [{ id: note.id, title: note.title, folder: note.folder ?? undefined, tags: note.tags.length > 0 ? note.tags : undefined, updatedAt: note.updatedAt }] };
+}
+
 async function executeCreateNote(
   input: Record<string, unknown>,
   userId: string,
@@ -465,88 +483,50 @@ async function executeCreateNote(
   };
 }
 
-async function executeMoveNote(
-  input: Record<string, unknown>,
-  userId: string,
-): Promise<ToolResult> {
+async function executeMoveNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const note = await findNoteByTitle(userId, String(input.noteTitle));
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
-
   const folder = await findFolderByName(userId, String(input.folderName));
   if (!folder) return { text: `No folder found with name "${input.folderName}".` };
-
   await updateNote(userId, note.id, { folderId: folder.id });
-  return {
-    text: `Moved "${note.title}" to folder "${folder.name}".`,
-    noteCards: [{ id: note.id, title: note.title, folder: folder.name, updatedAt: note.updatedAt }],
-  };
+  return { text: `Moved "${note.title}" to folder "${folder.name}".`, noteCards: [{ id: note.id, title: note.title, folder: folder.name }] };
 }
 
-async function executeTagNote(
-  input: Record<string, unknown>,
-  userId: string,
-): Promise<ToolResult> {
+async function executeTagNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const note = await findNoteByTitle(userId, String(input.noteTitle));
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
-
   const newTags = Array.isArray(input.tags) ? input.tags.map(String) : [];
-  const finalTags = input.append ? [...new Set([...note.tags, ...newTags])] : newTags;
-
-  await updateNote(userId, note.id, { tags: finalTags });
-  return {
-    text: `Updated tags on "${note.title}" to: ${finalTags.join(", ")}`,
-    noteCards: [{ id: note.id, title: note.title, tags: finalTags, updatedAt: note.updatedAt }],
-  };
+  const merged = [...new Set([...note.tags, ...newTags])];
+  await updateNote(userId, note.id, { tags: merged });
+  return { text: `Tagged "${note.title}" with: ${merged.join(", ")}`, noteCards: [{ id: note.id, title: note.title, tags: merged }] };
 }
 
-async function executeGenerateTags(
-  input: Record<string, unknown>,
-  userId: string,
-): Promise<ToolResult> {
+async function executeGenerateTags(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const note = await findNoteByTitle(userId, String(input.noteTitle));
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
-
   const tags = await suggestTags(note.title, note.content, note.tags);
-  return {
-    text: `Suggested tags for "${note.title}": ${tags.join(", ")}`,
-    noteCards: [{ id: note.id, title: note.title, tags, updatedAt: note.updatedAt }],
-  };
+  return { text: `Suggested tags for "${note.title}": ${tags.join(", ")}`, noteCards: [{ id: note.id, title: note.title, tags }] };
 }
 
-async function executeGenerateSummary(
-  input: Record<string, unknown>,
-  userId: string,
-): Promise<ToolResult> {
+async function executeGenerateSummary(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const note = await findNoteByTitle(userId, String(input.noteTitle));
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
-
   const summary = await generateSummary(note.title, note.content);
   await updateNote(userId, note.id, { summary });
-  return {
-    text: `Summary for "${note.title}":\n${summary}`,
-    noteCards: [{ id: note.id, title: note.title, updatedAt: note.updatedAt }],
-  };
+  return { text: `Summary for "${note.title}":\n${summary}`, noteCards: [{ id: note.id, title: note.title }] };
 }
 
-async function executeDeleteNote(
-  input: Record<string, unknown>,
-  userId: string,
-): Promise<ToolResult> {
+async function executeDeleteNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const note = await findNoteByTitle(userId, String(input.noteTitle));
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
-
   const deleted = await softDeleteNote(userId, note.id);
   if (!deleted) return { text: `Failed to delete "${note.title}".` };
-  return { text: `Moved "${note.title}" to trash. It can be restored from the trash panel.` };
+  return { text: `Moved "${note.title}" to trash.` };
 }
 
-async function executeDeleteFolder(
-  input: Record<string, unknown>,
-  userId: string,
-): Promise<ToolResult> {
+async function executeDeleteFolder(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const folder = await findFolderByName(userId, String(input.folderName));
   if (!folder) return { text: `No folder found with name "${input.folderName}".` };
-
   await deleteFolderById(userId, folder.id);
-  return { text: `Deleted folder "${folder.name}". Notes that were inside are now unfiled.` };
+  return { text: `Deleted folder "${folder.name}". Notes inside are now unfiled.` };
 }

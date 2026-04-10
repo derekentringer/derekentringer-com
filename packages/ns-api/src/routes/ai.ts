@@ -245,6 +245,9 @@ export default async function aiRoutes(fastify: FastifyInstance) {
               `data: ${JSON.stringify({ sources: [] })}\n\n`,
             );
 
+            // Accumulate note cards across tool rounds so they persist with the final response
+            const allNoteCards: { id: string; title: string; folder?: string; tags?: string[]; updatedAt?: string }[] = [];
+
             for await (const event of answerWithTools(
               question,
               userId,
@@ -260,11 +263,22 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                   `data: ${JSON.stringify({ tool: { name: event.toolName, description: event.description } })}\n\n`,
                 );
               } else if (event.type === "note_cards") {
+                allNoteCards.push(...(event.noteCards ?? []));
                 passthrough.write(
                   `data: ${JSON.stringify({ noteCards: event.noteCards })}\n\n`,
                 );
               }
             }
+
+            // Re-send accumulated note cards at the end to ensure they persist
+            if (allNoteCards.length > 0) {
+              passthrough.write(
+                `data: ${JSON.stringify({ noteCards: allNoteCards })}\n\n`,
+              );
+            }
+
+            // Notify sync so UI refreshes after any tool-based write operations
+            fastify.sseHub.notify(userId);
           }
         } catch (error) {
           if (!abortController.signal.aborted) {
@@ -810,6 +824,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                   content: { type: "string" },
                   sources: {},
                   meetingData: {},
+                  noteCards: {},
                 },
               },
             },

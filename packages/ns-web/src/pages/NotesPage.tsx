@@ -324,8 +324,31 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
   // Drawer state (shared by AI Assistant and Version History)
   type DrawerTab = "assistant" | "history" | "toc";
-  const [drawerTab, setDrawerTab] = useState<DrawerTab>("assistant");
-  const [qaOpen, setQaOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>(() => {
+    const saved = localStorage.getItem("ns-drawer-tab");
+    return (saved === "assistant" || saved === "history" || saved === "toc") ? saved : "assistant";
+  });
+  const [qaOpen, setQaOpen] = useState(() => localStorage.getItem("ns-drawer-open") === "true");
+
+  // Persist drawer state to localStorage
+  useEffect(() => { localStorage.setItem("ns-drawer-open", String(qaOpen)); }, [qaOpen]);
+  useEffect(() => { localStorage.setItem("ns-drawer-tab", drawerTab); }, [drawerTab]);
+
+  // Suppress drawer transition on initial mount
+  const drawerMountedRef = useRef(false);
+  useEffect(() => { requestAnimationFrame(() => { drawerMountedRef.current = true; }); }, []);
+
+  // Switch away from note-specific tabs when no note is selected
+  useEffect(() => {
+    if (!selectedId && qaOpen && (drawerTab === "history" || drawerTab === "toc")) {
+      if (settings.masterAiEnabled && settings.qaAssistant) {
+        setDrawerTab("assistant");
+      } else {
+        setQaOpen(false);
+      }
+    }
+  }, [selectedId, drawerTab, qaOpen, settings.masterAiEnabled, settings.qaAssistant]);
+
   const [focusMode, setFocusMode] = useState(false);
   const focusModeDrawerRef = useRef(false);
   const [sidebarHidden, setSidebarHidden] = useState(false);
@@ -846,7 +869,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     setConfirmPermanentDelete(false);
     setLinkCopied(false);
     setSelectedVersion(null);
-    if (qaOpen && drawerTab === "history") {
+    if (drawerMountedRef.current && qaOpen && drawerTab === "history") {
       setQaOpen(false);
     }
     navigate(`/notes/${note.id}`, { replace: true });
@@ -2942,7 +2965,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
           )}
         </div>}
         <div
-          className={`h-full overflow-hidden ${qaResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
+          className={`h-full overflow-hidden ${!drawerMountedRef.current || qaResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
           style={{ width: qaOpen ? qaResize.size : 0 }}
         >
           <div className="h-full flex bg-card shadow-lg" style={{ width: qaResize.size }}>

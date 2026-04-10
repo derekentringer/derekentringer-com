@@ -368,8 +368,29 @@ export function NotesPage() {
   noteTitlesRef.current = noteTitles;
 
   // Drawer + focus mode
-  const [drawerTab, setDrawerTab] = useState<DrawerTab>("history");
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>(() => {
+    const saved = localStorage.getItem("ns-drawer-tab");
+    return (saved === "assistant" || saved === "history" || saved === "toc") ? saved : "history";
+  });
+  const [drawerOpen, setDrawerOpen] = useState(() => localStorage.getItem("ns-drawer-open") === "true");
+
+  useEffect(() => { localStorage.setItem("ns-drawer-open", String(drawerOpen)); }, [drawerOpen]);
+  useEffect(() => { localStorage.setItem("ns-drawer-tab", drawerTab); }, [drawerTab]);
+
+  const drawerMountedRef = useRef(false);
+  useEffect(() => { requestAnimationFrame(() => { drawerMountedRef.current = true; }); }, []);
+
+  // Switch away from note-specific tabs when no note is selected
+  useEffect(() => {
+    if (!selectedId && drawerOpen && (drawerTab === "history" || drawerTab === "toc")) {
+      if (aiSettings.masterAiEnabled && aiSettings.qaAssistant) {
+        setDrawerTab("assistant");
+      } else {
+        setDrawerOpen(false);
+      }
+    }
+  }, [selectedId, drawerTab, drawerOpen, aiSettings.masterAiEnabled, aiSettings.qaAssistant]);
+
   const [focusMode, setFocusMode] = useState(false);
   const focusModeDrawerRef = useRef(false);
 
@@ -3611,7 +3632,7 @@ export function NotesPage() {
           )}
         </div>}
         <div
-          className={`h-full overflow-hidden ${drawerResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
+          className={`h-full overflow-hidden ${!drawerMountedRef.current || drawerResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
           style={{ width: drawerOpen ? drawerResize.size : 0 }}
         >
           <div className="h-full flex bg-card shadow-lg" style={{ width: drawerResize.size }}>

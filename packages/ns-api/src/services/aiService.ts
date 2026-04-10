@@ -420,7 +420,12 @@ export async function* answerWithTools(
       model: "claude-sonnet-4-20250514",
       max_tokens: 1500,
       temperature: 0.3,
-      system: "You are a helpful note-taking assistant. Use the provided tools to look up and manage the user's notes, folders, and tags. You can search, create, move, tag, summarize, and delete notes. Be concise and helpful. When referencing notes, use their exact titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. For destructive actions like deleting, confirm what you did clearly. When creating notes, generate useful structured content based on the user's request.",
+      system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. When referencing notes, use their exact titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
+
+The user also has slash commands available as a faster alternative for the same actions (no AI cost). You can mention these as tips when relevant:
+/open, /create, /move, /tag, /delete, /deletefolder, /summarize, /gentags, /favorites, /recent, /folders, /tags, /stats, /clear
+
+If the user asks what you can do or asks for help, explain your capabilities: searching notes, answering questions about note content, finding connections between notes, creating notes with templates, moving/tagging/deleting notes, generating summaries and tags, and showing statistics. Also mention that slash commands are available as a free, instant alternative.`,
       tools: ASSISTANT_TOOLS,
       messages,
     });
@@ -490,6 +495,8 @@ function describeToolCall(name: string, input: Record<string, unknown>): string 
       return `Reading "${input.title}"...`;
     case "get_backlinks":
       return `Finding links to "${input.noteTitle}"...`;
+    case "open_note":
+      return `Opening "${input.noteTitle}"...`;
     case "create_note":
       return `Creating note "${input.title}"...`;
     case "move_note":

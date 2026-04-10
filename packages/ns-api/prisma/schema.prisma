@@ -207,6 +207,7 @@ model ChatMessage {
   content     String   @default("")
   sources     Json?
   meetingData Json?
+  noteCards   Json?
   createdAt   DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -1,29 +1,43 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData } from "../api/ai.ts";
+import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags } from "../api/ai.ts";
+import { createNote, updateNote, deleteNote, fetchFolders, fetchTags, fetchFavoriteNotes, fetchDashboardData, deleteFolderApi } from "../api/notes.ts";
 import type { QASource } from "@derekentringer/shared/ns";
 import type { MeetingContextNote } from "../api/ai.ts";
+import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
 
 const ASSISTANT_TIPS = [
-  "List my favorite notes",
+  // AI-powered queries
   "What notes are tagged #meeting?",
-  "Show my folder structure",
   "What did I edit recently?",
   "How many notes do I have?",
   "What notes link to my Weekly Summary?",
-  "Summarize my Project Plan note",
-  "What are my most used tags?",
   "Find notes about React",
   "Which notes are in my Work folder?",
-  "Show my audio recordings",
-  "Create a new meeting agenda note",
+  "What's in my Project Plan note?",
+  "What can you do?",
+  // AI-powered actions
+  "Create a meeting agenda template note",
+  "Delete my old scratch note",
   "Move my Draft note to the Work folder",
   "Tag my latest note with #important",
-  "Generate tags for my Project Plan",
-  "Delete my old scratch note",
+  "Summarize my Project Plan",
+  "Generate tags for Meeting Notes",
+  // Slash commands (free, instant)
+  "/create Weekly Standup",
+  "/move Draft to Work",
+  "/tag Project Plan #important",
+  "/delete Old Notes",
+  "/favorites",
+  "/recent",
+  "/folders",
+  "/tags",
+  "/summarize Project Plan",
+  "/gentags Meeting Notes",
+  "/stats",
 ];
 
 /** Typing animation that cycles through tips */
@@ -239,6 +253,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [toolActivity, setToolActivity] = useState<string | null>(null);
+  const [autocompleteItems, setAutocompleteItems] = useState<ChatCommand[]>([]);
+  const [autocompleteIdx, setAutocompleteIdx] = useState(0);
+  const inputWrapRef = useRef<HTMLDivElement>(null);
   const [meetingCollapsed, setMeetingCollapsed] = useState(false);
   const [transcriptHeight, setTranscriptHeight] = useState(TRANSCRIPT_DEFAULT_HEIGHT);
   const [transcriptDragging, setTranscriptDragging] = useState(false);
@@ -265,14 +282,19 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           content: r.content,
           sources: (r.sources as QASource[] | undefined) ?? undefined,
           meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+          noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
         })));
       }
     }).catch(() => {});
   }, []);
 
+  // Suppress refetch during our own saves
+  const isSavingRef = useRef(false);
+
   // Refetch chat from server when another device updates (SSE chat event)
   useEffect(() => {
     if (!chatRefreshKey) return;
+    if (isSavingRef.current) return; // Skip refetch triggered by our own save
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
         const loaded = rows.map((r: ChatMessageData) => ({
@@ -302,17 +324,22 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       lastSavedRef.current = json;
+      isSavingRef.current = true;
       // Full replace: clear then append all
       clearServerChatHistory().then(() => {
         if (messages.length > 0) {
-          saveChatMessages(messages.map((m) => ({
+          return saveChatMessages(messages.map((m) => ({
             role: m.role,
             content: m.content,
             sources: m.sources,
             meetingData: m.meetingData,
+            noteCards: m.noteCards,
           })));
         }
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => {
+        // Delay unsetting to let SSE events from our save pass through
+        setTimeout(() => { isSavingRef.current = false; }, 500);
+      });
     }, 1000);
   }, [messages, isStreaming]);
 
@@ -416,11 +443,187 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     document.addEventListener("pointerup", onUp);
   }, [transcriptHeight]);
 
+  // ─── Command Context ──────────────────────────────────
+  const commandCtx = useMemo((): CommandContext => ({
+    createNote: async (title) => {
+      try {
+        const note = await createNote({ title });
+        return { id: note.id, title: note.title };
+      } catch { return null; }
+    },
+    moveNote: async (noteTitle, folderName) => {
+      try {
+        const { folders } = await fetchFolders();
+        const findFolder = (items: typeof folders): string | null => {
+          for (const f of items) {
+            if (f.name.toLowerCase() === folderName.toLowerCase()) return f.id;
+            const found = findFolder(f.children);
+            if (found) return found;
+          }
+          return null;
+        };
+        const folderId = findFolder(folders);
+        if (!folderId) return `Folder "${folderName}" not found.`;
+        // Find note by searching
+        const { fetchNotes } = await import("../api/notes.ts");
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return `Note "${noteTitle}" not found.`;
+        await updateNote(note.id, { folderId });
+        return `Moved "${note.title}" to "${folderName}".`;
+      } catch { return "Failed to move note."; }
+    },
+    tagNote: async (noteTitle, tags) => {
+      try {
+        const { fetchNotes } = await import("../api/notes.ts");
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return `Note "${noteTitle}" not found.`;
+        const existing = Array.isArray(note.tags) ? note.tags : [];
+        const merged = [...new Set([...existing, ...tags])];
+        await updateNote(note.id, { tags: merged });
+        return `Tagged "${note.title}" with: ${merged.join(", ")}`;
+      } catch { return "Failed to tag note."; }
+    },
+    deleteNote: async (noteTitle) => {
+      try {
+        const { fetchNotes } = await import("../api/notes.ts");
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return `Note "${noteTitle}" not found.`;
+        await deleteNote(note.id);
+        return `Moved "${note.title}" to trash.`;
+      } catch { return "Failed to delete note."; }
+    },
+    deleteFolder: async (folderName) => {
+      try {
+        const { folders } = await fetchFolders();
+        const findFolder = (items: typeof folders): string | null => {
+          for (const f of items) {
+            if (f.name.toLowerCase() === folderName.toLowerCase()) return f.id;
+            const found = findFolder(f.children);
+            if (found) return found;
+          }
+          return null;
+        };
+        const folderId = findFolder(folders);
+        if (!folderId) return `Folder "${folderName}" not found.`;
+        await deleteFolderApi(folderId);
+        return `Deleted folder "${folderName}".`;
+      } catch { return "Failed to delete folder."; }
+    },
+    summarizeNote: async (noteTitle) => {
+      try {
+        const { fetchNotes } = await import("../api/notes.ts");
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return `Note "${noteTitle}" not found.`;
+        const summary = await apiSummarize(note.id);
+        return `Summary of "${note.title}":\n${summary}`;
+      } catch { return "Failed to summarize note."; }
+    },
+    generateTags: async (noteTitle) => {
+      try {
+        const { fetchNotes } = await import("../api/notes.ts");
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return `Note "${noteTitle}" not found.`;
+        const tags = await apiSuggestTags(note.id);
+        return `Suggested tags for "${note.title}": ${tags.join(", ")}`;
+      } catch { return "Failed to generate tags."; }
+    },
+    listFavorites: async () => {
+      try {
+        const result = await fetchFavoriteNotes();
+        return result.notes.map((n) => ({ id: n.id, title: n.title }));
+      } catch { return []; }
+    },
+    listRecent: async () => {
+      try {
+        const data = await fetchDashboardData();
+        return data.recentlyEdited.map((n) => ({ id: n.id, title: n.title, updatedAt: n.updatedAt }));
+      } catch { return []; }
+    },
+    listFolders: async () => {
+      try {
+        const result = await fetchFolders();
+        const folders = result.folders;
+        const format = (items: typeof folders, depth = 0): string[] => {
+          const lines: string[] = [];
+          for (const f of items) {
+            lines.push(`${"  ".repeat(depth)}- ${f.name} (${f.count} notes)`);
+            if (f.children.length > 0) lines.push(...format(f.children, depth + 1));
+          }
+          return lines;
+        };
+        const lines = format(folders);
+        return lines.length > 0 ? lines.join("\n") : "No folders.";
+      } catch { return "Failed to load folders."; }
+    },
+    listTags: async () => {
+      try {
+        const result = await fetchTags();
+        if (result.tags.length === 0) return "No tags.";
+        return result.tags.map((t) => `- ${t.name} (${t.count})`).join("\n");
+      } catch { return "Failed to load tags."; }
+    },
+    getStats: async () => {
+      try {
+        const data = await fetchDashboardData();
+        const tagResult = await fetchTags();
+        const folderResult = await fetchFolders();
+        return [
+          `Recently edited: ${data.recentlyEdited.length}`,
+          `Favorites: ${data.favorites.length}`,
+          `Audio notes: ${data.audioNotes.length}`,
+          `Folders: ${folderResult.folders.length}`,
+          `Tags: ${tagResult.tags.length}`,
+        ].join("\n");
+      } catch { return "Failed to load stats."; }
+    },
+    openNote: async (noteTitle) => {
+      try {
+        const { fetchNotes } = await import("../api/notes.ts");
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return null;
+        onSelectNote(note.id);
+        return { id: note.id, title: note.title };
+      } catch { return null; }
+    },
+    clearChat: () => handleClear(),
+  }), []);
+
+  // ─── Slash Command Handler ───────────────────────────
+  async function handleSlashCommand(cmd: ReturnType<typeof parseCommand>) {
+    if (!cmd) return false;
+    setInput("");
+    setAutocompleteItems([]);
+    setMessages((prev) => [...prev, { role: "user", content: `${cmd.command.usage.split(" ")[0]} ${cmd.args}`.trim() }]);
+    try {
+      const result: CommandResult = await cmd.command.execute(cmd.args, commandCtx);
+      if (!result.silent) {
+        setMessages((prev) => [...prev, { role: "assistant", content: result.text, noteCards: result.noteCards }]);
+      }
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Command failed." }]);
+    }
+    return true;
+  }
+
   async function handleAsk() {
     const question = input.trim();
     if (!question || isStreaming) return;
 
+    // Check for slash command
+    const cmd = parseCommand(question);
+    if (cmd) {
+      handleSlashCommand(cmd);
+      return;
+    }
+
     setInput("");
+    setAutocompleteItems([]);
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     setIsStreaming(true);
     setToolActivity(null);
@@ -439,33 +642,30 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
         setMessages((prev) => {
           const updated = [...prev];
-          const last = updated[updated.length - 1];
+          let last = updated[updated.length - 1];
           if (last.role !== "assistant") return prev;
 
           if (event.sources) {
-            updated[updated.length - 1] = { ...last, sources: event.sources };
+            last = { ...last, sources: event.sources };
+            updated[updated.length - 1] = last;
           }
           if (event.error) {
-            updated[updated.length - 1] = {
-              ...last,
-              content: event.error,
-            };
+            last = { ...last, content: event.error };
+            updated[updated.length - 1] = last;
           }
           if (event.text) {
             setToolActivity(null);
-            updated[updated.length - 1] = {
-              ...last,
-              content: last.content + event.text,
-            };
+            last = { ...last, content: last.content + event.text };
+            updated[updated.length - 1] = last;
           }
           if (event.tool) {
             setToolActivity(event.tool.description);
           }
           if (event.noteCards) {
-            updated[updated.length - 1] = {
-              ...last,
-              noteCards: [...(last.noteCards ?? []), ...event.noteCards],
-            };
+            const existing = last.noteCards ?? [];
+            const merged = [...existing, ...event.noteCards.filter((c) => !existing.some((e) => e.id === c.id))];
+            last = { ...last, noteCards: merged };
+            updated[updated.length - 1] = last;
           }
           return updated;
         });
@@ -516,10 +716,43 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
+    if (autocompleteItems.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAutocompleteIdx((i) => Math.min(i + 1, autocompleteItems.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAutocompleteIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        const selected = autocompleteItems[autocompleteIdx];
+        if (selected) {
+          setInput(`/${selected.name} `);
+          setAutocompleteItems([]);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        setAutocompleteItems([]);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleAsk();
     }
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setInput(val);
+    const items = filterCommands(val);
+    setAutocompleteItems(val.startsWith("/") && !val.includes(" ") ? items : []);
+    setAutocompleteIdx(0);
   }
 
   return (
@@ -775,11 +1008,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 )}
               </div>
             ) : msg.role === "user" ? (
-              <div className="max-w-[85%] px-2.5 py-1.5 rounded-lg bg-primary text-primary-contrast text-sm">
-                {msg.content}
+              <div className="max-w-[85%] px-2.5 py-1.5 rounded-lg bg-subtle border border-border text-sm text-foreground">
+                {msg.content.startsWith("/") ? (
+                  <><code className="text-xs text-primary bg-input px-1 py-0.5 rounded font-mono">{msg.content.split(" ")[0]}</code> {msg.content.split(" ").slice(1).join(" ")}</>
+                ) : msg.content}
               </div>
             ) : (
-              <div className="max-w-[95%] rounded-lg bg-card border border-border px-2.5 py-2">
+              <div className="max-w-[95%] rounded-lg bg-card border border-border px-2.5 py-1.5">
                 {msg.content ? (
                   <>
                     <div className="text-sm text-foreground markdown-preview chat-markdown">
@@ -914,12 +1149,36 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             Catch me up
           </button>
         )}
+        <div className="relative" ref={inputWrapRef}>
+          {/* Autocomplete dropdown */}
+          {autocompleteItems.length > 0 && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-card border border-border rounded-md shadow-lg overflow-hidden z-50">
+              {autocompleteItems.map((cmd, i) => (
+                <button
+                  key={cmd.name}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setInput(`/${cmd.name} `);
+                    setAutocompleteItems([]);
+                    inputRef.current?.focus();
+                  }}
+                  className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 cursor-pointer transition-colors ${
+                    i === autocompleteIdx ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  <span className="text-primary font-mono text-xs">/{cmd.name}</span>
+                  <span className="text-xs text-muted-foreground truncate">{cmd.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
           <input
             ref={inputRef}
             type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder={isRecording ? "Ask about this meeting..." : "Ask anything about your notes..."}
             className="flex-1 px-3 py-2 rounded-md bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-muted-foreground"

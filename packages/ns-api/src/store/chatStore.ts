@@ -7,6 +7,7 @@ export interface ChatMessageRow {
   content: string;
   sources: unknown | null;
   meetingData: unknown | null;
+  noteCards: unknown | null;
   createdAt: Date;
 }
 
@@ -21,6 +22,7 @@ export async function getChatHistory(userId: string): Promise<ChatMessageRow[]> 
       content: true,
       sources: true,
       meetingData: true,
+      noteCards: true,
       createdAt: true,
     },
   });
@@ -28,7 +30,7 @@ export async function getChatHistory(userId: string): Promise<ChatMessageRow[]> 
 
 export async function appendChatMessages(
   userId: string,
-  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown }[],
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown }[],
 ): Promise<ChatMessageRow[]> {
   const prisma = getPrisma();
   const created: ChatMessageRow[] = [];
@@ -42,6 +44,7 @@ export async function appendChatMessages(
         content: msg.content,
         sources: msg.sources ?? undefined,
         meetingData: msg.meetingData ?? undefined,
+        noteCards: msg.noteCards ?? undefined,
       },
       select: {
         id: true,
@@ -49,6 +52,7 @@ export async function appendChatMessages(
         content: true,
         sources: true,
         meetingData: true,
+        noteCards: true,
         createdAt: true,
       },
     });
