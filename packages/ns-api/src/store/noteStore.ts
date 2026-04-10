@@ -96,7 +96,7 @@ interface FtsRow extends PrismaNote {
 }
 
 // Explicit column list for raw SQL queries (avoids issues with unsupported types like vector)
-const NOTE_COLUMNS = `"id", "userId", "title", "content", "folder", "folderId", "tags", "summary", "favorite", "sortOrder", "favoriteSortOrder", "isLocalFile", "audioMode", "createdAt", "updatedAt", "deletedAt"`;
+const NOTE_COLUMNS = `"id", "userId", "title", "content", "folder", "folderId", "tags", "summary", "favorite", "sortOrder", "favoriteSortOrder", "isLocalFile", "audioMode", "transcript", "createdAt", "updatedAt", "deletedAt"`;
 
 export async function listNotes(
   userId: string,
@@ -412,6 +412,7 @@ export async function updateNote(
     if (data.folderId !== undefined) updateData.folderId = data.folderId;
     if (data.tags !== undefined) updateData.tags = data.tags;
     if (data.summary !== undefined) updateData.summary = data.summary;
+    if (data.transcript !== undefined) updateData.transcript = data.transcript;
     if (data.favorite !== undefined) {
       updateData.favorite = data.favorite;
       if (data.favorite) {

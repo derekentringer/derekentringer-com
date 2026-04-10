@@ -20,6 +20,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     favoriteSortOrder: 0,
     isLocalFile: false,
     audioMode: null,
+    transcript: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 minutes ago
     deletedAt: null,

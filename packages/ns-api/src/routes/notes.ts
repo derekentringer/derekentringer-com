@@ -96,6 +96,7 @@ const updateNoteSchema = {
       summary: { type: ["string", "null"] },
       favorite: { type: "boolean" },
       isLocalFile: { type: "boolean" },
+      transcript: { type: ["string", "null"] },
     },
   },
 };
@@ -1024,7 +1025,8 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         body.tags === undefined &&
         body.summary === undefined &&
         body.favorite === undefined &&
-        body.isLocalFile === undefined
+        body.isLocalFile === undefined &&
+        body.transcript === undefined
       ) {
         return reply.status(400).send({
           statusCode: 400,

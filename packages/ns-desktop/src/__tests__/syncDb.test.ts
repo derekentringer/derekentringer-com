@@ -246,6 +246,7 @@ describe("upsertNoteFromRemote", () => {
     favoriteSortOrder: 0,
     isLocalFile: false,
     audioMode: null,
+    transcript: null,
     createdAt: "2024-01-01T00:00:00.000Z",
     updatedAt: "2024-06-01T00:00:00.000Z",
     deletedAt: null,

@@ -12,6 +12,7 @@ export interface Note {
   favoriteSortOrder: number;
   isLocalFile: boolean;
   audioMode: AudioMode | null;
+  transcript: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -35,6 +36,7 @@ export interface UpdateNoteRequest {
   summary?: string | null;
   favorite?: boolean;
   isLocalFile?: boolean;
+  transcript?: string | null;
 }
 
 export interface NoteListResponse {
