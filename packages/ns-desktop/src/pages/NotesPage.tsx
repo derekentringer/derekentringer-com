@@ -1231,6 +1231,7 @@ export function NotesPage() {
       let finalNote = serverNote;
       const surfacedNotes = meetingContext.relevantNotes;
       const liveText = capturedTranscript ?? lastLiveTranscriptRef.current;
+      console.log("[AudioNoteCreated] capturedTranscript:", capturedTranscript?.length, "liveText:", liveText.length, "refs:", surfacedNotes.length);
       const hasRefs = surfacedNotes.length > 0;
       const hasLiveTranscript = liveText.trim().length > 0;
 

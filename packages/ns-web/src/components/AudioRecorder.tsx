@@ -195,6 +195,10 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     }
   }
 
+  // Keep a ref copy of liveTranscript so it's accessible from stale closures
+  const liveTranscriptRef = useRef(liveTranscript);
+  liveTranscriptRef.current = liveTranscript;
+
   // Notify parent of recording state changes
   useEffect(() => {
     if (state === "idle") {
@@ -240,8 +244,10 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       recorder.onstop = async () => {
         const blobType = recorder.mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type: blobType });
-        // Capture transcript before cleanup destroys it
-        const capturedTranscript = getOrderedTranscript();
+        // Capture transcript — try ref map first, fall back to state ref
+        const fromMap = getOrderedTranscript();
+        const fromState = liveTranscriptRef.current;
+        const capturedTranscript = fromMap || fromState;
         cleanup();
         setState("processing");
 
