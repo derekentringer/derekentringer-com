@@ -2749,7 +2749,7 @@ export function NotesPage() {
                         Search
                       </span>
                     </div>
-                    <div className="flex items-center rounded-md bg-input border border-border focus-within:ring-1 focus-within:ring-primary focus-within:border-primary">
+                    <div className="flex items-center rounded-md bg-input border border-border focus-within:border-muted-foreground">
                       {semanticEnabled && (
                         <select
                           value={searchMode}
