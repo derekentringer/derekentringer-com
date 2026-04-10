@@ -8,11 +8,13 @@ import {
   structureTranscript,
   answerQuestion,
   answerMeetingQuestion,
+  answerWithTools,
 } from "../services/aiService.js";
 import { transcribeAudio, transcribeAudioChunked } from "../services/whisperService.js";
 import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
+import { getChatHistory, appendChatMessages, clearChatHistory } from "../store/chatStore.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
 import { getImagesByNoteIds } from "../store/imageStore.js";
 import {
@@ -238,46 +240,28 @@ export default async function aiRoutes(fastify: FastifyInstance) {
               );
             }
           } else {
-            const relevantNotes = await findRelevantNotes(userId, question, 5);
-
-            // Enrich with image descriptions for AI context
-            if (relevantNotes.length > 0) {
-              const noteIds = relevantNotes.map((n) => n.id);
-              const images = await getImagesByNoteIds(userId, noteIds);
-              const descByNote = new Map<string, string[]>();
-              for (const img of images) {
-                if (img.aiDescription) {
-                  const arr = descByNote.get(img.noteId) ?? [];
-                  arr.push(img.aiDescription);
-                  descByNote.set(img.noteId, arr);
-                }
-              }
-              for (const note of relevantNotes) {
-                (note as { imageDescriptions?: string[] }).imageDescriptions = descByNote.get(note.id);
-              }
-            }
-
-            const sources = relevantNotes.map((n) => ({
-              id: n.id,
-              title: n.title,
-            }));
+            // Agentic flow with tool use
             passthrough.write(
-              `data: ${JSON.stringify({ sources })}\n\n`,
+              `data: ${JSON.stringify({ sources: [] })}\n\n`,
             );
 
-            if (relevantNotes.length === 0) {
-              passthrough.write(
-                `data: ${JSON.stringify({ text: "I couldn't find any relevant notes to answer your question. Try adding more notes or rephrasing your question." })}\n\n`,
-              );
-            } else {
-              for await (const chunk of answerQuestion(
-                question,
-                relevantNotes,
-                abortController.signal,
-              )) {
-                if (abortController.signal.aborted) break;
+            for await (const event of answerWithTools(
+              question,
+              userId,
+              abortController.signal,
+            )) {
+              if (abortController.signal.aborted) break;
+              if (event.type === "text") {
                 passthrough.write(
-                  `data: ${JSON.stringify({ text: chunk })}\n\n`,
+                  `data: ${JSON.stringify({ text: event.text })}\n\n`,
+                );
+              } else if (event.type === "tool_activity") {
+                passthrough.write(
+                  `data: ${JSON.stringify({ tool: { name: event.toolName, description: event.description } })}\n\n`,
+                );
+              } else if (event.type === "note_cards") {
+                passthrough.write(
+                  `data: ${JSON.stringify({ noteCards: event.noteCards })}\n\n`,
                 );
               }
             }
@@ -786,6 +770,69 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         pendingCount: pendingResult[0]?.count ?? 0,
         totalWithEmbeddings: embeddedResult[0]?.count ?? 0,
       });
+    },
+  );
+
+  // GET /ai/chat-history — fetch chat messages for the current user
+  fastify.get(
+    "/chat-history",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
+      const messages = await getChatHistory(userId);
+      return reply.send({ messages });
+    },
+  );
+
+  // POST /ai/chat-history — append chat messages
+  fastify.post<{
+    Body: {
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown }[];
+    };
+  }>(
+    "/chat-history",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["messages"],
+          additionalProperties: false,
+          properties: {
+            messages: {
+              type: "array",
+              minItems: 1,
+              maxItems: 10,
+              items: {
+                type: "object",
+                required: ["role", "content"],
+                additionalProperties: false,
+                properties: {
+                  role: { type: "string", enum: ["user", "assistant", "meeting-summary"] },
+                  content: { type: "string" },
+                  sources: {},
+                  meetingData: {},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const created = await appendChatMessages(userId, request.body.messages);
+      fastify.sseHub.notifyChat(userId);
+      return reply.send({ messages: created });
+    },
+  );
+
+  // DELETE /ai/chat-history — clear all chat messages
+  fastify.delete(
+    "/chat-history",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
+      await clearChatHistory(userId);
+      fastify.sseHub.notifyChat(userId);
+      return reply.send({ ok: true });
     },
   );
 }

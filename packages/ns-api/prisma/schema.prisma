@@ -25,6 +25,7 @@ model User {
   images             Image[]
   refreshTokens      RefreshToken[]
   passkeys           Passkey[]
+  chatMessages       ChatMessage[]
 
   @@map("users")
 }
@@ -197,4 +198,19 @@ model Image {
   @@index([updatedAt])
   @@index([deletedAt])
   @@map("images")
+}
+
+model ChatMessage {
+  id          String   @id @default(uuid())
+  userId      String
+  role        String
+  content     String   @default("")
+  sources     Json?
+  meetingData Json?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("chat_messages")
 }

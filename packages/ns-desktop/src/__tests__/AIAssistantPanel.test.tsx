@@ -9,6 +9,9 @@ const mockAskQuestion = vi.fn();
 
 vi.mock("../api/ai.ts", () => ({
   askQuestion: (...args: unknown[]) => mockAskQuestion(...args),
+  fetchChatHistory: () => Promise.resolve([]),
+  saveChatMessages: () => Promise.resolve(),
+  clearServerChatHistory: () => Promise.resolve(),
 }));
 
 beforeEach(() => {

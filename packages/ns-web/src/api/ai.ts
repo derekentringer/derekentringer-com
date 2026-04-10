@@ -63,10 +63,20 @@ export async function* fetchCompletion(
   }
 }
 
+export interface NoteCard {
+  id: string;
+  title: string;
+  folder?: string;
+  tags?: string[];
+  updatedAt?: string;
+}
+
 export interface AskQuestionEvent {
   sources?: QASource[];
   text?: string;
   error?: string;
+  tool?: { name: string; description: string };
+  noteCards?: NoteCard[];
 }
 
 export async function* askQuestion(
@@ -336,6 +346,37 @@ export async function fetchMeetingContext(
   }
 
   return response.json();
+}
+
+// ─── Chat History ────────────────────────────────────────
+
+export interface ChatMessageData {
+  id: string;
+  role: string;
+  content: string;
+  sources?: QASource[] | null;
+  meetingData?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export async function fetchChatHistory(): Promise<ChatMessageData[]> {
+  const response = await apiFetch("/ai/chat-history");
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.messages ?? [];
+}
+
+export async function saveChatMessages(
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown }[],
+): Promise<void> {
+  await apiFetch("/ai/chat-history", {
+    method: "POST",
+    body: JSON.stringify({ messages }),
+  });
+}
+
+export async function clearServerChatHistory(): Promise<void> {
+  await apiFetch("/ai/chat-history", { method: "DELETE" });
 }
 
 /** Structure an already-transcribed text and create a note (skip audio transcription) */

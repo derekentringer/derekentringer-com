@@ -10,6 +10,7 @@ export interface SseHub {
   addConnection(userId: string, deviceId: string, stream: PassThrough): void;
   removeConnection(userId: string, stream: PassThrough): void;
   notify(userId: string, excludeDeviceId?: string): void;
+  notifyChat(userId: string): void;
   cleanup(): void;
   /** Visible for testing */
   connectionCount(userId?: string): number;
@@ -104,6 +105,21 @@ export function createSseHub(): SseHub {
         if (excludeDeviceId && conn.deviceId === excludeDeviceId) continue;
         try {
           conn.stream.write("event: sync\ndata: {}\n\n");
+          conn.lastWrite = Date.now();
+        } catch {
+          conn.stream.end();
+          userConns.delete(conn);
+        }
+      }
+      if (userConns.size === 0) connections.delete(userId);
+    },
+
+    notifyChat(userId: string) {
+      const userConns = connections.get(userId);
+      if (!userConns) return;
+      for (const conn of userConns) {
+        try {
+          conn.stream.write("event: chat\ndata: {}\n\n");
           conn.lastWrite = Date.now();
         } catch {
           conn.stream.end();

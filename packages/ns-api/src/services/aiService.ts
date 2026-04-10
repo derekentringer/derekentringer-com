@@ -391,6 +391,124 @@ export async function* answerMeetingQuestion(
   throw lastError;
 }
 
+export interface AgentEvent {
+  type: "tool_activity" | "note_cards" | "text" | "done";
+  toolName?: string;
+  description?: string;
+  noteCards?: { id: string; title: string; folder?: string; tags?: string[]; updatedAt?: string }[];
+  text?: string;
+}
+
+export async function* answerWithTools(
+  question: string,
+  userId: string,
+  signal?: AbortSignal,
+): AsyncGenerator<AgentEvent> {
+  const { ASSISTANT_TOOLS, executeTool } = await import("./assistantTools.js");
+  const anthropic = getClient();
+
+  const messages: Anthropic.MessageParam[] = [
+    { role: "user", content: question },
+  ];
+
+  const MAX_ROUNDS = 3;
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    if (signal?.aborted) return;
+
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1500,
+      temperature: 0.3,
+      system: "You are a helpful note-taking assistant. Use the provided tools to look up and manage the user's notes, folders, and tags. You can search, create, move, tag, summarize, and delete notes. Be concise and helpful. When referencing notes, use their exact titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. For destructive actions like deleting, confirm what you did clearly. When creating notes, generate useful structured content based on the user's request.",
+      tools: ASSISTANT_TOOLS,
+      messages,
+    });
+
+    // Collect all content blocks
+    const toolUseBlocks: Anthropic.ContentBlockParam[] = [];
+    const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
+    let hasToolUse = false;
+
+    for (const block of response.content) {
+      if (block.type === "text" && block.text) {
+        yield { type: "text", text: block.text };
+      } else if (block.type === "tool_use") {
+        hasToolUse = true;
+        const toolDescription = describeToolCall(block.name, block.input as Record<string, unknown>);
+        yield { type: "tool_activity", toolName: block.name, description: toolDescription };
+
+        const result = await executeTool(block.name, block.input as Record<string, unknown>, userId);
+
+        if (result.noteCards && result.noteCards.length > 0) {
+          yield { type: "note_cards", noteCards: result.noteCards };
+        }
+
+        toolUseBlocks.push({ type: "tool_use", id: block.id, name: block.name, input: block.input });
+        toolResultBlocks.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: result.text,
+        });
+      }
+    }
+
+    if (!hasToolUse) {
+      // No more tool calls — we're done
+      yield { type: "done" };
+      return;
+    }
+
+    // Add assistant's tool_use response and our tool_results to the conversation
+    messages.push({ role: "assistant", content: [...toolUseBlocks] });
+    messages.push({ role: "user", content: [...toolResultBlocks] });
+  }
+
+  yield { type: "done" };
+}
+
+function describeToolCall(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case "search_notes": {
+      const parts: string[] = [];
+      if (input.favorite) parts.push("favorite");
+      if (input.tag) parts.push(`tagged "${input.tag}"`);
+      if (input.folder) parts.push(`in "${input.folder}"`);
+      if (input.audioMode) parts.push(`${input.audioMode} recordings`);
+      if (input.query) parts.push(`matching "${input.query}"`);
+      return parts.length > 0 ? `Searching ${parts.join(", ")} notes...` : "Searching notes...";
+    }
+    case "list_folders":
+      return "Looking up folder structure...";
+    case "list_tags":
+      return "Fetching tags...";
+    case "get_note_stats":
+      return "Getting note statistics...";
+    case "get_recent_notes":
+      return "Finding recently edited notes...";
+    case "get_note_content":
+      return `Reading "${input.title}"...`;
+    case "get_backlinks":
+      return `Finding links to "${input.noteTitle}"...`;
+    case "create_note":
+      return `Creating note "${input.title}"...`;
+    case "move_note":
+      return `Moving "${input.noteTitle}" to "${input.folderName}"...`;
+    case "tag_note":
+      return `Tagging "${input.noteTitle}"...`;
+    case "generate_tags":
+      return `Generating tags for "${input.noteTitle}"...`;
+    case "generate_summary":
+      return `Summarizing "${input.noteTitle}"...`;
+    case "delete_note":
+      return `Deleting "${input.noteTitle}"...`;
+    case "delete_folder":
+      return `Deleting folder "${input.folderName}"...`;
+    default:
+      return "Processing...";
+  }
+}
+
 export async function analyzeImage(
   base64: string,
   mimeType: string,

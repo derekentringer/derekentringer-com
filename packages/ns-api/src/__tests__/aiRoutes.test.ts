@@ -25,6 +25,8 @@ const mockSuggestTags = vi.fn();
 const mockRewriteText = vi.fn();
 const mockStructureTranscript = vi.fn();
 const mockAnswerQuestion = vi.fn();
+const mockAnswerMeetingQuestion = vi.fn();
+const mockAnswerWithTools = vi.fn();
 
 vi.mock("../services/aiService.js", () => ({
   generateCompletion: (...args: unknown[]) => mockGenerateCompletion(...args),
@@ -33,6 +35,8 @@ vi.mock("../services/aiService.js", () => ({
   rewriteText: (...args: unknown[]) => mockRewriteText(...args),
   structureTranscript: (...args: unknown[]) => mockStructureTranscript(...args),
   answerQuestion: (...args: unknown[]) => mockAnswerQuestion(...args),
+  answerMeetingQuestion: (...args: unknown[]) => mockAnswerMeetingQuestion(...args),
+  answerWithTools: (...args: unknown[]) => mockAnswerWithTools(...args),
 }));
 
 const mockTranscribeAudioChunked = vi.fn();
@@ -823,13 +827,9 @@ describe("AI routes", () => {
   describe("POST /ai/ask", () => {
     it("returns 200 SSE stream with sources and text", async () => {
       const token = await getAccessToken();
-      mockFindRelevantNotes.mockResolvedValue([
-        { id: VALID_UUID, title: "Test Note", content: "Some content here" },
-        { id: "660e8400-e29b-41d4-a716-446655440001", title: "Second Note", content: "More content" },
-      ]);
-      mockAnswerQuestion.mockImplementation(async function* () {
-        yield "Based on";
-        yield " your notes";
+      mockAnswerWithTools.mockImplementation(async function* () {
+        yield { type: "text", text: "Based on your notes" };
+        yield { type: "done" };
       });
 
       const res = await app.inject({
@@ -842,16 +842,11 @@ describe("AI routes", () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers["content-type"]).toBe("text/event-stream");
       expect(res.body).toContain("sources");
-      expect(res.body).toContain("Test Note");
-      expect(res.body).toContain("Second Note");
-      expect(res.body).toContain("Based on");
+      expect(res.body).toContain("Based on your notes");
       expect(res.body).toContain("[DONE]");
-      expect(mockFindRelevantNotes).toHaveBeenCalledWith(TEST_USER_ID, "What is in my notes?", 5);
-      expect(mockAnswerQuestion).toHaveBeenCalledWith(
+      expect(mockAnswerWithTools).toHaveBeenCalledWith(
         "What is in my notes?",
-        expect.arrayContaining([
-          expect.objectContaining({ title: "Test Note" }),
-        ]),
+        TEST_USER_ID,
         expect.any(Object),
       );
     });
@@ -879,23 +874,27 @@ describe("AI routes", () => {
       expect(res.statusCode).toBe(401);
     });
 
-    it("handles no relevant notes gracefully", async () => {
+    it("handles tool-based response with note cards", async () => {
       const token = await getAccessToken();
-      mockFindRelevantNotes.mockResolvedValue([]);
+      mockAnswerWithTools.mockImplementation(async function* () {
+        yield { type: "tool_activity", toolName: "search_notes", description: "Searching notes..." };
+        yield { type: "note_cards", noteCards: [{ id: VALID_UUID, title: "Test Note" }] };
+        yield { type: "text", text: "Found your notes" };
+        yield { type: "done" };
+      });
 
       const res = await app.inject({
         method: "POST",
         url: "/ai/ask",
         headers: { authorization: `Bearer ${token}` },
-        payload: { question: "Something with no matching notes" },
+        payload: { question: "List my notes" },
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.headers["content-type"]).toBe("text/event-stream");
-      expect(res.body).toContain("sources");
-      expect(res.body).toContain("couldn't find any relevant notes");
+      expect(res.body).toContain("Searching notes...");
+      expect(res.body).toContain("noteCards");
+      expect(res.body).toContain("Found your notes");
       expect(res.body).toContain("[DONE]");
-      expect(mockAnswerQuestion).not.toHaveBeenCalled();
     });
   });
 });
