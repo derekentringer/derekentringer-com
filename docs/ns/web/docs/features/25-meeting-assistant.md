@@ -50,6 +50,23 @@ Real-time AI meeting assistant that surfaces relevant notes during audio recordi
 - Transcript button (mic icon) on note toolbar — visible for audio notes with transcript
 - TranscriptViewer: read-only view replacing editor area, close button (X) to return
 
+### Chat History Persistence (Phase E)
+- Server-side chat storage in `chat_messages` PostgreSQL table (id, userId, role, content, sources JSON, meetingData JSON, createdAt)
+- API: `GET /ai/chat-history`, `POST /ai/chat-history` (batch append), `DELETE /ai/chat-history`
+- Load on mount, debounced save (1s) after messages change (skipped during streaming)
+- Clear button clears both local state and server
+- SSE real-time sync: `notifyChat()` sends `event: chat` to other devices; `chatRefreshKey` triggers refetch
+- Typing tips animation below chat: cycles through randomized tips, hidden when chat has messages
+
+### Agentic Tool Use (Phase F)
+- Claude tool_use API for structured note queries and actions (up to 3 tool rounds per question)
+- **Read tools**: `search_notes`, `list_folders`, `list_tags`, `get_note_stats`, `get_recent_notes`, `get_note_content`, `get_backlinks`
+- **Action tools**: `create_note` (with AI-generated template content), `move_note`, `tag_note`, `generate_tags`, `generate_summary`, `delete_note`, `delete_folder`
+- All tools scoped to `request.user.sub` — no cross-user data access
+- Tool activity SSE events: `{ tool: { name, description } }` shown as bouncing dots status in chat
+- Note card SSE events: `{ noteCards: [...] }` rendered as interactive clickable cards below Claude's answer
+- System prompt instructs Claude on when to use tools vs answer directly
+
 ## API Endpoints
 
 | Endpoint | Method | Purpose |
@@ -57,12 +74,16 @@ Real-time AI meeting assistant that surfaces relevant notes during audio recordi
 | `/ai/transcribe-chunk` | POST | Transcribe single audio chunk (multipart: file + sessionId + chunkIndex) |
 | `/ai/structure-transcript` | POST | Structure pre-transcribed text + create note (JSON: transcript + mode + folderId) |
 | `/ai/meeting-context` | POST | Find notes relevant to transcript (JSON: transcript + excludeNoteIds + threshold) |
+| `/ai/chat-history` | GET | Fetch all chat messages for the user |
+| `/ai/chat-history` | POST | Append chat messages (batch) |
+| `/ai/chat-history` | DELETE | Clear all chat messages |
 
 ## Database Changes
 
 ### PostgreSQL (ns-api)
 - Migration `20260409000000_add_transcript`: `ALTER TABLE notes ADD COLUMN transcript TEXT`
-- Prisma schema: `transcript String?` on Note model
+- Migration `20260410000000_add_chat_messages`: `CREATE TABLE chat_messages` (id, userId, role, content, sources JSONB, meetingData JSONB, createdAt)
+- Prisma schema: `transcript String?` on Note model, `ChatMessage` model
 - noteStore: `updateNote` handles transcript field
 - notes route: PATCH schema accepts `transcript`
 - mappers: `toNote` includes transcript

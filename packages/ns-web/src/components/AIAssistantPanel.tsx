@@ -2,10 +2,75 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { askQuestion, type AskQuestionEvent } from "../api/ai.ts";
+import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData } from "../api/ai.ts";
 import type { QASource } from "@derekentringer/shared/ns";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
+
+const ASSISTANT_TIPS = [
+  "List my favorite notes",
+  "What notes are tagged #meeting?",
+  "Show my folder structure",
+  "What did I edit recently?",
+  "How many notes do I have?",
+  "What notes link to my Weekly Summary?",
+  "Summarize my Project Plan note",
+  "What are my most used tags?",
+  "Find notes about React",
+  "Which notes are in my Work folder?",
+  "Show my audio recordings",
+  "Create a new meeting agenda note",
+  "Move my Draft note to the Work folder",
+  "Tag my latest note with #important",
+  "Generate tags for my Project Plan",
+  "Delete my old scratch note",
+];
+
+/** Typing animation that cycles through tips */
+function TypingTips() {
+  const [tipIndex, setTipIndex] = useState(0);
+  const [charIndex, setCharIndex] = useState(0);
+  const [deleting, setDeleting] = useState(false);
+  const orderRef = useRef<number[]>([]);
+
+  // Shuffle tips on mount
+  if (orderRef.current.length === 0) {
+    orderRef.current = [...Array(ASSISTANT_TIPS.length).keys()].sort(() => Math.random() - 0.5);
+  }
+
+  const currentTip = ASSISTANT_TIPS[orderRef.current[tipIndex % orderRef.current.length]];
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!deleting) {
+        if (charIndex < currentTip.length) {
+          setCharIndex((c) => c + 1);
+        } else {
+          // Pause at end, then start deleting
+          setTimeout(() => setDeleting(true), 2000);
+        }
+      } else {
+        if (charIndex > 0) {
+          setCharIndex((c) => c - 1);
+        } else {
+          setDeleting(false);
+          setTipIndex((i) => i + 1);
+        }
+      }
+    }, deleting ? 25 : 45);
+    return () => clearTimeout(timer);
+  }, [charIndex, deleting, currentTip.length]);
+
+  return (
+    <div className="px-3 py-1.5 shrink-0">
+      <p className="text-xs text-muted-foreground/60 truncate">
+        <span className="text-muted-foreground/40">Try: </span>
+        {currentTip.slice(0, charIndex)}
+        <span className="animate-pulse">|</span>
+      </p>
+    </div>
+  );
+}
 
 const CITE_RE = /\[([^\]]+)\]/g;
 
@@ -102,6 +167,7 @@ interface Message {
   content: string;
   sources?: QASource[];
   meetingData?: MeetingSummaryData;
+  noteCards?: NoteCard[];
 }
 
 const RECORDING_MODE_LABELS: Record<string, string> = {
@@ -164,12 +230,15 @@ interface AIAssistantPanelProps {
   recordingMode?: string;
   /** Populated after audio note is created — enriches the meeting-ended card */
   completedNote?: { id: string; title: string; content: string; mode: string } | null;
+  /** Incremented when another device updates chat history via SSE */
+  chatRefreshKey?: number;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, completedNote }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, completedNote, chatRefreshKey }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [toolActivity, setToolActivity] = useState<string | null>(null);
   const [meetingCollapsed, setMeetingCollapsed] = useState(false);
   const [transcriptHeight, setTranscriptHeight] = useState(TRANSCRIPT_DEFAULT_HEIGHT);
   const [transcriptDragging, setTranscriptDragging] = useState(false);
@@ -183,6 +252,69 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const hasMeetingContext = isRecording || (relevantNotes && relevantNotes.length > 0);
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
   const hasNotes = (relevantNotes?.length ?? 0) > 0;
+  const historyLoadedRef = useRef(false);
+
+  // Load chat history from server on mount
+  useEffect(() => {
+    if (historyLoadedRef.current) return;
+    historyLoadedRef.current = true;
+    fetchChatHistory().then((rows) => {
+      if (rows.length > 0) {
+        setMessages(rows.map((r: ChatMessageData) => ({
+          role: r.role as Message["role"],
+          content: r.content,
+          sources: (r.sources as QASource[] | undefined) ?? undefined,
+          meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+        })));
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Refetch chat from server when another device updates (SSE chat event)
+  useEffect(() => {
+    if (!chatRefreshKey) return;
+    fetchChatHistory().then((rows) => {
+      if (rows.length > 0) {
+        const loaded = rows.map((r: ChatMessageData) => ({
+          role: r.role as Message["role"],
+          content: r.content,
+          sources: (r.sources as QASource[] | undefined) ?? undefined,
+          meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+        }));
+        setMessages(loaded);
+        lastSavedRef.current = JSON.stringify(loaded);
+      } else {
+        setMessages([]);
+        lastSavedRef.current = "[]";
+      }
+    }).catch(() => {});
+  }, [chatRefreshKey]);
+
+  // Persist chat to server when messages change (debounced full replace)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedRef = useRef<string>("");
+  useEffect(() => {
+    if (!historyLoadedRef.current) return;
+    // Skip saving during streaming (incomplete messages)
+    if (isStreaming) return;
+    const json = JSON.stringify(messages);
+    if (json === lastSavedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      lastSavedRef.current = json;
+      // Full replace: clear then append all
+      clearServerChatHistory().then(() => {
+        if (messages.length > 0) {
+          saveChatMessages(messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            sources: m.sources,
+            meetingData: m.meetingData,
+          })));
+        }
+      }).catch(() => {});
+    }, 1000);
+  }, [messages, isStreaming]);
 
   useEffect(() => {
     if (isOpen) {
@@ -291,6 +423,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     setIsStreaming(true);
+    setToolActivity(null);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -319,9 +452,19 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             };
           }
           if (event.text) {
+            setToolActivity(null);
             updated[updated.length - 1] = {
               ...last,
               content: last.content + event.text,
+            };
+          }
+          if (event.tool) {
+            setToolActivity(event.tool.description);
+          }
+          if (event.noteCards) {
+            updated[updated.length - 1] = {
+              ...last,
+              noteCards: [...(last.noteCards ?? []), ...event.noteCards],
             };
           }
           return updated;
@@ -343,6 +486,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       }
     } finally {
       setIsStreaming(false);
+      setToolActivity(null);
       abortRef.current = null;
       setMessages((prev) => {
         const updated = [...prev];
@@ -367,6 +511,8 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       abortRef.current?.abort();
     }
     setMessages([]);
+    lastSavedRef.current = "[]";
+    clearServerChatHistory().catch(() => {});
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -670,10 +816,42 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                   </>
                 ) : (
                   isStreaming && (
-                    <span className="text-sm text-muted-foreground">
-                      Thinking...
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3 justify-center">
+                        <span className="bounce-dot" />
+                        <span className="bounce-dot" />
+                        <span className="bounce-dot" />
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {toolActivity ?? "Thinking..."}
+                      </span>
+                    </div>
                   )
+                )}
+                {/* Note cards from tool results */}
+                {msg.noteCards && msg.noteCards.length > 0 && (
+                  <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-border">
+                    {msg.noteCards.map((card) => (
+                      <button
+                        key={card.id}
+                        onClick={() => onSelectNote(card.id)}
+                        className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                          <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                            {card.title}
+                          </span>
+                          {card.folder && (
+                            <span className="text-[10px] text-muted-foreground shrink-0">{card.folder}</span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -681,6 +859,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         ))}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Tips */}
+      {!isRecording && !isStreaming && messages.length === 0 && <TypingTips />}
 
       {/* Input */}
       <div className="border-t border-border p-3 shrink-0">

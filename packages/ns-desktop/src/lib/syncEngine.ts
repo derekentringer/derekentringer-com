@@ -89,10 +89,12 @@ export interface SyncEngineCallbacks {
     forcePush: (changeIds: string[]) => Promise<void>,
     discard: (changeIds: string[]) => Promise<void>,
   ) => void;
+  onChatChanged?: () => void;
 }
 
 let noteRemoteDeletedCallback: ((noteId: string) => void) | null = null;
 let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
+let chatChangedCallback: (() => void) | null = null;
 
 export async function initSyncEngine(callbacks: SyncEngineCallbacks): Promise<void> {
   statusCallback = callbacks.onStatusChange;
@@ -100,6 +102,7 @@ export async function initSyncEngine(callbacks: SyncEngineCallbacks): Promise<vo
   localFileCloudUpdateCallback = callbacks.onLocalFileCloudUpdate ?? null;
   noteRemoteDeletedCallback = callbacks.onNoteRemoteDeleted ?? null;
   syncRejectionsCallback = callbacks.onSyncRejections ?? null;
+  chatChangedCallback = callbacks.onChatChanged ?? null;
 
   await getOrCreateDeviceId();
 
@@ -271,6 +274,8 @@ async function connectSse(): Promise<void> {
         } else if (line.startsWith("data: ")) {
           if (currentEvent === "sync") {
             triggerSync();
+          } else if (currentEvent === "chat") {
+            chatChangedCallback?.();
           }
           currentEvent = "";
         } else if (line === "") {

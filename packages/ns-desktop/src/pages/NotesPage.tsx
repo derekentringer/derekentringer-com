@@ -321,6 +321,7 @@ export function NotesPage() {
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
   const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string } | null>(null);
+  const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const [showGame, setShowGame] = useState(false);
 
   // Meeting Assistant — surface relevant notes during recording
@@ -588,6 +589,7 @@ export function NotesPage() {
         forcePushRef.current = forcePush;
         discardRef.current = discard;
       },
+      onChatChanged: () => setChatRefreshKey((k) => k + 1),
     }).catch((err) => console.error("Failed to init sync engine:", err));
 
     // Initialize local file watchers
@@ -3629,6 +3631,7 @@ export function NotesPage() {
                   relevantNotes={meetingContext.relevantNotes}
                   recordingMode={recordingState?.mode}
                   completedNote={completedAudioNote}
+                  chatRefreshKey={chatRefreshKey}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel

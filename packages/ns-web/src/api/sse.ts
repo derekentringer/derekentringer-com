@@ -12,6 +12,7 @@ export function connectSseStream(
   onEvent: () => void,
   onError?: () => void,
   onConnect?: () => void,
+  onChatEvent?: () => void,
 ): SseConnection {
   const deviceId = crypto.randomUUID();
   let abortController: AbortController | null = null;
@@ -140,6 +141,8 @@ export function connectSseStream(
           } else if (line.startsWith("data: ")) {
             if (currentEvent === "sync") {
               onEvent();
+            } else if (currentEvent === "chat") {
+              onChatEvent?.();
             }
             currentEvent = "";
           } else if (line === "") {

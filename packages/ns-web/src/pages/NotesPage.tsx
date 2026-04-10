@@ -255,6 +255,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
   const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string } | null>(null);
+  const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
   // Meeting Assistant — surface relevant notes during recording
   const isRecording = recordingState?.state === "recording";
@@ -667,7 +668,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       setSyncError(null);
     };
 
-    sseConn = connectSseStream(handleSyncEvent, handleSseError, handleSseConnect);
+    sseConn = connectSseStream(handleSyncEvent, handleSseError, handleSseConnect, () => setChatRefreshKey((k) => k + 1));
 
     // Fallback poll at 120s (safety net if SSE drops silently)
     const FALLBACK_POLL_MS = 120_000;
@@ -2961,6 +2962,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   relevantNotes={meetingContext.relevantNotes}
                   recordingMode={recordingState?.mode}
                   completedNote={completedAudioNote}
+                  chatRefreshKey={chatRefreshKey}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
