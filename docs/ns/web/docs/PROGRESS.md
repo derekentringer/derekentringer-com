@@ -205,6 +205,10 @@
 - [x] Heading transition removed — font-size CSS transition caused visible animation when switching notes in Live view
 - [x] Tab indicator ResizeObserver — recalculates position on any container layout change (fixes misposition on refresh); isDirty change also triggers recalculation
 
+### Live Meeting Assistant
+
+- [x] [25 — Live Meeting Assistant](features/25-meeting-assistant.md) — Real-time AI meeting assistant: 20-second chunked Whisper transcription during recording, pgvector semantic note matching every 45 seconds via Voyage embeddings, integrated into AI Assistant panel (renamed from QAPanel) with collapsible "Related Notes" + resizable "Transcription" sections with typing animation, "Meeting Ended" card persisted in chat history with note pills and collapsible transcript, raw transcript saved to `transcript` database column (Postgres + SQLite) and viewable via mic icon button on note toolbar opening read-only TranscriptViewer, desktop native audio chunk export from Rust (system+mic mixed WAV), FolderPicker component extracted for recording bar folder selection, dashboard skeleton loading placeholders
+
 ### Native Desktop Menus
 
 - [x] Native macOS/Windows Menu Bar — Full menu bar with File (New Note, Quick Switcher, Close Tab, Save, Export, Import), Edit (Undo/Redo/Cut/Copy/Paste, Find, Bold/Italic/Strikethrough/Code/Heading), View (Editor/Split/Live/Preview, Cycle View, Toggle Sidebar/Note List/Focus Mode, Command Palette, Full Screen), Window (Minimize, Maximize, Previous/Next Tab), Help (Keyboard Shortcuts, About). macOS App menu with About, Settings, Hide/Quit. Platform-conditional placement (Settings in App menu on Mac, File on Windows). Contextual menu items: formatting grayed out when editor not focused, note items grayed out when no note open. Menu events dispatched to command registry via Tauri events. Editor formatting commands wired through editorRef.
