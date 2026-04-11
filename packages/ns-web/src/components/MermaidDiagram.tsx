@@ -56,6 +56,11 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
           setError("");
         }
       } catch (err) {
+        // Dynamic import chunk failure after deploy — reload to get fresh assets
+        if (err instanceof TypeError && String(err.message).includes("dynamically imported module")) {
+          window.location.reload();
+          return;
+        }
         if (!cancelled) {
           setSvg("");
           setError(err instanceof Error ? err.message : "Failed to render diagram");

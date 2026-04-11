@@ -62,7 +62,7 @@ Real-time AI meeting assistant that surfaces relevant notes during audio recordi
 ### Agentic Tool Use (Phase F)
 - Claude tool_use API for structured note queries and actions (up to 3 tool rounds per question)
 - **Read tools**: `search_notes`, `list_folders`, `list_tags`, `get_note_stats`, `get_recent_notes`, `get_note_content`, `get_backlinks`, `open_note`
-- **Action tools**: `create_note` (with AI-generated template content), `move_note`, `tag_note`, `generate_tags`, `generate_summary`, `delete_note`, `delete_folder`
+- **Action tools**: `create_note` (with AI-generated template content), `update_note_content` (edit existing note content, version history preserved), `move_note`, `tag_note`, `generate_tags`, `generate_summary`, `delete_note`, `delete_folder`
 - All tools scoped to `request.user.sub` — no cross-user data access
 - Tool activity SSE events: `{ tool: { name, description } }` shown as bouncing dots status in chat
 - Note card SSE events: `{ noteCards: [...] }` rendered as interactive clickable cards below Claude's answer; accumulated and re-sent at end of tool loop for persistence; deduplicated by ID on client

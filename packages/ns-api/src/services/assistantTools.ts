@@ -113,6 +113,18 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "update_note_content",
+    description: "Update the content of an existing note. Use this to fix, rewrite, or modify note content. The user's version history will preserve the previous version. Always provide the complete updated content, not just the changed parts.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        noteTitle: { type: "string", description: "Title of the note to update" },
+        content: { type: "string", description: "The full updated markdown content for the note" },
+      },
+      required: ["noteTitle", "content"],
+    },
+  },
+  {
     name: "move_note",
     description: "Move a note to a different folder.",
     input_schema: {
@@ -213,6 +225,8 @@ export async function executeTool(
       return executeOpenNote(input, userId);
     case "create_note":
       return executeCreateNote(input, userId);
+    case "update_note_content":
+      return executeUpdateNoteContent(input, userId);
     case "move_note":
       return executeMoveNote(input, userId);
     case "tag_note":
@@ -481,6 +495,13 @@ async function executeCreateNote(
     text: `Created note "${mapped.title}"${folderId ? ` in folder` : ""}.`,
     noteCards: [{ id: mapped.id, title: mapped.title, folder: mapped.folder ?? undefined, tags: mapped.tags.length > 0 ? mapped.tags : undefined, updatedAt: mapped.updatedAt }],
   };
+}
+
+async function executeUpdateNoteContent(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  const note = await findNoteByTitle(userId, String(input.noteTitle));
+  if (!note) return { text: `No note found with title "${input.noteTitle}".` };
+  await updateNote(userId, note.id, { content: String(input.content) });
+  return { text: `Updated content of "${note.title}". The previous version is saved in version history.`, noteCards: [{ id: note.id, title: note.title }] };
 }
 
 async function executeMoveNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {

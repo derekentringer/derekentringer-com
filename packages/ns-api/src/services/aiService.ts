@@ -499,6 +499,8 @@ function describeToolCall(name: string, input: Record<string, unknown>): string 
       return `Opening "${input.noteTitle}"...`;
     case "create_note":
       return `Creating note "${input.title}"...`;
+    case "update_note_content":
+      return `Updating "${input.noteTitle}"...`;
     case "move_note":
       return `Moving "${input.noteTitle}" to "${input.folderName}"...`;
     case "tag_note":

@@ -3536,7 +3536,7 @@ export function NotesPage() {
                   {(viewMode === "split" || viewMode === "preview") && (
                     <MarkdownPreview
                       content={content}
-                      className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1"}
+                      className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1 overflow-auto"}
                       wikiLinkTitleMap={wikiLinkTitleMap}
                       onWikiLinkClick={handleWikiLinkClick}
                       onContentChange={(newContent) => setContent(newContent)}
