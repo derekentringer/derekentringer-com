@@ -38,13 +38,18 @@ Swappable embedding providers:
 - `@notesync/plugin-local-embeddings` — Run embeddings locally (e.g., via transformers.js or Ollama)
 - `@notesync/plugin-cohere-embeddings` — Cohere embed API
 
-Each registers the same `EmbeddingService` interface:
+Each implements the `EmbeddingProvider` interface from `@notesync/plugin-api` and registers via `host.providers.registerProvider("embedding", ...)`. Plugin authors bring their own API keys.
 
 ```typescript
-export interface EmbeddingService {
-  embedDocument(text: string): Promise<number[]>;
-  embedQuery(text: string): Promise<number[]>;
-  dimensions: number;
+// Example: community plugin with OpenAI embeddings
+export default class OpenAIEmbeddingsPlugin implements Plugin {
+  register(host: NoteSync) {
+    host.providers.registerProvider("embedding", {
+      embedDocument: (text) => callOpenAI(text, "text-embedding-3-small"),
+      embedQuery: (text) => callOpenAI(text, "text-embedding-3-small"),
+      dimensions: 1536,
+    });
+  }
 }
 ```
 

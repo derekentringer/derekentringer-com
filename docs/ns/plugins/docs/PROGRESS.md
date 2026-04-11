@@ -2,31 +2,49 @@
 
 ## Vision
 
-A plugin system that makes NoteSync notes programmable — from the terminal, from scripts, from CI/CD, from other apps, and from community-built extensions. Unlike Obsidian (requires app running), Notion (rate-limited, no real-time), or Evernote (abandoned API), NoteSync plugins work headless, offline-first, and with built-in AI as a platform primitive.
+A plugin system that makes NoteSync notes programmable — from the terminal, from scripts, from CI/CD, from other apps, and from community-built extensions. Unlike Obsidian (requires app running), Notion (rate-limited, no real-time), or Evernote (abandoned API), NoteSync plugins work headless, offline-first, and provider-agnostic.
 
 ## Competitive Advantages
 
 - **API-first**: Plugins work without opening the app — CI/CD, scripts, servers, CLI
 - **Real-time sync as a primitive**: SSE push/pull means plugins get live note change events (Notion can't do this, Obsidian can't do this)
-- **Built-in AI as a platform API**: Plugins access embeddings, completions, transcription, semantic search without managing API keys
+- **Provider-agnostic AI**: Plugin API defines interfaces (transcription, embeddings, completions) — developers bring their own AI keys and providers. NoteSync's Whisper/Claude/Voyage are just the default plugins, swappable for OpenAI, Gemini, Deepgram, local models, etc.
 - **Stable, versioned, documented API**: Semantic versioning with deprecation cycle (Obsidian's #1 complaint is API instability)
 - **True cross-platform parity**: REST API + sync engine means plugins work identically on web, desktop, mobile, and CLI
 - **Offline-first plugin data**: SQLite sync engine can sync plugin data too — offline support for free
 - **Sandboxed by architecture**: Server-side plugins run in isolated Fastify contexts, not in the UI process
+
+## Business Model
+
+NoteSync's own AI-powered features ship as first-party plugins included in paid tiers:
+
+| Tier | Included Plugins |
+|---|---|
+| **Free** | Core app (notes, folders, tags, sync, editor) + community plugins |
+| **Pro** | + AI Assistant (agentic tools, chat, slash commands) + Audio Transcription (Whisper + Claude) |
+| **Team** | + Embeddings & Semantic Search (Voyage AI) + Image Analysis (Claude Vision) + priority support |
+
+This model:
+- **Free tier** is fully functional for note-taking — AI is the upsell
+- **Plugin authors** bring their own API keys — NoteSync doesn't subsidize third-party AI costs
+- **First-party plugins** demonstrate the platform's capabilities and generate revenue
+- **Community plugins** are always free and expand the ecosystem
 
 ## Architecture
 
 ```
 @notesync/plugin-api             (types + interfaces, published to npm)
     |
-    +-- Built-in Plugins
-    |     plugin-transcription   (Whisper + Claude structuring)
-    |     plugin-ai-tools        (agentic assistant tools)
-    |     plugin-embeddings      (Voyage AI semantic search)
-    |     plugin-image-analysis  (Claude Vision)
+    +-- First-Party Plugins (paid tiers)
+    |     plugin-transcription   (Whisper + Claude — Pro tier)
+    |     plugin-ai-tools        (agentic assistant — Pro tier)
+    |     plugin-embeddings      (Voyage AI search — Team tier)
+    |     plugin-image-analysis  (Claude Vision — Team tier)
+    |
+    +-- Built-in Plugins (free)
     |     plugin-import-export   (markdown, zip)
     |
-    +-- Community Plugins        (npm packages with notesync field)
+    +-- Community Plugins        (npm packages, bring-your-own AI keys)
     |
 NoteSync Host
     |
@@ -34,7 +52,7 @@ NoteSync Host
     |     PluginLoader           (discover + register server plugins)
     |     HookRegistry           (beforeNoteSave, afterTranscribe, etc.)
     |     ServiceRegistry        (named services for inter-plugin use)
-    |     AI API                 (embeddings, completions, search — exposed to plugins)
+    |     ProviderRegistry       (AI provider interfaces — plugins implement, not consume)
     |
     +-- ns-web / ns-desktop (React)
     |     PluginManager          (discover + activate client plugins)

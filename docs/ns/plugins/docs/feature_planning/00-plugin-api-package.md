@@ -18,7 +18,7 @@ packages/ns-plugin-api/
     manifest.ts           # PluginManifest type
     host.ts               # NoteSync host interface (what plugins receive)
     vault.ts              # VaultAPI — note/folder/tag CRUD
-    ai.ts                 # AIAPI — completions, embeddings, transcription
+    providers.ts          # AI provider interfaces (plugins implement these)
     editor.ts             # EditorAPI — CodeMirror extensions, markdown processing
     workspace.ts          # WorkspaceAPI — UI slots, panels, commands
     settings.ts           # SettingsAPI — plugin configuration
@@ -92,7 +92,7 @@ export interface NoteSync {
 
   // Subsystem APIs (facades over internals — never expose Prisma/SQLite)
   readonly vault: VaultAPI;
-  readonly ai: AIAPI;
+  readonly providers: ProviderRegistry;
   readonly workspace: WorkspaceAPI;
   readonly commands: CommandRegistry;
   readonly settings: SettingsAPI;
@@ -130,31 +130,51 @@ export interface VaultAPI {
 }
 ```
 
-### AIAPI (Built-in AI as a Platform Primitive)
+### ProviderRegistry (AI Provider Interfaces)
+
+The host does NOT provide AI capabilities — plugins implement them. NoteSync defines **interfaces** that AI plugins register against. The host routes to whichever provider is active.
 
 ```typescript
-export interface AIAPI {
-  /** Generate text completion (streaming) */
+export interface ProviderRegistry {
+  /** Register an AI provider implementation */
+  registerProvider<K extends keyof Providers>(type: K, provider: Providers[K]): void;
+
+  /** Get the active provider for a type (null if none registered) */
+  getProvider<K extends keyof Providers>(type: K): Providers[K] | null;
+
+  /** Register an assistant tool (for the agentic AI loop) */
+  registerTool(tool: AssistantTool): void;
+}
+
+/** Provider interfaces that plugins implement */
+export interface Providers {
+  completion: CompletionProvider;
+  embedding: EmbeddingProvider;
+  transcription: TranscriptionProvider;
+  imageAnalysis: ImageAnalysisProvider;
+}
+
+export interface CompletionProvider {
   complete(prompt: string, options?: CompletionOptions): AsyncGenerator<string>;
-
-  /** Generate embedding vector for text */
-  embed(text: string): Promise<number[]>;
-
-  /** Semantic similarity search against all note embeddings */
-  semanticSearch(query: string, limit?: number): Promise<SearchResult[]>;
-
-  /** Transcribe audio buffer */
-  transcribe(audio: Buffer, options?: TranscribeOptions): Promise<string>;
-
-  /** Structure raw transcript into note content */
   structureTranscript(transcript: string, mode: AudioMode): Promise<StructuredNote>;
+}
 
-  /** Ask a question with note context (agentic tool loop) */
-  ask(question: string): AsyncGenerator<AskEvent>;
+export interface EmbeddingProvider {
+  embedDocument(text: string): Promise<number[]>;
+  embedQuery(text: string): Promise<number[]>;
+  readonly dimensions: number;
+}
+
+export interface TranscriptionProvider {
+  transcribe(audio: Buffer, filename: string): Promise<string>;
+}
+
+export interface ImageAnalysisProvider {
+  analyze(imageBase64: string, mimeType: string): Promise<string>;
 }
 ```
 
-This is the killer differentiator — no other note app gives plugins access to embeddings, semantic search, and AI completions as a built-in API. Plugin authors don't need their own API keys.
+This is the key architectural decision: NoteSync defines **what AI capabilities look like** but doesn't provide them. First-party plugins (Whisper, Claude, Voyage) are the default implementations, included in paid tiers. Community plugins can swap in any provider (OpenAI, Gemini, Deepgram, local models) with their own API keys. NoteSync never subsidizes third-party AI costs.
 
 ## Versioning Strategy
 

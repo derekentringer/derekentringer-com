@@ -44,9 +44,13 @@ export default class ImageAnalysisPlugin implements Plugin {
 
 ## Extensibility
 
-- `@notesync/plugin-openai-vision` — Use GPT-4V instead of Claude
-- `@notesync/plugin-local-vision` — Local OCR/analysis
-- `@notesync/plugin-exif` — Extract EXIF metadata instead of AI analysis
+Implements the `ImageAnalysisProvider` interface. Community plugins can swap providers with their own API keys:
+
+- `@notesync/plugin-openai-vision` — GPT-4V — developer brings OpenAI key
+- `@notesync/plugin-local-vision` — Local OCR/analysis — no API key needed
+- `@notesync/plugin-exif` — EXIF metadata extraction — no API key needed
+
+**Business model**: This first-party plugin is included in the **Team tier**.
 
 ## Tasks
 

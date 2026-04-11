@@ -60,12 +60,15 @@ export default class TranscriptionPlugin implements Plugin {
 
 ## Extensibility
 
-Other plugins could replace the transcription provider:
-- `@notesync/plugin-deepgram` — Use Deepgram instead of Whisper (with speaker diarization)
-- `@notesync/plugin-assemblyai` — Use AssemblyAI
-- `@notesync/plugin-local-whisper` — Run Whisper locally via whisper.cpp
+This plugin implements the `TranscriptionProvider` and `CompletionProvider` interfaces from `@notesync/plugin-api`. Community plugins can replace it with their own AI providers and API keys:
 
-Each would register the same `transcription` service interface, and the host routes to whichever is active.
+- `@notesync/plugin-deepgram` — Deepgram (with speaker diarization) — developer brings Deepgram API key
+- `@notesync/plugin-assemblyai` — AssemblyAI — developer brings AssemblyAI API key
+- `@notesync/plugin-local-whisper` — Run Whisper locally via whisper.cpp — no API key needed
+
+Each registers via `host.providers.registerProvider("transcription", ...)`. The host routes to whichever provider is active. Only one transcription provider can be active at a time.
+
+**Business model**: This first-party plugin is included in the **Pro tier**. Community alternatives are free but developers bring their own API keys and costs.
 
 ## Settings
 

@@ -61,10 +61,10 @@ export interface AssistantTool {
 ```typescript
 export default class AIToolsPlugin implements Plugin {
   register(host: NoteSync) {
-    // Register each tool
-    host.ai.registerTool(searchNotesTool);
-    host.ai.registerTool(createNoteTool);
-    host.ai.registerTool(moveNoteTool);
+    // Register each tool via the provider registry
+    host.providers.registerTool(searchNotesTool);
+    host.providers.registerTool(createNoteTool);
+    host.providers.registerTool(moveNoteTool);
     // ... etc
 
     // Register the agentic runner
@@ -81,7 +81,7 @@ Other plugins can register their own tools:
 // @notesync/plugin-jira
 export default class JiraPlugin implements Plugin {
   register(host: NoteSync) {
-    host.ai.registerTool({
+    host.providers.registerTool({
       definition: {
         name: "create_jira_ticket",
         description: "Create a Jira ticket from a note or action item",
