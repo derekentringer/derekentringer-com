@@ -31,8 +31,9 @@ The root `.gitignore` already handles `.env` and `.env.*` with `!.env.example`, 
 
 | Script | Command | Purpose |
 |--------|---------|---------|
-| `tauri:build:local` | `tauri build` | Alias for `tauri build`, loads `.env` (localhost) |
-| `tauri:build:prod` | `npm run tauri:version-sync && APPLE_SIGNING_IDENTITY=- VITE_API_URL=... tauri build --target universal-apple-darwin` | Syncs version from git tag, ad-hoc code signs for TCC permission persistence, inline env var override bakes in prod URL, builds universal binary (ARM + Intel) |
+| `dev` | `tauri dev` | Local development with hot reload — always use this for local testing (no packaged local build exists) |
+| `tauri:build:prod` (macOS) | `npm run tauri:version-sync && APPLE_SIGNING_IDENTITY=- VITE_API_URL=... tauri build --target universal-apple-darwin` | Syncs version from git tag, ad-hoc code signs for TCC permission persistence, inline env var override bakes in prod URL, builds universal binary (ARM + Intel) |
+| `tauri:build:prod:win` (Windows) | `npm run tauri:version-sync && cross-env VITE_API_URL=... tauri build` | Windows equivalent. Uses `cross-env` because `cmd.exe` does not understand bash-style inline env prefixes. Unsigned (no Windows code-signing cert available). |
 | `vite:build:prod` | `vite build --mode production` | Vite-only build loading `.env.production` |
 | `tauri:version-sync` | `node -e "..."` | Reads latest git tag, writes version to `tauri.conf.json` |
 
@@ -74,10 +75,9 @@ The three files using `import.meta.env.VITE_API_URL || "http://localhost:3004"` 
 
 | Command | API Target | Notes |
 |---------|-----------|-------|
-| `npm run dev` | localhost:3004 | Tauri dev mode |
-| `npm run tauri:build` | localhost:3004 | Default build |
-| `npm run tauri:build:local` | localhost:3004 | Explicit local alias |
-| `npm run tauri:build:prod` | ns-api.derekentringer.com | Universal binary, version synced |
+| `npm run dev` | localhost:3004 | Tauri dev mode with hot reload — use for all local development on both macOS and Windows |
+| `npm run tauri:build:prod` | ns-api.derekentringer.com | Universal macOS binary, version synced, ad-hoc signed |
+| `npm run tauri:build:prod:win` | ns-api.derekentringer.com | Windows x64 MSI + NSIS, version synced, unsigned |
 | `npm run vite:build:prod` | ns-api.derekentringer.com | Vite-only (no Tauri) |
 
 ## Files Changed
@@ -94,4 +94,4 @@ The three files using `import.meta.env.VITE_API_URL || "http://localhost:3004"` 
 
 | File | Changes |
 |------|---------|
-| `packages/ns-desktop/package.json` | Added `tauri:build:local`, `tauri:build:prod`, `vite:build:prod`, `tauri:version-sync` scripts |
+| `packages/ns-desktop/package.json` | Added `tauri:build:prod` (macOS), `tauri:build:prod:win` (Windows), `vite:build:prod`, `tauri:version-sync` scripts |

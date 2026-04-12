@@ -376,18 +376,19 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| {
-        if let RunEvent::Opened { urls } = event {
+    app.run(|_app_handle, _event| {
+        #[cfg(target_os = "macos")]
+        if let RunEvent::Opened { urls } = _event {
             let paths = urls_to_paths(urls);
             if paths.is_empty() {
                 return;
             }
             // Buffer for cold-launch (frontend may not be ready yet)
-            if let Some(state) = app_handle.try_state::<OpenedFiles>() {
+            if let Some(state) = _app_handle.try_state::<OpenedFiles>() {
                 state.0.lock().unwrap().extend(paths.clone());
             }
             // Emit for hot-open (frontend listener picks it up immediately)
-            let _ = app_handle.emit("open-files", &paths);
+            let _ = _app_handle.emit("open-files", &paths);
         }
     });
 }
