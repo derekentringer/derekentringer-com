@@ -16,90 +16,61 @@ A plugin system that makes NoteSync notes programmable — from the terminal, fr
 
 ## Business Model
 
-### Pricing Tiers
+### Subscription Model
 
-| Tier | AI Credits | What's Included |
+AI usage is included in the paid subscription — no credit system, no metering, no per-operation charges. The subscription price provides enough margin to cover AI compute costs for typical usage.
+
+| Tier | AI | What's Included |
 |---|---|---|
-| **Free** | 0 | Core app (notes, folders, tags, sync, editor) + community plugins (BYOK only) |
-| **Pro** ($X/mo) | Y credits/month | All first-party AI plugins + included credits |
-
-- **Free tier** is fully functional for note-taking — no AI, no credit system
-- **Pro tier** includes all first-party plugins AND a monthly AI credit allowance
-- Credits cover normal usage; heavy users can purchase additional credits or bring their own API keys (BYOK)
-
-### Credit System
-
-A server-side metering layer that sits between first-party plugins and the AI providers:
-
-```
-Plugin makes AI call
-    → CreditMeter middleware
-        → check user's credit balance
-            → has credits → route to AI provider → deduct credits
-            → no credits → return "credit limit reached" error
-```
-
-**Credit costs** (approximate, based on underlying API costs + margin):
-
-| Operation | Credits |
-|---|---|
-| AI chat response (1 tool round) | 1 credit |
-| AI chat response (multi-tool) | 2 credits |
-| Note summarization | 1 credit |
-| Tag generation | 1 credit |
-| Audio transcription (per minute) | 2 credits |
-| Transcript structuring | 1 credit |
-| Embedding generation (per note) | 0.1 credits |
-| Image analysis | 1 credit |
-| Semantic search query | 0.1 credits |
-
-**What the credit system needs:**
-
-```sql
--- User credit balance
-ALTER TABLE users ADD COLUMN credit_balance DECIMAL DEFAULT 0;
-ALTER TABLE users ADD COLUMN credit_reset_at TIMESTAMP;
-
--- Usage tracking
-CREATE TABLE credit_usage (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES users(id),
-  plugin_id TEXT NOT NULL,
-  operation TEXT NOT NULL,
-  credits_used DECIMAL NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
+| **Free** | BYOK only (via community plugins) | Core app (notes, folders, tags, sync, editor) + community plugins |
+| **Paid** | Included (NoteSync AI) + BYOK option | All first-party AI plugins + full AI usage included |
 
 ### BYOK (Bring Your Own Key)
 
-Community plugins and power users bypass the credit system entirely:
+Community plugins and power users can always bring their own API keys:
 
-- Developer builds `@community/plugin-ollama` → calls Ollama directly → zero NoteSync credits used
-- Power user configures their own OpenAI key in plugin settings → plugin calls OpenAI directly → zero credits used
-- BYOK is always available on all tiers, including Free
-
-The credit system ONLY meters calls routed through NoteSync's first-party AI providers.
+- Developer builds `@community/plugin-ollama` → calls Ollama directly → no NoteSync AI involved
+- Power user configures their own OpenAI key in plugin settings → plugin calls OpenAI directly
+- BYOK is available on all tiers, including Free
+- Paid users can also use BYOK alongside NoteSync's included AI
 
 ### Revenue Model
 
-- Pro subscription covers the base cost + margin on included credits
-- Additional credit packs available for purchase (e.g., 100 credits for $Y)
-- Community plugins are always free — they expand the ecosystem and drive Pro adoption
+- Paid subscription covers infrastructure + AI compute costs with margin
+- Community plugins are always free — they expand the ecosystem and drive paid adoption
 - First-party plugins demonstrate the platform and generate subscription revenue
+
+## E2E Encryption & Plugins
+
+When a user enables E2E encryption, plugin behavior depends on their chosen privacy tier:
+
+| Privacy Tier | Server Plugins | Client Plugins |
+|---|---|---|
+| **E2E + Server Relay** | Receive transient plaintext for AI processing (never stored) | Full access to decrypted content |
+| **E2E + BYOK Direct** | No plaintext access — ciphertext only | Full access to decrypted content + direct API calls |
+| **E2E + No AI** | No plaintext access — ciphertext only | Full access to decrypted content, no AI |
+
+Key rules:
+- Client-side plugins always have access to decrypted note content (they run on the user's device)
+- Server-side plugins only see ciphertext unless the user is in Server Relay mode
+- Plugins that require plaintext declare `requiresPlaintext: true` in their manifest — disabled automatically when encryption prevents access
+- Embeddings plugin is disabled with encryption (pgvector can't index ciphertext, embeddings leak content meaning)
+- Plugin data storage offers an `encryptedStorage` option for sensitive derived data
+
+See [E2E encryption feature plans](../../web/docs/feature_planning/38-e2e-encryption.md) for full details.
 
 ## Architecture
 
 ```
 @notesync/plugin-api             (types + interfaces, published to npm)
     |
-    +-- First-Party Plugins (Pro tier, metered via credits)
+    +-- First-Party Plugins (paid tier, AI included in subscription)
     |     plugin-transcription   (Whisper + Claude)
     |     plugin-ai-tools        (agentic assistant tools)
     |     plugin-embeddings      (Voyage AI semantic search)
     |     plugin-image-analysis  (Claude Vision)
     |
-    +-- Built-in Plugins (free, no credits)
+    +-- Built-in Plugins (free, no AI)
     |     plugin-import-export   (markdown, zip)
     |
     +-- Community Plugins        (npm packages, bring-your-own AI keys)
@@ -111,7 +82,6 @@ NoteSync Host
     |     HookRegistry           (beforeNoteSave, afterTranscribe, etc.)
     |     ServiceRegistry        (named services for inter-plugin use)
     |     ProviderRegistry       (AI provider interfaces — plugins implement, not consume)
-    |     CreditMeter            (metering layer for first-party AI providers)
     |
     +-- ns-web / ns-desktop (React)
     |     PluginManager          (discover + activate client plugins)
@@ -129,7 +99,7 @@ NoteSync Host
 - [ ] [00 — Plugin API Package](feature_planning/00-plugin-api-package.md)
 - [ ] [01 — Server Plugin Loader](feature_planning/01-server-plugin-loader.md)
 - [ ] [02 — Hook System](feature_planning/02-hook-system.md)
-- [ ] [14 — Credit System](feature_planning/14-credit-system.md)
+- [ ] [14 — Usage Tracking & Abuse Prevention](feature_planning/14-usage-tracking.md)
 
 ### Phase 2 — Extract Built-in Plugins
 
@@ -153,3 +123,18 @@ NoteSync Host
 
 - [ ] [12 — Plugin Directory & Marketplace](feature_planning/12-plugin-marketplace.md)
 - [ ] [13 — Security & Sandboxing](feature_planning/13-security-sandboxing.md)
+
+### Phase 6 — Example Plugins
+
+First-party example plugins that showcase every plugin type and API feature. These serve as working examples for plugin developers and seed the ecosystem.
+
+- [ ] [15 — Daily Journal](feature_planning/15-example-daily-journal.md) — sidebar panel, commands, NotesAPI, templates
+- [ ] [16 — Ollama (Local LLM)](feature_planning/16-example-ollama.md) — ProviderRegistry, BYOK, streaming completions
+- [ ] [17 — PDF Export](feature_planning/17-example-pdf-export.md) — commands, markdown rendering, platform-specific output
+- [ ] [18 — Kanban Board](feature_planning/18-example-kanban.md) — CodeMirror widget, drag-and-drop, editor extensions
+- [ ] [19 — Math/LaTeX](feature_planning/19-example-math-latex.md) — markdown render middleware, KaTeX, CSS injection
+- [ ] [20 — Templater](feature_planning/20-example-templater.md) — commands, prompts, note lifecycle hooks, file includes
+- [ ] [21 — Quick Capture](feature_planning/21-example-quick-capture.md) — commands, keyboard shortcuts, CLI integration
+- [ ] [22 — Git Backup](feature_planning/22-example-git-backup.md) — event hooks, sync-handler, headless/CLI operation
+- [ ] [23 — Google Calendar](feature_planning/23-example-google-calendar.md) — OAuth, external API, encrypted storage, background polling
+- [ ] [24 — Word Count](feature_planning/24-example-word-count.md) — status bar, sidebar panel, real-time events (starter example)

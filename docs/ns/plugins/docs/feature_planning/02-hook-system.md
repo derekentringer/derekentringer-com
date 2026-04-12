@@ -90,9 +90,54 @@ interface NsMiddleware {
 }
 ```
 
+## E2E Encryption & Hooks
+
+When E2E encryption is enabled, hook payloads differ depending on where the hook runs:
+
+### Server-Side Hooks
+
+Server hooks receive **encrypted payloads** when E2E is enabled. The server never has the master key.
+
+```typescript
+// Hook context includes encryption state
+interface HookContext {
+  encrypted: boolean;       // Whether this user has E2E encryption enabled
+  tier: "relay" | "byok" | "none" | null;
+}
+```
+
+- `before:note:save` — receives the note with encrypted `title` and `content` fields. Plugins can inspect metadata (ID, timestamps, folder) but not content.
+- `after:note:save` — same: encrypted content fields.
+- `before:sync:push` — sync changes contain encrypted blobs.
+
+**Exception — Server Relay mode:** When the user's tier is `relay` and the client has explicitly sent decrypted content for an AI operation, AI-related hooks (`before:ai:complete`, `after:ai:complete`, `before:transcribe:structure`, `after:transcribe:structure`) receive transient plaintext. This plaintext is discarded after the hook chain completes — it is never persisted.
+
+### Client-Side Hooks
+
+Client hooks always receive **decrypted content**. The client holds the master key and decrypts before any hook fires.
+
+- `before:note:save` on client — receives plaintext content (encryption happens after the hook chain, before sync)
+- `before:render:preview` — receives plaintext (the editor always works with decrypted content)
+- All client events — decrypted
+
+### Plugin Guidance
+
+Plugins should check `context.encrypted` if they need to handle both encrypted and unencrypted states:
+
+```typescript
+host.hooks.tap("after:note:save", async (note, context) => {
+  if (context.encrypted && !context.tier) {
+    // No AI tier — can't process note content server-side
+    return;
+  }
+  // Safe to process note content
+  await processNote(note);
+});
+```
+
 ## Auto-Cleanup
 
-All hooks registered by a plugin are automatically removed on `deactivate()`. Plugins don't need manual cleanup — mirrors Obsidian's `Component` pattern.
+All hooks registered by a plugin are automatically removed on `deactivate()`. Plugins don't need manual cleanup.
 
 ```typescript
 // Internally, the host tracks registrations per plugin
@@ -116,6 +161,7 @@ class PluginHost implements NoteSync {
 - [ ] Implement typed `EventBus` with `on`/`off`/`emit`
 - [ ] Implement typed `HookRegistry` with `tap` and sequential async execution
 - [ ] Implement `MiddlewareRegistry` with chainable `next()` pattern
+- [ ] Add `HookContext` with `encrypted` and `tier` fields to all hook payloads
 - [ ] Auto-cleanup tracking per plugin instance
 - [ ] Wire hooks into existing noteStore, aiService, syncEngine
 - [ ] Add bail support for hooks (return `false` to cancel operation)

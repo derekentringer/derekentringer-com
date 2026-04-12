@@ -31,7 +31,7 @@ const isolate = new ivm.Isolate({ memoryLimit: 128 }); // 128 MB
 const context = await isolate.createContext();
 
 // Inject the plugin API (only safe subset)
-await context.global.set("vault", new ivm.Reference(sandboxedVaultAPI));
+await context.global.set("notes", new ivm.Reference(sandboxedNotesAPI));
 
 // Run plugin code with timeout
 const script = await isolate.compileScript(pluginCode);
@@ -68,7 +68,7 @@ iframe.contentWindow.postMessage({ type: "note:data", note }, "*");
 
 // Plugin → Host
 window.addEventListener("message", (event) => {
-  if (event.data.type === "vault:createNote") {
+  if (event.data.type === "notes:createNote") {
     // Validate and execute
   }
 });
@@ -81,9 +81,9 @@ Plugins declare required permissions in manifest:
 ```json
 {
   "permissions": [
-    "vault:read",          // Read notes, folders, tags
-    "vault:write",         // Create/update/delete notes
-    "vault:delete",        // Specifically delete notes
+    "notes:read",          // Read notes, folders, tags
+    "notes:write",         // Create/update/delete notes
+    "notes:delete",        // Specifically delete notes
     "ai:complete",         // Use AI completions
     "ai:embed",            // Generate embeddings
     "network:fetch",       // Make outbound HTTP requests

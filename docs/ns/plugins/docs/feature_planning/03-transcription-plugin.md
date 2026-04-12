@@ -68,7 +68,7 @@ This plugin implements the `TranscriptionProvider` and `CompletionProvider` inte
 
 Each registers via `host.providers.registerProvider("transcription", ...)`. The host routes to whichever provider is active. Only one transcription provider can be active at a time.
 
-**Business model**: This first-party plugin is included in the **Pro tier**. Community alternatives are free but developers bring their own API keys and costs.
+**Business model**: This first-party plugin is included in the paid subscription. AI usage is covered by the subscription — no credits or metering. Community alternatives are free but developers bring their own API keys and costs.
 
 ## Settings
 

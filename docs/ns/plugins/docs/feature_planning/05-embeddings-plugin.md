@@ -53,11 +53,21 @@ export default class OpenAIEmbeddingsPlugin implements Plugin {
 }
 ```
 
+## E2E Encryption
+
+When a user enables E2E encryption, the embeddings plugin is **disabled**. The server cannot generate embeddings from ciphertext, and stored embeddings leak content meaning (vectors can be used to approximate the original text). On encryption enable:
+
+- All existing embeddings for the user are deleted from pgvector
+- Semantic and hybrid search fall back to client-side keyword search (FTS5 on desktop/mobile, IndexedDB FTS on web)
+- The `/ai/embeddings/*` endpoints return 403 for encrypted users
+
+**Future possibility:** Client-side embedding generation using transformers.js or a local model, with vectors stored in SQLite (desktop/mobile only). This would restore semantic search for encrypted users without server involvement. Deferred — complex and limited to platforms with local vector storage.
+
 ## Tasks
 
 - [ ] Create `packages/ns-plugin-embeddings/`
 - [ ] Define `EmbeddingService` interface in plugin-api
 - [ ] Extract Voyage client, processor, search
-- [ ] Register search functions via VaultAPI extension
+- [ ] Register search functions via NotesAPI extension
 - [ ] Register routes via plugin Fastify context
 - [ ] Allow provider swapping via settings

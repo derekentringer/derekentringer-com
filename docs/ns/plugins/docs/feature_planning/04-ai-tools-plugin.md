@@ -52,7 +52,7 @@ Each tool implements a standard interface:
 export interface AssistantTool {
   definition: Anthropic.Tool;          // Schema for Claude
   describe(input: Record<string, unknown>): string;  // Activity text
-  execute(input: Record<string, unknown>, userId: string, vault: VaultAPI): Promise<ToolResult>;
+  execute(input: Record<string, unknown>, userId: string, notes: NotesAPI): Promise<ToolResult>;
 }
 ```
 
@@ -87,7 +87,7 @@ export default class JiraPlugin implements Plugin {
         description: "Create a Jira ticket from a note or action item",
         input_schema: { ... }
       },
-      execute: async (input, userId, vault) => {
+      execute: async (input, userId, notes) => {
         // Call Jira API
       }
     });

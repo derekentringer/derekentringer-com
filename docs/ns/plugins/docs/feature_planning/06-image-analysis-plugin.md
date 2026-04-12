@@ -36,7 +36,7 @@ export default class ImageAnalysisPlugin implements Plugin {
   activate(host: NoteSync) {
     host.events.on("image:uploaded", async (image) => {
       const description = await this.analyze(image);
-      await host.vault.updateImageDescription(image.id, description);
+      await host.notes.updateImageDescription(image.id, description);
     });
   }
 }
@@ -50,7 +50,7 @@ Implements the `ImageAnalysisProvider` interface. Community plugins can swap pro
 - `@notesync/plugin-local-vision` — Local OCR/analysis — no API key needed
 - `@notesync/plugin-exif` — EXIF metadata extraction — no API key needed
 
-**Business model**: This first-party plugin is included in the **Team tier**.
+**Business model**: This first-party plugin is included in the paid subscription. AI usage is covered by the subscription — no credits or metering.
 
 ## Tasks
 

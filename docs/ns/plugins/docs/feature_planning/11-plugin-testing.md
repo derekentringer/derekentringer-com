@@ -37,7 +37,7 @@ test("plugin hook modifies note before save", async () => {
 
 test("plugin AI tool executes correctly", async () => {
   const host = createMockHost({
-    vault: {
+    notes: {
       notes: [
         createMockNote({ title: "Project Plan", tags: ["work"] }),
         createMockNote({ title: "Meeting Notes", tags: ["meeting"] }),
@@ -49,7 +49,7 @@ test("plugin AI tool executes correctly", async () => {
   plugin.register(host);
 
   const tool = host.ai.getTool("my-plugin.custom-tool");
-  const result = await tool.execute({ query: "work" }, "user-123", host.vault);
+  const result = await tool.execute({ query: "work" }, "user-123", host.notes);
   expect(result.noteCards).toHaveLength(1);
 });
 ```
@@ -59,7 +59,7 @@ test("plugin AI tool executes correctly", async () => {
 ```typescript
 // Create mock host with optional pre-populated data
 createMockHost(options?: {
-  vault?: { notes?: Note[]; folders?: Folder[]; tags?: Tag[] };
+  data?: { notes?: Note[]; folders?: Folder[]; tags?: Tag[] };
   platform?: "web" | "desktop" | "mobile" | "cli";
   version?: string;
 })
@@ -79,7 +79,7 @@ createMockEditorState(content?: string): EditorState
 - [ ] Create `packages/ns-plugin-testing/`
 - [ ] Implement `createMockHost` with all subsystem mocks
 - [ ] Implement `createMockNote`, `createMockFolder`, etc.
-- [ ] Mock VaultAPI with in-memory data store
+- [ ] Mock NotesAPI with in-memory data store
 - [ ] Mock AIAPI with stub responses
 - [ ] Mock WorkspaceAPI with spy functions
 - [ ] Publish to npm as `@notesync/plugin-testing`

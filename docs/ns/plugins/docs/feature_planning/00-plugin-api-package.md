@@ -17,7 +17,7 @@ packages/ns-plugin-api/
     plugin.ts             # Plugin interface + lifecycle
     manifest.ts           # PluginManifest type
     host.ts               # NoteSync host interface (what plugins receive)
-    vault.ts              # VaultAPI — note/folder/tag CRUD
+    notes.ts              # NotesAPI — note/folder/tag CRUD
     providers.ts          # AI provider interfaces (plugins implement these)
     editor.ts             # EditorAPI — CodeMirror extensions, markdown processing
     workspace.ts          # WorkspaceAPI — UI slots, panels, commands
@@ -64,6 +64,7 @@ export interface PluginManifest {
   homepage?: string;
   hostApiVersion: string;               // Semver range (e.g., "^1.0.0")
   type: PluginType;
+  requiresPlaintext?: boolean;          // If true, plugin is disabled when encryption prevents plaintext access
   dependencies?: Record<string, string>; // Other plugin IDs + version ranges
   platforms?: ("web" | "desktop" | "mobile" | "cli")[]; // Default: all
   settings?: {
@@ -91,7 +92,7 @@ export interface NoteSync {
   readonly platform: "web" | "desktop" | "mobile" | "cli";
 
   // Subsystem APIs (facades over internals — never expose Prisma/SQLite)
-  readonly vault: VaultAPI;
+  readonly notes: NotesAPI;
   readonly providers: ProviderRegistry;
   readonly workspace: WorkspaceAPI;
   readonly commands: CommandRegistry;
@@ -99,13 +100,25 @@ export interface NoteSync {
   readonly hooks: HookRegistry;
   readonly events: EventBus;
   readonly services: ServiceRegistry;
+
+  // Encryption state
+  readonly encryption: EncryptionInfo;
+}
+
+export interface EncryptionInfo {
+  /** Whether the user has E2E encryption enabled */
+  readonly enabled: boolean;
+  /** The user's privacy tier (null if encryption not enabled) */
+  readonly tier: "relay" | "byok" | "none" | null;
+  /** Whether this plugin has access to plaintext note content in its current context */
+  readonly hasPlaintextAccess: boolean;
 }
 ```
 
-### VaultAPI (Note/Folder/Tag CRUD)
+### NotesAPI (Note/Folder/Tag CRUD)
 
 ```typescript
-export interface VaultAPI {
+export interface NotesAPI {
   // Notes
   listNotes(filter?: NoteFilter): Promise<NoteSummary[]>;
   getNote(id: string): Promise<Note | null>;
@@ -129,6 +142,11 @@ export interface VaultAPI {
   getBacklinks(noteId: string): Promise<Backlink[]>;
 }
 ```
+
+**Encryption behavior:** When E2E encryption is enabled:
+- **Client-side plugins:** `NotesAPI` returns decrypted content (client holds the master key). No change in behavior.
+- **Server-side plugins (Server Relay):** `NotesAPI` returns metadata only (IDs, timestamps, folder names). Note content fields are `null` unless the client has explicitly sent decrypted content for a transient AI operation.
+- **Server-side plugins (BYOK Direct / No AI):** Same as above — metadata only, no content access.
 
 ### ProviderRegistry (AI Provider Interfaces)
 
@@ -174,7 +192,56 @@ export interface ImageAnalysisProvider {
 }
 ```
 
-This is the key architectural decision: NoteSync defines **what AI capabilities look like** but doesn't provide them. First-party plugins (Whisper, Claude, Voyage) are the default implementations, included in paid tiers. Community plugins can swap in any provider (OpenAI, Gemini, Deepgram, local models) with their own API keys. NoteSync never subsidizes third-party AI costs.
+This is the key architectural decision: NoteSync defines **what AI capabilities look like** but doesn't provide them. First-party plugins (Whisper, Claude, Voyage) are the default implementations, included in the paid subscription. Community plugins can swap in any provider (OpenAI, Gemini, Deepgram, local models) with their own API keys.
+
+## E2E Encryption & Plugins
+
+### How Plugins Interact with Encrypted Data
+
+Encryption affects server-side and client-side plugins differently:
+
+**Client-side plugins** always have access to decrypted note content. The client holds the master key and decrypts notes before they reach the editor or any client plugin. From a client plugin's perspective, encryption is transparent — `NotesAPI` returns plaintext.
+
+**Server-side plugins** cannot decrypt notes (the server never has the master key). Their access depends on the user's privacy tier:
+
+| Privacy Tier | Server Plugin Access |
+|---|---|
+| No encryption | Full plaintext access (current behavior) |
+| E2E + Server Relay | Transient plaintext for AI operations only (client sends decrypted content per-request, server discards after processing) |
+| E2E + BYOK Direct | No plaintext access — ciphertext only |
+| E2E + No AI | No plaintext access — ciphertext only |
+
+### Manifest: `requiresPlaintext`
+
+Plugins that need note content to function declare `requiresPlaintext: true` in their manifest. The plugin loader uses this to:
+
+1. **Disable the plugin** when the user's encryption settings prevent plaintext access
+2. **Show a message** in the plugin's settings: "This plugin requires access to note content and is disabled because E2E encryption is enabled with No AI mode."
+3. **Allow the plugin** when the user is in Server Relay mode (transient plaintext is available)
+
+Example:
+- `plugin-transcription`: `requiresPlaintext: false` — transcription input is audio, not encrypted notes
+- `plugin-ai-tools`: `requiresPlaintext: true` — tools read note content for search, summarize, etc.
+- `plugin-embeddings`: `requiresPlaintext: true` — needs content to generate vectors
+- `plugin-import-export`: `requiresPlaintext: false` on client (decrypts locally), `requiresPlaintext: true` on server
+
+### Encrypted Plugin Storage
+
+Plugins may store derived data (cached summaries, extracted entities, etc.). When encryption is enabled, this derived data should also be protected:
+
+```typescript
+export interface SettingsAPI {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, value: T): Promise<void>;
+
+  /** Store data encrypted with the user's key (client-side only).
+      Returns null on server when encryption is enabled. */
+  getEncrypted<T>(key: string): Promise<T | null>;
+  setEncrypted<T>(key: string, value: T): Promise<void>;
+}
+```
+
+`getEncrypted`/`setEncrypted` use the user's master key to encrypt plugin data at rest. This prevents derived data from leaking note content when the notes themselves are encrypted.
 
 ## Versioning Strategy
 
@@ -188,9 +255,10 @@ This is the key architectural decision: NoteSync defines **what AI capabilities 
 ## Tasks
 
 - [ ] Create `packages/ns-plugin-api/` with package.json, tsconfig
-- [ ] Define `Plugin`, `PluginManifest`, `NoteSync` interfaces
-- [ ] Define `VaultAPI`, `AIAPI`, `WorkspaceAPI`, `CommandRegistry`, `SettingsAPI`
+- [ ] Define `Plugin`, `PluginManifest`, `NoteSync`, `EncryptionInfo` interfaces
+- [ ] Define `NotesAPI`, `AIAPI`, `WorkspaceAPI`, `CommandRegistry`, `SettingsAPI`
 - [ ] Define `HookRegistry`, `EventBus`, `ServiceRegistry`
 - [ ] Define shared types (Note, Folder, Tag, SearchResult, etc.)
+- [ ] Define `getEncrypted`/`setEncrypted` on SettingsAPI
 - [ ] Publish to npm as `@notesync/plugin-api`
 - [ ] Write API reference documentation
