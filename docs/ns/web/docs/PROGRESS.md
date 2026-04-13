@@ -228,6 +228,9 @@
 - [x] Transcript typing animation slowdown — Speed reduced 50% (40ms→80ms normal, 15ms→30ms catch-up)
 - [x] Separate collapse for Related Notes and Transcription — Independent expand/collapse with chevron toggles and `transition-all duration-200` animation; replaces single shared toggle
 - [x] Meeting card note link styled as card — Note title in recording-ended card matches Related Notes button style (bordered card with document icon)
+- [x] Recording bar redesign — Stop button with pulsing red dot moved to left, waveform hidden (drives audio-reactive top border pulse in highlight color), smooth slide-down animation with overflow handling for folder dropdown, doubled item spacing
+- [x] Recording folder isolation — Captures active folder when recording starts; sidebar browsing no longer changes recording output folder; only the ribbon folder picker changes it
+- [x] Audio chunk transcription fix — Chunk blobs now include all data from recording start (WebM header in first chunk) so magic byte validation passes on server
 
 ### Native Desktop Menus
 
