@@ -67,7 +67,7 @@ export function BacklinksPanel({ noteId, onNavigate }: BacklinksPanelProps) {
             try { localStorage.setItem("ns-backlinks-collapsed", String(next)); } catch {}
             return next;
           })}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left cursor-pointer"
         >
           <span
             className="inline-block transition-transform"
@@ -86,7 +86,7 @@ export function BacklinksPanel({ noteId, onNavigate }: BacklinksPanelProps) {
               <li key={`${bl.noteId}-${bl.linkText}`} className="text-sm">
                 <button
                   onClick={() => onNavigate(bl.noteId)}
-                  className="text-primary hover:text-primary-hover transition-colors"
+                  className="text-primary hover:text-primary-hover transition-colors cursor-pointer"
                 >
                   {bl.noteTitle}
                 </button>

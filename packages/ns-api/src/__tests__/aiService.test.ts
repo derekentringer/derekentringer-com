@@ -27,6 +27,7 @@ import {
   answerQuestion,
   structureTranscript,
   resetClient,
+  getAiErrorMessage,
 } from "../services/aiService.js";
 
 beforeEach(() => {
@@ -693,6 +694,28 @@ describe("aiService", () => {
         }
       }).rejects.toThrow("Bad Request");
       expect(mockCreate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("getAiErrorMessage", () => {
+    it("returns mapped message for known status codes", () => {
+      expect(getAiErrorMessage({ status: 429 })).toBe("AI is busy right now. Please wait a moment and try again.");
+      expect(getAiErrorMessage({ status: 529 })).toBe("AI service is experiencing high demand. Please try again in a moment.");
+      expect(getAiErrorMessage({ status: 500 })).toBe("AI service encountered an error. Please try again.");
+      expect(getAiErrorMessage({ status: 504 })).toBe("AI request timed out. Please try again with a shorter question.");
+      expect(getAiErrorMessage({ status: 413 })).toBe("Your request is too large. Try with a shorter transcript or note.");
+      expect(getAiErrorMessage({ status: 401 })).toBe("AI service is temporarily unavailable. Please try again later.");
+      expect(getAiErrorMessage({ status: 400 })).toBe("Unable to process your request. Please try again.");
+    });
+
+    it("returns default message for unknown status codes", () => {
+      expect(getAiErrorMessage({ status: 418 })).toBe("Something went wrong. Please try again.");
+    });
+
+    it("returns default message for errors without status", () => {
+      expect(getAiErrorMessage(new Error("network error"))).toBe("Something went wrong. Please try again.");
+      expect(getAiErrorMessage(null)).toBe("Something went wrong. Please try again.");
+      expect(getAiErrorMessage(undefined)).toBe("Something went wrong. Please try again.");
     });
   });
 });

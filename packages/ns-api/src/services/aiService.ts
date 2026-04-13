@@ -211,6 +211,46 @@ const TRANSCRIPT_PROMPTS: Record<AudioMode, string> = {
 const MAX_RETRIES = 2;
 const RETRYABLE_STATUSES = [502, 503, 504, 529];
 
+/**
+ * Maps Anthropic API error status codes to user-friendly messages.
+ *
+ * | HTTP | Anthropic Type         | User Message                                                        |
+ * |------|------------------------|---------------------------------------------------------------------|
+ * | 400  | invalid_request_error  | Unable to process your request. Please try again.                   |
+ * | 401  | authentication_error   | AI service is temporarily unavailable. Please try again later.      |
+ * | 402  | billing_error          | AI service is temporarily unavailable. Please try again later.      |
+ * | 403  | permission_error       | AI service is temporarily unavailable. Please try again later.      |
+ * | 404  | not_found_error        | AI service is temporarily unavailable. Please try again later.      |
+ * | 413  | request_too_large      | Your request is too large. Try with a shorter transcript or note.   |
+ * | 429  | rate_limit_error       | AI is busy right now. Please wait a moment and try again.           |
+ * | 500  | api_error              | AI service encountered an error. Please try again.                  |
+ * | 504  | timeout_error          | AI request timed out. Please try again with a shorter question.     |
+ * | 529  | overloaded_error       | AI service is experiencing high demand. Please try again in a moment.|
+ */
+const AI_ERROR_MESSAGES: Record<number, string> = {
+  400: "Unable to process your request. Please try again.",
+  401: "AI service is temporarily unavailable. Please try again later.",
+  402: "AI service is temporarily unavailable. Please try again later.",
+  403: "AI service is temporarily unavailable. Please try again later.",
+  404: "AI service is temporarily unavailable. Please try again later.",
+  413: "Your request is too large. Try with a shorter transcript or note.",
+  429: "AI is busy right now. Please wait a moment and try again.",
+  500: "AI service encountered an error. Please try again.",
+  504: "AI request timed out. Please try again with a shorter question.",
+  529: "AI service is experiencing high demand. Please try again in a moment.",
+};
+
+const AI_DEFAULT_ERROR = "Something went wrong. Please try again.";
+
+/** Extract a user-friendly error message from an Anthropic SDK error. */
+export function getAiErrorMessage(err: unknown): string {
+  const status = (err as { status?: number })?.status;
+  if (status && AI_ERROR_MESSAGES[status]) {
+    return AI_ERROR_MESSAGES[status];
+  }
+  return AI_DEFAULT_ERROR;
+}
+
 export async function structureTranscript(
   transcript: string,
   mode: AudioMode,

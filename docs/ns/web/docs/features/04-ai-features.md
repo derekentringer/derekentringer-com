@@ -652,6 +652,27 @@ Adds an on-demand "Continue writing / Suggest structure" feature triggered by Cm
 - Ghost text extension built directly in ns-web (not the shared `@derekentringer/codemirror-ai-markdown` package yet — extract when desktop app needs it)
 - Cost control: 600ms debounce on completions, AbortController cancels in-flight requests on new keystrokes
 
+## AI Error Handling
+
+All AI endpoints map Anthropic API errors to user-friendly messages via `getAiErrorMessage()` in `aiService.ts`. Errors are surfaced in the UI instead of generic "Something went wrong" messages.
+
+| HTTP | Anthropic Type | User Message |
+|---|---|---|
+| 400 | `invalid_request_error` | Unable to process your request. Please try again. |
+| 401 | `authentication_error` | AI service is temporarily unavailable. Please try again later. |
+| 402 | `billing_error` | AI service is temporarily unavailable. Please try again later. |
+| 403 | `permission_error` | AI service is temporarily unavailable. Please try again later. |
+| 404 | `not_found_error` | AI service is temporarily unavailable. Please try again later. |
+| 413 | `request_too_large` | Your request is too large. Try with a shorter transcript or note. |
+| 429 | `rate_limit_error` | AI is busy right now. Please wait a moment and try again. |
+| 500 | `api_error` | AI service encountered an error. Please try again. |
+| 504 | `timeout_error` | AI request timed out. Please try again with a shorter question. |
+| 529 | `overloaded_error` | AI service is experiencing high demand. Please try again in a moment. |
+
+Server-config errors (401-404) show a generic "temporarily unavailable" message to avoid leaking internal details. Transient errors (429, 529) encourage the user to retry. The 413 and 504 messages suggest actionable fixes.
+
+Streaming endpoints (`/ai/ask`, `/ai/complete`) send the error as an SSE event: `data: {"error": "message"}`. Non-streaming endpoints (`/ai/summarize`, `/ai/tags`, `/ai/rewrite`, `/ai/structure-transcript`) return the message in the standard Fastify error response body.
+
 ## Dependencies
 
 - [00 — Project Scaffolding](00-project-scaffolding.md) — needs API infrastructure
