@@ -643,9 +643,9 @@ async function executeToggleFavorite(input: Record<string, unknown>, userId: str
 }
 
 async function executeListTrash(userId: string): Promise<ToolResult> {
-  const trashed = await listTrashedNotes(userId);
-  if (trashed.length === 0) return { text: "Trash is empty." };
-  const notes = trashed.map(toNote);
+  const result = await listTrashedNotes(userId);
+  if (result.notes.length === 0) return { text: "Trash is empty." };
+  const notes = result.notes.map(toNote);
   return {
     text: `${notes.length} note(s) in trash:`,
     noteCards: notes.map((n) => ({ id: n.id, title: n.title })),
@@ -654,9 +654,9 @@ async function executeListTrash(userId: string): Promise<ToolResult> {
 
 async function executeRestoreNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const title = String(input.noteTitle).toLowerCase();
-  const trashed = await listTrashedNotes(userId);
-  const match = trashed.find((n) => n.title.toLowerCase() === title)
-    ?? trashed.find((n) => n.title.toLowerCase().includes(title));
+  const result = await listTrashedNotes(userId);
+  const match = result.notes.find((n) => n.title.toLowerCase() === title)
+    ?? result.notes.find((n) => n.title.toLowerCase().includes(title));
   if (!match) return { text: `No trashed note found matching "${input.noteTitle}".` };
   const restored = await restoreNote(userId, match.id);
   if (!restored) return { text: `Failed to restore "${match.title}".` };
