@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { AudioMode } from "../hooks/useAiSettings.ts";
 import { AudioWaveform } from "./AudioWaveform.tsx";
 import { FolderPicker, type FolderOption } from "./FolderPicker.tsx";
@@ -62,50 +62,69 @@ function ProcessingStatus() {
 }
 
 export function RecordingBar({ state, elapsed, mode, stream, folderId, folders, onFolderChange, onStop }: RecordingBarProps) {
+  const [audioLevel, setAudioLevel] = useState(0);
+  const borderRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (borderRef.current) {
+      const opacity = 0.15 + audioLevel * 0.85;
+      borderRef.current.style.backgroundColor = `rgba(212, 225, 87, ${opacity})`;
+    }
+  }, [audioLevel]);
+
   if (state === "processing") {
     return <ProcessingStatus />;
   }
 
   return (
-    <div className="h-9 px-4 bg-sidebar border-b border-border flex items-center gap-2 shrink-0">
-      {/* Recording indicator */}
-      <span className="h-2 w-2 rounded-full bg-destructive animate-pulse shrink-0" />
+    <div className="h-9 bg-sidebar flex flex-col shrink-0">
+      {/* Top border — pulses with waveform */}
+      <div
+        ref={borderRef}
+        className="h-px w-full transition-colors duration-75"
+        style={{ backgroundColor: "rgba(212, 225, 87, 0.15)" }}
+      />
 
-      {/* Elapsed time */}
-      <span className="text-xs text-foreground tabular-nums shrink-0">{formatTime(elapsed)}</span>
+      <div className="flex-1 flex items-center gap-4">
+        {/* Stop button with pulsing recording dot */}
+        <button
+          onClick={onStop}
+          className="flex items-center gap-1.5 h-full px-3 -mr-2 text-xs text-foreground hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
+          title="Stop recording"
+        >
+          <span className="h-2.5 w-2.5 rounded-sm bg-destructive animate-pulse shrink-0" />
+          <span>Stop</span>
+        </button>
 
-      {/* Waveform */}
-      <AudioWaveform stream={stream} isRecording={true} width={80} height={20} />
+        {/* Elapsed time */}
+        <span className="text-xs text-foreground tabular-nums shrink-0">{formatTime(elapsed)}</span>
 
-      {/* Mode label */}
-      <span className="text-xs text-foreground shrink-0">{MODE_LABELS[mode]}</span>
+        {/* Waveform — hidden for UI testing, still active for border pulse */}
+        <div className="hidden">
+          <AudioWaveform stream={stream} isRecording={true} width={80} height={20} onLevelChange={setAudioLevel} />
+        </div>
 
-      {/* Folder picker */}
-      {folders && onFolderChange && (
-        <FolderPicker
-          selectedId={folderId ?? null}
-          folders={folders}
-          onChange={onFolderChange}
-          emptyLabel="All Notes"
-          iconSize={10}
-          textSize="text-xs"
-          showLabel
-          className="text-foreground"
-          ariaLabel="Recording folder"
-        />
-      )}
+        {/* Mode label */}
+        <span className="text-xs text-foreground shrink-0">{MODE_LABELS[mode]}</span>
 
-      {/* Stop button */}
-      <button
-        onClick={onStop}
-        className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-destructive/40 text-xs text-destructive/60 hover:text-destructive hover:border-destructive transition-colors cursor-pointer"
-        title="Stop recording"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-          <rect x="4" y="4" width="16" height="16" rx="2" />
-        </svg>
-        Stop
-      </button>
+        {/* Folder picker */}
+        {folders && onFolderChange && (
+          <FolderPicker
+            selectedId={folderId ?? null}
+            folders={folders}
+            onChange={onFolderChange}
+            emptyLabel="All Notes"
+            iconSize={10}
+            textSize="text-xs"
+            showLabel
+            className="text-foreground"
+            ariaLabel="Recording folder"
+          />
+        )}
+      </div>
+
+      {/* Bottom border — static */}
+      <div className="h-px w-full bg-border" />
     </div>
   );
 }

@@ -257,6 +257,21 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string } | null>(null);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
+  // Recording folder — captures active folder when recording starts, independent of sidebar browsing
+  const [recordingFolderId, setRecordingFolderId] = useState<string | null>(null);
+  const prevRecordingState = useRef<string | null>(null);
+  useEffect(() => {
+    const currentState = recordingState?.state ?? null;
+    if (currentState === "recording" && prevRecordingState.current !== "recording") {
+      // Recording just started — capture current folder
+      setRecordingFolderId(activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null);
+    } else if (!currentState || currentState === "idle") {
+      // Recording ended — clear
+      setRecordingFolderId(null);
+    }
+    prevRecordingState.current = currentState;
+  }, [recordingState?.state, activeFolder]);
+
   // Meeting Assistant — surface relevant notes during recording
   const isRecording = recordingState?.state === "recording";
   const meetingContext = useMeetingContext(
@@ -2084,6 +2099,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       style={{
         maxHeight: recordingState && (recordingState.state === "recording" || recordingState.state === "processing") ? "36px" : "0px",
         opacity: recordingState && (recordingState.state === "recording" || recordingState.state === "processing") ? 1 : 0,
+        overflow: recordingState && (recordingState.state === "recording" || recordingState.state === "processing") ? "visible" : "hidden",
       }}
     >
       {recordingState && (
@@ -2092,9 +2108,9 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
           elapsed={recordingState.elapsed}
           mode={recordingState.mode}
           stream={recordingState.stream}
-          folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+          folderId={recordingFolderId ?? undefined}
           folders={flatFolders}
-          onFolderChange={(id) => setActiveFolder(id ?? null)}
+          onFolderChange={(id) => setRecordingFolderId(id ?? null)}
           onStop={recordingState.onStop}
         />
       )}
@@ -3070,7 +3086,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       <AudioRecorder
         headless
         defaultMode={settings.audioMode}
-        folderId={activeFolder && activeFolder !== "__unfiled__" ? activeFolder : undefined}
+        folderId={recordingFolderId ?? undefined}
         onNoteCreated={handleAudioNoteCreated}
         onError={showError}
         onRecordingStateChange={setRecordingState}

@@ -6,9 +6,12 @@ interface AudioWaveformProps {
   audioLevel?: number;
   width?: number;
   height?: number;
+  onLevelChange?: (level: number) => void;
 }
 
-export function AudioWaveform({ stream, isRecording, audioLevel, width = 120, height = 24 }: AudioWaveformProps) {
+export function AudioWaveform({ stream, isRecording, audioLevel, width = 120, height = 24, onLevelChange }: AudioWaveformProps) {
+  const onLevelChangeRef = useRef(onLevelChange);
+  onLevelChangeRef.current = onLevelChange;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -58,8 +61,10 @@ export function AudioWaveform({ stream, isRecording, audioLevel, width = 120, he
         const gap = 1;
         const step = Math.floor(dataRef.current.length / barCount);
 
+        let maxVal = 0;
         for (let i = 0; i < barCount; i++) {
           const val = dataRef.current[i * step] / 255;
+          if (val > maxVal) maxVal = val;
           const barHeight = Math.max(2, val * height);
           const x = i * (barWidth + gap);
           const y = (height - barHeight) / 2;
@@ -69,6 +74,7 @@ export function AudioWaveform({ stream, isRecording, audioLevel, width = 120, he
           ctx.roundRect(x, y, barWidth, barHeight, 1);
           ctx.fill();
         }
+        onLevelChangeRef.current?.(maxVal);
 
         animFrameRef.current = requestAnimationFrame(draw);
       }
@@ -97,10 +103,12 @@ export function AudioWaveform({ stream, isRecording, audioLevel, width = 120, he
       const barWidth = Math.floor(width / barCount) - 1;
       const gap = 1;
 
+      let maxVal = 0;
       for (let i = 0; i < barCount; i++) {
         // Use audio level with per-bar variation for natural look
         const variation = 0.5 + 0.5 * Math.sin(t * 3 + i * 0.8);
         const val = scaledLevel * variation;
+        if (val > maxVal) maxVal = val;
         const barHeight = Math.max(2, val * height);
         const x = i * (barWidth + gap);
         const y = (height - barHeight) / 2;
@@ -110,6 +118,7 @@ export function AudioWaveform({ stream, isRecording, audioLevel, width = 120, he
         ctx.roundRect(x, y, barWidth, barHeight, 1);
         ctx.fill();
       }
+      onLevelChangeRef.current?.(maxVal);
 
       animFrameRef.current = requestAnimationFrame(drawFromLevel);
     }

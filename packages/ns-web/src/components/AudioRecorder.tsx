@@ -172,11 +172,11 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     const lastSent = lastChunkSentRef.current;
     if (allChunks.length <= lastSent) return; // no new data
 
-    const newChunks = allChunks.slice(lastSent);
     lastChunkSentRef.current = allChunks.length;
 
+    // Include all chunks from the start so the blob has valid container headers (WebM EBML header is in the first chunk)
     const mimeType = mediaRecorderRef.current?.mimeType || "audio/webm";
-    const chunkBlob = new Blob(newChunks, { type: mimeType });
+    const chunkBlob = new Blob(allChunks, { type: mimeType });
 
     // Skip tiny chunks (< 1KB likely silence/noise)
     if (chunkBlob.size < 1024) return;

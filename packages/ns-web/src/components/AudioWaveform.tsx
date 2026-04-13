@@ -5,9 +5,12 @@ interface AudioWaveformProps {
   isRecording: boolean;
   width?: number;
   height?: number;
+  onLevelChange?: (level: number) => void;
 }
 
-export function AudioWaveform({ stream, isRecording, width = 120, height = 24 }: AudioWaveformProps) {
+export function AudioWaveform({ stream, isRecording, width = 120, height = 24, onLevelChange }: AudioWaveformProps) {
+  const onLevelChangeRef = useRef(onLevelChange);
+  onLevelChangeRef.current = onLevelChange;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -54,8 +57,10 @@ export function AudioWaveform({ stream, isRecording, width = 120, height = 24 }:
       const gap = 1;
       const step = Math.floor(dataRef.current.length / barCount);
 
+      let maxVal = 0;
       for (let i = 0; i < barCount; i++) {
         const val = dataRef.current[i * step] / 255;
+        if (val > maxVal) maxVal = val;
         const barHeight = Math.max(2, val * height);
         const x = i * (barWidth + gap);
         const y = (height - barHeight) / 2;
@@ -65,6 +70,7 @@ export function AudioWaveform({ stream, isRecording, width = 120, height = 24 }:
         ctx.roundRect(x, y, barWidth, barHeight, 1);
         ctx.fill();
       }
+      onLevelChangeRef.current?.(maxVal);
 
       animFrameRef.current = requestAnimationFrame(draw);
     }
