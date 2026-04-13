@@ -235,6 +235,7 @@ export interface CreateNoteInput {
   title?: string;
   content?: string;
   folderId?: string;
+  tags?: string[];
   isLocalFile?: boolean;
 }
 
@@ -247,15 +248,16 @@ export async function createNote(data: CreateNoteInput): Promise<Note> {
   const folderId = data.folderId ?? null;
 
   const isLocalFile = data.isLocalFile ? 1 : 0;
+  const tagsJson = JSON.stringify(data.tags ?? []);
 
   await db.execute(
-    `INSERT INTO notes (id, title, content, folder_id, is_local_file, is_deleted, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, 0, $6, $6)`,
-    [id, title, content, folderId, isLocalFile, now],
+    `INSERT INTO notes (id, title, content, folder_id, tags, is_local_file, is_deleted, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $7)`,
+    [id, title, content, folderId, tagsJson, isLocalFile, now],
   );
 
   // Sync to FTS
-  await ftsInsert(id, title, content, "[]");
+  await ftsInsert(id, title, content, tagsJson);
 
   // Re-read the row to get all column values including migration-002 defaults
   const note = await fetchNoteById(id);
