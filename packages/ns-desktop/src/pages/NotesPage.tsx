@@ -68,6 +68,7 @@ import {
   enqueueSyncAction,
   type SearchMode,
 } from "../lib/db.ts";
+import { AboutDialog } from "../components/AboutDialog.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import {
   MarkdownEditor,
@@ -312,10 +313,11 @@ export function NotesPage() {
     return "count";
   });
 
-  // Settings / Change Password / Admin
+  // Settings / Change Password / Admin / About
   const [showSettings, setShowSettings] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
@@ -1103,7 +1105,7 @@ export function NotesPage() {
 
     // Help
     "nav:shortcuts": () => setShowSettings(true),
-    "app:about": () => { /* TODO: about dialog */ },
+    "app:about": () => setShowAbout(true),
   });
 
   // Auto-refresh editor content when notes array updates (e.g. after sync)
@@ -1357,18 +1359,29 @@ export function NotesPage() {
     try {
       await softDeleteNote(noteId);
       if (noteId === previewTabId) setPreviewTabId(null);
-      setOpenTabs((prev) => prev.filter((id) => id !== noteId));
+      const prevTabs = openTabs;
+      const idx = prevTabs.indexOf(noteId);
+      const nextTabs = prevTabs.filter((id) => id !== noteId);
+      setOpenTabs(nextTabs);
+      if (noteId === selectedId) {
+        if (nextTabs.length === 0) {
+          setSelectedId(null);
+          setTitle("");
+          setContent("");
+          loadedTitleRef.current = "";
+          loadedContentRef.current = "";
+        } else {
+          const newIdx = Math.min(idx, nextTabs.length - 1);
+          const newActiveId = nextTabs[newIdx];
+          const newNote = notes.find((n) => n.id === newActiveId) ?? tabNoteCacheRef.current.get(newActiveId);
+          if (newNote) selectNote(newNote);
+        }
+      }
       tabNoteCacheRef.current.delete(noteId);
+      tabEditorStateRef.current.delete(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
       setFavoriteNotes((prev) => prev.filter((n) => n.id !== noteId));
       setTrashCount((c) => c + 1);
-      if (selectedId === noteId) {
-        setSelectedId(null);
-        setTitle("");
-        setContent("");
-        loadedTitleRef.current = "";
-        loadedContentRef.current = "";
-      }
       await refreshSidebarData();
       loadNoteTitles();
       loadFavoriteNotes();
@@ -2536,18 +2549,18 @@ export function NotesPage() {
     }
   }
 
-  function handleQaSelectNote(noteId: string) {
+  async function handleQaSelectNote(noteId: string) {
     if (sidebarView === "trash") {
       setSidebarView("notes");
     }
-    const note = notes.find((n) => n.id === noteId);
+    const note = notes.find((n) => n.id === noteId) ?? tabNoteCacheRef.current.get(noteId);
     if (note) {
       openNoteAsTab(note);
     } else {
-      reloadNotes().then(() => {
-        setOpenTabs((prev) => prev.includes(noteId) ? prev : [...prev, noteId]);
-        setSelectedId(noteId);
-      });
+      const fetched = await fetchNoteById(noteId);
+      if (fetched) {
+        openNoteAsTab(fetched);
+      }
     }
   }
 
@@ -3370,6 +3383,7 @@ export function NotesPage() {
                 onCancel={() => setConfirmDeleteSummary(false)}
               />
             )}
+            {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
 
             {/* Tag input */}
             <TagInput

@@ -158,6 +158,17 @@
 
 - [x] [26 — SyncSwarm Game](features/26-syncswarm-game.md) — Hidden Galaga-style ASCII space shooter: enemy formations with bezier entry animations, diving attacks, boss tractor beam capture, dual fighter mode, challenge stages every 3 levels, parallax starfield with 3 grey-toned depth layers, per-character color rendering, high score persistence, launched from rocket icon in ribbon
 
+### UI Polish
+
+- [x] About Dialog — `AboutDialog.tsx` component displaying NoteSync logo, version (from `tauri.conf.json` via Vite `define`), description, and copyright; wired to native macOS/Windows "About NoteSync" menu via `app:about` command
+- [x] Tab delete highlight fix — Deleting a note with an open tab now selects the adjacent tab instead of losing selection
+- [x] AI error message mapping — Anthropic API errors mapped to user-friendly messages via `getAiErrorMessage()` in ns-api
+- [x] Catch Me Up error handling — Error events from server no longer silently swallowed; actual error message displayed in chat bubble
+- [x] Related Notes click fix — Clicking related notes during recording now fetches the note via `fetchNoteById` and opens it in a tab
+- [x] Transcript typing animation slowdown — Speed reduced 50% (40ms→80ms normal, 15ms→30ms catch-up)
+- [x] Separate collapse for Related Notes and Transcription — Independent expand/collapse with chevron toggles and animated transitions
+- [x] Meeting card note link styled as card — Note title in recording-ended card matches Related Notes button style (bordered card with document icon)
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

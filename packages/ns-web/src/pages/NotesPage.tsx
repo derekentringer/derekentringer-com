@@ -1094,16 +1094,28 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     try {
       await deleteNote(noteId);
       if (noteId === previewTabId) setPreviewTabId(null);
-      setOpenTabs((prev) => prev.filter((id) => id !== noteId));
+      const prevTabs = openTabs;
+      const idx = prevTabs.indexOf(noteId);
+      const nextTabs = prevTabs.filter((id) => id !== noteId);
+      setOpenTabs(nextTabs);
+      if (noteId === selectedId) {
+        if (nextTabs.length === 0) {
+          setSelectedId(null);
+          setTitle("");
+          setContent("");
+          setIsDirty(false);
+          setConfirmDelete(false);
+          navigate("/", { replace: true });
+        } else {
+          const newIdx = Math.min(idx, nextTabs.length - 1);
+          const newActiveId = nextTabs[newIdx];
+          const newNote = notes.find((n) => n.id === newActiveId) ?? tabNoteCacheRef.current.get(newActiveId);
+          if (newNote) selectNote(newNote);
+        }
+      }
+      tabNoteCacheRef.current.delete(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
       setFavoriteNotes((prev) => prev.filter((n) => n.id !== noteId));
-      if (selectedId === noteId) {
-        setSelectedId(null);
-        setTitle("");
-        setContent("");
-        setIsDirty(false);
-        setConfirmDelete(false);
-      }
       setTrashTotal((prev) => prev + 1);
       loadFolders();
       loadFavoriteNotes();
@@ -2042,23 +2054,25 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }
 
-  function handleQaSelectNote(noteId: string) {
+  async function handleQaSelectNote(noteId: string) {
     // Switch to notes view if in trash
     if (sidebarView === "trash") {
       setSidebarView("notes");
       setConfirmPermanentDelete(false);
     }
-    // Find the note in the current list
-    const note = notes.find((n) => n.id === noteId);
+    // Find the note in the current list or tab cache
+    const note = notes.find((n) => n.id === noteId) ?? tabNoteCacheRef.current.get(noteId);
     if (note) {
       openNoteAsTab(note);
     } else {
-      // Note may not be loaded (different folder/search), so reload and select
-      loadNotes().then(() => {
-        // After reload, try to find and select
-        setOpenTabs((prev) => prev.includes(noteId) ? prev : [...prev, noteId]);
-        setSelectedId(noteId);
-      });
+      try {
+        const fetched = await fetchNote(noteId);
+        if (fetched) {
+          openNoteAsTab(fetched);
+        }
+      } catch {
+        // Note may have been deleted
+      }
     }
   }
 

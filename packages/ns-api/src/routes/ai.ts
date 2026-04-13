@@ -9,6 +9,7 @@ import {
   answerQuestion,
   answerMeetingQuestion,
   answerWithTools,
+  getAiErrorMessage,
 } from "../services/aiService.js";
 import { transcribeAudio, transcribeAudioChunked } from "../services/whisperService.js";
 import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
@@ -188,6 +189,9 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         } catch (error) {
           if (!abortController.signal.aborted) {
             request.log.error(error, "AI completion error");
+            passthrough.write(
+              `data: ${JSON.stringify({ error: getAiErrorMessage(error) })}\n\n`,
+            );
           }
         }
         passthrough.write("data: [DONE]\n\n");
@@ -284,7 +288,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
           if (!abortController.signal.aborted) {
             request.log.error(error, "AI ask error");
             passthrough.write(
-              `data: ${JSON.stringify({ error: "Something went wrong. Please try again." })}\n\n`,
+              `data: ${JSON.stringify({ error: getAiErrorMessage(error) })}\n\n`,
             );
           }
         }
@@ -428,11 +432,10 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         structured = await structureTranscript(transcript, mode as AudioMode);
       } catch (err) {
         request.log.error(err, "Transcript structuring failed");
-        const message = err instanceof Error ? err.message : "Failed to structure transcript";
         return reply.status(502).send({
           statusCode: 502,
           error: "Bad Gateway",
-          message,
+          message: getAiErrorMessage(err),
         });
       }
 
@@ -683,11 +686,10 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         structured = await structureTranscript(transcript, mode);
       } catch (err) {
         request.log.error(err, "Transcript structuring failed");
-        const message = err instanceof Error ? err.message : "Failed to structure transcript";
         return reply.status(502).send({
           statusCode: 502,
           error: "Bad Gateway",
-          message,
+          message: getAiErrorMessage(err),
         });
       }
 

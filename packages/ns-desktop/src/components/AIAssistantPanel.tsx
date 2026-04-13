@@ -132,9 +132,8 @@ function LiveTranscript({ text }: { text: string }) {
   useEffect(() => {
     if (displayLen >= targetLen) return;
     const remaining = targetLen - displayLen;
-    // Slightly slower typing: 2 chars at 40ms normally, batch faster for large gaps
     const batch = remaining > 30 ? 3 : 2;
-    const speed = remaining > 60 ? 15 : 40;
+    const speed = remaining > 60 ? 30 : 80;
     const timer = setTimeout(() => {
       setDisplayLen((prev) => Math.min(prev + batch, targetLen));
     }, speed);
@@ -247,7 +246,8 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [autocompleteItems, setAutocompleteItems] = useState<ChatCommand[]>([]);
   const [autocompleteIdx, setAutocompleteIdx] = useState(0);
   const inputWrapRef = useRef<HTMLDivElement>(null);
-  const [meetingCollapsed, setMeetingCollapsed] = useState(false);
+  const [notesCollapsed, setNotesCollapsed] = useState(false);
+  const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
   const [transcriptHeight, setTranscriptHeight] = useState(TRANSCRIPT_DEFAULT_HEIGHT);
   const [transcriptDragging, setTranscriptDragging] = useState(false);
   const transcriptResizing = useRef(false);
@@ -345,10 +345,11 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Auto-expand meeting section when recording starts
+  // Auto-expand meeting sections when recording starts
   useEffect(() => {
     if (isRecording) {
-      setMeetingCollapsed(false);
+      setNotesCollapsed(false);
+      setTranscriptCollapsed(false);
     }
   }, [isRecording]);
 
@@ -752,11 +753,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       </div>
 
       {/* Meeting context section */}
-      {hasMeetingContext && !meetingCollapsed && (
-        <div className="shrink-0">
+      {hasMeetingContext && (
+        <div className="shrink-0 border-b border-border">
           {/* Related Notes section */}
           <div className="px-3 pt-2 pb-1">
-            <div className="flex items-center gap-1.5 mb-1.5">
+            <button
+              onClick={() => setNotesCollapsed((v) => !v)}
+              className="flex items-center gap-1.5 w-full text-left cursor-pointer group"
+            >
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
                 <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
                 <polyline points="14 2 14 8 20 8" />
@@ -765,61 +769,88 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 Related Notes
               </span>
               {hasNotes && (
-                <span className="ml-auto text-[10px] text-muted-foreground">
+                <span className="text-[10px] text-muted-foreground">
                   {relevantNotes!.length}
                 </span>
               )}
-            </div>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`ml-auto text-muted-foreground transition-transform duration-200 ${notesCollapsed ? "-rotate-90" : ""}`}
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
 
-            {isRecording && !hasTranscript && !hasNotes ? (
-              <div className="flex items-center gap-2 py-2 animate-fade-in">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40 shrink-0">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                </svg>
-                <p className="text-xs text-muted-foreground">Listening for conversation context...</p>
+            <div
+              className="overflow-hidden transition-all duration-200 ease-in-out"
+              style={{
+                maxHeight: notesCollapsed ? 0 : 1000,
+                opacity: notesCollapsed ? 0 : 1,
+              }}
+            >
+              <div className="pt-1.5">
+                {isRecording && !hasTranscript && !hasNotes ? (
+                  <div className="flex items-center gap-2 py-2 animate-fade-in">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40 shrink-0">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    </svg>
+                    <p className="text-xs text-muted-foreground">Listening for conversation context...</p>
+                  </div>
+                ) : isRecording && hasTranscript && !hasNotes ? (
+                  <div className="flex items-center gap-2 py-2 animate-fade-in">
+                    <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">
+                      <span className="bounce-dot" />
+                      <span className="bounce-dot" />
+                      <span className="bounce-dot" />
+                    </span>
+                    <p className="text-xs text-muted-foreground">Monitoring the {RECORDING_MODE_LABELS[recordingMode ?? "meeting"] ?? "recording"} to surface related notes...</p>
+                  </div>
+                ) : hasNotes ? (
+                  <div className="space-y-1.5 animate-fade-in">
+                    {relevantNotes!.map((note, index) => (
+                      <button
+                        key={note.id}
+                        onClick={() => onSelectNote(note.id)}
+                        className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer animate-fade-in group"
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                          <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                            {note.title}
+                          </span>
+                          <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
+                            {Math.round(note.score * 100)}%
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            ) : isRecording && hasTranscript && !hasNotes ? (
-              <div className="flex items-center gap-2 py-2 animate-fade-in">
-                <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">
-                  <span className="bounce-dot" />
-                  <span className="bounce-dot" />
-                  <span className="bounce-dot" />
-                </span>
-                <p className="text-xs text-muted-foreground">Monitoring the {RECORDING_MODE_LABELS[recordingMode ?? "meeting"] ?? "recording"} to surface related notes...</p>
-              </div>
-            ) : hasNotes ? (
-              <div className="space-y-1.5 animate-fade-in">
-                {relevantNotes!.map((note, index) => (
-                  <button
-                    key={note.id}
-                    onClick={() => onSelectNote(note.id)}
-                    className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer animate-fade-in group"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                        <polyline points="14 2 14 8 20 8" />
-                      </svg>
-                      <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
-                        {note.title}
-                      </span>
-                      <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
-                        {Math.round(note.score * 100)}%
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            </div>
           </div>
 
           {/* Transcription section */}
           {isRecording && hasTranscript && (
             <div className="flex flex-col">
               {/* Transcription header */}
-              <div className="px-3 pt-2 pb-1 flex items-center gap-1.5">
+              <button
+                onClick={() => setTranscriptCollapsed((v) => !v)}
+                className="px-3 pt-2 pb-1 flex items-center gap-1.5 w-full text-left cursor-pointer"
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
                   <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
@@ -829,47 +860,46 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
                   Transcription
                 </span>
-              </div>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`ml-auto text-muted-foreground transition-transform duration-200 ${transcriptCollapsed ? "-rotate-90" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
 
-              {/* Scrollable transcript area */}
-              <div style={{ height: transcriptHeight }}>
-                <LiveTranscript text={liveTranscript!} />
-              </div>
-
-              {/* Resize divider — matches app ResizeDivider style */}
               <div
-                onPointerDown={handleTranscriptResizeStart}
-                className="shrink-0 flex items-center justify-center h-1.5 cursor-row-resize group"
-                style={{ touchAction: "none" }}
+                className="overflow-hidden transition-all duration-200 ease-in-out"
+                style={{
+                  maxHeight: transcriptCollapsed ? 0 : transcriptHeight + 10,
+                  opacity: transcriptCollapsed ? 0 : 1,
+                }}
               >
-                <div className={`h-px w-full ${transcriptDragging ? "bg-ring" : "bg-border group-hover:bg-muted-foreground"} transition-colors`} />
+                {/* Scrollable transcript area */}
+                <div style={{ height: transcriptHeight }}>
+                  <LiveTranscript text={liveTranscript!} />
+                </div>
+
+                {/* Resize divider — matches app ResizeDivider style */}
+                <div
+                  onPointerDown={handleTranscriptResizeStart}
+                  className="shrink-0 flex items-center justify-center h-1.5 cursor-row-resize group"
+                  style={{ touchAction: "none" }}
+                >
+                  <div className={`h-px w-full ${transcriptDragging ? "bg-ring" : "bg-border group-hover:bg-muted-foreground"} transition-colors`} />
+                </div>
               </div>
             </div>
           )}
         </div>
-      )}
-
-      {/* Collapse/expand toggle for meeting section */}
-      {hasMeetingContext && (
-        <button
-          onClick={() => setMeetingCollapsed((v) => !v)}
-          className="flex items-center justify-center py-1 hover:bg-accent/50 transition-colors cursor-pointer shrink-0 border-b border-border"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={`text-muted-foreground transition-transform ${meetingCollapsed ? "rotate-180" : ""}`}
-          >
-            <polyline points="18 15 12 9 6 15" />
-          </svg>
-        </button>
       )}
 
       {messages.length > 0 && (
@@ -913,14 +943,22 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                   </span>
                 </div>
 
-                {/* Note title — clickable link to generated note */}
+                {/* Note title — clickable card matching Related Notes style */}
                 {msg.meetingData.noteId && msg.meetingData.noteTitle ? (
                   <button
                     onClick={() => onSelectNote(msg.meetingData!.noteId!)}
-                    className="text-xs font-medium text-foreground hover:text-primary transition-colors cursor-pointer mb-1.5 text-left truncate block w-full"
+                    className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer mb-1.5 group"
                     title={msg.meetingData.noteTitle}
                   >
-                    {msg.meetingData.noteTitle}
+                    <div className="flex items-center gap-1.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                      <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                        {msg.meetingData.noteTitle}
+                      </span>
+                    </div>
                   </button>
                 ) : !msg.meetingData.noteId ? (
                   <div className="flex items-center gap-1.5 mb-1.5">
@@ -1096,6 +1134,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                       const updated = [...prev];
                       const last = updated[updated.length - 1];
                       if (last.role !== "assistant") return prev;
+                      if (event.error) {
+                        updated[updated.length - 1] = { ...last, content: event.error };
+                      }
                       if (event.text) {
                         updated[updated.length - 1] = { ...last, content: last.content + event.text };
                       }

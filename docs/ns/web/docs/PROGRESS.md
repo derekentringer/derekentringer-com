@@ -220,6 +220,14 @@
 
 - [x] Chat bubble styling — User messages use `bg-subtle` (lighter), response messages use `bg-card`, matched `py-1.5` padding, compact `chat-markdown` CSS with stripped first/last `<p>` margins
 - [x] Right sidebar persistence — Drawer open/closed state, active tab, and width persisted to localStorage; transition suppressed on initial mount; auto-switch from history/toc to assistant when no note selected (or close if AI disabled)
+- [x] BacklinksPanel `cursor-pointer` — Added to collapse toggle button and backlink buttons
+- [x] Tab delete highlight fix — Deleting a note with an open tab now selects the adjacent tab instead of losing selection
+- [x] AI error message mapping — Anthropic API errors mapped to user-friendly messages via `getAiErrorMessage()` (429→"AI is busy", 529→"high demand", 504→"timed out", etc.)
+- [x] Catch Me Up error handling — Error events from server no longer silently swallowed; actual error message displayed in chat bubble
+- [x] Related Notes click fix — Clicking related notes during recording now fetches the note and opens it in a tab (previously showed dashboard)
+- [x] Transcript typing animation slowdown — Speed reduced 50% (40ms→80ms normal, 15ms→30ms catch-up)
+- [x] Separate collapse for Related Notes and Transcription — Independent expand/collapse with chevron toggles and `transition-all duration-200` animation; replaces single shared toggle
+- [x] Meeting card note link styled as card — Note title in recording-ended card matches Related Notes button style (bordered card with document icon)
 
 ### Native Desktop Menus
 
