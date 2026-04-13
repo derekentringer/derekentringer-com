@@ -3397,8 +3397,6 @@ export function NotesPage() {
                 onCancel={() => setConfirmDeleteSummary(false)}
               />
             )}
-            {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
-
             {/* Tag input */}
             <TagInput
               tags={selectedNote.tags}
@@ -3839,6 +3837,9 @@ export function NotesPage() {
         triggerKey={recordTrigger?.key}
       />
     )}
+
+    {/* About Dialog */}
+    {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
 
     {/* Command Palette */}
     <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
