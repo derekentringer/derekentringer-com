@@ -848,6 +848,7 @@ describe("AI routes", () => {
         "What is in my notes?",
         TEST_USER_ID,
         expect.any(Object),
+        undefined,
       );
     });
 

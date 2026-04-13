@@ -19,6 +19,13 @@ export interface CommandContext {
   listTags: () => Promise<string>;
   getStats: () => Promise<string>;
   openNote: (noteTitle: string) => Promise<{ id: string; title: string } | null>;
+  favoriteNote: (noteTitle: string) => Promise<string>;
+  unfavoriteNote: (noteTitle: string) => Promise<string>;
+  listTrash: () => Promise<{ id: string; title: string }[]>;
+  restoreNote: (noteTitle: string) => Promise<string>;
+  renameFolder: (oldName: string, newName: string) => Promise<string>;
+  renameTag: (oldName: string, newName: string) => Promise<string>;
+  duplicateNote: (noteTitle: string) => Promise<{ id: string; title: string } | null>;
   clearChat: () => void;
 }
 
@@ -167,6 +174,80 @@ export const CHAT_COMMANDS: ChatCommand[] = [
       if (!note) return { text: `Note "${args.trim()}" not found.` };
       return {
         text: `Opened "${note.title}".`,
+        noteCards: [{ id: note.id, title: note.title }],
+      };
+    },
+  },
+  {
+    name: "favorite",
+    description: "Toggle a note as favorite",
+    usage: "/favorite [note title]",
+    execute: async (args, ctx) => {
+      if (!args.trim()) return { text: "Usage: /favorite [note title]" };
+      return { text: await ctx.favoriteNote(args.trim()) };
+    },
+  },
+  {
+    name: "unfavorite",
+    description: "Remove a note from favorites",
+    usage: "/unfavorite [note title]",
+    execute: async (args, ctx) => {
+      if (!args.trim()) return { text: "Usage: /unfavorite [note title]" };
+      return { text: await ctx.unfavoriteNote(args.trim()) };
+    },
+  },
+  {
+    name: "trash",
+    description: "List notes in trash",
+    usage: "/trash",
+    execute: async (_args, ctx) => {
+      const notes = await ctx.listTrash();
+      if (notes.length === 0) return { text: "Trash is empty." };
+      return {
+        text: `${notes.length} note(s) in trash:`,
+        noteCards: notes.map((n) => ({ id: n.id, title: n.title })),
+      };
+    },
+  },
+  {
+    name: "restore",
+    description: "Restore a note from trash",
+    usage: "/restore [note title]",
+    execute: async (args, ctx) => {
+      if (!args.trim()) return { text: "Usage: /restore [note title]" };
+      return { text: await ctx.restoreNote(args.trim()) };
+    },
+  },
+  {
+    name: "renamefolder",
+    description: "Rename a folder",
+    usage: "/renamefolder [old name] to [new name]",
+    execute: async (args, ctx) => {
+      const match = args.match(/^(.+?)\s+to\s+(.+)$/i);
+      if (!match) return { text: "Usage: /renamefolder [old name] to [new name]" };
+      return { text: await ctx.renameFolder(match[1].trim(), match[2].trim()) };
+    },
+  },
+  {
+    name: "renametag",
+    description: "Rename a tag",
+    usage: "/renametag [old name] to [new name]",
+    execute: async (args, ctx) => {
+      const match = args.match(/^(.+?)\s+to\s+(.+)$/i);
+      if (!match) return { text: "Usage: /renametag [old name] to [new name]" };
+      return { text: await ctx.renameTag(match[1].trim(), match[2].trim()) };
+    },
+  },
+  {
+    name: "duplicate",
+    description: "Duplicate a note",
+    usage: "/duplicate [note title]",
+    execute: async (args, ctx) => {
+      if (!args.trim()) return { text: "Usage: /duplicate [note title]" };
+      const note = await ctx.duplicateNote(args.trim());
+      if (!note) return { text: `Note "${args.trim()}" not found.` };
+      return {
+        text: `Duplicated as "${note.title}".`,
         noteCards: [{ id: note.id, title: note.title }],
       };
     },

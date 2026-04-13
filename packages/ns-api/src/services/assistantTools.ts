@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { listNotes, listFolders, listTags, listFavoriteNotes, getDashboardData, createNote, updateNote, softDeleteNote, deleteFolderById, type ListNotesFilter } from "../store/noteStore.js";
+import { listNotes, listFolders, listTags, listFavoriteNotes, listTrashedNotes, getDashboardData, createNote, updateNote, softDeleteNote, restoreNote, deleteFolderById, renameFolder, renameTag, type ListNotesFilter } from "../store/noteStore.js";
 import { getBacklinks } from "../store/linkStore.js";
 import { toNote } from "../lib/mappers.js";
 import { suggestTags, generateSummary } from "./aiService.js";
@@ -192,6 +192,73 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
       required: ["folderName"],
     },
   },
+  {
+    name: "toggle_favorite",
+    description: "Add or remove a note from favorites.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        noteTitle: { type: "string", description: "Title of the note" },
+        favorite: { type: "boolean", description: "true to favorite, false to unfavorite" },
+      },
+      required: ["noteTitle", "favorite"],
+    },
+  },
+  {
+    name: "list_trash",
+    description: "List notes that are in the trash.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "restore_note",
+    description: "Restore a note from the trash.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        noteTitle: { type: "string", description: "Title of the trashed note to restore" },
+      },
+      required: ["noteTitle"],
+    },
+  },
+  {
+    name: "rename_folder",
+    description: "Rename a folder.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        oldName: { type: "string", description: "Current folder name" },
+        newName: { type: "string", description: "New folder name" },
+      },
+      required: ["oldName", "newName"],
+    },
+  },
+  {
+    name: "rename_tag",
+    description: "Rename a tag across all notes that use it.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        oldName: { type: "string", description: "Current tag name" },
+        newName: { type: "string", description: "New tag name" },
+      },
+      required: ["oldName", "newName"],
+    },
+  },
+  {
+    name: "duplicate_note",
+    description: "Create a copy of an existing note with '(Copy)' appended to the title.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        noteTitle: { type: "string", description: "Title of the note to duplicate" },
+      },
+      required: ["noteTitle"],
+    },
+  },
 ];
 
 // ─── Tool Executor ───────────────────────────────────────
@@ -239,6 +306,18 @@ export async function executeTool(
       return executeDeleteNote(input, userId);
     case "delete_folder":
       return executeDeleteFolder(input, userId);
+    case "toggle_favorite":
+      return executeToggleFavorite(input, userId);
+    case "list_trash":
+      return executeListTrash(userId);
+    case "restore_note":
+      return executeRestoreNote(input, userId);
+    case "rename_folder":
+      return executeRenameFolder(input, userId);
+    case "rename_tag":
+      return executeRenameTag(input, userId);
+    case "duplicate_note":
+      return executeDuplicateNote(input, userId);
     default:
       return { text: `Unknown tool: ${toolName}` };
   }
@@ -550,4 +629,70 @@ async function executeDeleteFolder(input: Record<string, unknown>, userId: strin
   if (!folder) return { text: `No folder found with name "${input.folderName}".` };
   await deleteFolderById(userId, folder.id);
   return { text: `Deleted folder "${folder.name}". Notes inside are now unfiled.` };
+}
+
+async function executeToggleFavorite(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  const note = await findNoteByTitle(userId, String(input.noteTitle));
+  if (!note) return { text: `No note found with title "${input.noteTitle}".` };
+  const favorite = Boolean(input.favorite);
+  await updateNote(userId, note.id, { favorite });
+  return {
+    text: favorite ? `Added "${note.title}" to favorites.` : `Removed "${note.title}" from favorites.`,
+    noteCards: [{ id: note.id, title: note.title }],
+  };
+}
+
+async function executeListTrash(userId: string): Promise<ToolResult> {
+  const trashed = await listTrashedNotes(userId);
+  if (trashed.length === 0) return { text: "Trash is empty." };
+  const notes = trashed.map(toNote);
+  return {
+    text: `${notes.length} note(s) in trash:`,
+    noteCards: notes.map((n) => ({ id: n.id, title: n.title })),
+  };
+}
+
+async function executeRestoreNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  const title = String(input.noteTitle).toLowerCase();
+  const trashed = await listTrashedNotes(userId);
+  const match = trashed.find((n) => n.title.toLowerCase() === title)
+    ?? trashed.find((n) => n.title.toLowerCase().includes(title));
+  if (!match) return { text: `No trashed note found matching "${input.noteTitle}".` };
+  const restored = await restoreNote(userId, match.id);
+  if (!restored) return { text: `Failed to restore "${match.title}".` };
+  const note = toNote(restored);
+  return {
+    text: `Restored "${note.title}" from trash.`,
+    noteCards: [{ id: note.id, title: note.title, folder: note.folder ?? undefined, tags: note.tags }],
+  };
+}
+
+async function executeRenameFolder(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  const folder = await findFolderByName(userId, String(input.oldName));
+  if (!folder) return { text: `No folder found with name "${input.oldName}".` };
+  await renameFolder(userId, folder.id, String(input.newName));
+  return { text: `Renamed folder "${input.oldName}" to "${input.newName}".` };
+}
+
+async function executeRenameTag(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  const oldName = String(input.oldName);
+  const newName = String(input.newName);
+  await renameTag(userId, oldName, newName);
+  return { text: `Renamed tag "${oldName}" to "${newName}".` };
+}
+
+async function executeDuplicateNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  const note = await findNoteByTitle(userId, String(input.noteTitle));
+  if (!note) return { text: `No note found with title "${input.noteTitle}".` };
+  const copy = await createNote(userId, {
+    title: `${note.title} (Copy)`,
+    content: note.content,
+    folderId: note.folderId ?? undefined,
+    tags: note.tags,
+  });
+  const result = toNote(copy);
+  return {
+    text: `Duplicated "${note.title}" as "${result.title}".`,
+    noteCards: [{ id: result.id, title: result.title, folder: result.folder ?? undefined, tags: result.tags }],
+  };
 }

@@ -187,8 +187,10 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     try {
       const result = await transcribeChunk(chunkBlob, sid, idx);
       if (result.text && result.text.trim()) {
-        transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
-        setLiveTranscript(getOrderedTranscript());
+        // Cumulative audio means each result contains the full transcript so far — replace all previous chunks
+        transcriptChunksRef.current.clear();
+        transcriptChunksRef.current.set(0, result.text.trim());
+        setLiveTranscript(result.text.trim());
       }
     } catch (err) {
       // Non-fatal — chunk transcription failure doesn't stop recording

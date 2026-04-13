@@ -170,6 +170,10 @@
 - [x] Meeting card note link styled as card — Note title in recording-ended card matches Related Notes button style (bordered card with document icon)
 - [x] Recording bar redesign — Stop button with pulsing red dot moved to left, waveform hidden (drives audio-reactive top border pulse in highlight color), smooth slide-down animation, doubled item spacing
 - [x] Recording folder isolation — Captures active folder when recording starts; sidebar browsing no longer changes recording output folder
+- [x] New AI tools — 6 additional Claude tools: toggle_favorite, list_trash, restore_note, rename_folder, rename_tag, duplicate_note (22 total)
+- [x] New slash commands — 7 additional: `/favorite`, `/unfavorite`, `/trash`, `/restore`, `/renamefolder`, `/renametag`, `/duplicate` (21 total)
+- [x] Tools during meetings — AI assistant uses tools + transcript context simultaneously; Claude decides whether to answer from transcript or use tools
+- [x] Updated AI assistant tips and placeholder text to reflect full capabilities
 
 ## Extension Ideas (Future)
 
