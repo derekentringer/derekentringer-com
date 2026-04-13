@@ -8,6 +8,7 @@ generated/
 !.env.example
 *.log
 .DS_Store
+.claude/
 
 # Tauri
 src-tauri/target/
