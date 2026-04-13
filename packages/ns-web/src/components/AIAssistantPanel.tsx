@@ -3,40 +3,36 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags } from "../api/ai.ts";
-import { createNote, updateNote, deleteNote, fetchFolders, fetchTags, fetchFavoriteNotes, fetchDashboardData, deleteFolderApi } from "../api/notes.ts";
+import { createNote, updateNote, deleteNote, fetchNotes, fetchFolders, fetchTags, fetchFavoriteNotes, fetchDashboardData, fetchTrash, restoreNote as apiRestoreNote, deleteFolderApi, renameFolderApi, renameTagApi } from "../api/notes.ts";
 import type { QASource } from "@derekentringer/shared/ns";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
 
 const ASSISTANT_TIPS = [
-  // AI-powered queries
+  // Search & discover
+  "Find notes about last week's sprint",
   "What notes are tagged #meeting?",
-  "What did I edit recently?",
-  "How many notes do I have?",
-  "What notes link to my Weekly Summary?",
-  "Find notes about React",
-  "Which notes are in my Work folder?",
-  "What's in my Project Plan note?",
-  "What can you do?",
-  // AI-powered actions
-  "Create a meeting agenda template note",
-  "Delete my old scratch note",
-  "Move my Draft note to the Work folder",
+  "Which notes mention the Q3 budget?",
+  "What links to my Project Plan?",
+  "Show me my recent notes",
+  // Read & understand
+  "Summarize my Meeting Notes",
+  "What are the key points in my Research note?",
+  "What's in my Work folder?",
+  // Create & organize
+  "Create a weekly standup template",
+  "Move my Draft to the Work folder",
   "Tag my latest note with #important",
-  "Summarize my Project Plan",
-  "Generate tags for Meeting Notes",
-  // Slash commands (free, instant)
+  "Generate tags for my Meeting Notes",
+  // During meetings
+  "What was just discussed?",
+  "Create an action item from this meeting",
+  "Find notes related to what we're talking about",
+  // Slash commands
   "/create Weekly Standup",
-  "/move Draft to Work",
-  "/tag Project Plan #important",
-  "/delete Old Notes",
   "/favorites",
   "/recent",
-  "/folders",
-  "/tags",
-  "/summarize Project Plan",
-  "/gentags Meeting Notes",
   "/stats",
 ];
 
@@ -466,7 +462,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         const folderId = findFolder(folders);
         if (!folderId) return `Folder "${folderName}" not found.`;
         // Find note by searching
-        const { fetchNotes } = await import("../api/notes.ts");
+
         const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
         const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
         if (!note) return `Note "${noteTitle}" not found.`;
@@ -476,7 +472,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     },
     tagNote: async (noteTitle, tags) => {
       try {
-        const { fetchNotes } = await import("../api/notes.ts");
+
         const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
         const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
         if (!note) return `Note "${noteTitle}" not found.`;
@@ -488,7 +484,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     },
     deleteNote: async (noteTitle) => {
       try {
-        const { fetchNotes } = await import("../api/notes.ts");
+
         const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
         const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
         if (!note) return `Note "${noteTitle}" not found.`;
@@ -515,7 +511,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     },
     summarizeNote: async (noteTitle) => {
       try {
-        const { fetchNotes } = await import("../api/notes.ts");
+
         const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
         const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
         if (!note) return `Note "${noteTitle}" not found.`;
@@ -525,7 +521,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     },
     generateTags: async (noteTitle) => {
       try {
-        const { fetchNotes } = await import("../api/notes.ts");
+
         const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
         const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
         if (!note) return `Note "${noteTitle}" not found.`;
@@ -584,12 +580,77 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     },
     openNote: async (noteTitle) => {
       try {
-        const { fetchNotes } = await import("../api/notes.ts");
         const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
         const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
         if (!note) return null;
         onSelectNote(note.id);
         return { id: note.id, title: note.title };
+      } catch { return null; }
+    },
+    favoriteNote: async (noteTitle) => {
+      try {
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return `Note "${noteTitle}" not found.`;
+        await updateNote(note.id, { favorite: true });
+        return `Added "${note.title}" to favorites.`;
+      } catch { return "Failed to favorite note."; }
+    },
+    unfavoriteNote: async (noteTitle) => {
+      try {
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return `Note "${noteTitle}" not found.`;
+        await updateNote(note.id, { favorite: false });
+        return `Removed "${note.title}" from favorites.`;
+      } catch { return "Failed to unfavorite note."; }
+    },
+    listTrash: async () => {
+      try {
+        const result = await fetchTrash();
+        return result.notes.map((n) => ({ id: n.id, title: n.title }));
+      } catch { return []; }
+    },
+    restoreNote: async (noteTitle) => {
+      try {
+        const result = await fetchTrash();
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase())
+          ?? result.notes.find((n) => n.title.toLowerCase().includes(noteTitle.toLowerCase()));
+        if (!note) return `No trashed note found matching "${noteTitle}".`;
+        await apiRestoreNote(note.id);
+        return `Restored "${note.title}" from trash.`;
+      } catch { return "Failed to restore note."; }
+    },
+    renameFolder: async (oldName, newName) => {
+      try {
+        const { folders } = await fetchFolders();
+        const findFolder = (items: typeof folders): string | null => {
+          for (const f of items) {
+            if (f.name.toLowerCase() === oldName.toLowerCase()) return f.id;
+            const found = findFolder(f.children);
+            if (found) return found;
+          }
+          return null;
+        };
+        const folderId = findFolder(folders);
+        if (!folderId) return `Folder "${oldName}" not found.`;
+        await renameFolderApi(folderId, newName);
+        return `Renamed folder "${oldName}" to "${newName}".`;
+      } catch { return "Failed to rename folder."; }
+    },
+    renameTag: async (oldName, newName) => {
+      try {
+        await renameTagApi(oldName, newName);
+        return `Renamed tag "${oldName}" to "${newName}".`;
+      } catch { return "Failed to rename tag."; }
+    },
+    duplicateNote: async (noteTitle) => {
+      try {
+        const result = await fetchNotes({ search: noteTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title.toLowerCase() === noteTitle.toLowerCase()) ?? result.notes[0];
+        if (!note) return null;
+        const copy = await createNote({ title: `${note.title} (Copy)`, content: note.content, folderId: note.folderId ?? undefined, tags: note.tags });
+        return { id: copy.id, title: copy.title };
       } catch { return null; }
     },
     clearChat: () => handleClear(),
@@ -942,9 +1003,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            <p className="text-sm text-muted-foreground">Ask about your notes</p>
-            <p className="text-xs text-muted-foreground/60 text-center">
-              Ask questions and get answers based on your note content.
+            <p className="text-sm text-muted-foreground">Your AI Assistant</p>
+            <p className="text-xs text-muted-foreground/60 text-center px-4">
+              Search, create, and organize notes. Summarize content, generate tags, and ask questions during meetings.
             </p>
           </div>
         )}
@@ -1221,7 +1282,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={isRecording ? "Ask about this meeting..." : "Ask anything about your notes..."}
+            placeholder={isRecording ? "Ask about the meeting or manage your notes..." : "Ask, search, create, or organize..."}
             className="flex-1 px-3 py-2 rounded-md bg-input border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-muted-foreground"
             disabled={isStreaming}
           />

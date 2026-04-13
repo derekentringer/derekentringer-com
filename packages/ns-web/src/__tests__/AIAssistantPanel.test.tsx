@@ -28,7 +28,7 @@ describe("AIAssistantPanel", () => {
 
     render(<AIAssistantPanel onSelectNote={vi.fn()} isOpen={true} />);
 
-    const input = screen.getByPlaceholderText("Ask anything about your notes...");
+    const input = screen.getByPlaceholderText("Ask, search, create, or organize...");
     await userEvent.type(input, "test");
     await userEvent.click(screen.getByText("Ask"));
 
@@ -47,7 +47,7 @@ describe("AIAssistantPanel", () => {
   it("Ask button enabled when input has text", async () => {
     render(<AIAssistantPanel onSelectNote={vi.fn()} isOpen={true} />);
 
-    const input = screen.getByPlaceholderText("Ask anything about your notes...");
+    const input = screen.getByPlaceholderText("Ask, search, create, or organize...");
     await userEvent.type(input, "What is React?");
 
     const askButton = screen.getByText("Ask");
@@ -65,7 +65,7 @@ describe("AIAssistantPanel", () => {
 
     render(<AIAssistantPanel onSelectNote={onSelectNote} isOpen={true} />);
 
-    const input = screen.getByPlaceholderText("Ask anything about your notes...");
+    const input = screen.getByPlaceholderText("Ask, search, create, or organize...");
     await userEvent.type(input, "What is React?");
 
     const askButton = screen.getByText("Ask");

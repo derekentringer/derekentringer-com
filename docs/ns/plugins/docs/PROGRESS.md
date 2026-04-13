@@ -99,6 +99,7 @@ NoteSync Host
 - [ ] [00 — Plugin API Package](feature_planning/00-plugin-api-package.md)
 - [ ] [01 — Server Plugin Loader](feature_planning/01-server-plugin-loader.md)
 - [ ] [02 — Hook System](feature_planning/02-hook-system.md)
+- [ ] [02a — Scheduler API](feature_planning/02a-scheduler-api.md)
 - [ ] [14 — Usage Tracking & Abuse Prevention](feature_planning/14-usage-tracking.md)
 
 ### Phase 2 — Extract Built-in Plugins
@@ -138,3 +139,5 @@ First-party example plugins that showcase every plugin type and API feature. The
 - [ ] [22 — Git Backup](feature_planning/22-example-git-backup.md) — event hooks, sync-handler, headless/CLI operation
 - [ ] [23 — Google Calendar](feature_planning/23-example-google-calendar.md) — OAuth, external API, encrypted storage, background polling
 - [ ] [24 — Word Count](feature_planning/24-example-word-count.md) — status bar, sidebar panel, real-time events (starter example)
+- [ ] [25 — Voice Input](feature_planning/25-example-voice-input.md) — mic button for AI Assistant, TranscriptionProvider, WorkspaceAPI input control
+- [ ] [26 — Reminders](feature_planning/26-example-reminders.md) — /setreminder slash command + AI tools, Scheduler API, persistent notifications
