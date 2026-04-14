@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext.tsx";
 import { CommandProvider } from "./commands/index.ts";
 import { LoginPage } from "./pages/LoginPage.tsx";
@@ -86,12 +86,22 @@ function useThemeAttribute() {
   }, []);
 }
 
+/** Strip trailing slashes by redirecting /path/ to /path */
+function TrailingSlashRedirect() {
+  const { pathname, search, hash } = useLocation();
+  if (pathname !== "/" && pathname.endsWith("/")) {
+    return <Navigate to={pathname.slice(0, -1) + search + hash} replace />;
+  }
+  return null;
+}
+
 export function App() {
   useThemeAttribute();
 
   return (
     <CommandProvider>
     <AuthProvider>
+      <TrailingSlashRedirect />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
@@ -137,7 +147,6 @@ export function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/settings/:section/" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
