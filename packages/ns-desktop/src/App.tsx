@@ -52,12 +52,12 @@ function useThemeAttribute() {
         const theme = parsed.theme || "dark";
         const accentColor = parsed.accentColor || "lime";
         const customAccentColor = parsed.customAccentColor || "#d4e157";
-        if (theme === "dark" || theme === "light" || theme === "system") {
+        if (theme === "dark" || theme === "light" || theme === "system" || theme === "teams") {
           document.documentElement.setAttribute("data-theme", theme);
         } else {
           document.documentElement.setAttribute("data-theme", "dark");
         }
-        applyAccentCssVars(theme, accentColor, customAccentColor);
+        if (theme !== "teams") applyAccentCssVars(theme, accentColor, customAccentColor);
       } catch {
         document.documentElement.setAttribute("data-theme", "dark");
         applyAccentCssVars("dark", "lime");

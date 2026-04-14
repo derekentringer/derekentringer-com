@@ -357,14 +357,35 @@ export function SettingsPage() {
   function handleThemeChange(theme: ThemeMode) {
     updateEditorSetting("theme", theme);
     document.documentElement.setAttribute("data-theme", theme);
-    const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
-    const colors = editorSettings.accentColor === "custom"
-      ? deriveAccentColors(editorSettings.customAccentColor)
-      : ACCENT_PRESETS[editorSettings.accentColor];
-    document.documentElement.style.setProperty("--color-primary", isLight ? colors.light : colors.dark);
-    document.documentElement.style.setProperty("--color-primary-hover", isLight ? colors.lightHover : colors.darkHover);
-    document.documentElement.style.setProperty("--color-ring", isLight ? colors.light : colors.dark);
-    document.documentElement.style.setProperty("--color-primary-contrast", editorSettings.accentColor === "black" ? "#ffffff" : "#000000");
+    if (theme === "teams") {
+      // Teams theme has its own brand colors — clear any accent overrides
+      document.documentElement.style.removeProperty("--color-primary");
+      document.documentElement.style.removeProperty("--color-primary-hover");
+      document.documentElement.style.removeProperty("--color-ring");
+      document.documentElement.style.removeProperty("--color-primary-contrast");
+      refreshFavicon();
+    } else {
+      const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
+      const colors = editorSettings.accentColor === "custom"
+        ? deriveAccentColors(editorSettings.customAccentColor)
+        : ACCENT_PRESETS[editorSettings.accentColor];
+      document.documentElement.style.setProperty("--color-primary", isLight ? colors.light : colors.dark);
+      document.documentElement.style.setProperty("--color-primary-hover", isLight ? colors.lightHover : colors.darkHover);
+      document.documentElement.style.setProperty("--color-ring", isLight ? colors.light : colors.dark);
+      document.documentElement.style.setProperty("--color-primary-contrast", editorSettings.accentColor === "black" ? "#ffffff" : "#000000");
+    }
+  }
+
+  function refreshFavicon() {
+    requestAnimationFrame(() => {
+      const s = getComputedStyle(document.documentElement);
+      const p = s.getPropertyValue("--color-primary").trim() || "#d4e157";
+      const c = s.getPropertyValue("--color-primary-contrast").trim() || "#000";
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="${p}"/><rect x="228" y="128" width="56" height="256" rx="28" fill="${c}"/><rect x="128" y="228" width="256" height="56" rx="28" fill="${c}"/></svg>`;
+      let link = document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]');
+      if (!link) { link = document.createElement("link"); link.rel = "icon"; link.type = "image/svg+xml"; document.head.appendChild(link); }
+      link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+    });
   }
 
   function applyAccentColors(colors: { dark: string; light: string; darkHover: string; lightHover: string }, contrastColor: string) {
@@ -374,6 +395,7 @@ export function SettingsPage() {
     document.documentElement.style.setProperty("--color-primary-hover", isLight ? colors.lightHover : colors.darkHover);
     document.documentElement.style.setProperty("--color-ring", isLight ? colors.light : colors.dark);
     document.documentElement.style.setProperty("--color-primary-contrast", contrastColor);
+    refreshFavicon();
   }
 
   function handleAccentColorChange(preset: AccentColorPreset) {
@@ -556,6 +578,7 @@ export function SettingsPage() {
                   <RadioOption name="theme" value={"dark" as ThemeMode} currentValue={editorSettings.theme} label="Dark" onChange={handleThemeChange} />
                   <RadioOption name="theme" value={"light" as ThemeMode} currentValue={editorSettings.theme} label="Light" onChange={handleThemeChange} />
                   <RadioOption name="theme" value={"system" as ThemeMode} currentValue={editorSettings.theme} label="System" onChange={handleThemeChange} />
+                  <RadioOption name="theme" value={"teams" as ThemeMode} currentValue={editorSettings.theme} label="Teams" onChange={handleThemeChange} />
                 </div>
               </SettingsRow>
               <SettingsRow label="Accent color">

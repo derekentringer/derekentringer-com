@@ -195,6 +195,10 @@
 - [x] Reset to Defaults — Clears editor and AI settings with inline confirmation; notes/account/data unaffected
 - [x] About section — Version, What's New (release notes modal from RELEASE_NOTES.md), Feedback placeholder
 - [x] Consistent destructive button pattern — All destructive actions use inline confirm
+- [x] Teams theme — Fourth built-in theme using official Fluent UI dark tokens (neutral grays, brand purple accent); forces Teams brand colors on editor headings and + button
+- [x] Theme-aware editor — CodeMirror uses CSS variables instead of hardcoded hex; automatically matches any theme
+- [x] Theme-aware logo — NsLogo SVG uses CSS variables on About dialog
+- [x] Tab indicator fix — Staggered recalculations + parent ResizeObserver to fix highlight misalignment after Settings navigation
 - [x] About dialog updated — Removed description, copyright to PixelPerfect Studios LLC, What's New and Feedback buttons navigate to Settings About section
 - [x] Default recording source changed to meeting mode — Greyed out when unsupported
 - [x] Transcription mode removed from Settings — Ribbon buttons are the primary UI for mode selection

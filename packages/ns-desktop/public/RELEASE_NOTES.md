@@ -1,5 +1,17 @@
 # What's New
 
+## v2.22.0
+
+- **New** — Update About dialog with What's New and Feedback navigation
+
+## v2.21.0
+
+- **Fix** — Strip trailing slashes on all routes
+
+## v2.20.0
+
+- **New** — Auto-generate release notes on build, fix About page
+
 ## v2.19.0
 
 - **New** — Redesign Settings with sidebar nav, grouped sections, admin integration

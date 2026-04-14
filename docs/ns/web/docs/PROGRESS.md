@@ -252,6 +252,12 @@
 - [x] About section — Version, What's New (release notes modal from RELEASE_NOTES.md), Feedback placeholder
 - [x] Consistent destructive button pattern — All destructive actions use inline confirm (Clear Cache, Reset Defaults, Sign Out, Disable 2FA)
 - [x] `__APP_VERSION__` injected via Vite define from git tag on web
+- [x] Teams theme — Fourth built-in theme using official Fluent UI dark tokens (neutral grays, brand purple `#887dff` accent); forces Teams brand colors on editor headings, + button, and favicon
+- [x] Theme-aware editor — CodeMirror uses CSS variables (`--color-input`, `--color-foreground`, `--color-border`, `--color-muted-foreground`) instead of hardcoded hex; automatically matches any theme
+- [x] Theme-aware logo — NsLogo SVG uses `var(--color-primary)` and `var(--color-primary-contrast)` on login and About dialog
+- [x] Dynamic favicon — Browser tab icon regenerated as SVG data URL from theme colors on every theme/accent change
+- [x] Tab indicator fix — Staggered recalculations (50/200/500ms) + parent ResizeObserver to fix highlight misalignment after Settings navigation
+- [x] Custom themes feature plan — `docs/ns/web/docs/feature_planning/28-custom-themes.md` with JSON format, visual editor, import/export, plugin API
 
 ### Native Desktop Menus
 

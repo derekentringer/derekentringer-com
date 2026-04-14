@@ -129,16 +129,22 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onPinTab, o
     });
     // Also recalculate after fonts finish loading
     document.fonts?.ready?.then(updateIndicator);
-    return () => cancelAnimationFrame(raf);
+    // Staggered recalcs to catch post-navigation layout shifts
+    const t1 = setTimeout(updateIndicator, 50);
+    const t2 = setTimeout(updateIndicator, 200);
+    const t3 = setTimeout(updateIndicator, 500);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, tabs.length, updateIndicator, tabs.find((t) => t.id === activeTabId)?.isDirty]);
 
-  // ResizeObserver: recalculate indicator whenever tab container layout changes
+  // ResizeObserver: recalculate indicator whenever tab container or parent layout changes
   useEffect(() => {
     const container = containerRef.current;
     if (!container || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => updateIndicator());
     observer.observe(container);
+    // Also observe the parent to catch sidebar/ribbon layout shifts
+    if (container.parentElement) observer.observe(container.parentElement);
     return () => observer.disconnect();
   }, [updateIndicator]);
 

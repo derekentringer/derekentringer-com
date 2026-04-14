@@ -204,8 +204,8 @@ function createDarkTheme(accent: string) {
   return EditorView.theme(
     {
       "&": {
-        backgroundColor: "#0f1117",
-        color: "#ececec",
+        backgroundColor: "var(--color-input)",
+        color: "var(--color-foreground)",
         fontFamily: "'Roboto Mono', monospace",
         fontSize: "14px",
         height: "100%",
@@ -218,9 +218,9 @@ function createDarkTheme(accent: string) {
         backgroundColor: hexToRgba(accent, 0.15),
       },
       ".cm-gutters": {
-        backgroundColor: "#10121a",
-        color: "#666666",
-        borderRight: "1px solid #1e2028",
+        backgroundColor: "var(--color-input)",
+        color: "var(--color-muted-foreground)",
+        borderRight: "1px solid var(--color-border)",
       },
       ".cm-activeLineGutter": {
         backgroundColor: hexToRgba(accent, 0.05),
@@ -235,7 +235,7 @@ function createDarkTheme(accent: string) {
         overflow: "auto",
       },
       ".cm-placeholder": {
-        color: "#666666",
+        color: "var(--color-muted-foreground)",
       },
       "&.cm-focused .cm-placeholder": {
         display: "none",
@@ -269,8 +269,8 @@ function createLightTheme(accent: string) {
   return EditorView.theme(
     {
       "&": {
-        backgroundColor: "#ffffff",
-        color: "#1a1a2e",
+        backgroundColor: "var(--color-input)",
+        color: "var(--color-foreground)",
         fontFamily: "'Roboto Mono', monospace",
         fontSize: "14px",
         height: "100%",
@@ -283,9 +283,9 @@ function createLightTheme(accent: string) {
         backgroundColor: hexToRgba(accent, 0.15),
       },
       ".cm-gutters": {
-        backgroundColor: "#f5f5f5",
-        color: "#999999",
-        borderRight: "1px solid #e0e0e0",
+        backgroundColor: "var(--color-input)",
+        color: "var(--color-muted-foreground)",
+        borderRight: "1px solid var(--color-border)",
       },
       ".cm-activeLineGutter": {
         backgroundColor: hexToRgba(accent, 0.08),
@@ -300,7 +300,7 @@ function createLightTheme(accent: string) {
         overflow: "auto",
       },
       ".cm-placeholder": {
-        color: "#999999",
+        color: "var(--color-muted-foreground)",
       },
       "&.cm-focused .cm-placeholder": {
         display: "none",

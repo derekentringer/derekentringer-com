@@ -1703,13 +1703,14 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     if (editorSettings.theme === "system") {
       return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     }
+    if (editorSettings.theme === "teams") return "dark";
     return editorSettings.theme;
   }, [editorSettings.theme]);
 
-  const resolvedAccentColor = useMemo(
-    () => resolveAccentColor(editorSettings.accentColor, resolvedTheme),
-    [editorSettings.accentColor, resolvedTheme],
-  );
+  const resolvedAccentColor = useMemo(() => {
+    if (editorSettings.theme === "teams") return "#887dff";
+    return resolveAccentColor(editorSettings.accentColor, resolvedTheme);
+  }, [editorSettings.accentColor, editorSettings.theme, resolvedTheme]);
 
   const aiExtensions = useMemo(
     () => {

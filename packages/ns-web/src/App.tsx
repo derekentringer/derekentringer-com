@@ -54,6 +54,22 @@ function applyAccentCssVars(theme: string, accentColor: string, customHex?: stri
   document.documentElement.style.setProperty("--color-ring", primary);
 }
 
+function updateFavicon() {
+  const style = getComputedStyle(document.documentElement);
+  const primary = style.getPropertyValue("--color-primary").trim() || "#d4e157";
+  const contrast = style.getPropertyValue("--color-primary-contrast").trim() || "#000000";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="${primary}"/><rect x="228" y="128" width="56" height="256" rx="28" fill="${contrast}"/><rect x="128" y="228" width="256" height="56" rx="28" fill="${contrast}"/></svg>`;
+  const url = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]');
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    link.type = "image/svg+xml";
+    document.head.appendChild(link);
+  }
+  link.href = url;
+}
+
 function useThemeAttribute() {
   useEffect(() => {
     function applyTheme() {
@@ -63,16 +79,18 @@ function useThemeAttribute() {
         const theme = parsed.theme || "dark";
         const accentColor = parsed.accentColor || "lime";
         const customAccentColor = parsed.customAccentColor || "#d4e157";
-        if (theme === "dark" || theme === "light" || theme === "system") {
+        if (theme === "dark" || theme === "light" || theme === "system" || theme === "teams") {
           document.documentElement.setAttribute("data-theme", theme);
         } else {
           document.documentElement.setAttribute("data-theme", "dark");
         }
-        applyAccentCssVars(theme, accentColor, customAccentColor);
+        if (theme !== "teams") applyAccentCssVars(theme, accentColor, customAccentColor);
       } catch {
         document.documentElement.setAttribute("data-theme", "dark");
         applyAccentCssVars("dark", "lime");
       }
+      // Update favicon to match theme — use RAF so CSS vars are resolved first
+      requestAnimationFrame(updateFavicon);
     }
 
     applyTheme();
