@@ -1,5 +1,10 @@
 # What's New
 
+## v2.19.0
+
+- **New** — Redesign Settings with sidebar nav, grouped sections, admin integration
+- **Refactor** — Remove transcription mode from Settings, default to meeting source
+
 ## v2.18.0
 
 - **Live recording card** — Recording context (Related Notes + Transcription) now appears as a sticky card in the AI Assistant chat during recording
