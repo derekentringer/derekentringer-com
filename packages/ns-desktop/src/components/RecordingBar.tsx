@@ -93,7 +93,10 @@ export function RecordingBar({ state, elapsed, mode, stream, audioLevel, folderI
           className="flex items-center gap-1.5 h-full px-3 -mr-2 text-xs text-foreground hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
           title="Stop recording"
         >
-          <span className="h-2.5 w-2.5 rounded-sm bg-destructive animate-pulse shrink-0" />
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-destructive" />
+          </span>
           <span>Stop</span>
         </button>
 
@@ -123,6 +126,7 @@ export function RecordingBar({ state, elapsed, mode, stream, audioLevel, folderI
             ariaLabel="Recording folder"
           />
         )}
+
       </div>
 
       {/* Bottom border — static */}
