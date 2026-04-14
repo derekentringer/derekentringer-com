@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.tsx";
 import { useRegistry, formatShortcut } from "../commands/index.ts";
-import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
+import { useAiSettings, type CompletionStyle } from "../hooks/useAiSettings.ts";
 import { useEditorSettings, ACCENT_PRESETS, type ThemeMode, type ViewModeDefault, type TabSizeOption, type CursorStyle, type AccentColorPreset } from "../hooks/useEditorSettings.ts";
 
 import { useOfflineCache } from "../hooks/useOfflineCache.ts";
@@ -125,13 +125,6 @@ const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] =
   { value: "continue", label: "Continue writing", info: "Predicts and continues your natural writing style." },
   { value: "markdown", label: "Markdown assist", info: "Suggests markdown formatting like headings, lists, and code blocks." },
   { value: "brief", label: "Brief", info: "Short, concise completions — a few words at a time." },
-];
-
-const AUDIO_MODE_OPTIONS: { value: AudioMode; label: string; info: string }[] = [
-  { value: "meeting", label: "Meeting notes", info: "Structures transcript into attendees, discussion points, decisions, and action items." },
-  { value: "lecture", label: "Lecture notes", info: "Organizes into key concepts, definitions, important points, and a summary." },
-  { value: "memo", label: "Memo", info: "Cleans up speech into a well-written memo. Fixes grammar and filler words." },
-  { value: "verbatim", label: "Verbatim", info: "Minimal processing — adds punctuation and paragraphs but keeps your exact words." },
 ];
 
 // Keyboard shortcuts are now driven by the command registry.
@@ -572,25 +565,6 @@ export function SettingsPage() {
                         </select>
                       </div>
                     </>
-                  )}
-                  {key === "audioNotes" && aiSettings.audioNotes && !aiDisabled && (
-                    <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
-                      {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel, info: modeInfo }) => (
-                        <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="audioMode"
-                            value={value}
-                            checked={aiSettings.audioMode === value}
-                            onChange={() => updateAiSetting("audioMode", value)}
-                            className="accent-primary"
-                            aria-label={modeLabel}
-                          />
-                          <span className="text-sm text-muted-foreground">{modeLabel}</span>
-                          <InfoIcon tooltip={modeInfo} />
-                        </label>
-                      ))}
-                    </div>
                   )}
                 </div>
               ))}
