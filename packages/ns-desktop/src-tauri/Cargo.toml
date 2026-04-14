@@ -30,6 +30,9 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 tauri-plugin-fs = { version = "2", features = ["watch"] }
 tauri-plugin-dialog = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# `hound` is used by the cross-platform audio_capture_shared module, so it must
+# be available on every target that includes meeting-mode capture (macOS + Windows).
+hound = "3.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -37,5 +40,9 @@ objc2-foundation = { version = "0.3", features = ["NSUserDefaults", "NSString", 
 objc2-core-audio = { version = "0.3", default-features = false, features = ["std", "AudioHardware", "objc2", "objc2-foundation"] }
 coreaudio-rs = { version = "0.14", features = ["audio_unit", "core_audio"] }
 core-foundation = "0.10"
-hound = "3.5"
 block2 = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# cpal provides WASAPI capture (including loopback on the default output device)
+# for the Windows meeting-mode audio_capture_win module.
+cpal = "0.15"

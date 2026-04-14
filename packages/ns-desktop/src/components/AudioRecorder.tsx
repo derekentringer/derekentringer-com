@@ -84,8 +84,9 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   const chunkIndexRef = useRef(0);
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const transcriptChunksRef = useRef<Map<number, string>>(new Map());
-  const allAudioChunksRef = useRef<Blob[]>([]);
-  const lastChunkSentRef = useRef(0);
+  const chunkRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunkBufferRef = useRef<Blob[]>([]);
+  const chunkRecorderShouldRestartRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
@@ -140,8 +141,9 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     }
     mediaRecorderRef.current = null;
     chunksRef.current = [];
-    allAudioChunksRef.current = [];
-    lastChunkSentRef.current = 0;
+    chunkRecorderRef.current = null;
+    chunkBufferRef.current = [];
+    chunkRecorderShouldRestartRef.current = false;
     transcriptChunksRef.current = new Map();
     sessionIdRef.current = "";
     chunkIndexRef.current = 0;
@@ -164,32 +166,50 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     return parts.join(" ");
   }
 
-  // Send accumulated audio as a chunk for transcription
-  async function sendChunk() {
-    const allChunks = allAudioChunksRef.current;
-    const lastSent = lastChunkSentRef.current;
-    if (allChunks.length <= lastSent) return;
+  // Start an independent MediaRecorder on the shared mic stream whose sole job
+  // is to produce self-contained audio files every CHUNK_INTERVAL_MS for live
+  // transcription. On stop() it flushes a complete file (with container header),
+  // uploads it, and restarts itself if recording is still active. This avoids
+  // Chromium/WebView2's fragmented-WebM problem where mid-stream slices lack an
+  // EBML header and are rejected by the server's magic-byte check.
+  function startMicChunkRecorder(stream: MediaStream, mimeType: string | undefined) {
+    const recorder = mimeType
+      ? new MediaRecorder(stream, { mimeType })
+      : new MediaRecorder(stream);
+    chunkBufferRef.current = [];
+    chunkRecorderRef.current = recorder;
 
-    const newChunks = allChunks.slice(lastSent);
-    lastChunkSentRef.current = allChunks.length;
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunkBufferRef.current.push(e.data);
+    };
 
-    const mimeType = mediaRecorderRef.current?.mimeType || "audio/webm";
-    const chunkBlob = new Blob(newChunks, { type: mimeType });
+    recorder.onstop = async () => {
+      const buf = chunkBufferRef.current;
+      chunkBufferRef.current = [];
+      const blobType = recorder.mimeType || mimeType || "audio/webm";
+      const blob = new Blob(buf, { type: blobType });
 
-    if (chunkBlob.size < 1024) return;
-
-    const idx = chunkIndexRef.current++;
-    const sid = sessionIdRef.current;
-
-    try {
-      const result = await transcribeChunk(chunkBlob, sid, idx);
-      if (result.text && result.text.trim()) {
-        transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
-        setLiveTranscript(getOrderedTranscript());
+      // Restart immediately so we don't miss audio while the upload runs
+      if (chunkRecorderShouldRestartRef.current && streamRef.current) {
+        startMicChunkRecorder(streamRef.current, mimeType);
       }
-    } catch (err) {
-      console.warn("Chunk transcription failed:", err);
-    }
+
+      if (blob.size < 1024) return;
+
+      const idx = chunkIndexRef.current++;
+      const sid = sessionIdRef.current;
+      try {
+        const result = await transcribeChunk(blob, sid, idx);
+        if (result.text && result.text.trim()) {
+          transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
+          setLiveTranscript(getOrderedTranscript());
+        }
+      } catch (err) {
+        console.warn("Chunk transcription failed:", err);
+      }
+    };
+
+    recorder.start();
   }
 
   const useMeeting = meetingSupported && recordingSource === "meeting";
@@ -265,6 +285,14 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   liveTranscriptRef.current = liveTranscript;
 
   async function handleMeetingStop() {
+    // Re-entry guard: subsequent Stop clicks while we're already processing
+    // the current recording are no-ops. On Windows the native stop_recording
+    // call can take a few seconds (final WAV mix), and the Stop button stays
+    // visible until state flips to "processing", so rapid clicks used to
+    // queue multiple invokes.
+    if (!isMeetingRef.current) return;
+    isMeetingRef.current = false;
+
     try {
       // Capture transcript — try ref map first, fall back to state ref
       const fromMap = getOrderedTranscript();
@@ -274,6 +302,11 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       // Stop live transcription chunk capture
       stopMeetingChunkCapture();
 
+      // Flip UI to "processing" *before* the native stop call so the Stop
+      // button disappears and the user sees the spinner while Rust is
+      // mixing the final WAV.
+      setState("processing");
+
       const wavPath = await invoke<string>("stop_meeting_recording");
 
       // Unlisten ticks
@@ -281,9 +314,6 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         tickUnlistenRef.current();
         tickUnlistenRef.current = null;
       }
-
-      setState("processing");
-      isMeetingRef.current = false;
 
       // Read the WAV file from disk
       const data = await readFile(wavPath);
@@ -333,8 +363,6 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
-      allAudioChunksRef.current = [];
-      lastChunkSentRef.current = 0;
       transcriptChunksRef.current = new Map();
       sessionIdRef.current = generateSessionId();
       chunkIndexRef.current = 0;
@@ -343,7 +371,6 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           chunksRef.current.push(e.data);
-          allAudioChunksRef.current.push(e.data);
         }
       };
 
@@ -389,6 +416,10 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       startTimeRef.current = Date.now();
       setState("recording");
 
+      // Spin up the independent live-chunk recorder on the same stream
+      chunkRecorderShouldRestartRef.current = true;
+      startMicChunkRecorder(stream, mimeType);
+
       timerRef.current = setInterval(() => {
         const ms = Date.now() - startTimeRef.current;
         setElapsed(ms);
@@ -397,9 +428,12 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         }
       }, 1000);
 
-      // Chunk transcription timer
+      // Roll the chunk recorder every CHUNK_INTERVAL_MS — its onstop handler
+      // uploads the completed file and restarts itself.
       chunkTimerRef.current = setInterval(() => {
-        sendChunk();
+        if (chunkRecorderRef.current?.state === "recording") {
+          chunkRecorderRef.current.stop();
+        }
       }, CHUNK_INTERVAL_MS);
     } catch (err) {
       cleanup();
@@ -446,6 +480,11 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     if (isMeetingRef.current) {
       handleMeetingStop();
       return;
+    }
+    // Prevent the live-chunk recorder from restarting and flush its final chunk
+    chunkRecorderShouldRestartRef.current = false;
+    if (chunkRecorderRef.current?.state === "recording") {
+      chunkRecorderRef.current.stop();
     }
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
