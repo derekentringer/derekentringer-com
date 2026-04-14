@@ -151,7 +151,6 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
-import { AdminPage } from "./AdminPage.tsx";
 import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
 import { RecordingBar } from "../components/RecordingBar.tsx";
 import { FolderPicker } from "../components/FolderPicker.tsx";
@@ -313,10 +312,9 @@ export function NotesPage() {
     return "count";
   });
 
-  // Settings / Change Password / Admin / About
+  // Settings / Change Password / About
   const [showSettings, setShowSettings] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
 
   // Audio recording state
@@ -2697,10 +2695,6 @@ export function NotesPage() {
       .catch((err) => console.error("Failed to purge trash:", err));
   }
 
-  if (showAdmin) {
-    return <AdminPage onBack={() => setShowAdmin(false)} />;
-  }
-
   if (showChangePassword) {
     return <ChangePasswordPage onBack={() => setShowChangePassword(false)} />;
   }
@@ -2717,6 +2711,7 @@ export function NotesPage() {
           setShowSettings(false);
           setShowChangePassword(true);
         }}
+        onSignOut={logout}
         onTrashRetentionChange={handleRetentionChangeFromSettings}
         editorSettings={editorSettings}
         updateEditorSetting={updateEditorSetting}
@@ -2772,8 +2767,6 @@ export function NotesPage() {
         onImportDirectory={(files) => handleImportFiles(files)}
         showImport={sidebarView === "notes"}
         onSettings={() => setShowSettings(true)}
-        onAdmin={() => setShowAdmin(true)}
-        showAdmin={user?.role === "admin"}
         onSignOut={logout}
       />
 

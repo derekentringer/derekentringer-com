@@ -235,6 +235,24 @@
 - [x] Recording bar pulsing dot — Stop button dot changed from square `animate-pulse` to round `animate-ping` matching the recording card style
 - [x] Clear button moved to header — Chat Clear button relocated from standalone row into the AI Assistant header bar (right-aligned via `ml-auto`)
 
+### Settings Redesign
+
+- [x] macOS-style sidebar layout — Left sidebar with grouped section tabs (General, Features, Data, Account, App, Admin), right content area with active section
+- [x] Grouped settings rows — `SettingsGroup` bordered cards with `SettingsRow` inline label/control pattern; removed old card titles
+- [x] Custom accent color picker — Native `<input type="color">` alongside preset swatches; `deriveAccentColors()` generates dark/light/hover variants from hex
+- [x] Font size dropdown — Replaced range slider with select dropdown (10–24px)
+- [x] Light theme readability — Darkened `muted-foreground` from `#999` to `#555` for better contrast
+- [x] Info tooltips repositioned — Changed from above (`bottom-full`) to below (`top-full left-0`) to prevent viewport overflow
+- [x] Settings section routing (web) — `/settings/:section?` URL params with slug mapping for direct navigation
+- [x] Keyboard shortcuts filter — Search input filters shortcuts by label or key combo
+- [x] AI Features grouped by category — Writing Assistance, Note Analysis, Search & Chat, Audio in separate cards
+- [x] Admin moved into Settings — AI Controls, Approved Emails, User Management sections visible only to admin users; admin button removed from ribbon
+- [x] Sign Out moved to Settings — Relocated from ribbon to My Account section with inline confirm
+- [x] Reset to Defaults — Clears editor and AI settings with inline confirmation; notes/account/data unaffected
+- [x] About section — Version, What's New (release notes modal from RELEASE_NOTES.md), Feedback placeholder
+- [x] Consistent destructive button pattern — All destructive actions use inline confirm (Clear Cache, Reset Defaults, Sign Out, Disable 2FA)
+- [x] `__APP_VERSION__` injected via Vite define from git tag on web
+
 ### Native Desktop Menus
 
 - [x] Native macOS/Windows Menu Bar — Full menu bar with File (New Note, Quick Switcher, Close Tab, Save, Export, Import), Edit (Undo/Redo/Cut/Copy/Paste, Find, Bold/Italic/Strikethrough/Code/Heading), View (Editor/Split/Live/Preview, Cycle View, Toggle Sidebar/Note List/Focus Mode, Command Palette, Full Screen), Window (Minimize, Maximize, Previous/Next Tab), Help (Keyboard Shortcuts, About). macOS App menu with About, Settings, Hide/Quit. Platform-conditional placement (Settings in App menu on Mac, File on Windows). Contextual menu items: formatting grayed out when editor not focused, note items grayed out when no note open. Menu events dispatched to command registry via Tauri events. Editor formatting commands wired through editorRef.

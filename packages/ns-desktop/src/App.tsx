@@ -22,8 +22,17 @@ const ACCENT_PRESETS: Record<string, { dark: string; light: string; darkHover: s
 
 type AuthView = "login" | "register" | "forgot-password";
 
-function applyAccentCssVars(theme: string, accentColor: string) {
-  const preset = ACCENT_PRESETS[accentColor] || ACCENT_PRESETS.lime;
+function deriveCustomColors(hex: string) {
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  const dk = (c: number, f: number) => Math.max(0, Math.round(c * f));
+  const h = (r2: number, g2: number, b2: number) => `#${[r2, g2, b2].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+  return { dark: hex, light: h(dk(r, 0.6), dk(g, 0.6), dk(b, 0.6)), darkHover: h(dk(r, 0.85), dk(g, 0.85), dk(b, 0.85)), lightHover: h(dk(r, 0.45), dk(g, 0.45), dk(b, 0.45)) };
+}
+
+function applyAccentCssVars(theme: string, accentColor: string, customHex?: string) {
+  const preset = accentColor === "custom" && customHex
+    ? deriveCustomColors(customHex)
+    : ACCENT_PRESETS[accentColor] || ACCENT_PRESETS.lime;
   const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
   const primary = isLight ? preset.light : preset.dark;
   const hover = isLight ? preset.lightHover : preset.darkHover;
@@ -42,12 +51,13 @@ function useThemeAttribute() {
         const parsed = raw ? JSON.parse(raw) : {};
         const theme = parsed.theme || "dark";
         const accentColor = parsed.accentColor || "lime";
+        const customAccentColor = parsed.customAccentColor || "#d4e157";
         if (theme === "dark" || theme === "light" || theme === "system") {
           document.documentElement.setAttribute("data-theme", theme);
         } else {
           document.documentElement.setAttribute("data-theme", "dark");
         }
-        applyAccentCssVars(theme, accentColor);
+        applyAccentCssVars(theme, accentColor, customAccentColor);
       } catch {
         document.documentElement.setAttribute("data-theme", "dark");
         applyAccentCssVars("dark", "lime");
