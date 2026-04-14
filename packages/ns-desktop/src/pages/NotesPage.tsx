@@ -572,10 +572,11 @@ export function NotesPage() {
     if (editorSettings.theme === "system") {
       return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     }
+    if (editorSettings.theme === "teams") return "dark" as const;
     return editorSettings.theme;
   })();
 
-  const accentHex = resolveAccentColor(editorSettings.accentColor, resolvedTheme);
+  const accentHex = editorSettings.theme === "teams" ? "#887dff" : resolveAccentColor(editorSettings.accentColor, resolvedTheme);
 
   // --- Load data on mount ---
 

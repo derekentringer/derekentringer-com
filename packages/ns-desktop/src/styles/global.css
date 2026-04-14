@@ -130,6 +130,38 @@
   }
 }
 
+/* MS Teams dark theme — Fluent UI tokens (brandTeamsV21) */
+[data-theme="teams"] {
+  --color-background: #242424;
+  --color-foreground: #ffffff;
+  --color-primary: #887dff;
+  --color-primary-hover: #7769fa;
+  --color-destructive: #dc2626;
+  --color-destructive-hover: #b91c1c;
+  --color-muted: #adadad;
+  --color-muted-foreground: #999999;
+  --color-border: #3d3d3d;
+  --color-input: #1f1f1f;
+  --color-card: #292929;
+  --color-card-foreground: #ffffff;
+  --color-sidebar: #1f1f1f;
+  --color-popover: #333333;
+  --color-popover-foreground: #ffffff;
+  --color-subtle: #2e2e2e;
+  --color-accent: rgba(136, 125, 255, 0.10);
+  --color-ring: #887dff;
+  --color-primary-contrast: #000000;
+  --color-error: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-hljs-keyword: #c792ea;
+  --color-hljs-string: #c3e88d;
+  --color-hljs-comment: #666666;
+  --color-hljs-number: #f78c6c;
+  --color-hljs-function: #82aaff;
+  --color-hljs-variable: #f07178;
+}
+
 /* Light theme overrides */
 [data-theme="light"] {
   --color-background: #ffffff;

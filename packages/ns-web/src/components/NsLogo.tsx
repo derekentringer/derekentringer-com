@@ -9,9 +9,9 @@ export function NsLogo({ className }: NsLogoProps) {
       xmlns="http://www.w3.org/2000/svg"
       className={className}
     >
-      <rect width="512" height="512" rx="96" fill="#d4e157" />
-      <rect x="228" y="128" width="56" height="256" rx="28" fill="#0f1117" />
-      <rect x="128" y="228" width="256" height="56" rx="28" fill="#0f1117" />
+      <rect width="512" height="512" rx="96" fill="var(--color-primary)" />
+      <rect x="228" y="128" width="56" height="256" rx="28" fill="var(--color-primary-contrast)" />
+      <rect x="128" y="228" width="256" height="56" rx="28" fill="var(--color-primary-contrast)" />
     </svg>
   );
 }

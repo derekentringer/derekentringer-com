@@ -247,14 +247,21 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
   function handleThemeChange(theme: ThemeMode) {
     updateEditorSetting("theme", theme);
     document.documentElement.setAttribute("data-theme", theme);
-    const colors = editorSettings.accentColor === "custom"
-      ? deriveAccentColors(editorSettings.customAccentColor)
-      : ACCENT_PRESETS[editorSettings.accentColor];
-    const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
-    document.documentElement.style.setProperty("--color-primary", isLight ? colors.light : colors.dark);
-    document.documentElement.style.setProperty("--color-primary-hover", isLight ? colors.lightHover : colors.darkHover);
-    document.documentElement.style.setProperty("--color-ring", isLight ? colors.light : colors.dark);
-    document.documentElement.style.setProperty("--color-primary-contrast", editorSettings.accentColor === "black" ? "#ffffff" : "#000000");
+    if (theme === "teams") {
+      document.documentElement.style.removeProperty("--color-primary");
+      document.documentElement.style.removeProperty("--color-primary-hover");
+      document.documentElement.style.removeProperty("--color-ring");
+      document.documentElement.style.removeProperty("--color-primary-contrast");
+    } else {
+      const colors = editorSettings.accentColor === "custom"
+        ? deriveAccentColors(editorSettings.customAccentColor)
+        : ACCENT_PRESETS[editorSettings.accentColor];
+      const isLight = theme === "light" || (theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
+      document.documentElement.style.setProperty("--color-primary", isLight ? colors.light : colors.dark);
+      document.documentElement.style.setProperty("--color-primary-hover", isLight ? colors.lightHover : colors.darkHover);
+      document.documentElement.style.setProperty("--color-ring", isLight ? colors.light : colors.dark);
+      document.documentElement.style.setProperty("--color-primary-contrast", editorSettings.accentColor === "black" ? "#ffffff" : "#000000");
+    }
   }
 
   function handleAccentColorChange(preset: AccentColorPreset) {
@@ -441,6 +448,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                   <RadioOption name="theme" value={"dark" as ThemeMode} currentValue={editorSettings.theme} label="Dark" onChange={handleThemeChange} />
                   <RadioOption name="theme" value={"light" as ThemeMode} currentValue={editorSettings.theme} label="Light" onChange={handleThemeChange} />
                   <RadioOption name="theme" value={"system" as ThemeMode} currentValue={editorSettings.theme} label="System" onChange={handleThemeChange} />
+                  <RadioOption name="theme" value={"teams" as ThemeMode} currentValue={editorSettings.theme} label="Teams" onChange={handleThemeChange} />
                 </div>
               </SettingsRow>
               <SettingsRow label="Accent color">

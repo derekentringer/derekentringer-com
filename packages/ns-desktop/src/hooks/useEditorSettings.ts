@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 
-export type ThemeMode = "dark" | "light" | "system";
+export type ThemeMode = "dark" | "light" | "system" | "teams";
 export type ViewModeDefault = "editor" | "split" | "preview";
 export type TabSizeOption = 2 | 4;
 export type CursorStyle = "line" | "block" | "underline";
@@ -61,7 +61,7 @@ export interface EditorSettings {
 const STORAGE_KEY = "ns-editor-settings";
 
 const VALID_VIEW_MODES: ViewModeDefault[] = ["editor", "split", "preview"];
-const VALID_THEMES: ThemeMode[] = ["dark", "light", "system"];
+const VALID_THEMES: ThemeMode[] = ["dark", "light", "system", "teams"];
 const VALID_TAB_SIZES: TabSizeOption[] = [2, 4];
 const VALID_CURSOR_STYLES: CursorStyle[] = ["line", "block", "underline"];
 
