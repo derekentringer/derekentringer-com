@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import type { AudioMode } from "../hooks/useAiSettings.ts";
-import { AudioWaveform } from "./AudioWaveform.tsx";
+import { useAudioLevel } from "../hooks/useAudioLevel.ts";
 import { FolderPicker, type FolderOption } from "./FolderPicker.tsx";
 
 const MODE_LABELS: Record<AudioMode, string> = {
@@ -63,15 +63,15 @@ function ProcessingStatus() {
 }
 
 export function RecordingBar({ state, elapsed, mode, stream, audioLevel, folderId, folders, onFolderChange, onStop }: RecordingBarProps) {
-  const [waveLevel, setWaveLevel] = useState(0);
+  const level = useAudioLevel(stream, state === "recording", audioLevel);
   const borderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (borderRef.current) {
-      const opacity = 0.15 + waveLevel * 0.85;
+      const opacity = 0.15 + level * 0.85;
       borderRef.current.style.backgroundColor = `rgba(212, 225, 87, ${opacity})`;
     }
-  }, [waveLevel]);
+  }, [level]);
 
   if (state === "processing") {
     return <ProcessingStatus />;
@@ -102,12 +102,6 @@ export function RecordingBar({ state, elapsed, mode, stream, audioLevel, folderI
 
         {/* Elapsed time */}
         <span className="text-xs text-foreground tabular-nums shrink-0">{formatTime(elapsed)}</span>
-
-        {/* Waveform */}
-        {/* Waveform — hidden for UI testing, still active for border pulse */}
-        <div className="hidden">
-          <AudioWaveform stream={stream} isRecording={true} audioLevel={audioLevel} width={80} height={20} onLevelChange={setWaveLevel} />
-        </div>
 
         {/* Mode label */}
         <span className="text-xs text-foreground shrink-0">{MODE_LABELS[mode]}</span>
