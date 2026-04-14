@@ -2134,8 +2134,6 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         onImportDirectory={(files) => handleImportFiles(files)}
         showImport={sidebarView === "notes"}
         onSettings={() => navigate("/settings")}
-        onAdmin={() => navigate("/admin")}
-        showAdmin={user?.role === "admin"}
         onSignOut={logout}
       />
 

@@ -4,9 +4,25 @@ export type ThemeMode = "dark" | "light" | "system";
 export type ViewModeDefault = "editor" | "live" | "split" | "preview";
 export type TabSizeOption = 2 | 4;
 export type CursorStyle = "line" | "block" | "underline";
-export type AccentColorPreset = "lime" | "blue" | "cyan" | "purple" | "orange" | "teal" | "pink" | "red" | "amber" | "black" | "white";
+export type AccentColorPreset = "lime" | "blue" | "cyan" | "purple" | "orange" | "teal" | "pink" | "red" | "amber" | "black" | "white" | "custom";
 
-export const ACCENT_PRESETS: Record<AccentColorPreset, { dark: string; light: string; darkHover: string; lightHover: string }> = {
+/** Derive dark/light/hover variants from a single hex color */
+export function deriveAccentColors(hex: string): { dark: string; light: string; darkHover: string; lightHover: string } {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const darken = (c: number, f: number) => Math.max(0, Math.round(c * f));
+  const lighten = (c: number, f: number) => Math.min(255, Math.round(c + (255 - c) * f));
+  const toHex = (r2: number, g2: number, b2: number) => `#${[r2, g2, b2].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+  return {
+    dark: hex,
+    light: toHex(darken(r, 0.6), darken(g, 0.6), darken(b, 0.6)),
+    darkHover: toHex(darken(r, 0.85), darken(g, 0.85), darken(b, 0.85)),
+    lightHover: toHex(darken(r, 0.45), darken(g, 0.45), darken(b, 0.45)),
+  };
+}
+
+export const ACCENT_PRESETS: Record<Exclude<AccentColorPreset, "custom">, { dark: string; light: string; darkHover: string; lightHover: string }> = {
   lime:   { dark: "#d4e157", light: "#7c8a00", darkHover: "#c0ca33", lightHover: "#636e00" },
   blue:   { dark: "#42a5f5", light: "#1565c0", darkHover: "#1e88e5", lightHover: "#0d47a1" },
   cyan:   { dark: "#26c6da", light: "#00838f", darkHover: "#00acc1", lightHover: "#006064" },
@@ -20,9 +36,11 @@ export const ACCENT_PRESETS: Record<AccentColorPreset, { dark: string; light: st
   white:  { dark: "#ffffff", light: "#666666", darkHover: "#e0e0e0", lightHover: "#444444" },
 };
 
-const VALID_ACCENT_COLORS: AccentColorPreset[] = Object.keys(ACCENT_PRESETS) as AccentColorPreset[];
+const VALID_ACCENT_COLORS: AccentColorPreset[] = [...Object.keys(ACCENT_PRESETS) as AccentColorPreset[], "custom"];
 
-export function resolveAccentColor(preset: AccentColorPreset, theme: "dark" | "light"): string {
+export function resolveAccentColor(preset: AccentColorPreset, theme: "dark" | "light", customHex?: string): string {
+  if (preset === "custom" && customHex) return deriveAccentColors(customHex)[theme];
+  if (preset === "custom") return "#d4e157";
   return ACCENT_PRESETS[preset][theme];
 }
 
@@ -36,6 +54,7 @@ export interface EditorSettings {
   editorFontSize: number;
   maxCachedNotes: number;
   accentColor: AccentColorPreset;
+  customAccentColor: string;
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
 }
@@ -57,6 +76,7 @@ const DEFAULT_SETTINGS: EditorSettings = {
   editorFontSize: 14,
   maxCachedNotes: 100,
   accentColor: "lime",
+  customAccentColor: "#d4e157",
   cursorStyle: "line",
   cursorBlink: true,
 };
@@ -90,6 +110,9 @@ function loadSettings(): EditorSettings {
       accentColor: VALID_ACCENT_COLORS.includes(parsed.accentColor)
         ? parsed.accentColor
         : "lime",
+      customAccentColor: typeof parsed.customAccentColor === "string" && /^#[0-9a-fA-F]{6}$/.test(parsed.customAccentColor)
+        ? parsed.customAccentColor
+        : "#d4e157",
       cursorStyle: VALID_CURSOR_STYLES.includes(parsed.cursorStyle)
         ? parsed.cursorStyle
         : "line",

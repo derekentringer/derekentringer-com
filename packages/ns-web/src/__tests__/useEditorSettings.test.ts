@@ -20,6 +20,7 @@ describe("useEditorSettings", () => {
       editorFontSize: 14,
       maxCachedNotes: 100,
       accentColor: "lime",
+      customAccentColor: "#d4e157",
       cursorStyle: "line",
       cursorBlink: true,
     });
@@ -38,6 +39,7 @@ describe("useEditorSettings", () => {
         editorFontSize: 16,
         maxCachedNotes: 200,
         accentColor: "blue",
+        customAccentColor: "#ff0000",
         cursorStyle: "block",
         cursorBlink: false,
       }),
@@ -55,6 +57,7 @@ describe("useEditorSettings", () => {
       editorFontSize: 16,
       maxCachedNotes: 200,
       accentColor: "blue",
+      customAccentColor: "#ff0000",
       cursorStyle: "block",
       cursorBlink: false,
     });
@@ -104,6 +107,7 @@ describe("useEditorSettings", () => {
       editorFontSize: 16,
       maxCachedNotes: 200,
       accentColor: "lime",
+      customAccentColor: "#d4e157",
       cursorStyle: "line",
       cursorBlink: true,
     });
@@ -124,6 +128,7 @@ describe("useEditorSettings", () => {
       editorFontSize: 14,
       maxCachedNotes: 100,
       accentColor: "lime",
+      customAccentColor: "#d4e157",
       cursorStyle: "line",
       cursorBlink: true,
     });
@@ -147,6 +152,7 @@ describe("useEditorSettings", () => {
       editorFontSize: 14,
       maxCachedNotes: 100,
       accentColor: "lime",
+      customAccentColor: "#d4e157",
       cursorStyle: "line",
       cursorBlink: true,
     });

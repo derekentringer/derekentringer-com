@@ -430,8 +430,8 @@
   --color-primary-hover: #636e00;
   --color-destructive: #dc2626;
   --color-destructive-hover: #b91c1c;
-  --color-muted: #666666;
-  --color-muted-foreground: #999999;
+  --color-muted: #444444;
+  --color-muted-foreground: #555555;
   --color-border: #e0e0e0;
   --color-input: #f5f5f5;
   --color-card: #f9f9f9;
@@ -461,8 +461,8 @@
     --color-primary-hover: #636e00;
     --color-destructive: #dc2626;
     --color-destructive-hover: #b91c1c;
-    --color-muted: #666666;
-    --color-muted-foreground: #999999;
+    --color-muted: #555555;
+    --color-muted-foreground: #666666;
     --color-border: #e0e0e0;
     --color-input: #f5f5f5;
     --color-card: #f9f9f9;

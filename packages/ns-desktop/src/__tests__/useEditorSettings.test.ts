@@ -42,6 +42,7 @@ describe("useEditorSettings", () => {
       editorFontSize: 16,
       maxCachedNotes: 50,
       accentColor: "blue",
+      customAccentColor: "#d4e157",
       cursorStyle: "block",
       cursorBlink: false,
       versionIntervalMinutes: 5,

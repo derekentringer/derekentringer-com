@@ -180,6 +180,24 @@
 - [x] Recording bar pulsing dot — Stop button dot changed from square `animate-pulse` to round `animate-ping` matching the recording card style
 - [x] Clear button moved to header — Chat Clear button relocated from standalone row into the AI Assistant header bar (right-aligned via `ml-auto`)
 
+### Settings Redesign
+
+- [x] macOS-style sidebar layout — Left sidebar with grouped section tabs (General, Features, Data, Account, App, Admin), right content area with active section
+- [x] Grouped settings rows — `SettingsGroup` bordered cards with `SettingsRow` inline label/control pattern; removed old card titles
+- [x] Custom accent color picker — Native `<input type="color">` alongside preset swatches; `deriveAccentColors()` generates dark/light/hover variants from hex
+- [x] Font size dropdown — Replaced range slider with select dropdown (10–24px)
+- [x] Light theme readability — Darkened `muted-foreground` from `#999` to `#555` for better contrast
+- [x] Info tooltips repositioned — Changed from above to below to prevent viewport overflow
+- [x] Keyboard shortcuts filter — Search input filters shortcuts by label or key combo
+- [x] AI Features grouped by category — Writing Assistance, Note Analysis, Search & Chat, Audio in separate cards
+- [x] Admin moved into Settings — AI Controls, Approved Emails, User Management sections visible only to admin users; admin button removed from ribbon
+- [x] Sign Out moved to Settings — Relocated from ribbon to My Account section with inline confirm
+- [x] Reset to Defaults — Clears editor and AI settings with inline confirmation; notes/account/data unaffected
+- [x] About section — Version, What's New (release notes modal from RELEASE_NOTES.md), Feedback placeholder
+- [x] Consistent destructive button pattern — All destructive actions use inline confirm
+- [x] Default recording source changed to meeting mode — Greyed out when unsupported
+- [x] Transcription mode removed from Settings — Ribbon buttons are the primary UI for mode selection
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)

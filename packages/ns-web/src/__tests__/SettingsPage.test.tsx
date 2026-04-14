@@ -51,61 +51,66 @@ function renderSettingsPage() {
   );
 }
 
-describe("SettingsPage", () => {
-  it("renders Settings heading", () => {
-    renderSettingsPage();
-    expect(screen.getByText("Settings")).toBeInTheDocument();
-  });
+async function clickTab(name: string) {
+  const tab = screen.getByRole("button", { name });
+  await userEvent.click(tab);
+}
 
+describe("SettingsPage", () => {
   it("renders back to notes link", () => {
     renderSettingsPage();
     expect(screen.getByText("Back")).toBeInTheDocument();
   });
 
-  // --- Section headings ---
+  // --- Sidebar navigation tabs ---
 
-  it("renders all section headings", () => {
+  it("renders all sidebar navigation tabs", () => {
     renderSettingsPage();
-    expect(screen.getByText("Editor Preferences")).toBeInTheDocument();
-    expect(screen.getByText("Appearance")).toBeInTheDocument();
-    expect(screen.getByText("Trash")).toBeInTheDocument();
-    expect(screen.getByText("Version History")).toBeInTheDocument();
-    expect(screen.getByText("AI Features")).toBeInTheDocument();
-    expect(screen.getByText("Offline Cache")).toBeInTheDocument();
-    expect(screen.getByText("Account")).toBeInTheDocument();
-    expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Appearance" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Editor" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keyboard Shortcuts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI Features" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Offline Cache" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Trash" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Version History" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "My Account" })).toBeInTheDocument();
   });
 
   // --- Account ---
 
-  it("renders Change Password button in Account section", () => {
+  it("renders Change button in My Account section", async () => {
     renderSettingsPage();
-    expect(screen.getByText("Change Password")).toBeInTheDocument();
+    await clickTab("My Account");
+    expect(screen.getByText("Change")).toBeInTheDocument();
   });
 
   // --- Editor Preferences ---
 
-  it("renders default view mode radio group", () => {
+  it("renders default view mode radio group", async () => {
     renderSettingsPage();
+    await clickTab("Editor");
     expect(screen.getByRole("radiogroup", { name: "Default view mode" })).toBeInTheDocument();
     expect(screen.getByLabelText("Editor")).toBeInTheDocument();
     expect(screen.getByLabelText("Split")).toBeInTheDocument();
     expect(screen.getByLabelText("Preview")).toBeInTheDocument();
   });
 
-  it("renders line numbers and word wrap toggles", () => {
+  it("renders line numbers and word wrap toggles", async () => {
     renderSettingsPage();
+    await clickTab("Editor");
     expect(screen.getByText("Line numbers")).toBeInTheDocument();
     expect(screen.getByText("Word wrap")).toBeInTheDocument();
   });
 
-  it("renders auto-save delay select", () => {
+  it("renders auto-save delay select", async () => {
     renderSettingsPage();
+    await clickTab("Editor");
     expect(screen.getByLabelText("Auto-save delay")).toBeInTheDocument();
   });
 
-  it("renders tab size radio group", () => {
+  it("renders tab size radio group", async () => {
     renderSettingsPage();
+    await clickTab("Editor");
     expect(screen.getByRole("radiogroup", { name: "Tab size" })).toBeInTheDocument();
     expect(screen.getByLabelText("2 spaces")).toBeInTheDocument();
     expect(screen.getByLabelText("4 spaces")).toBeInTheDocument();
@@ -113,6 +118,7 @@ describe("SettingsPage", () => {
 
   it("changing view mode persists to localStorage", async () => {
     renderSettingsPage();
+    await clickTab("Editor");
     await userEvent.click(screen.getByLabelText("Split"));
     const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
     expect(stored.defaultViewMode).toBe("split");
@@ -120,13 +126,14 @@ describe("SettingsPage", () => {
 
   it("changing auto-save delay persists to localStorage", async () => {
     renderSettingsPage();
+    await clickTab("Editor");
     const select = screen.getByLabelText("Auto-save delay");
     await userEvent.selectOptions(select, "2000");
     const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
     expect(stored.autoSaveDelay).toBe(2000);
   });
 
-  // --- Appearance ---
+  // --- Appearance (default active section) ---
 
   it("renders theme radio group", () => {
     renderSettingsPage();
@@ -136,7 +143,7 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("System")).toBeInTheDocument();
   });
 
-  it("renders font size slider", () => {
+  it("renders font size select", () => {
     renderSettingsPage();
     expect(screen.getByLabelText("Editor font size")).toBeInTheDocument();
   });
@@ -167,13 +174,15 @@ describe("SettingsPage", () => {
 
   // --- AI Features ---
 
-  it("renders master AI toggle", () => {
+  it("renders master AI toggle", async () => {
     renderSettingsPage();
+    await clickTab("AI Features");
     expect(screen.getByText("Enable AI features")).toBeInTheDocument();
   });
 
-  it("renders eight individual AI toggle switches", () => {
+  it("renders eight individual AI toggle switches", async () => {
     renderSettingsPage();
+    await clickTab("AI Features");
     expect(screen.getByText("Inline completions")).toBeInTheDocument();
     expect(screen.getByText("Continue writing")).toBeInTheDocument();
     expect(screen.getByText("Summarize")).toBeInTheDocument();
@@ -184,41 +193,43 @@ describe("SettingsPage", () => {
     expect(screen.getByText("AI assistant chat")).toBeInTheDocument();
   });
 
-  it("master AI defaults to on", () => {
+  it("master AI defaults to on", async () => {
     renderSettingsPage();
-    // Master toggle + 8 individual + line numbers + word wrap + cursor blink = 12 switches
+    await clickTab("AI Features");
     const switches = screen.getAllByRole("switch");
-    // Master AI toggle is the fourth switch (after line numbers, word wrap, cursor blink)
-    const masterSwitch = switches[3];
+    // Master AI toggle is the first switch on this section
+    const masterSwitch = switches[0];
     expect(masterSwitch).toHaveAttribute("aria-checked", "true");
   });
 
   it("toggling master AI off disables individual toggles", async () => {
     renderSettingsPage();
+    await clickTab("AI Features");
     const switches = screen.getAllByRole("switch");
-    // Master is index 3
-    await userEvent.click(switches[3]);
-    expect(switches[3]).toHaveAttribute("aria-checked", "false");
+    // Master is index 0 on AI Features section
+    await userEvent.click(switches[0]);
+    expect(switches[0]).toHaveAttribute("aria-checked", "false");
 
     // All AI toggles after master should be disabled
-    for (let i = 4; i <= 11; i++) {
+    for (let i = 1; i <= 8; i++) {
       expect(switches[i]).toBeDisabled();
     }
   });
 
   it("toggling an AI switch persists to localStorage", async () => {
     renderSettingsPage();
+    await clickTab("AI Features");
     const switches = screen.getAllByRole("switch");
-    // Inline completions is at index 4
-    await userEvent.click(switches[4]);
+    // Inline completions is at index 1 (after master)
+    await userEvent.click(switches[1]);
 
-    expect(switches[4]).toHaveAttribute("aria-checked", "true");
+    expect(switches[1]).toHaveAttribute("aria-checked", "true");
 
     const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
     expect(stored.completions).toBe(true);
   });
 
-  it("reads initial AI state from localStorage", () => {
+  it("reads initial AI state from localStorage", async () => {
     localStorage.setItem(
       "ns-ai-settings",
       JSON.stringify({
@@ -233,18 +244,20 @@ describe("SettingsPage", () => {
     );
 
     renderSettingsPage();
+    await clickTab("AI Features");
     const switches = screen.getAllByRole("switch");
-    // Index 4 = completions, index 6 = summarize, index 7 = tagSuggestions
-    expect(switches[4]).toHaveAttribute("aria-checked", "true");  // completions
-    expect(switches[6]).toHaveAttribute("aria-checked", "false"); // summarize
-    expect(switches[7]).toHaveAttribute("aria-checked", "true");  // tagSuggestions
+    // Index 1 = completions, index 4 = summarize, index 5 = tagSuggestions
+    expect(switches[1]).toHaveAttribute("aria-checked", "true");  // completions
+    expect(switches[4]).toHaveAttribute("aria-checked", "false"); // summarize
+    expect(switches[5]).toHaveAttribute("aria-checked", "true");  // tagSuggestions
   });
 
   it("shows completion style radio group when completions enabled", async () => {
     renderSettingsPage();
+    await clickTab("AI Features");
     const switches = screen.getAllByRole("switch");
-    // Enable completions (index 4)
-    await userEvent.click(switches[4]);
+    // Enable completions (index 1)
+    await userEvent.click(switches[1]);
 
     expect(screen.getByRole("radiogroup", { name: "Completion style" })).toBeInTheDocument();
     // Note: "Continue writing" label exists both as a toggle and as a radio option
@@ -263,38 +276,44 @@ describe("SettingsPage", () => {
       }),
     );
     renderSettingsPage();
+    await clickTab("AI Features");
     expect(screen.getByLabelText("Completion delay")).toBeInTheDocument();
   });
 
-  it("hides style radio group when completions disabled", () => {
+  it("hides style radio group when completions disabled", async () => {
     renderSettingsPage();
+    await clickTab("AI Features");
     expect(screen.queryByRole("radiogroup", { name: "Completion style" })).not.toBeInTheDocument();
   });
 
-  it("Q&A toggle is disabled when semantic search is off", () => {
+  it("Q&A toggle is disabled when semantic search is off", async () => {
     renderSettingsPage();
+    await clickTab("AI Features");
     const switches = screen.getAllByRole("switch");
-    // Q&A assistant is the last AI toggle (index 11)
-    const qaSwitch = switches[11];
+    // Q&A assistant is at index 7 (after semantic search at 6)
+    const qaSwitch = switches[7];
     expect(qaSwitch).toBeDisabled();
   });
 
   // --- Offline Cache ---
 
-  it("renders offline cache section", () => {
+  it("renders offline cache section", async () => {
     renderSettingsPage();
+    await clickTab("Offline Cache");
     expect(screen.getByText("Cached notes")).toBeInTheDocument();
     expect(screen.getByText("Last synced")).toBeInTheDocument();
     expect(screen.getByLabelText("Max cached notes")).toBeInTheDocument();
   });
 
-  it("renders clear cache button", () => {
+  it("renders clear cache button", async () => {
     renderSettingsPage();
+    await clickTab("Offline Cache");
     expect(screen.getByText("Clear Cache")).toBeInTheDocument();
   });
 
   it("clear cache shows confirmation", async () => {
     renderSettingsPage();
+    await clickTab("Offline Cache");
     await userEvent.click(screen.getByText("Clear Cache"));
     expect(screen.getByText("Clear all cached data?")).toBeInTheDocument();
     expect(screen.getByText("Confirm")).toBeInTheDocument();
@@ -303,15 +322,16 @@ describe("SettingsPage", () => {
 
   // --- Keyboard Shortcuts ---
 
-  it("renders Keyboard Shortcuts heading", () => {
+  it("renders Keyboard Shortcuts tab", () => {
     renderSettingsPage();
-    expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keyboard Shortcuts" })).toBeInTheDocument();
   });
 
   // --- Trash Retention ---
 
   it("renders trash retention dropdown with default value", async () => {
     renderSettingsPage();
+    await clickTab("Trash");
     const select = await screen.findByLabelText("Trash retention period");
     expect(select).toBeInTheDocument();
     expect((select as HTMLSelectElement).value).toBe("30");
@@ -320,6 +340,7 @@ describe("SettingsPage", () => {
   it("renders trash retention dropdown with value from API", async () => {
     mockGetTrashRetention.mockResolvedValue({ days: 7 });
     renderSettingsPage();
+    await clickTab("Trash");
     const select = await screen.findByLabelText("Trash retention period");
     await waitFor(() => {
       expect((select as HTMLSelectElement).value).toBe("7");
@@ -329,13 +350,15 @@ describe("SettingsPage", () => {
   it("changing trash retention calls setTrashRetention", async () => {
     mockSetTrashRetention.mockResolvedValue({ days: 14 });
     renderSettingsPage();
+    await clickTab("Trash");
     const select = await screen.findByLabelText("Trash retention period");
     await userEvent.selectOptions(select, "14");
     expect(mockSetTrashRetention).toHaveBeenCalledWith(14);
   });
 
-  it("displays all shortcut descriptions from command registry", () => {
+  it("displays all shortcut descriptions from command registry", async () => {
     renderSettingsPage();
+    await clickTab("Keyboard Shortcuts");
     expect(screen.getByText("Save Note")).toBeInTheDocument();
     expect(screen.getByText("Bold")).toBeInTheDocument();
     expect(screen.getByText("Italic")).toBeInTheDocument();
@@ -349,6 +372,7 @@ describe("SettingsPage", () => {
 
   it("renders version interval dropdown with default value", async () => {
     renderSettingsPage();
+    await clickTab("Version History");
     const select = await screen.findByLabelText("Version capture interval");
     expect(select).toBeInTheDocument();
     expect((select as HTMLSelectElement).value).toBe("15");
@@ -357,6 +381,7 @@ describe("SettingsPage", () => {
   it("renders version interval dropdown with value from API", async () => {
     mockGetVersionInterval.mockResolvedValue({ minutes: 5 });
     renderSettingsPage();
+    await clickTab("Version History");
     const select = await screen.findByLabelText("Version capture interval");
     await waitFor(() => {
       expect((select as HTMLSelectElement).value).toBe("5");
@@ -366,6 +391,7 @@ describe("SettingsPage", () => {
   it("changing version interval calls setVersionInterval", async () => {
     mockSetVersionInterval.mockResolvedValue({ minutes: 30 });
     renderSettingsPage();
+    await clickTab("Version History");
     const select = await screen.findByLabelText("Version capture interval");
     await userEvent.selectOptions(select, "30");
     expect(mockSetVersionInterval).toHaveBeenCalledWith(30);
