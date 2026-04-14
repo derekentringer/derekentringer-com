@@ -289,6 +289,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           content: r.content,
           sources: (r.sources as QASource[] | undefined) ?? undefined,
           meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+          noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
         }));
         setMessages(loaded);
         lastSavedRef.current = JSON.stringify(loaded);
