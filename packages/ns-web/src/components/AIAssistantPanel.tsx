@@ -162,7 +162,7 @@ const RECORDING_ACTIVE_LABELS: Record<string, string> = {
   meeting: "Meeting Recording",
   lecture: "Lecture Recording",
   memo: "Memo Recording",
-  verbatim: "Recording",
+  verbatim: "Verbatim Recording",
 };
 
 interface MeetingSummaryData {
@@ -193,7 +193,7 @@ const RECORDING_ENDED_LABELS: Record<string, string> = {
   meeting: "Meeting Ended",
   lecture: "Lecture Ended",
   memo: "Memo Saved",
-  verbatim: "Recording Ended",
+  verbatim: "Verbatim Saved",
 };
 
 /** Which heading to extract list items from, per recording mode */
