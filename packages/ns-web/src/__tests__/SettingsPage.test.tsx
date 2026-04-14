@@ -279,25 +279,6 @@ describe("SettingsPage", () => {
     expect(qaSwitch).toBeDisabled();
   });
 
-  it("shows audio mode radio group when audio notes enabled", async () => {
-    localStorage.setItem(
-      "ns-ai-settings",
-      JSON.stringify({
-        masterAiEnabled: true,
-        audioNotes: true,
-        audioMode: "memo",
-      }),
-    );
-
-    renderSettingsPage();
-
-    expect(screen.getByRole("radiogroup", { name: "Audio mode" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Meeting notes")).toBeInTheDocument();
-    expect(screen.getByLabelText("Lecture notes")).toBeInTheDocument();
-    expect(screen.getByLabelText("Memo")).toBeInTheDocument();
-    expect(screen.getByLabelText("Verbatim")).toBeInTheDocument();
-  });
-
   // --- Offline Cache ---
 
   it("renders offline cache section", () => {

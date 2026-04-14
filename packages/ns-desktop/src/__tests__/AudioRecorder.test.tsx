@@ -159,13 +159,13 @@ describe("AudioRecorder", () => {
     vi.useRealTimers();
   });
 
-  it("hides source section in dropdown when meeting is not supported", async () => {
+  it("disables meeting option in dropdown when meeting is not supported", async () => {
     vi.useFakeTimers();
     mockInvoke.mockResolvedValue(false);
     render(
       <AudioRecorder
         defaultMode="memo"
-        recordingSource="microphone"
+        recordingSource="meeting"
         onRecordingSourceChange={vi.fn()}
         onNoteCreated={vi.fn()}
         onError={vi.fn()}
@@ -187,8 +187,11 @@ describe("AudioRecorder", () => {
       vi.advanceTimersByTime(500);
     });
 
-    expect(screen.queryByText("Source")).not.toBeInTheDocument();
-    expect(screen.queryByText("Microphone only")).not.toBeInTheDocument();
+    // Source section is always visible now
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Meeting option should be disabled
+    const meetingBtn = screen.getByText("Meeting mode");
+    expect(meetingBtn.closest("button")).toBeDisabled();
 
     vi.useRealTimers();
   });

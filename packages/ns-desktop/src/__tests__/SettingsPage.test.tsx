@@ -427,28 +427,6 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Audio notes")).toBeInTheDocument();
   });
 
-  it("shows audio mode radios when audio notes enabled", () => {
-    localStorage.setItem(
-      "ns-ai-settings",
-      JSON.stringify({ masterAiEnabled: true, audioNotes: true }),
-    );
-    renderSettingsPage();
-    expect(screen.getByRole("radiogroup", { name: "Audio mode" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Meeting notes")).toBeInTheDocument();
-    expect(screen.getByLabelText("Lecture notes")).toBeInTheDocument();
-    expect(screen.getByLabelText("Memo")).toBeInTheDocument();
-    expect(screen.getByLabelText("Verbatim")).toBeInTheDocument();
-  });
-
-  it("hides audio mode radios when audio notes disabled", () => {
-    localStorage.setItem(
-      "ns-ai-settings",
-      JSON.stringify({ masterAiEnabled: true, audioNotes: false }),
-    );
-    renderSettingsPage();
-    expect(screen.queryByRole("radiogroup", { name: "Audio mode" })).not.toBeInTheDocument();
-  });
-
   it("shows recording source radios when audio notes enabled", () => {
     localStorage.setItem(
       "ns-ai-settings",

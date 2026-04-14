@@ -38,7 +38,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   semanticSearch: false,
   audioNotes: false,
   audioMode: "meeting",
-  recordingSource: "microphone",
+  recordingSource: "meeting",
   qaAssistant: false,
 };
 
@@ -63,7 +63,7 @@ function loadSettings(): AiSettings {
       semanticSearch: typeof parsed.semanticSearch === "boolean" ? parsed.semanticSearch : false,
       audioNotes: typeof parsed.audioNotes === "boolean" ? parsed.audioNotes : false,
       audioMode: VALID_AUDIO_MODES.includes(parsed.audioMode) ? parsed.audioMode : "memo",
-      recordingSource: VALID_RECORDING_SOURCES.includes(parsed.recordingSource) ? parsed.recordingSource : "microphone",
+      recordingSource: VALID_RECORDING_SOURCES.includes(parsed.recordingSource) ? parsed.recordingSource : "meeting",
       qaAssistant: typeof parsed.qaAssistant === "boolean" ? parsed.qaAssistant : false,
     };
   } catch {

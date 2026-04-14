@@ -600,31 +600,34 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       </button>
       {showModes && state === "idle" && (
         <div className="absolute top-0 left-full ml-1 bg-card border border-border rounded-md shadow-lg py-1 z-50 min-w-[160px]">
-          {meetingSupported && (
-            <>
-              <div className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wider">Source</div>
-              {(["microphone", "meeting"] as RecordingSource[]).map((src) => (
-                <button
-                  key={src}
-                  onClick={() => {
-                    onRecordingSourceChange(src);
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-sm transition-colors cursor-pointer ${
-                    src === recordingSource
-                      ? "text-foreground bg-accent"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                  }`}
-                  title={src === "meeting" ? "Captures system audio + microphone via macOS Screen Recording" : undefined}
-                >
-                  {SOURCE_LABELS[src]}
-                  {src === recordingSource && (
-                    <span className="ml-1 text-xs">✓</span>
-                  )}
-                </button>
-              ))}
-              <div className="border-t border-border my-1" />
-            </>
-          )}
+          <div className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wider">Source</div>
+          {(["meeting", "microphone"] as RecordingSource[]).map((src) => {
+            const disabled = src === "meeting" && !meetingSupported;
+            const active = src === recordingSource || (src === "microphone" && recordingSource === "meeting" && !meetingSupported);
+            return (
+              <button
+                key={src}
+                onClick={() => {
+                  if (!disabled) onRecordingSourceChange(src);
+                }}
+                disabled={disabled}
+                className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                  disabled
+                    ? "text-muted-foreground/40 cursor-not-allowed"
+                    : active
+                      ? "text-foreground bg-accent cursor-pointer"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer"
+                }`}
+                title={disabled ? "Meeting mode not available on this system" : src === "meeting" ? "Captures system audio + microphone" : "Captures microphone only"}
+              >
+                {SOURCE_LABELS[src]}
+                {active && !disabled && (
+                  <span className="ml-1 text-xs">✓</span>
+                )}
+              </button>
+            );
+          })}
+          <div className="border-t border-border my-1" />
           <div className="px-3 py-1 text-xs text-muted-foreground uppercase tracking-wider">Mode</div>
           {MODES.map((m) => (
             <button

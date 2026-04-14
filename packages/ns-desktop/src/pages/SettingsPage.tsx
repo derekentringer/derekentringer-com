@@ -10,7 +10,7 @@ import {
   type CursorStyle,
   type AccentColorPreset,
 } from "../hooks/useEditorSettings.ts";
-import type { AiSettings, CompletionStyle, AudioMode, RecordingSource } from "../hooks/useAiSettings.ts";
+import type { AiSettings, CompletionStyle, RecordingSource } from "../hooks/useAiSettings.ts";
 import { useAuth } from "../context/AuthContext.tsx";
 import { setupTotp, verifyTotpSetup, disableTotp, getMe } from "../api/auth.ts";
 
@@ -125,13 +125,6 @@ const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] =
   { value: "continue", label: "Continue writing", info: "Predicts and continues your natural writing style." },
   { value: "markdown", label: "Markdown assist", info: "Suggests markdown formatting like headings, lists, and code blocks." },
   { value: "brief", label: "Brief", info: "Short, concise completions — a few words at a time." },
-];
-
-const AUDIO_MODE_OPTIONS: { value: AudioMode; label: string; info: string }[] = [
-  { value: "meeting", label: "Meeting notes", info: "Structures transcript into attendees, discussion points, decisions, and action items." },
-  { value: "lecture", label: "Lecture notes", info: "Organizes into key concepts, definitions, important points, and a summary." },
-  { value: "memo", label: "Memo", info: "Cleans up speech into a well-written memo. Fixes grammar and filler words." },
-  { value: "verbatim", label: "Verbatim", info: "Minimal processing — adds punctuation and paragraphs but keeps your exact words." },
 ];
 
 const RECORDING_SOURCE_OPTIONS: { value: RecordingSource; label: string; info: string }[] = [
@@ -696,24 +689,6 @@ export function SettingsPage({ onBack, onChangePassword, onTrashRetentionChange,
                             />
                             <span className="text-sm text-muted-foreground">{srcLabel}</span>
                             <InfoIcon tooltip={srcInfo} />
-                          </label>
-                        ))}
-                      </div>
-                      <div className="pb-3 pl-1" role="radiogroup" aria-label="Audio mode">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider">Transcription mode</span>
-                        {AUDIO_MODE_OPTIONS.map(({ value, label: modeLabel, info: modeInfo }) => (
-                          <label key={value} className="flex items-center gap-2 py-1 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="audioMode"
-                              value={value}
-                              checked={aiSettings.audioMode === value}
-                              onChange={() => updateAiSetting("audioMode", value)}
-                              className="accent-primary"
-                              aria-label={modeLabel}
-                            />
-                            <span className="text-sm text-muted-foreground">{modeLabel}</span>
-                            <InfoIcon tooltip={modeInfo} />
                           </label>
                         ))}
                       </div>

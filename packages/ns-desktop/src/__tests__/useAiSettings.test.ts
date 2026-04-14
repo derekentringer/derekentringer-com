@@ -22,7 +22,7 @@ describe("useAiSettings", () => {
       semanticSearch: false,
       audioNotes: false,
       audioMode: "meeting",
-      recordingSource: "microphone",
+      recordingSource: "meeting",
       qaAssistant: false,
     });
   });
@@ -82,7 +82,7 @@ describe("useAiSettings", () => {
       semanticSearch: false,
       audioNotes: false,
       audioMode: "meeting",
-      recordingSource: "microphone",
+      recordingSource: "meeting",
       qaAssistant: false,
     });
   });
@@ -98,7 +98,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings.completions).toBe(true);
     expect(result.current.settings.masterAiEnabled).toBe(true);
     expect(result.current.settings.completionStyle).toBe("continue");
-    expect(result.current.settings.recordingSource).toBe("microphone");
+    expect(result.current.settings.recordingSource).toBe("meeting");
   });
 
   it("updateSetting persists changes to localStorage", () => {
@@ -129,7 +129,7 @@ describe("useAiSettings", () => {
         semanticSearch: true,
         audioNotes: false,
         audioMode: "memo",
-        recordingSource: "microphone",
+        recordingSource: "meeting",
         qaAssistant: false,
       }),
     );
@@ -174,7 +174,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings.audioMode).toBe("memo");
   });
 
-  it("defaults invalid recordingSource to microphone", () => {
+  it("defaults invalid recordingSource to meeting", () => {
     localStorage.setItem(
       "ns-ai-settings",
       JSON.stringify({
@@ -185,7 +185,7 @@ describe("useAiSettings", () => {
 
     const { result } = renderHook(() => useAiSettings());
 
-    expect(result.current.settings.recordingSource).toBe("microphone");
+    expect(result.current.settings.recordingSource).toBe("meeting");
   });
 
   it("clamps completionDebounceMs to valid range", () => {
