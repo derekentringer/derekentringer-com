@@ -137,6 +137,7 @@ export function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/settings/:section/" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>

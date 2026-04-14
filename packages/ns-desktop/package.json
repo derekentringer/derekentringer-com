@@ -13,7 +13,7 @@
     "tauri:clear-cache": "rm -rf ~/Library/Caches/com.derekentringer.notesync/WebKit ~/Library/WebKit/com.derekentringer.notesync/WebsiteData",
     "type-check": "tsc --noEmit",
     "vite:dev": "vite --port 3006",
-    "vite:build": "vite build",
+    "vite:build": "node scripts/generate-release-notes.mjs && vite build",
     "vite:build:prod": "vite build --mode production",
     "test": "vitest run"
   },
