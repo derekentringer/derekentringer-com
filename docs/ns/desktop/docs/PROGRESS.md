@@ -195,6 +195,7 @@
 - [x] Reset to Defaults — Clears editor and AI settings with inline confirmation; notes/account/data unaffected
 - [x] About section — Version, What's New (release notes modal from RELEASE_NOTES.md), Feedback placeholder
 - [x] Consistent destructive button pattern — All destructive actions use inline confirm
+- [x] About dialog updated — Removed description, copyright to PixelPerfect Studios LLC, What's New and Feedback buttons navigate to Settings About section
 - [x] Default recording source changed to meeting mode — Greyed out when unsupported
 - [x] Transcription mode removed from Settings — Ribbon buttons are the primary UI for mode selection
 

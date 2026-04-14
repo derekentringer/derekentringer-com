@@ -178,6 +178,8 @@ interface SettingsPageProps {
   onBack: () => void;
   onChangePassword?: () => void;
   onSignOut?: () => void;
+  initialSection?: string;
+  initialAction?: "whats-new" | "feedback";
   onTrashRetentionChange?: (days: number) => void;
   editorSettings: EditorSettings;
   updateEditorSetting: <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) => void;
@@ -186,7 +188,7 @@ interface SettingsPageProps {
   embeddingStatus?: EmbeddingStatus | null;
 }
 
-export function SettingsPage({ onBack, onChangePassword, onSignOut, onTrashRetentionChange, editorSettings, updateEditorSetting, aiSettings, updateAiSetting, embeddingStatus }: SettingsPageProps) {
+export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSection, initialAction, onTrashRetentionChange, editorSettings, updateEditorSetting, aiSettings, updateAiSetting, embeddingStatus }: SettingsPageProps) {
   const { user, setUserFromLogin } = useAuth();
 
   const [trashRetentionDays, setTrashRetentionDays] = useState<number>(() => {
@@ -208,6 +210,16 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, onTrashReten
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [releaseNotes, setReleaseNotes] = useState<string | null>(null);
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+
+  // Auto-open release notes if navigated from About dialog
+  useEffect(() => {
+    if (initialAction === "whats-new") {
+      fetch("/RELEASE_NOTES.md")
+        .then((res) => res.text())
+        .then((text) => { setReleaseNotes(text); setShowReleaseNotes(true); })
+        .catch(() => { setReleaseNotes("Failed to load release notes."); setShowReleaseNotes(true); });
+    }
+  }, [initialAction]);
 
   // Admin state
   const [adminAiEnabled, setAdminAiEnabled] = useState(false);
@@ -360,7 +372,9 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, onTrashReten
     "User Management",
   ] as const;
   type Section = typeof SECTIONS[number];
-  const [activeSection, setActiveSection] = useState<Section>("Appearance");
+  const [activeSection, setActiveSection] = useState<Section>(
+    (initialSection && SECTIONS.includes(initialSection as Section) ? initialSection as Section : "Appearance")
+  );
 
   return (
     <div className="flex h-full bg-background">

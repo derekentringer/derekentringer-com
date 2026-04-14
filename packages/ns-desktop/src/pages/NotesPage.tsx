@@ -314,6 +314,8 @@ export function NotesPage() {
 
   // Settings / Change Password / About
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>();
+  const [settingsInitialAction, setSettingsInitialAction] = useState<"whats-new" | "feedback" | undefined>();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
 
@@ -2706,7 +2708,11 @@ export function NotesPage() {
           setViewMode(editorSettings.defaultViewMode);
           setShowLineNumbers(editorSettings.showLineNumbers);
           setShowSettings(false);
+          setSettingsInitialSection(undefined);
+          setSettingsInitialAction(undefined);
         }}
+        initialSection={settingsInitialSection}
+        initialAction={settingsInitialAction}
         onChangePassword={() => {
           setShowSettings(false);
           setShowChangePassword(true);
@@ -3832,7 +3838,23 @@ export function NotesPage() {
     )}
 
     {/* About Dialog */}
-    {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
+    {showAbout && (
+      <AboutDialog
+        onClose={() => setShowAbout(false)}
+        onWhatsNew={() => {
+          setShowAbout(false);
+          setSettingsInitialSection("About");
+          setSettingsInitialAction("whats-new");
+          setShowSettings(true);
+        }}
+        onFeedback={() => {
+          setShowAbout(false);
+          setSettingsInitialSection("About");
+          setSettingsInitialAction("feedback");
+          setShowSettings(true);
+        }}
+      />
+    )}
 
     {/* Command Palette */}
     <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
