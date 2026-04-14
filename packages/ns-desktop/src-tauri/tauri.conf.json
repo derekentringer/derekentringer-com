@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "NoteSync",
-  "version": "2.13.0",
+  "version": "2.16.0",
   "identifier": "com.derekentringer.notesync",
   "build": {
     "frontendDist": "../dist",
@@ -38,11 +38,12 @@
     ],
     "fileAssociations": [
       {
-        "ext": [
-          "md",
-          "txt",
-          "markdown"
-        ],
+        "ext": ["md", "markdown"],
+        "mimeType": "text/markdown",
+        "description": "Markdown Document"
+      },
+      {
+        "ext": ["txt"],
         "mimeType": "text/plain",
         "description": "Text Document"
       }

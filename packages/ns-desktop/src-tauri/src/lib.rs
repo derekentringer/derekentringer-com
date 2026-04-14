@@ -385,6 +385,25 @@ pub fn run() {
                 let _ = app_handle.emit("menu-event", event.id().0.as_str());
             });
 
+            // Windows file association: files opened via double-click are passed as CLI args
+            #[cfg(target_os = "windows")]
+            {
+                let file_paths: Vec<String> = std::env::args()
+                    .skip(1) // skip the exe path
+                    .filter(|arg| {
+                        let p = std::path::Path::new(arg);
+                        p.exists() && p.extension().map_or(false, |ext| {
+                            matches!(ext.to_str(), Some("md" | "txt" | "markdown"))
+                        })
+                    })
+                    .collect();
+                if !file_paths.is_empty() {
+                    if let Some(state) = app.try_state::<OpenedFiles>() {
+                        state.0.lock().unwrap().extend(file_paths);
+                    }
+                }
+            }
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

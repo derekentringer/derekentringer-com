@@ -3597,7 +3597,7 @@ export function NotesPage() {
       </div>
 
       {/* Sliding drawer with tabbed content */}
-      <div className="relative h-full shrink-0 overflow-visible">
+      <div className="relative shrink-0 overflow-visible self-stretch">
         {/* Tab buttons on left edge, above backlinks panel */}
         {!focusMode && <div className="absolute right-full flex flex-col gap-1" style={{ bottom: 38 }}>
           {/* AI Assistant tab — always visible when setting enabled */}
