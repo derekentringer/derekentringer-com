@@ -1,5 +1,3 @@
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -9,6 +7,11 @@ use std::time::Duration;
 use coreaudio::audio_unit::AudioUnit;
 use objc2::AnyThread;
 use tauri::Emitter;
+
+use crate::audio_capture_shared::{
+    encode_mixed_wav_chunk, mix_to_wav, read_pcm_since, spawn_writer_thread, to_mono,
+    ChunkResampler,
+};
 
 struct RecordingState {
     system_audio_unit: AudioUnit,
@@ -34,221 +37,6 @@ struct RecordingState {
 unsafe impl Send for RecordingState {}
 
 static RECORDING: Mutex<Option<RecordingState>> = Mutex::new(None);
-
-fn to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
-    if channels <= 1 {
-        return samples.to_vec();
-    }
-    let ch = channels as usize;
-    samples
-        .chunks_exact(ch)
-        .map(|frame| frame.iter().sum::<f32>() / ch as f32)
-        .collect()
-}
-
-/// Stateful chunk-based linear interpolation resampler.
-struct ChunkResampler {
-    ratio: f64,
-    pos: f64,
-    prev_sample: f32,
-}
-
-impl ChunkResampler {
-    fn new(from_rate: u32, to_rate: u32) -> Self {
-        Self {
-            ratio: from_rate as f64 / to_rate as f64,
-            pos: 0.0,
-            prev_sample: 0.0,
-        }
-    }
-
-    fn process(&mut self, input: &[f32]) -> Vec<f32> {
-        if input.is_empty() {
-            return Vec::new();
-        }
-        let n = input.len();
-        let estimated = ((n as f64) / self.ratio).ceil() as usize + 1;
-        let mut out = Vec::with_capacity(estimated);
-
-        while (self.pos as usize) < n {
-            let idx0 = self.pos.floor() as isize;
-            let frac = (self.pos - idx0 as f64) as f32;
-
-            let s0 = if idx0 < 0 {
-                self.prev_sample
-            } else {
-                input[idx0 as usize]
-            };
-            let s1 = if idx0 + 1 < n as isize {
-                input[(idx0 + 1) as usize]
-            } else {
-                input[n - 1]
-            };
-
-            out.push(s0 * (1.0 - frac) + s1 * frac);
-            self.pos += self.ratio;
-        }
-
-        self.pos -= n as f64;
-        self.prev_sample = input[n - 1];
-        out
-    }
-}
-
-/// Read up to `max_samples` f32 values from a raw PCM file.
-fn read_f32_chunk(reader: &mut BufReader<File>, max_samples: usize) -> Result<Vec<f32>, String> {
-    let byte_count = max_samples * 4;
-    let mut buf = vec![0u8; byte_count];
-    let mut total_read = 0;
-
-    while total_read < byte_count {
-        match reader.read(&mut buf[total_read..]) {
-            Ok(0) => break,
-            Ok(n) => total_read += n,
-            Err(e) => return Err(format!("Read error: {e}")),
-        }
-    }
-
-    // Truncate to complete f32 values
-    let sample_count = total_read / 4;
-    let mut samples = Vec::with_capacity(sample_count);
-    for i in 0..sample_count {
-        let offset = i * 4;
-        let bytes = [
-            buf[offset],
-            buf[offset + 1],
-            buf[offset + 2],
-            buf[offset + 3],
-        ];
-        samples.push(f32::from_le_bytes(bytes));
-    }
-    Ok(samples)
-}
-
-/// Spawn a thread that receives f32 chunks via channel and writes raw PCM to a file.
-fn spawn_writer_thread(
-    path: PathBuf,
-    receiver: mpsc::Receiver<Vec<f32>>,
-) -> thread::JoinHandle<Result<(), String>> {
-    thread::spawn(move || {
-        let file =
-            File::create(&path).map_err(|e| format!("Failed to create temp file: {e}"))?;
-        let mut writer = BufWriter::with_capacity(256 * 1024, file);
-        while let Ok(chunk) = receiver.recv() {
-            for &sample in &chunk {
-                writer
-                    .write_all(&sample.to_le_bytes())
-                    .map_err(|e| format!("Write error: {e}"))?;
-            }
-        }
-        writer.flush().map_err(|e| format!("Flush error: {e}"))?;
-        Ok(())
-    })
-}
-
-/// Stream-mix two raw PCM temp files into a single WAV, processing in 1-second chunks.
-/// Output is always 16kHz mono 16-bit — Whisper works at 16kHz internally so no quality loss,
-/// and the smaller file size (~1.9 MB/min vs ~5.6 MB/min at 48kHz) enables longer recordings.
-fn mix_to_wav(
-    sys_path: &PathBuf,
-    sys_rate: u32,
-    sys_channels: u16,
-    mic_path: &PathBuf,
-    mic_rate: u32,
-    mic_channels: u16,
-) -> Result<String, String> {
-    let output_rate: u32 = 16000; // Whisper's native rate — no quality loss
-
-    let temp_dir = std::env::temp_dir();
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let wav_path = temp_dir.join(format!("notesync_meeting_{timestamp}.wav"));
-
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: output_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut wav_writer =
-        hound::WavWriter::create(&wav_path, spec).map_err(|e| format!("WAV create error: {e}"))?;
-
-    let sys_file = File::open(sys_path).map_err(|e| format!("Open sys temp: {e}"))?;
-    let mic_file = File::open(mic_path).map_err(|e| format!("Open mic temp: {e}"))?;
-    let mut sys_reader = BufReader::with_capacity(256 * 1024, sys_file);
-    let mut mic_reader = BufReader::with_capacity(256 * 1024, mic_file);
-
-    // 1 second of interleaved samples per chunk
-    let sys_chunk_size = sys_rate as usize * sys_channels as usize;
-    let mic_chunk_size = mic_rate as usize * mic_channels as usize;
-
-    // Both streams may need resampling to 16kHz
-    let mut sys_resampler = ChunkResampler::new(sys_rate, output_rate);
-    let mut mic_resampler = ChunkResampler::new(mic_rate, output_rate);
-    let sys_needs_resample = sys_rate != output_rate;
-    let mic_needs_resample = mic_rate != output_rate;
-
-    let mut total_samples: u64 = 0;
-
-    loop {
-        let sys_raw = read_f32_chunk(&mut sys_reader, sys_chunk_size)?;
-        let mic_raw = read_f32_chunk(&mut mic_reader, mic_chunk_size)?;
-
-        if sys_raw.is_empty() && mic_raw.is_empty() {
-            break;
-        }
-
-        let sys_mono_raw = to_mono(&sys_raw, sys_channels);
-        let sys_mono = if sys_needs_resample && !sys_mono_raw.is_empty() {
-            sys_resampler.process(&sys_mono_raw)
-        } else {
-            sys_mono_raw
-        };
-
-        let mic_mono_raw = to_mono(&mic_raw, mic_channels);
-        let mic_mono = if mic_needs_resample && !mic_mono_raw.is_empty() {
-            mic_resampler.process(&mic_mono_raw)
-        } else {
-            mic_mono_raw
-        };
-
-        let len = sys_mono.len().max(mic_mono.len());
-        for i in 0..len {
-            let sa = if i < sys_mono.len() {
-                sys_mono[i]
-            } else {
-                0.0
-            };
-            let sb = if i < mic_mono.len() {
-                mic_mono[i]
-            } else {
-                0.0
-            };
-            let mixed = ((sa + sb) * 0.5).clamp(-1.0, 1.0);
-            wav_writer
-                .write_sample((mixed * 32767.0) as i16)
-                .map_err(|e| format!("WAV write error: {e}"))?;
-            total_samples += 1;
-        }
-    }
-
-    wav_writer
-        .finalize()
-        .map_err(|e| format!("WAV finalize error: {e}"))?;
-
-    log::info!(
-        "Mixed {} samples ({:.1}s) at {}Hz to {}",
-        total_samples,
-        total_samples as f64 / output_rate as f64,
-        output_rate,
-        wav_path.display()
-    );
-
-    Ok(wav_path.to_string_lossy().into_owned())
-}
 
 fn request_microphone_permission() -> Result<(), String> {
     use objc2_foundation::NSString;
@@ -808,23 +596,19 @@ pub fn get_audio_chunk() -> Result<Vec<u8>, String> {
 
     let output_rate: u32 = 16000;
 
-    // Read new bytes from system PCM temp file
     let sys_new = read_pcm_since(&state.system_temp_path, state.sys_chunk_read_pos)?;
     let mic_new = read_pcm_since(&state.mic_temp_path, state.mic_chunk_read_pos)?;
 
-    // Update read positions
     state.sys_chunk_read_pos += (sys_new.len() * 4) as u64;
     state.mic_chunk_read_pos += (mic_new.len() * 4) as u64;
 
     if sys_new.is_empty() && mic_new.is_empty() {
-        return Ok(Vec::new()); // No new audio
+        return Ok(Vec::new());
     }
 
-    // Downmix to mono
     let sys_mono = to_mono(&sys_new, state.system_channels);
     let mic_mono = to_mono(&mic_new, state.mic_channels);
 
-    // Resample to 16kHz
     let sys_resampled = if state.system_sample_rate != output_rate && !sys_mono.is_empty() {
         let mut resampler = ChunkResampler::new(state.system_sample_rate, output_rate);
         resampler.process(&sys_mono)
@@ -839,92 +623,19 @@ pub fn get_audio_chunk() -> Result<Vec<u8>, String> {
         mic_mono
     };
 
-    // Mix
-    let len = sys_resampled.len().max(mic_resampled.len());
-    if len == 0 {
+    let wav_bytes = encode_mixed_wav_chunk(&sys_resampled, &mic_resampled, output_rate)?;
+    if wav_bytes.is_empty() {
         return Ok(Vec::new());
-    }
-
-    let mut mixed = Vec::with_capacity(len);
-    for i in 0..len {
-        let sa = if i < sys_resampled.len() { sys_resampled[i] } else { 0.0 };
-        let sb = if i < mic_resampled.len() { mic_resampled[i] } else { 0.0 };
-        mixed.push(((sa + sb) * 0.5).clamp(-1.0, 1.0));
-    }
-
-    // Encode as in-memory WAV
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: output_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut cursor = std::io::Cursor::new(Vec::with_capacity(mixed.len() * 2 + 44));
-    {
-        let mut writer = hound::WavWriter::new(&mut cursor, spec)
-            .map_err(|e| format!("WAV create error: {e}"))?;
-        for &sample in &mixed {
-            writer
-                .write_sample((sample * 32767.0) as i16)
-                .map_err(|e| format!("WAV write error: {e}"))?;
-        }
-        writer.finalize().map_err(|e| format!("WAV finalize error: {e}"))?;
     }
 
     log::info!(
-        "Audio chunk: {:.1}s mixed ({} samples at {}Hz)",
-        mixed.len() as f64 / output_rate as f64,
-        mixed.len(),
+        "Audio chunk: {:.1}s ({} samples at {}Hz)",
+        sys_resampled.len().max(mic_resampled.len()) as f64 / output_rate as f64,
+        sys_resampled.len().max(mic_resampled.len()),
         output_rate,
     );
 
-    Ok(cursor.into_inner())
-}
-
-/// Read f32 samples from a raw PCM file starting at a byte offset.
-fn read_pcm_since(path: &PathBuf, byte_offset: u64) -> Result<Vec<f32>, String> {
-    use std::io::Seek;
-
-    let file = match File::open(path) {
-        Ok(f) => f,
-        Err(_) => return Ok(Vec::new()), // File not yet created
-    };
-
-    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
-    if file_len <= byte_offset {
-        return Ok(Vec::new()); // No new data
-    }
-
-    let new_bytes = (file_len - byte_offset) as usize;
-    // Truncate to complete f32 values
-    let sample_count = new_bytes / 4;
-    if sample_count == 0 {
-        return Ok(Vec::new());
-    }
-
-    let mut reader = BufReader::new(file);
-    reader.seek(std::io::SeekFrom::Start(byte_offset))
-        .map_err(|e| format!("Seek error: {e}"))?;
-
-    let mut buf = vec![0u8; sample_count * 4];
-    let mut total_read = 0;
-    while total_read < buf.len() {
-        match reader.read(&mut buf[total_read..]) {
-            Ok(0) => break,
-            Ok(n) => total_read += n,
-            Err(e) => return Err(format!("Read error: {e}")),
-        }
-    }
-
-    let actual_samples = total_read / 4;
-    let mut samples = Vec::with_capacity(actual_samples);
-    for i in 0..actual_samples {
-        let offset = i * 4;
-        let bytes = [buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]];
-        samples.push(f32::from_le_bytes(bytes));
-    }
-    Ok(samples)
+    Ok(wav_bytes)
 }
 
 pub fn stop_recording() -> Result<String, String> {

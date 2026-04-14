@@ -158,6 +158,8 @@
 
 - [x] [26 — SyncSwarm Game](features/26-syncswarm-game.md) — Hidden Galaga-style ASCII space shooter: enemy formations with bezier entry animations, diving attacks, boss tractor beam capture, dual fighter mode, challenge stages every 3 levels, parallax starfield with 3 grey-toned depth layers, per-character color rendering, high score persistence, launched from rocket icon in ribbon
 
+- [x] [27 — Windows Meeting Audio Capture](features/27-windows-meeting-audio-capture.md) — Windows parity for feature 10d: `cpal` WASAPI backend captures mic via `default_input_device` and system audio via `default_output_device` in loopback mode, shared platform-agnostic helpers (`audio_capture_shared.rs`) are reused by both macOS (CoreAudio Process Tap) and Windows (WASAPI) implementations. `check_meeting_recording_support` now returns true on Windows 10+. Includes a stop-button race fix in `handleMeetingStop` (re-entry guard + early `setState("processing")`) so single-click Stop reliably flips the UI to processing and inserts the "Meeting Ended" card in the AI panel even when the native `mix_to_wav` takes a few seconds.
+
 ### UI Polish
 
 - [x] About Dialog — `AboutDialog.tsx` component displaying NoteSync logo, version (from `tauri.conf.json` via Vite `define`), description, and copyright; wired to native macOS/Windows "About NoteSync" menu via `app:about` command

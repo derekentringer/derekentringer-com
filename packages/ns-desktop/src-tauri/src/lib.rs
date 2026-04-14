@@ -5,8 +5,14 @@ use tauri::{Emitter, Manager, RunEvent};
 use tauri::menu::{MenuBuilder, SubmenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod audio_capture_shared;
+
 #[cfg(target_os = "macos")]
 mod audio_capture;
+
+#[cfg(target_os = "windows")]
+mod audio_capture_win;
 
 const KEYRING_SERVICE: &str = "com.derekentringer.notesync";
 
@@ -141,7 +147,11 @@ fn check_meeting_recording_support() -> Result<bool, String> {
     {
         audio_capture::check_support()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        audio_capture_win::check_support()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         Ok(false)
     }
@@ -153,10 +163,14 @@ fn start_meeting_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     {
         audio_capture::start_recording(app_handle)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        audio_capture_win::start_recording(app_handle)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app_handle;
-        Err("Meeting recording is only supported on macOS".into())
+        Err("Meeting recording is not supported on this platform".into())
     }
 }
 
@@ -166,9 +180,13 @@ fn stop_meeting_recording() -> Result<String, String> {
     {
         audio_capture::stop_recording()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        Err("Meeting recording is only supported on macOS".into())
+        audio_capture_win::stop_recording()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Err("Meeting recording is not supported on this platform".into())
     }
 }
 
@@ -178,9 +196,13 @@ fn get_meeting_audio_chunk() -> Result<Vec<u8>, String> {
     {
         audio_capture::get_audio_chunk()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        Err("Meeting recording is only supported on macOS".into())
+        audio_capture_win::get_audio_chunk()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Err("Meeting recording is not supported on this platform".into())
     }
 }
 
