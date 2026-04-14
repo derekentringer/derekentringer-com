@@ -176,6 +176,9 @@
 - [x] New slash commands — 7 additional: `/favorite`, `/unfavorite`, `/trash`, `/restore`, `/renamefolder`, `/renametag`, `/duplicate` (21 total)
 - [x] Tools during meetings — AI assistant uses tools + transcript context simultaneously; Claude decides whether to answer from transcript or use tools
 - [x] Updated AI assistant tips and placeholder text to reflect full capabilities
+- [x] Live recording card in chat — Recording context (Related Notes + Transcription) moved from dedicated panel section into a sticky card at the top of the chat messages area; card shows pulsing red dot, dynamic "{mode} Recording" title, collapsible Related Notes and Transcription dropdowns with matching spacing; transcription fixed to ~15 lines (no vertical drag resize); when recording ends, card becomes a normal "{mode} Ended" message in the chat flow
+- [x] Recording bar pulsing dot — Stop button dot changed from square `animate-pulse` to round `animate-ping` matching the recording card style
+- [x] Clear button moved to header — Chat Clear button relocated from standalone row into the AI Assistant header bar (right-aligned via `ml-auto`)
 
 ## Extension Ideas (Future)
 

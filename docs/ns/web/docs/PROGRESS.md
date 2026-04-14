@@ -231,6 +231,9 @@
 - [x] Recording bar redesign — Stop button with pulsing red dot moved to left, waveform hidden (drives audio-reactive top border pulse in highlight color), smooth slide-down animation with overflow handling for folder dropdown, doubled item spacing
 - [x] Recording folder isolation — Captures active folder when recording starts; sidebar browsing no longer changes recording output folder; only the ribbon folder picker changes it
 - [x] Audio chunk transcription fix — Chunk blobs now include all data from recording start (WebM header in first chunk) so magic byte validation passes on server
+- [x] Live recording card in chat — Recording context (Related Notes + Transcription) moved from dedicated panel section into a sticky card at the top of the chat messages area; card shows pulsing red dot, dynamic "{mode} Recording" title, collapsible Related Notes and Transcription dropdowns with matching spacing; transcription fixed to ~15 lines (no vertical drag resize); when recording ends, card becomes a normal "{mode} Ended" message in the chat flow
+- [x] Recording bar pulsing dot — Stop button dot changed from square `animate-pulse` to round `animate-ping` matching the recording card style
+- [x] Clear button moved to header — Chat Clear button relocated from standalone row into the AI Assistant header bar (right-aligned via `ml-auto`)
 
 ### Native Desktop Menus
 

@@ -150,7 +150,7 @@ function LiveTranscript({ text }: { text: string }) {
   const displayed = text.slice(0, displayLen);
 
   return (
-    <div ref={scrollRef} className="overflow-y-auto h-full px-3 pb-2">
+    <div ref={scrollRef} className="overflow-y-auto h-full pb-2">
       <p className="text-sm text-muted-foreground leading-relaxed">
         {displayed}
       </p>
@@ -158,9 +158,12 @@ function LiveTranscript({ text }: { text: string }) {
   );
 }
 
-const TRANSCRIPT_MIN_HEIGHT = 60;
-const TRANSCRIPT_MAX_HEIGHT = 400;
-const TRANSCRIPT_DEFAULT_HEIGHT = 140;
+const RECORDING_ACTIVE_LABELS: Record<string, string> = {
+  meeting: "Meeting Recording",
+  lecture: "Lecture Recording",
+  memo: "Memo Recording",
+  verbatim: "Recording",
+};
 
 interface MeetingSummaryData {
   relevantNotes: MeetingContextNote[];
@@ -253,16 +256,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const inputWrapRef = useRef<HTMLDivElement>(null);
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
-  const [transcriptHeight, setTranscriptHeight] = useState(TRANSCRIPT_DEFAULT_HEIGHT);
-  const [transcriptDragging, setTranscriptDragging] = useState(false);
-  const transcriptResizing = useRef(false);
-  const transcriptStartY = useRef(0);
-  const transcriptStartH = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const hasMeetingContext = isRecording || (relevantNotes && relevantNotes.length > 0);
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
   const hasNotes = (relevantNotes?.length ?? 0) > 0;
   const historyLoadedRef = useRef(false);
@@ -416,29 +413,6 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       return updated;
     });
   }, [completedNote]);
-
-  // Transcript area resize via drag (handle at bottom)
-  const handleTranscriptResizeStart = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    transcriptResizing.current = true;
-    transcriptStartY.current = e.clientY;
-    transcriptStartH.current = transcriptHeight;
-    setTranscriptDragging(true);
-
-    function onMove(ev: PointerEvent) {
-      if (!transcriptResizing.current) return;
-      const delta = ev.clientY - transcriptStartY.current;
-      setTranscriptHeight(Math.min(TRANSCRIPT_MAX_HEIGHT, Math.max(TRANSCRIPT_MIN_HEIGHT, transcriptStartH.current + delta)));
-    }
-    function onUp() {
-      transcriptResizing.current = false;
-      setTranscriptDragging(false);
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-    }
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
-  }, [transcriptHeight]);
 
   // ─── Command Context ──────────────────────────────────
   const commandCtx = useMemo((): CommandContext => ({
@@ -833,108 +807,131 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
           </svg>
         )}
+        {messages.length > 0 && (
+          <button
+            onClick={handleClear}
+            className={`text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer ${isSearchingContext ? "" : "ml-auto"}`}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
-      {/* Meeting context section */}
-      {hasMeetingContext && (
-        <div className="shrink-0 border-b border-border">
-          {/* Related Notes section */}
-          <div className="px-3 pt-2 pb-1">
-            <button
-              onClick={() => setNotesCollapsed((v) => !v)}
-              className="flex items-center gap-1.5 w-full text-left cursor-pointer group"
-            >
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+        {/* Live recording card — sticky at top */}
+        {isRecording && (
+          <div className="sticky top-0 z-10 w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive" />
+              </span>
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
-                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                <polyline points="14 2 14 8 20 8" />
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               </svg>
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                Related Notes
+                {RECORDING_ACTIVE_LABELS[recordingMode ?? "meeting"] ?? "Recording"}
               </span>
-              {hasNotes && (
-                <span className="text-[10px] text-muted-foreground">
-                  {relevantNotes!.length}
-                </span>
-              )}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`ml-auto text-muted-foreground transition-transform duration-200 ${notesCollapsed ? "-rotate-90" : ""}`}
-              >
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
+            </div>
 
-            <div
-              className="overflow-hidden transition-all duration-200 ease-in-out"
-              style={{
-                maxHeight: notesCollapsed ? 0 : 1000,
-                opacity: notesCollapsed ? 0 : 1,
-              }}
-            >
-              <div className="pt-1.5">
-                {isRecording && !hasTranscript && !hasNotes ? (
-                  <div className="flex items-center gap-2 py-2 animate-fade-in">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40 shrink-0">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                    </svg>
-                    <p className="text-xs text-muted-foreground">Listening for conversation context...</p>
-                  </div>
-                ) : isRecording && hasTranscript && !hasNotes ? (
-                  <div className="flex items-center gap-2 py-2 animate-fade-in">
-                    <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">
-                      <span className="bounce-dot" />
-                      <span className="bounce-dot" />
-                      <span className="bounce-dot" />
-                    </span>
-                    <p className="text-xs text-muted-foreground">Monitoring the {RECORDING_MODE_LABELS[recordingMode ?? "meeting"] ?? "recording"} to surface related notes...</p>
-                  </div>
-                ) : hasNotes ? (
-                  <div className="space-y-1.5 animate-fade-in">
-                    {relevantNotes!.map((note, index) => (
-                      <button
-                        key={note.id}
-                        onClick={() => onSelectNote(note.id)}
-                        className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer animate-fade-in group"
-                        style={{ animationDelay: `${index * 50}ms` }}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                            <polyline points="14 2 14 8 20 8" />
-                          </svg>
-                          <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
-                            {note.title}
-                          </span>
-                          <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
-                            {Math.round(note.score * 100)}%
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+            {/* Related Notes dropdown */}
+            <div className="mb-1">
+              <button
+                onClick={() => setNotesCollapsed((v) => !v)}
+                className="flex items-center gap-1.5 w-full text-left cursor-pointer group"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                  Related Notes
+                </span>
+                {hasNotes && (
+                  <span className="text-[10px] text-muted-foreground">
+                    {relevantNotes!.length}
+                  </span>
+                )}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={`ml-auto text-muted-foreground transition-transform duration-200 ${notesCollapsed ? "-rotate-90" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+
+              <div
+                className="overflow-hidden transition-all duration-200 ease-in-out"
+                style={{
+                  maxHeight: notesCollapsed ? 0 : 1000,
+                  opacity: notesCollapsed ? 0 : 1,
+                }}
+              >
+                <div className="pt-1.5">
+                  {!hasTranscript && !hasNotes ? (
+                    <div className="flex items-center gap-2 py-1 animate-fade-in">
+                      <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">
+                        <span className="bounce-dot" />
+                        <span className="bounce-dot" />
+                        <span className="bounce-dot" />
+                      </span>
+                      <p className="text-xs text-muted-foreground">Listening for conversation context...</p>
+                    </div>
+                  ) : hasTranscript && !hasNotes ? (
+                    <div className="flex items-center gap-2 py-1 animate-fade-in">
+                      <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">
+                        <span className="bounce-dot" />
+                        <span className="bounce-dot" />
+                        <span className="bounce-dot" />
+                      </span>
+                      <p className="text-xs text-muted-foreground">Monitoring the {RECORDING_MODE_LABELS[recordingMode ?? "meeting"] ?? "recording"} to surface related notes...</p>
+                    </div>
+                  ) : hasNotes ? (
+                    <div className="space-y-1.5 animate-fade-in">
+                      {relevantNotes!.map((note, index) => (
+                        <button
+                          key={note.id}
+                          onClick={() => onSelectNote(note.id)}
+                          className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer animate-fade-in group"
+                          style={{ animationDelay: `${index * 50}ms` }}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                              <polyline points="14 2 14 8 20 8" />
+                            </svg>
+                            <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                              {note.title}
+                            </span>
+                            <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
+                              {Math.round(note.score * 100)}%
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Transcription section */}
-          {isRecording && hasTranscript && (
-            <div className="flex flex-col">
-              {/* Transcription header */}
+            {/* Transcription dropdown */}
+            <div>
               <button
                 onClick={() => setTranscriptCollapsed((v) => !v)}
-                className="px-3 pt-2 pb-1 flex items-center gap-1.5 w-full text-left cursor-pointer"
+                className="flex items-center gap-1.5 w-full text-left cursor-pointer"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
                   <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                   <line x1="12" y1="19" x2="12" y2="23" />
@@ -962,43 +959,31 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               <div
                 className="overflow-hidden transition-all duration-200 ease-in-out"
                 style={{
-                  maxHeight: transcriptCollapsed ? 0 : transcriptHeight + 10,
+                  maxHeight: transcriptCollapsed ? 0 : 340,
                   opacity: transcriptCollapsed ? 0 : 1,
                 }}
               >
-                {/* Scrollable transcript area */}
-                <div style={{ height: transcriptHeight }}>
-                  <LiveTranscript text={liveTranscript!} />
-                </div>
-
-                {/* Resize divider — matches app ResizeDivider style */}
-                <div
-                  onPointerDown={handleTranscriptResizeStart}
-                  className="shrink-0 flex items-center justify-center h-1.5 cursor-row-resize group"
-                  style={{ touchAction: "none" }}
-                >
-                  <div className={`h-px w-full ${transcriptDragging ? "bg-ring" : "bg-border group-hover:bg-muted-foreground"} transition-colors`} />
+                <div className="pt-1.5">
+                  {hasTranscript ? (
+                    <div className="max-h-[320px] overflow-y-auto">
+                      <LiveTranscript text={liveTranscript!} />
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 py-1">
+                      <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">
+                        <span className="bounce-dot" />
+                        <span className="bounce-dot" />
+                        <span className="bounce-dot" />
+                      </span>
+                      <p className="text-xs text-muted-foreground">Starting transcription...</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          )}
-        </div>
-      )}
-
-      {messages.length > 0 && (
-        <div className="flex justify-end px-3 py-2 shrink-0">
-          <button
-            onClick={handleClear}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {messages.length === 0 && !hasMeetingContext && (
+          </div>
+        )}
+        {messages.length === 0 && !isRecording && (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
