@@ -4,6 +4,8 @@
 **Phase:** 11 — Build & Distribution
 **Priority:** Low
 
+> **Note:** This file documents the original build-system feature work. For the **current** authoritative build reference (scripts, env var precedence, cross-platform output locations, common pitfalls), see [`docs/ns/desktop/docs/BUILD.md`](../BUILD.md). If the two disagree, `BUILD.md` is correct.
+
 ## Summary
 
 Environment-aware build scripts for the NoteSync desktop Tauri app. Supports switching between local development (`localhost:3004`) and production (`ns-api.derekentringer.com`) API targets via `.env` files and npm scripts, with automatic version sync from git tags.
