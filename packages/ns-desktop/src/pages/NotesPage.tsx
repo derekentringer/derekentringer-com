@@ -3678,6 +3678,7 @@ export function NotesPage() {
                   relevantNotes={meetingContext.relevantNotes}
                   recordingMode={recordingState?.mode}
                   completedNote={completedAudioNote}
+                  activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                   chatRefreshKey={chatRefreshKey}
                 />
               ) : drawerTab === "history" && selectedId ? (

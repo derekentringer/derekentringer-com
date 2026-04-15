@@ -100,6 +100,8 @@ export interface NoteSync {
   readonly hooks: HookRegistry;
   readonly events: EventBus;
   readonly services: ServiceRegistry;
+  readonly recording: RecordingAPI;
+  readonly notifications: NotificationsAPI;
 
   // Encryption state
   readonly encryption: EncryptionInfo;
@@ -147,6 +149,63 @@ export interface NotesAPI {
 - **Client-side plugins:** `NotesAPI` returns decrypted content (client holds the master key). No change in behavior.
 - **Server-side plugins (Server Relay):** `NotesAPI` returns metadata only (IDs, timestamps, folder names). Note content fields are `null` unless the client has explicitly sent decrypted content for a transient AI operation.
 - **Server-side plugins (BYOK Direct / No AI):** Same as above — metadata only, no content access.
+
+### RecordingAPI (Audio Recording Control)
+
+```typescript
+export interface RecordingAPI {
+  /** Whether a recording is currently active */
+  readonly isRecording: boolean;
+
+  /** Current recording mode (null if not recording) */
+  readonly mode: "meeting" | "lecture" | "memo" | "verbatim" | null;
+
+  /** Start a recording in the specified mode */
+  start(mode: "meeting" | "lecture" | "memo" | "verbatim"): Promise<void>;
+
+  /** Stop the current recording */
+  stop(): Promise<void>;
+
+  /** Listen for recording state changes */
+  onStateChange(callback: (state: { isRecording: boolean; mode: string | null }) => void): () => void;
+
+  /** Get the live transcript text (empty if not recording or no transcript yet) */
+  getTranscript(): string;
+}
+```
+
+**Use case:** Calendar plugins prompt the user to start recording when a meeting begins. Theme/ambient plugins can react to recording state (e.g., show a "recording" indicator).
+
+### NotificationsAPI (User Notifications)
+
+```typescript
+export interface NotificationsAPI {
+  /** Show a toast notification with optional action button */
+  show(options: NotificationOptions): string;
+
+  /** Dismiss a notification by ID */
+  dismiss(id: string): void;
+}
+
+export interface NotificationOptions {
+  title: string;
+  body?: string;
+  /** Duration in ms before auto-dismiss (0 = persistent until dismissed) */
+  duration?: number;
+  /** Optional action button */
+  action?: {
+    label: string;
+    callback: () => void;
+  };
+  /** Optional secondary action */
+  secondaryAction?: {
+    label: string;
+    callback: () => void;
+  };
+}
+```
+
+**Use case:** Calendar plugins show "Meeting in 5 minutes — Start Recording?" with action buttons. Reminder plugins show scheduled notifications. Sync plugins report conflicts.
 
 ### ProviderRegistry (AI Provider Interfaces)
 

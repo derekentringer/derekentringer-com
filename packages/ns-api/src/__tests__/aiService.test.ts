@@ -16,6 +16,7 @@ vi.mock("@anthropic-ai/sdk", () => {
 vi.mock("../config.js", () => ({
   loadConfig: () => ({
     anthropicApiKey: "test-key",
+    claudeModel: "claude-sonnet-4-6",
   }),
 }));
 
@@ -61,7 +62,7 @@ describe("aiService", () => {
       expect(chunks).toEqual(["Hello", " world"]);
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 200,
           temperature: 0.7,
           stream: true,
@@ -224,7 +225,7 @@ describe("aiService", () => {
       expect(result).toBe("This is a summary.");
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 150,
           temperature: 0.3,
         }),
@@ -261,7 +262,7 @@ describe("aiService", () => {
       expect(result).toEqual(["javascript", "react"]);
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 100,
           temperature: 0.3,
         }),
@@ -321,7 +322,7 @@ describe("aiService", () => {
       expect(result).toBe("Rewritten version.");
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 500,
           temperature: 0.3,
         }),
@@ -426,7 +427,7 @@ describe("aiService", () => {
       expect(chunks).toEqual(["Based on", " your notes"]);
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 1000,
           temperature: 0.3,
           stream: true,
@@ -523,7 +524,7 @@ describe("aiService", () => {
       });
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 8192,
           temperature: 0.3,
         }),

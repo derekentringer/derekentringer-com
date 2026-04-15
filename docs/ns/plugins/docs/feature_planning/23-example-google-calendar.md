@@ -32,14 +32,20 @@ Connects NoteSync to Google Calendar to auto-create meeting notes before events 
       "minutesBefore": { "type": "number", "description": "Create note X minutes before event" },
       "folder": { "type": "string", "description": "Folder for meeting notes" },
       "template": { "type": "string", "description": "Template for meeting notes" },
-      "autoTag": { "type": "boolean", "description": "Auto-tag with attendee names" }
+      "autoTag": { "type": "boolean", "description": "Auto-tag with attendee names" },
+      "promptRecording": { "type": "boolean", "description": "Prompt to start recording before meetings" },
+      "autoRecordMode": { "type": "string", "enum": ["meeting", "lecture", "memo", "verbatim", "off"], "description": "Auto-start recording mode (off = prompt only)" },
+      "surfaceRelatedNotes": { "type": "boolean", "description": "Show related notes before meeting starts" }
     },
     "defaults": {
       "calendarIds": ["primary"],
       "minutesBefore": 5,
       "folder": "Meetings",
       "template": "default",
-      "autoTag": true
+      "autoTag": true,
+      "promptRecording": true,
+      "autoRecordMode": "off",
+      "surfaceRelatedNotes": true
     }
   }
 }
@@ -144,6 +150,9 @@ export default class GoogleCalendarPlugin implements Plugin {
       const settings = await this.host.settings.get<{
         calendarIds: string[];
         minutesBefore: number;
+        promptRecording: boolean;
+        autoRecordMode: string;
+        surfaceRelatedNotes: boolean;
       }>("settings");
 
       const minutesBefore = settings?.minutesBefore ?? 5;
@@ -157,6 +166,48 @@ export default class GoogleCalendarPlugin implements Plugin {
           if (!this.createdNotes.has(event.id)) {
             await this.createMeetingNote(event);
             this.createdNotes.add(event.id);
+
+            // Surface related notes based on meeting title/attendees
+            if (settings?.surfaceRelatedNotes) {
+              const related = await this.host.notes.search(event.summary, "semantic");
+              if (related.length > 0) {
+                this.host.notifications.show({
+                  title: `Related notes for "${event.summary}"`,
+                  body: related.slice(0, 3).map((r) => r.title).join(", "),
+                  duration: 10000,
+                  action: { label: "View", callback: () => this.host.workspace.openNote(related[0].id) },
+                });
+              }
+            }
+
+            // Prompt or auto-start recording
+            if (settings?.promptRecording && !this.host.recording.isRecording) {
+              const recordMode = settings?.autoRecordMode;
+              if (recordMode && recordMode !== "off") {
+                // Auto-start recording
+                await this.host.recording.start(recordMode as "meeting" | "lecture" | "memo" | "verbatim");
+                this.host.notifications.show({
+                  title: "Recording started",
+                  body: `Auto-recording "${event.summary}" in ${recordMode} mode`,
+                  duration: 5000,
+                });
+              } else {
+                // Prompt user
+                this.host.notifications.show({
+                  title: `"${event.summary}" starting soon`,
+                  body: "Start recording this meeting?",
+                  duration: 0, // persistent until dismissed
+                  action: {
+                    label: "Start Recording",
+                    callback: () => this.host.recording.start("meeting"),
+                  },
+                  secondaryAction: {
+                    label: "Dismiss",
+                    callback: () => {},
+                  },
+                });
+              }
+            }
           }
         }
       }
@@ -330,8 +381,12 @@ export default class GoogleCalendarPlugin implements Plugin {
 | `host.notes.createNote()` | Auto-create meeting notes |
 | `host.notes.createFolder()` | Ensure meetings folder exists |
 | `host.notes.listFolders()` | Find existing folder |
+| `host.notes.search()` | Surface related notes by meeting title |
 | `host.workspace.openNote()` | Navigate to created note |
 | `host.workspace.openExternalUrl()` | Open OAuth consent page |
+| `host.recording.start()` | Auto-start or prompt-start meeting recording |
+| `host.recording.isRecording` | Check if already recording before prompting |
+| `host.notifications.show()` | Meeting prompts, related notes, recording status |
 | Background polling | `setInterval` for upcoming event detection |
 | `deactivate()` cleanup | Persist state, clear timer |
 

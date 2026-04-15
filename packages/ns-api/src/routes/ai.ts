@@ -49,6 +49,14 @@ const askSchema = {
     properties: {
       question: { type: "string", minLength: 1, maxLength: 2000 },
       transcript: { type: "string", maxLength: 50000 },
+      activeNote: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          title: { type: "string" },
+          content: { type: "string", maxLength: 50000 },
+        },
+      },
     },
   },
 };
@@ -206,15 +214,15 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   );
 
   // POST /ai/ask — SSE streaming Q&A
-  fastify.post<{ Body: { question: string; transcript?: string } }>(
+  fastify.post<{ Body: { question: string; transcript?: string; activeNote?: { id: string; title: string; content: string } } }>(
     "/ask",
     { schema: askSchema },
     async (
-      request: FastifyRequest<{ Body: { question: string; transcript?: string } }>,
+      request: FastifyRequest<{ Body: { question: string; transcript?: string; activeNote?: { id: string; title: string; content: string } } }>,
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
-      const { question, transcript } = request.body;
+      const { question, transcript, activeNote } = request.body;
       const hasMeetingTranscript = transcript && transcript.trim().length > 0;
 
       const abortController = new AbortController();
@@ -238,6 +246,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
             userId,
             abortController.signal,
             hasMeetingTranscript ? transcript : undefined,
+            activeNote,
           )) {
             if (abortController.signal.aborted) break;
             if (event.type === "text") {
