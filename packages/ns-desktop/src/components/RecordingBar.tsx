@@ -62,14 +62,28 @@ function ProcessingStatus() {
   );
 }
 
+function getPrimaryRgb(): [number, number, number] {
+  const hex = getComputedStyle(document.documentElement).getPropertyValue("--color-primary").trim();
+  if (hex.startsWith("#") && hex.length >= 7) {
+    return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  }
+  return [212, 225, 87];
+}
+
 export function RecordingBar({ state, elapsed, mode, stream, audioLevel, folderId, folders, onFolderChange, onStop }: RecordingBarProps) {
   const level = useAudioLevel(stream, state === "recording", audioLevel);
   const borderRef = useRef<HTMLDivElement>(null);
+  const primaryRgbRef = useRef<[number, number, number]>(getPrimaryRgb());
+
+  useEffect(() => {
+    primaryRgbRef.current = getPrimaryRgb();
+  }, []);
 
   useEffect(() => {
     if (borderRef.current) {
+      const [r, g, b] = primaryRgbRef.current;
       const opacity = 0.15 + level * 0.85;
-      borderRef.current.style.backgroundColor = `rgba(212, 225, 87, ${opacity})`;
+      borderRef.current.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
     }
   }, [level]);
 
@@ -83,7 +97,7 @@ export function RecordingBar({ state, elapsed, mode, stream, audioLevel, folderI
       <div
         ref={borderRef}
         className="h-px w-full transition-colors duration-75"
-        style={{ backgroundColor: "rgba(212, 225, 87, 0.15)" }}
+        style={{ backgroundColor: `rgba(${primaryRgbRef.current.join(", ")}, 0.15)` }}
       />
 
       <div className="flex-1 flex items-center gap-4">
