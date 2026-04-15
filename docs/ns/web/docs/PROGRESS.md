@@ -262,6 +262,7 @@
 - [x] Active note context in AI Assistant — Currently open note (id, title, content) passed to Claude system prompt so "this note" / "the current note" works without naming it
 - [x] Claude model configurable — Single `CLAUDE_MODEL` env var (defaults to `claude-sonnet-4-6`); replaces 9 hardcoded model strings
 - [x] Transcription area reduced to ~10 lines (max-h-[200px])
+- [x] Web version display fix — `git fetch --tags` before reading version in Vite config; fixes Railway shallow clone showing "dev" and local dev showing "0.0.0"
 
 ### Native Desktop Menus
 
