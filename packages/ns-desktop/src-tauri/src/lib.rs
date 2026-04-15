@@ -90,6 +90,12 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/012.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 13,
+            description: "drop foreign key constraint on folders.parent_id",
+            sql: include_str!("../migrations/013.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

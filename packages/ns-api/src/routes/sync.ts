@@ -230,27 +230,32 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
       timestamp: i.updatedAt.toISOString(),
     }));
 
-    // Merge and sort by timestamp, limit to batch size
-    const allChanges = [...noteChanges, ...folderChanges, ...imageChanges]
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-      .slice(0, BATCH_LIMIT);
+    // Merge and sort by timestamp ASC. Do NOT slice here — each per-type query
+    // is already capped at BATCH_LIMIT (see syncStore.ts), so the combined
+    // response is bounded at 3*BATCH_LIMIT. Slicing again here would silently
+    // drop items that the client will never fetch, because the cursor advances
+    // past them on the next pull.
+    const allChanges = [...noteChanges, ...folderChanges, ...imageChanges].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
 
-    // Use max updatedAt from returned data instead of wall-clock time
-    // to avoid skipping changes that arrive between query and cursor update
+    // Cursor = timestamp of the LAST returned item (equivalent to max, since
+    // sorted ASC). Items the client didn't receive are guaranteed to have
+    // updatedAt > cursor and will be picked up on the next pull.
     let cursorDate: Date;
     if (allChanges.length > 0) {
-      const allUpdatedAts = [
-        ...notes.map((n) => n.updatedAt.getTime()),
-        ...folders.map((f) => f.updatedAt.getTime()),
-        ...images.map((i) => i.updatedAt.getTime()),
-      ];
-      cursorDate = new Date(Math.max(...allUpdatedAts));
+      cursorDate = new Date(allChanges[allChanges.length - 1].timestamp);
     } else {
       cursorDate = new Date();
     }
     await upsertSyncCursor(userId, deviceId, cursorDate);
 
-    const hasMore = (notes.length + folders.length + images.length) >= BATCH_LIMIT;
+    // hasMore is true if ANY per-type query hit its BATCH_LIMIT cap, meaning
+    // more items of that type exist beyond what we fetched.
+    const hasMore =
+      notes.length >= BATCH_LIMIT ||
+      folders.length >= BATCH_LIMIT ||
+      images.length >= BATCH_LIMIT;
 
     const response: SyncPullResponse = {
       changes: allChanges,
