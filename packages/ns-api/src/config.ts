@@ -57,6 +57,7 @@ export function loadConfig(): Config {
     r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
     r2BucketName: process.env.R2_BUCKET_NAME || "",
     r2PublicUrl: process.env.R2_PUBLIC_URL || "",
+    claudeModel: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
   };
 
   return cachedConfig;
@@ -81,6 +82,7 @@ export interface Config {
   r2SecretAccessKey: string;
   r2BucketName: string;
   r2PublicUrl: string;
+  claudeModel: string;
 }
 
 /** Reset cached config (for testing only) */

@@ -259,6 +259,9 @@
 - [x] Tab indicator fix — Staggered recalculations (50/200/500ms) + parent ResizeObserver to fix highlight misalignment after Settings navigation
 - [x] Theme-aware recording bar — Top border audio pulse uses `--color-primary` instead of hardcoded lime
 - [x] Custom themes feature plan — `docs/ns/web/docs/feature_planning/28-custom-themes.md` with JSON format, visual editor, import/export, plugin API
+- [x] Active note context in AI Assistant — Currently open note (id, title, content) passed to Claude system prompt so "this note" / "the current note" works without naming it
+- [x] Claude model configurable — Single `CLAUDE_MODEL` env var (defaults to `claude-sonnet-4-6`); replaces 9 hardcoded model strings
+- [x] Transcription area reduced to ~10 lines (max-h-[200px])
 
 ### Native Desktop Menus
 

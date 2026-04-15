@@ -12,6 +12,11 @@ function getClient(): Anthropic {
   return client;
 }
 
+/** Returns the configured Claude model ID (from CLAUDE_MODEL env var or default) */
+function getModel(): string {
+  return loadConfig().claudeModel;
+}
+
 export type CompletionStyle = "continue" | "markdown" | "brief" | "paragraph" | "structure";
 
 export type RewriteAction =
@@ -75,7 +80,7 @@ export async function* generateCompletion(
   const anthropic = getClient();
 
   const stream = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: getModel(),
     max_tokens: COMPLETION_MAX_TOKENS[style],
     temperature: 0.7,
     stream: true,
@@ -101,7 +106,7 @@ export async function generateSummary(
   const anthropic = getClient();
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: getModel(),
     max_tokens: 150,
     temperature: 0.3,
     system:
@@ -136,7 +141,7 @@ export async function suggestTags(
 
     try {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: getModel(),
         max_tokens: 100,
         temperature: 0.3,
         system: `You are a tagging assistant. Given a note's title and content, suggest 3-6 relevant tags. Prefer reusing existing tags when they fit, but always create new tags when the content covers topics not represented by existing tags. Existing tags in the system: ${JSON.stringify(existingTags)}. Return a JSON array of lowercase tag strings, e.g. ["tag1", "tag2"]. Output only the JSON array, nothing else.`,
@@ -183,7 +188,7 @@ export async function rewriteText(
   const anthropic = getClient();
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: getModel(),
     max_tokens: REWRITE_MAX_TOKENS[action],
     temperature: 0.3,
     system: REWRITE_PROMPTS[action],
@@ -265,7 +270,7 @@ export async function structureTranscript(
 
     try {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: getModel(),
         max_tokens: 8192,
         temperature: 0.3,
         system: TRANSCRIPT_PROMPTS[mode],
@@ -342,7 +347,7 @@ export async function* answerQuestion(
 
     try {
       const stream = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: getModel(),
         max_tokens: 1000,
         temperature: 0.3,
         stream: true,
@@ -394,7 +399,7 @@ export async function* answerMeetingQuestion(
 
     try {
       const stream = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: getModel(),
         max_tokens: 1000,
         temperature: 0.3,
         stream: true,
@@ -444,6 +449,7 @@ export async function* answerWithTools(
   userId: string,
   signal?: AbortSignal,
   transcript?: string,
+  activeNote?: { id: string; title: string; content: string },
 ): AsyncGenerator<AgentEvent> {
   const { ASSISTANT_TOOLS, executeTool } = await import("./assistantTools.js");
   const anthropic = getClient();
@@ -458,7 +464,7 @@ export async function* answerWithTools(
     if (signal?.aborted) return;
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: getModel(),
       max_tokens: 1500,
       temperature: 0.3,
       system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. When referencing notes, use their exact titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
@@ -466,7 +472,11 @@ export async function* answerWithTools(
 The user also has slash commands available as a faster alternative for the same actions (no AI cost). You can mention these as tips when relevant:
 /open, /create, /move, /tag, /delete, /deletefolder, /summarize, /gentags, /favorites, /favorite, /unfavorite, /trash, /restore, /renamefolder, /renametag, /duplicate, /recent, /folders, /tags, /stats, /clear
 
-If the user asks what you can do or asks for help, explain your capabilities: searching notes, answering questions about note content, finding connections between notes, creating notes with templates, moving/tagging/deleting notes, generating summaries and tags, and showing statistics. Also mention that slash commands are available as a free, instant alternative.${transcript ? `
+If the user asks what you can do or asks for help, explain your capabilities: searching notes, answering questions about note content, finding connections between notes, creating notes with templates, moving/tagging/deleting notes, generating summaries and tags, and showing statistics. Also mention that slash commands are available as a free, instant alternative.${activeNote ? `
+
+The user currently has the note "${activeNote.title}" (id: ${activeNote.id}) open in the editor. When they say "this note", "the current note", "this document", or similar, they are referring to this note. Here is its content:
+
+${activeNote.content.slice(0, 10000)}` : ""}${transcript ? `
 
 The user is currently in a live recording session. Below is the live transcript of the meeting/recording so far. You can answer questions about what's being discussed using this transcript, AND you can use your tools to search, create, or manage notes. Use your judgment — if the question is about the meeting content, answer from the transcript. If the question is about the user's notes or requires an action, use tools.
 
@@ -590,7 +600,7 @@ export async function analyzeImage(
 
     try {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: getModel(),
         max_tokens: 300,
         temperature: 0.3,
         system:

@@ -237,10 +237,11 @@ interface AIAssistantPanelProps {
   relevantNotes?: MeetingContextNote[];
   recordingMode?: string;
   completedNote?: { id: string; title: string; content: string; mode: string } | null;
+  activeNote?: { id: string; title: string; content: string } | null;
   chatRefreshKey?: number;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, completedNote, chatRefreshKey }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, completedNote, activeNote, chatRefreshKey }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -656,7 +657,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     ]);
 
     try {
-      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined)) {
+      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined)) {
         if (controller.signal.aborted) break;
 
         setMessages((prev) => {
@@ -948,7 +949,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               >
                 <div className="pt-1.5">
                   {hasTranscript ? (
-                    <div className="max-h-[320px] overflow-y-auto">
+                    <div className="max-h-[200px] overflow-y-auto">
                       <LiveTranscript text={liveTranscript!} />
                     </div>
                   ) : (

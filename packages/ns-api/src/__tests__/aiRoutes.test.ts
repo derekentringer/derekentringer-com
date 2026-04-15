@@ -849,6 +849,7 @@ describe("AI routes", () => {
         TEST_USER_ID,
         expect.any(Object),
         undefined,
+        undefined,
       );
     });
 

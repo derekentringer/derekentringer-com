@@ -1,5 +1,13 @@
 # What's New
 
+## v2.24.0
+
+- **Fix** — Recording bar pulse uses theme primary color
+
+## v2.23.0
+
+- **New** — Teams theme, theme-aware editor/logo/favicon, tab indicator fix
+
 ## v2.22.0
 
 - **New** — Update About dialog with What's New and Feedback navigation
