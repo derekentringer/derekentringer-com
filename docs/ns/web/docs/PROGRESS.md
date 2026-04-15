@@ -257,6 +257,7 @@
 - [x] Theme-aware logo — NsLogo SVG uses `var(--color-primary)` and `var(--color-primary-contrast)` on login and About dialog
 - [x] Dynamic favicon — Browser tab icon regenerated as SVG data URL from theme colors on every theme/accent change
 - [x] Tab indicator fix — Staggered recalculations (50/200/500ms) + parent ResizeObserver to fix highlight misalignment after Settings navigation
+- [x] Theme-aware recording bar — Top border audio pulse uses `--color-primary` instead of hardcoded lime
 - [x] Custom themes feature plan — `docs/ns/web/docs/feature_planning/28-custom-themes.md` with JSON format, visual editor, import/export, plugin API
 
 ### Native Desktop Menus
