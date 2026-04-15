@@ -78,6 +78,8 @@ packages/
 - `src/components/SyncStatusButton.tsx` — Sync status icon; shows rejection-aware click behavior when `hasRejections` is true
 - UI/UX must match `ns-web` — desktop components mirror web components
 - **Local testing**: always use `npm run dev` (Tauri dev mode with hot reload). There is no packaged "local build" — if you need to test against local ns-api, run dev mode. The `.env` file (`VITE_API_URL=http://localhost:3004`) is what dev mode reads.
+- **Build (local dev, macOS)**: `VITE_API_URL=http://localhost:3004 npm run tauri:build` — syncs git tag version with `-dev` suffix (e.g., `2.25.0-dev`), builds x64 macOS binary pointing to local API
+- **Build (local dev, Windows)**: `VITE_API_URL=http://localhost:3004 npm run tauri:build:win` — same as macOS local but for Windows
 - **Build (prod signed, macOS)**: `npm run tauri:build:prod` — syncs git tag version, clears WebKit cache, builds universal macOS binary with ad-hoc signing and `VITE_API_URL=https://ns-api.derekentringer.com`
 - **Build (prod unsigned, Windows)**: `npm run tauri:build:prod:win` — syncs git tag version, builds x64 Windows MSI + NSIS installers with `VITE_API_URL=https://ns-api.derekentringer.com`. Unsigned (ad-hoc) — SmartScreen shows "Unknown publisher" warnings, acceptable for personal use. Uses `cross-env` because npm on Windows runs scripts via `cmd.exe`, which doesn't understand bash-style inline env var prefixes.
 - **Build output (prod macOS)**: `src-tauri/target/universal-apple-darwin/release/bundle/macos/NoteSync.app`

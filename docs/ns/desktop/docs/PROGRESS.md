@@ -201,6 +201,7 @@
 - [x] Theme-aware recording bar — Top border audio pulse uses `--color-primary` instead of hardcoded lime
 - [x] Active note context in AI Assistant — Currently open note passed to Claude so "this note" works without naming it
 - [x] Transcription area reduced to ~10 lines (max-h-[200px])
+- [x] Local dev build versioning — `tauri:version-sync:dev` appends `-dev` to the latest git tag (e.g., `2.25.0-dev`); both macOS and Windows local builds auto-run it
 - [x] Tab indicator fix — Staggered recalculations + parent ResizeObserver to fix highlight misalignment after Settings navigation
 - [x] About dialog updated — Removed description, copyright to PixelPerfect Studios LLC, What's New and Feedback buttons navigate to Settings About section
 - [x] Default recording source changed to meeting mode — Greyed out when unsupported
