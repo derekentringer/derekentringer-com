@@ -1,4 +1,4 @@
-declare const __APP_VERSION__: string | undefined;
+declare const __APP_VERSION__: string;
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
@@ -1120,7 +1120,7 @@ export function SettingsPage() {
           <>
             <SettingsGroup>
               <SettingsRow label="Version">
-                <span className="text-sm text-muted-foreground">{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0"}</span>
+                <span className="text-sm text-muted-foreground">{__APP_VERSION__}</span>
               </SettingsRow>
               <SettingsRow label="What's New">
                 <button
