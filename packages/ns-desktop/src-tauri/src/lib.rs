@@ -96,6 +96,12 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/013.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 14,
+            description: "drop foreign key constraint on images.note_id",
+            sql: include_str!("../migrations/014.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
