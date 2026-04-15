@@ -770,6 +770,75 @@ describe("Sync routes", () => {
       expect(body.changes.length).toBeLessThanOrEqual(100);
     });
 
+    it("returns all fetched items without dropping any when multiple types present", async () => {
+      // Regression test for a bug where the pull route merged notes + folders +
+      // images and then re-sliced to BATCH_LIMIT, silently dropping items that
+      // the client would never fetch on subsequent pulls (because the cursor
+      // had advanced past them).
+      const baseTime = new Date("2024-01-03T00:00:00.000Z").getTime();
+      const notes = Array.from({ length: 60 }, (_, i) =>
+        makeMockNoteRow({
+          id: `note-${i}`,
+          updatedAt: new Date(baseTime + i * 60000),
+        }),
+      );
+      const folders = Array.from({ length: 60 }, (_, i) =>
+        makeMockFolderRow({
+          id: `folder-${i}`,
+          // interleave folder timestamps with note timestamps
+          updatedAt: new Date(baseTime + i * 60000 + 30000),
+        }),
+      );
+
+      mockPrisma.note.findMany.mockResolvedValue(notes);
+      mockPrisma.folder.findMany.mockResolvedValue(folders);
+      mockPrisma.syncCursor.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/sync/pull",
+        headers: authHeader(),
+        payload: { deviceId: "device-1", since: "2024-01-01T00:00:00.000Z" },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // All 60 notes and 60 folders must be present — nothing dropped
+      expect(body.changes).toHaveLength(120);
+      expect(body.changes.filter((c: { type: string }) => c.type === "note")).toHaveLength(60);
+      expect(body.changes.filter((c: { type: string }) => c.type === "folder")).toHaveLength(60);
+      // Neither query hit BATCH_LIMIT, so hasMore is false
+      expect(body.hasMore).toBe(false);
+    });
+
+    it("cursor advances to last returned item so nothing is skipped on next pull", async () => {
+      // Regression test: the cursor must reflect the timestamp of the last
+      // item actually returned, not the max timestamp of some internal set
+      // that the client never saw.
+      const baseTime = new Date("2024-01-03T00:00:00.000Z").getTime();
+      const notes = Array.from({ length: 5 }, (_, i) =>
+        makeMockNoteRow({
+          id: `note-${i}`,
+          updatedAt: new Date(baseTime + i * 60000),
+        }),
+      );
+
+      mockPrisma.note.findMany.mockResolvedValue(notes);
+      mockPrisma.folder.findMany.mockResolvedValue([]);
+      mockPrisma.syncCursor.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/sync/pull",
+        headers: authHeader(),
+        payload: { deviceId: "device-1", since: "2024-01-01T00:00:00.000Z" },
+      });
+
+      const body = res.json();
+      const lastNote = notes[notes.length - 1];
+      expect(body.cursor.lastSyncedAt).toBe(lastNote.updatedAt.toISOString());
+    });
+
     it("updates sync cursor", async () => {
       mockPrisma.note.findMany.mockResolvedValue([]);
       mockPrisma.folder.findMany.mockResolvedValue([]);
