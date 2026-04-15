@@ -1,5 +1,9 @@
 # What's New
 
+## v2.25.0
+
+- **New** — Active note context for AI, configurable Claude model, plugin API updates
+
 ## v2.24.0
 
 - **Fix** — Recording bar pulse uses theme primary color
