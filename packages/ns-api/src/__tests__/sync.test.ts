@@ -839,6 +839,87 @@ describe("Sync routes", () => {
       expect(body.cursor.lastSyncedAt).toBe(lastNote.updatedAt.toISOString());
     });
 
+    it("cursor does not advance past an un-drained type's boundary", async () => {
+      // Regression test for a cross-type pagination bug:
+      //
+      // If the notes query hits its BATCH_LIMIT cap (meaning more notes exist
+      // beyond what we returned), but folders/images have items with newer
+      // timestamps than the 100th note, the naive "cursor = max timestamp"
+      // approach advances the cursor PAST the un-returned notes. Those notes
+      // are then permanently skipped on the next pull because the new
+      // `since` is greater than their updatedAt.
+      //
+      // Correct behavior: the cursor must be clamped to the min of per-type
+      // "safe advance" timestamps — for capped types, the last returned
+      // item's timestamp.
+      const baseTime = new Date("2024-01-01T00:00:00.000Z").getTime();
+
+      // 100 notes (hits BATCH_LIMIT) with older timestamps.
+      const notes = Array.from({ length: 100 }, (_, i) =>
+        makeMockNoteRow({
+          id: `note-${i}`,
+          updatedAt: new Date(baseTime + i * 60000),
+        }),
+      );
+
+      // 5 folders with timestamps WAY LATER than any note.
+      // A naive cursor = max would pick one of these and lose un-returned notes.
+      const folders = Array.from({ length: 5 }, (_, i) =>
+        makeMockFolderRow({
+          id: `folder-${i}`,
+          updatedAt: new Date(baseTime + 1_000_000_000 + i * 60000),
+        }),
+      );
+
+      mockPrisma.note.findMany.mockResolvedValue(notes);
+      mockPrisma.folder.findMany.mockResolvedValue(folders);
+      mockPrisma.syncCursor.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/sync/pull",
+        headers: authHeader(),
+        payload: { deviceId: "device-1", since: "2023-01-01T00:00:00.000Z" },
+      });
+
+      const body = res.json();
+      // The cursor must NOT be past the 100th note — otherwise notes 101+
+      // would be permanently skipped on the next pull.
+      const lastReturnedNote = notes[notes.length - 1];
+      expect(body.cursor.lastSyncedAt).toBe(lastReturnedNote.updatedAt.toISOString());
+      // hasMore is true because notes hit its cap.
+      expect(body.hasMore).toBe(true);
+    });
+
+    it("cursor advances to last returned item when no type is capped", async () => {
+      const baseTime = new Date("2024-01-01T00:00:00.000Z").getTime();
+      const notes = Array.from({ length: 5 }, (_, i) =>
+        makeMockNoteRow({ id: `note-${i}`, updatedAt: new Date(baseTime + i * 60000) }),
+      );
+      const folders = Array.from({ length: 3 }, (_, i) =>
+        makeMockFolderRow({
+          id: `folder-${i}`,
+          updatedAt: new Date(baseTime + 10_000_000 + i * 60000),
+        }),
+      );
+
+      mockPrisma.note.findMany.mockResolvedValue(notes);
+      mockPrisma.folder.findMany.mockResolvedValue(folders);
+      mockPrisma.syncCursor.upsert.mockResolvedValue({});
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/sync/pull",
+        headers: authHeader(),
+        payload: { deviceId: "device-1", since: "2023-01-01T00:00:00.000Z" },
+      });
+
+      const body = res.json();
+      // No type was capped, so cursor = last returned item (the last folder).
+      expect(body.cursor.lastSyncedAt).toBe(folders[folders.length - 1].updatedAt.toISOString());
+      expect(body.hasMore).toBe(false);
+    });
+
     it("updates sync cursor", async () => {
       mockPrisma.note.findMany.mockResolvedValue([]);
       mockPrisma.folder.findMany.mockResolvedValue([]);

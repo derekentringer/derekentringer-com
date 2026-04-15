@@ -230,22 +230,45 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
       timestamp: i.updatedAt.toISOString(),
     }));
 
-    // Merge and sort by timestamp ASC. Do NOT slice here — each per-type query
-    // is already capped at BATCH_LIMIT (see syncStore.ts), so the combined
-    // response is bounded at 3*BATCH_LIMIT. Slicing again here would silently
-    // drop items that the client will never fetch, because the cursor advances
-    // past them on the next pull.
+    // Merge and sort by timestamp ASC. Each per-type query is already capped
+    // at BATCH_LIMIT (see syncStore.ts), so the combined response is bounded
+    // at 3*BATCH_LIMIT.
     const allChanges = [...noteChanges, ...folderChanges, ...imageChanges].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     );
 
-    // Cursor = timestamp of the LAST returned item (equivalent to max, since
-    // sorted ASC). Items the client didn't receive are guaranteed to have
-    // updatedAt > cursor and will be picked up on the next pull.
+    // Cursor math: per-type pagination with a single global cursor.
+    //
+    // Each per-type query uses `take: BATCH_LIMIT`. If a type hit that cap,
+    // there may be more items of that type with `updatedAt > lastReturned`.
+    // We must NOT advance the global cursor past any such item, or the next
+    // pull (which uses `updatedAt > cursor`) will permanently skip it.
+    //
+    // For each type compute a "safe advance" timestamp:
+    //   - If the type hit BATCH_LIMIT: its last returned item's updatedAt.
+    //     We've seen everything up to and including this timestamp.
+    //   - If the type returned < BATCH_LIMIT: +Infinity. This type is drained.
+    //
+    // Global cursor = min(safe advance across all types). This guarantees the
+    // next pull cannot skip items of any capped type, because we never
+    // advance past that type's last-seen boundary.
+    const safeAdvance = (items: { updatedAt: Date }[]): number =>
+      items.length >= BATCH_LIMIT
+        ? items[items.length - 1].updatedAt.getTime()
+        : Number.POSITIVE_INFINITY;
+
+    const minSafe = Math.min(safeAdvance(notes), safeAdvance(folders), safeAdvance(images));
+
     let cursorDate: Date;
-    if (allChanges.length > 0) {
+    if (Number.isFinite(minSafe)) {
+      // At least one type is capped — advance cursor only as far as safe.
+      cursorDate = new Date(minSafe);
+    } else if (allChanges.length > 0) {
+      // All types fully drained — advance to the last returned item.
       cursorDate = new Date(allChanges[allChanges.length - 1].timestamp);
     } else {
+      // Nothing returned — hold cursor at wall-clock so the client doesn't
+      // re-pull the same empty range forever.
       cursorDate = new Date();
     }
     await upsertSyncCursor(userId, deviceId, cursorDate);
