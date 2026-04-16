@@ -11,6 +11,12 @@ import type { Note as PrismaNote, Folder as PrismaFolder } from "../generated/pr
 import { generateQueryEmbedding } from "../services/embeddingService.js";
 import { syncNoteLinks } from "./linkStore.js";
 import { captureVersion } from "./versionStore.js";
+import {
+  parseFrontmatter,
+  serializeFrontmatter,
+  updateFrontmatterField,
+  injectFrontmatter,
+} from "@derekentringer/shared/ns";
 
 function isNotFoundError(error: unknown): boolean {
   return (
@@ -43,11 +49,18 @@ export async function createNote(
     }
   }
 
+  // Inject frontmatter into content — frontmatter is the source of truth for
+  // metadata fields. If content already has frontmatter, merge without overwriting.
+  const contentWithFrontmatter = injectFrontmatter(data.content ?? "", {
+    title: data.title,
+    tags: data.tags,
+  });
+
   const created = await prisma.note.create({
     data: {
       userId,
       title: data.title,
-      content: data.content ?? "",
+      content: contentWithFrontmatter,
       folder: data.folder ?? null,
       folderId: data.folderId ?? null,
       tags: data.tags ?? [],
@@ -422,6 +435,69 @@ export async function updateNote(
           where: { userId, favorite: true, deletedAt: null },
         });
         updateData.favoriteSortOrder = (maxResult._max.favoriteSortOrder ?? -1) + 1;
+      }
+    }
+
+    // Sync frontmatter ↔ database cache.
+    // When content changes: derive cache columns from frontmatter in content.
+    // When metadata fields change without content: update frontmatter in content.
+    if (data.content !== undefined) {
+      // Content changed — parse frontmatter and derive cache columns
+      const { metadata } = parseFrontmatter(data.content);
+      if (metadata.title !== undefined && data.title === undefined) {
+        updateData.title = metadata.title;
+      }
+      if (metadata.tags !== undefined && data.tags === undefined) {
+        updateData.tags = metadata.tags;
+      }
+      if (metadata.description !== undefined && data.summary === undefined) {
+        updateData.summary = metadata.description;
+      }
+      if (metadata.favorite !== undefined && data.favorite === undefined) {
+        updateData.favorite = metadata.favorite;
+      }
+    } else {
+      // Metadata changed without content — update frontmatter in content.
+      // Need to fetch current content to update frontmatter in it.
+      const metadataChanged =
+        data.title !== undefined ||
+        data.tags !== undefined ||
+        data.summary !== undefined ||
+        data.favorite !== undefined;
+
+      if (metadataChanged) {
+        const existing = await prisma.note.findUnique({
+          where: { id, userId, deletedAt: null },
+          select: { content: true },
+        });
+        if (existing?.content !== undefined) {
+          let content = existing.content;
+          if (data.title !== undefined) {
+            content = updateFrontmatterField(content, "title", data.title);
+          }
+          if (data.tags !== undefined) {
+            content = updateFrontmatterField(
+              content,
+              "tags",
+              data.tags.length > 0 ? data.tags : undefined,
+            );
+          }
+          if (data.summary !== undefined) {
+            content = updateFrontmatterField(
+              content,
+              "description",
+              data.summary || undefined,
+            );
+          }
+          if (data.favorite !== undefined) {
+            content = updateFrontmatterField(
+              content,
+              "favorite",
+              data.favorite || undefined,
+            );
+          }
+          updateData.content = content;
+        }
       }
     }
 

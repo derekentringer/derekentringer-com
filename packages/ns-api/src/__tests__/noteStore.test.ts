@@ -101,7 +101,7 @@ describe("noteStore", () => {
         data: {
           userId: TEST_USER_ID,
           title: "Test Note",
-          content: "Some content",
+          content: "---\ntitle: Test Note\ntags:\n  - tag1\n---\nSome content",
           folder: "work",
           folderId: null,
           tags: ["tag1"],
@@ -122,7 +122,7 @@ describe("noteStore", () => {
         data: {
           userId: TEST_USER_ID,
           title: "Minimal",
-          content: "",
+          content: "---\ntitle: Minimal\n---\n",
           folder: null,
           folderId: null,
           tags: [],
@@ -311,14 +311,16 @@ describe("noteStore", () => {
   describe("updateNote", () => {
     it("updates and returns the note", async () => {
       const row = makeMockNoteRow({ title: "Updated" });
+      mockPrisma.note.findUnique.mockResolvedValue({ content: "Some content" });
       mockPrisma.note.update.mockResolvedValue(row);
 
       const result = await updateNote(TEST_USER_ID, "note-1", { title: "Updated" });
 
       expect(result).toEqual(row);
+      // Title change updates frontmatter in content
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
-        data: { title: "Updated" },
+        data: { title: "Updated", content: "---\ntitle: Updated\n---\nSome content" },
       });
     });
 
@@ -328,6 +330,7 @@ describe("noteStore", () => {
 
       await updateNote(TEST_USER_ID, "note-1", { content: "new content" });
 
+      // Content-only change doesn't trigger metadata-to-frontmatter sync
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
         data: { content: "new content" },
@@ -351,25 +354,29 @@ describe("noteStore", () => {
 
     it("includes summary field when provided", async () => {
       const row = makeMockNoteRow({ summary: "A summary" });
+      mockPrisma.note.findUnique.mockResolvedValue({ content: "Some content" });
       mockPrisma.note.update.mockResolvedValue(row);
 
       await updateNote(TEST_USER_ID, "note-1", { summary: "A summary" });
 
+      // Summary change updates frontmatter description in content
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
-        data: { summary: "A summary" },
+        data: { summary: "A summary", content: "---\ndescription: A summary\n---\nSome content" },
       });
     });
 
     it("allows setting summary to null", async () => {
       const row = makeMockNoteRow({ summary: null });
+      mockPrisma.note.findUnique.mockResolvedValue({ content: "Some content" });
       mockPrisma.note.update.mockResolvedValue(row);
 
       await updateNote(TEST_USER_ID, "note-1", { summary: null });
 
+      // Clearing summary removes description from frontmatter
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
-        data: { summary: null },
+        data: { summary: null, content: "---\n---\nSome content" },
       });
     });
   });
