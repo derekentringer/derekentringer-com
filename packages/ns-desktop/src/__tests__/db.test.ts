@@ -253,7 +253,7 @@ describe("createNote", () => {
     expect(note.id).toBe("test-uuid-1234");
   });
 
-  it("uses empty string defaults for title and content", async () => {
+  it("uses empty string defaults for title and content with frontmatter", async () => {
     mockExecute.mockResolvedValue({ lastInsertId: 1, rowsAffected: 1 });
     mockSelect.mockResolvedValue([{ ...sampleRow, id: "test-uuid-1234", title: "", content: "" }]);
 
@@ -261,7 +261,8 @@ describe("createNote", () => {
 
     const [, params] = mockExecute.mock.calls[0];
     expect(params[1]).toBe(""); // title
-    expect(params[2]).toBe(""); // content
+    // Content gets an empty frontmatter block injected
+    expect(params[2]).toBe("---\n---\n");
   });
 
   it("returns fallback note if re-read fails", async () => {
@@ -272,7 +273,8 @@ describe("createNote", () => {
 
     expect(note.id).toBe("test-uuid-1234");
     expect(note.title).toBe("Fallback");
-    expect(note.content).toBe("");
+    // Content has frontmatter injected with title
+    expect(note.content).toBe("---\ntitle: Fallback\n---\n");
     expect(note.tags).toEqual([]);
     expect(note.favorite).toBe(false);
   });

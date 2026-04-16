@@ -15,6 +15,11 @@ import type {
   NoteVersionListResponse,
   AudioMode,
 } from "@derekentringer/ns-shared";
+import {
+  parseFrontmatter,
+  updateFrontmatterField,
+  injectFrontmatter,
+} from "@derekentringer/ns-shared";
 import { DB_URI } from "./dbName.ts";
 
 let dbInstance: Database | null = null;
@@ -244,11 +249,18 @@ export async function createNote(data: CreateNoteInput): Promise<Note> {
   const id = uuidv4();
   const now = new Date().toISOString();
   const title = data.title ?? "";
-  const content = data.content ?? "";
   const folderId = data.folderId ?? null;
 
   const isLocalFile = data.isLocalFile ? 1 : 0;
-  const tagsJson = JSON.stringify(data.tags ?? []);
+  const tags = data.tags ?? [];
+  const tagsJson = JSON.stringify(tags);
+
+  // Inject frontmatter into content — frontmatter is the source of truth for
+  // metadata fields. If content already has frontmatter, merge without overwriting.
+  const content = injectFrontmatter(data.content ?? "", {
+    title: title || undefined,
+    tags: tags.length > 0 ? tags : undefined,
+  });
 
   await db.execute(
     `INSERT INTO notes (id, title, content, folder_id, tags, is_local_file, is_deleted, created_at, updated_at)
@@ -350,6 +362,78 @@ export async function updateNote(
     setClauses.push(`is_local_file = $${paramIdx}`);
     params.push(data.isLocalFile ? 1 : 0);
     paramIdx++;
+  }
+
+  // Sync frontmatter ↔ database cache.
+  // When content changes: derive cache columns from frontmatter in content.
+  // When metadata fields change without content: update frontmatter in content.
+  if (data.content !== undefined) {
+    // Content changed — parse frontmatter and derive cache columns
+    const { metadata } = parseFrontmatter(data.content);
+    if (metadata.title !== undefined && data.title === undefined) {
+      setClauses.push(`title = $${paramIdx}`);
+      params.push(metadata.title);
+      paramIdx++;
+    }
+    if (metadata.tags !== undefined && data.tags === undefined) {
+      setClauses.push(`tags = $${paramIdx}`);
+      params.push(JSON.stringify(metadata.tags));
+      paramIdx++;
+    }
+    if (metadata.description !== undefined && data.summary === undefined) {
+      setClauses.push(`summary = $${paramIdx}`);
+      params.push(metadata.description);
+      paramIdx++;
+    }
+    if (metadata.favorite !== undefined && data.favorite === undefined) {
+      setClauses.push(`favorite = $${paramIdx}`);
+      params.push(metadata.favorite ? 1 : 0);
+      paramIdx++;
+    }
+  } else {
+    // Metadata changed without content — update frontmatter in content.
+    const metadataChanged =
+      data.title !== undefined ||
+      data.tags !== undefined ||
+      data.summary !== undefined ||
+      data.favorite !== undefined;
+
+    if (metadataChanged) {
+      const rows = await db.select<{ content: string }[]>(
+        "SELECT content FROM notes WHERE id = $1",
+        [id],
+      );
+      if (rows.length > 0 && rows[0].content !== undefined) {
+        let content = rows[0].content;
+        if (data.title !== undefined) {
+          content = updateFrontmatterField(content, "title", data.title);
+        }
+        if (data.tags !== undefined) {
+          content = updateFrontmatterField(
+            content,
+            "tags",
+            data.tags.length > 0 ? data.tags : undefined,
+          );
+        }
+        if (data.summary !== undefined) {
+          content = updateFrontmatterField(
+            content,
+            "description",
+            data.summary || undefined,
+          );
+        }
+        if (data.favorite !== undefined) {
+          content = updateFrontmatterField(
+            content,
+            "favorite",
+            data.favorite || undefined,
+          );
+        }
+        setClauses.push(`content = $${paramIdx}`);
+        params.push(content);
+        paramIdx++;
+      }
+    }
   }
 
   params.push(id);
