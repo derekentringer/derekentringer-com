@@ -618,6 +618,12 @@ async function pullChanges(id: string): Promise<void> {
 
 async function applyNoteChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
+    // Upsert first so the note exists locally (it may have been trashed before
+    // desktop ever synced it while active)
+    const noteData = change.data as Note | null;
+    if (noteData) {
+      await upsertNoteFromRemote(noteData);
+    }
     await softDeleteNoteFromRemote(change.id, change.timestamp);
     noteRemoteDeletedCallback?.(change.id);
     return;
@@ -657,6 +663,8 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
 
 async function applyFolderChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
+    const folderData = change.data as FolderSyncData | null;
+    if (folderData) await upsertFolderFromRemote(folderData);
     await softDeleteFolderFromRemote(change.id);
     return;
   }
@@ -668,6 +676,8 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
 
 async function applyImageChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
+    const imageData = change.data as ImageSyncData | null;
+    if (imageData) await upsertImageFromRemote(imageData);
     await softDeleteImageFromRemote(change.id);
     return;
   }
