@@ -458,6 +458,7 @@ export function NotesPage() {
   const refreshSidebarDataRef = useRef<() => void>(() => {});
   const loadFavoriteNotesRef = useRef<() => void>(() => {});
   const loadNoteTitlesRef = useRef<() => void>(() => {});
+  const refreshTrashCountRef = useRef<() => void>(() => {});
   const reloadNotesRef = useRef<() => Promise<void>>(async () => {});
   const closeDeletedNoteTabRef = useRef<(noteId: string) => void>(() => {});
 
@@ -597,6 +598,7 @@ export function NotesPage() {
         refreshSidebarDataRef.current();
         loadFavoriteNotesRef.current();
         loadNoteTitlesRef.current();
+        refreshTrashCountRef.current();
       },
       onLocalFileCloudUpdate: (noteId) => {
         setLocalFileStatuses((prev) => {
@@ -1836,6 +1838,11 @@ export function NotesPage() {
   refreshSidebarDataRef.current = refreshSidebarData;
   loadFavoriteNotesRef.current = loadFavoriteNotes;
   loadNoteTitlesRef.current = loadNoteTitles;
+  refreshTrashCountRef.current = () => {
+    fetchTrash()
+      .then((trash) => setTrashCount(trash.length))
+      .catch(() => {});
+  };
   reloadNotesRef.current = reloadNotes;
   closeDeletedNoteTabRef.current = (noteId: string) => {
     setOpenTabs((prev) => {
