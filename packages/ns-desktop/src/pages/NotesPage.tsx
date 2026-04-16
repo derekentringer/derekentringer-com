@@ -66,6 +66,7 @@ import {
   findNoteByLocalPath,
   getNoteLocalPath,
   enqueueSyncAction,
+  migrateFrontmatter,
   type SearchMode,
 } from "../lib/db.ts";
 import { AboutDialog } from "../components/AboutDialog.tsx";
@@ -666,6 +667,8 @@ export function NotesPage() {
   async function loadData() {
     try {
       await initFts();
+      // One-time migration: inject frontmatter into existing notes
+      await migrateFrontmatter();
       const [notesResult, foldersResult, tagsResult] = await Promise.all([
         fetchNotes({ sortBy, sortOrder }),
         fetchFolders(),

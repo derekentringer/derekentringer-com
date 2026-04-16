@@ -1725,3 +1725,77 @@ export async function fetchImageById(imageId: string): Promise<ImageSyncData | n
     deletedAt: r.deleted_at,
   };
 }
+
+// --- Data migrations ---
+
+const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";
+
+/**
+ * One-time data migration: inject YAML frontmatter into existing notes that
+ * don't have it yet. Checks a flag in sync_meta so it only runs once.
+ * Safe to call on every app startup — returns immediately if already done.
+ */
+export async function migrateFrontmatter(): Promise<void> {
+  const done = await getSyncMeta(FRONTMATTER_MIGRATION_KEY);
+  if (done === "1") return;
+
+  const db = await getDb();
+  const { hasFrontmatter: hasFm, injectFrontmatter: injectFm } = await import(
+    "@derekentringer/ns-shared"
+  );
+
+  // Fetch all notes (including soft-deleted)
+  const rows = await db.select<
+    {
+      id: string;
+      title: string;
+      content: string;
+      tags: string;
+      summary: string | null;
+      favorite: number;
+      created_at: string;
+      updated_at: string;
+    }[]
+  >("SELECT id, title, content, tags, summary, favorite, created_at, updated_at FROM notes");
+
+  let updated = 0;
+  for (const row of rows) {
+    if (hasFm(row.content)) continue;
+
+    let tags: string[] = [];
+    try {
+      tags = JSON.parse(row.tags);
+    } catch {
+      /* ignore */
+    }
+
+    const newContent = injectFm(row.content, {
+      title: row.title || undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      tags: tags.length > 0 ? tags : undefined,
+      summary: row.summary || undefined,
+      favorite: row.favorite === 1 || undefined,
+    });
+
+    await db.execute("UPDATE notes SET content = $1 WHERE id = $2", [
+      newContent,
+      row.id,
+    ]);
+
+    // Update FTS index
+    await ftsUpdate(
+      row.id,
+      row.title,
+      newContent,
+      row.tags,
+    );
+
+    updated++;
+  }
+
+  await setSyncMeta(FRONTMATTER_MIGRATION_KEY, "1");
+  if (updated > 0) {
+    console.log(`[frontmatter migration] Updated ${updated} of ${rows.length} notes`);
+  }
+}

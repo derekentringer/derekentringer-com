@@ -12,7 +12,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:migrate:frontmatter": "tsx scripts/migrate-frontmatter.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
