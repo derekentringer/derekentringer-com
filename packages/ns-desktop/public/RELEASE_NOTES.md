@@ -1,5 +1,18 @@
 # What's New
 
+## v2.34.0
+
+- **Fix** — Refresh trash count badge after sync pulls in trashed items on fresh install
+
+## v2.33.0
+
+- **Fix** — Sync trashed items that were never synced while active
+
+## v2.32.0
+
+- **Chore** — Sync tauri.conf.json version
+- **Chore** — Update RELEASE_NOTES for v2.26–v2.31
+
 ## v2.31.0
 
 - **Fix** — Drop foreign key constraint on images.note_id
