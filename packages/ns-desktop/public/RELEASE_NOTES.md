@@ -1,5 +1,35 @@
 # What's New
 
+## v2.31.0
+
+- **Fix** — Drop foreign key constraint on images.note_id
+
+## v2.30.0
+
+- **Fix** — Sync pull cursor must respect per-type pagination boundary
+
+## v2.29.0
+
+- **Fix** — Folder sync — pagination cursor + drop client FK
+
+## v2.28.0
+
+- **Fix** — Make local builds deterministic across platforms
+- **Chore** — Sync ns-web package.json version to 2.27.0
+
+## v2.27.0
+
+- **Fix** — Read version from package.json with git tag sync
+
+## v2.26.0
+
+- **Fix** — Version display fixes for web and desktop builds
+- **Fix** — Fix version display on local dev and Railway production
+- **Fix** — Use numeric pre-release identifier for dev builds
+- **New** — Local dev builds append -dev to version
+- **Chore** — Add tauri:build:win script mirroring macOS tauri:build
+- **Chore** — Remove slate.json, add to gitignore
+
 ## v2.25.0
 
 - **New** — Active note context for AI, configurable Claude model, plugin API updates
