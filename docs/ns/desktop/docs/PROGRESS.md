@@ -208,13 +208,24 @@
 - [x] Default recording source changed to meeting mode — Greyed out when unsupported
 - [x] Transcription mode removed from Settings — Ribbon buttons are the primary UI for mode selection
 
+### Phase 12: Advanced Local File Management — High Priority
+
+- [ ] [26 — Frontmatter Support](feature_planning/26-frontmatter-support.md) — YAML frontmatter as source of truth for note metadata (title, tags, dates, description, favorite); database columns become a read cache; shared parser/serializer in ns-shared; migration injects frontmatter into existing notes; unknown fields preserved on round-trip for Obsidian/Jekyll compatibility
+- [ ] [27 — Directory Watching](feature_planning/27-directory-watching.md) — Recursive directory watchers on managed folders; auto-index new files with frontmatter parsing; startup reconciliation; managed_directories SQLite table; Settings UI for managing watched directories; ignore patterns (.git, node_modules, .obsidian)
+- [ ] [28 — External Delete Handling](feature_planning/28-external-delete-handling.md) — Soft-delete notes when files are removed from managed directories; undo with file recreation; bulk delete handling; startup reconciliation for files deleted while app was closed; individually-linked files retain current "missing" behavior
+- [ ] [29 — Rename and Move Detection](feature_planning/29-rename-move-detection.md) — Correlate delete + create watcher events to detect renames/moves; match via frontmatter metadata or content hash; pending-delete buffer with 500ms timeout; preserve note ID, history, backlinks, embeddings; optional setting to rename files when note title changes
+- [ ] [30 — Folder Structure Mirroring](feature_planning/30-folder-structure-mirroring.md) — Bidirectional sync between filesystem directory structure and NoteSync folder tree; directory changes create/delete/rename folders; NoteSync folder changes create/delete/rename directories; path-to-folder mapping derived from managed directory root; file moves update folderId
+
+### Phase 13: Security — High Priority
+
+- [ ] [31 — End-to-End Encryption](feature_planning/31-e2e-encryption.md)
+
 ## Extension Ideas (Future)
 
 - Note templates (meeting notes, journal, project plan)
 - Clipboard capture via system hotkey
 - OCR import using AI vision
 - Browser extension for web clipping
-- Encrypted notes (end-to-end encryption)
 - Kanban board view
 - Graph visualization for note links
 
