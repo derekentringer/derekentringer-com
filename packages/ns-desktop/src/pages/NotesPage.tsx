@@ -87,6 +87,8 @@ import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
 import { TagBrowser, type TagLayout, type TagSort } from "../components/TagBrowser.tsx";
+import { PropertiesPanel, type PropertiesMode } from "../components/PropertiesPanel.tsx";
+import { updateFrontmatterField } from "@derekentringer/ns-shared";
 import { TagInput } from "../components/TagInput.tsx";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { DiffView } from "../components/DiffView.tsx";
@@ -3383,35 +3385,31 @@ export function NotesPage() {
               </p>
             </div>
 
-            {/* Summary */}
-            {selectedNote?.summary && (
-              <div className="relative px-4 py-2 text-sm text-muted-foreground border-b border-border italic pr-8 overflow-hidden">
-                {selectedNote.summary}
-                <button
-                  onClick={() => setConfirmDeleteSummary(true)}
-                  className="absolute top-1.5 right-2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  title="Remove summary"
-                >
-                  &times;
-                </button>
-              </div>
-            )}
-            {confirmDeleteSummary && (
-              <ConfirmDialog
-                title="Delete Summary"
-                message={selectedNote?.title || "Untitled"}
-                onConfirm={() => {
-                  handleDeleteSummary();
-                  setConfirmDeleteSummary(false);
-                }}
-                onCancel={() => setConfirmDeleteSummary(false)}
-              />
-            )}
-            {/* Tag input */}
-            <TagInput
-              tags={selectedNote.tags}
+            {/* Properties panel (replaces summary + tags) */}
+            <PropertiesPanel
+              content={content}
+              onFieldChange={(field, value) => {
+                if (!selectedId) return;
+                const newContent = updateFrontmatterField(content, field, value);
+                setContent(newContent);
+                // Also update the database cache columns directly
+                if (field === "tags") {
+                  const newTags = Array.isArray(value) ? value as string[] : [];
+                  handleUpdateTags(selectedId, newTags);
+                } else if (field === "description") {
+                  updateNote(selectedId, { summary: typeof value === "string" ? value : null }).catch(() => {});
+                } else if (field === "favorite") {
+                  updateNote(selectedId, { favorite: !!value }).then((updated) => {
+                    setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+                    loadFavoriteNotes();
+                  }).catch(() => {});
+                }
+              }}
+              mode={editorSettings.propertiesMode as PropertiesMode}
+              onModeChange={(mode) => updateEditorSetting("propertiesMode", mode)}
+              collapsed={editorSettings.propertiesCollapsed}
+              onToggleCollapsed={() => updateEditorSetting("propertiesCollapsed", !editorSettings.propertiesCollapsed)}
               allTags={tags.map((t) => t.name)}
-              onChange={(newTags) => handleUpdateTags(selectedId!, newTags)}
             />
 
             {/* Suggested tags */}
@@ -3440,6 +3438,17 @@ export function NotesPage() {
                   </span>
                 ))}
               </div>
+            )}
+            {confirmDeleteSummary && (
+              <ConfirmDialog
+                title="Delete Summary"
+                message={selectedNote?.title || "Untitled"}
+                onConfirm={() => {
+                  handleDeleteSummary();
+                  setConfirmDeleteSummary(false);
+                }}
+                onCancel={() => setConfirmDeleteSummary(false)}
+              />
             )}
 
             {localFileDiffView ? (
@@ -3557,6 +3566,7 @@ export function NotesPage() {
                       cursorBlink={editorSettings.cursorBlink}
                       enableLivePreview={viewMode === "live"}
                       viewMode={viewMode}
+                      hideFrontmatter={editorSettings.propertiesMode === "panel"}
                       extensions={[wikiLinkExt, ...aiExtensions]}
                       className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                       style={viewMode === "split" ? { width: splitResize.size } : undefined}

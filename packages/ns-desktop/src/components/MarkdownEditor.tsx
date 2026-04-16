@@ -8,6 +8,7 @@ import {
 import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { imageUploadExtension } from "../editor/imageUpload.ts";
+import { hideFrontmatter as hideFrontmatterExt } from "../editor/frontmatterFold.ts";
 import { livePreview } from "../editor/livePreview.ts";
 import { tableAutoFormat } from "../editor/tableAutoFormat.ts";
 import { formatTableChanges } from "../lib/tableMarkdown.ts";
@@ -68,6 +69,7 @@ interface MarkdownEditorProps {
   cursorBlink?: boolean;
   enableLivePreview?: boolean;
   viewMode?: string;
+  hideFrontmatter?: boolean;
 }
 
 function cycleHeadingLevel(view: EditorView) {
@@ -392,6 +394,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     cursorBlink = true,
     enableLivePreview = false,
     viewMode,
+    hideFrontmatter: hideFm = false,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -400,6 +403,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const onSaveRef = useRef(onSave);
   const onImageUploadRef = useRef(onImageUpload);
   const lineNumberCompartment = useRef(new Compartment());
+  const frontmatterCompartment = useRef(new Compartment());
   const wordWrapCompartment = useRef(new Compartment());
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
@@ -490,6 +494,9 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
           ]),
           lineNumberCompartment.current.of(
             showLineNumbers ? lineNumbers() : [],
+          ),
+          frontmatterCompartment.current.of(
+            hideFm ? hideFrontmatterExt() : [],
           ),
           wordWrapCompartment.current.of(
             wordWrap ? EditorView.lineWrapping : [],
@@ -634,6 +641,17 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
       ),
     });
   }, [showLineNumbers]);
+
+  // Toggle frontmatter visibility
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: frontmatterCompartment.current.reconfigure(
+        hideFm ? hideFrontmatterExt() : [],
+      ),
+    });
+  }, [hideFm]);
 
   // Toggle word wrap
   useEffect(() => {

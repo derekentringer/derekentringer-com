@@ -35,6 +35,8 @@ describe("useEditorSettings", () => {
     const saved: EditorSettings = {
       defaultViewMode: "split",
       showLineNumbers: false,
+      propertiesMode: "source",
+      propertiesCollapsed: true,
       wordWrap: false,
       autoSaveDelay: 2000,
       tabSize: 4,
