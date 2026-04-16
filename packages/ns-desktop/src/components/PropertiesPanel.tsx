@@ -1,13 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { parseFrontmatter, type FrontmatterData } from "@derekentringer/ns-shared";
 
-export type PropertiesMode = "panel" | "source";
-
 interface PropertiesPanelProps {
   content: string;
   onFieldChange: (field: string, value: unknown) => void;
-  mode: PropertiesMode;
-  onModeChange: (mode: PropertiesMode) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   allTags: string[];
@@ -18,8 +14,6 @@ interface PropertiesPanelProps {
 export function PropertiesPanel({
   content,
   onFieldChange,
-  mode,
-  onModeChange,
   collapsed,
   onToggleCollapsed,
   allTags,
@@ -29,8 +23,6 @@ export function PropertiesPanel({
     () => parseFrontmatter(content),
     [content],
   );
-
-  if (mode === "source") return null;
 
   return (
     <div className="border-b border-border">
@@ -57,19 +49,18 @@ export function PropertiesPanel({
           </svg>
           Properties
         </button>
-        <div className="flex-1" />
-        <button
-          onClick={() => onModeChange("source")}
-          className="px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors cursor-pointer"
-          title="Edit raw YAML"
-        >
-          {"</>"}
-        </button>
       </div>
 
       {/* Fields */}
       {!collapsed && (
         <div className="px-3 pb-2 space-y-1">
+          {/* Title */}
+          <PropertyRow label="title">
+            <span className="text-[11px] text-muted-foreground">
+              {metadata.title ?? ""}
+            </span>
+          </PropertyRow>
+
           {/* Tags */}
           <PropertyRow label="tags">
             <TagPills
@@ -81,21 +72,19 @@ export function PropertiesPanel({
           </PropertyRow>
 
           {/* Description */}
-          {(metadata.description !== undefined || !readOnly) && (
-            <PropertyRow label="description">
-              {readOnly ? (
-                <span className="text-xs text-foreground">{metadata.description ?? ""}</span>
-              ) : (
-                <input
-                  type="text"
-                  value={metadata.description ?? ""}
-                  onChange={(e) => onFieldChange("description", e.target.value || undefined)}
-                  placeholder="Add a description..."
-                  className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-                />
-              )}
-            </PropertyRow>
-          )}
+          <PropertyRow label="description">
+            {readOnly ? (
+              <span className="text-[11px] text-foreground">{metadata.description ?? ""}</span>
+            ) : (
+              <input
+                type="text"
+                value={metadata.description ?? ""}
+                onChange={(e) => onFieldChange("description", e.target.value || undefined)}
+                placeholder="Add a description..."
+                className="w-full bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+              />
+            )}
+          </PropertyRow>
 
           {/* Aliases */}
           {metadata.aliases && metadata.aliases.length > 0 && (
@@ -114,34 +103,28 @@ export function PropertiesPanel({
           )}
 
           {/* Favorite */}
-          {metadata.favorite !== undefined && (
-            <PropertyRow label="favorite">
-              <button
-                onClick={() => !readOnly && onFieldChange("favorite", !metadata.favorite || undefined)}
-                className={`cursor-pointer text-xs ${metadata.favorite ? "text-yellow-500" : "text-muted-foreground/50 hover:text-yellow-500"} transition-colors`}
-                disabled={readOnly}
-                title={metadata.favorite ? "Unfavorite" : "Favorite"}
-              >
-                {metadata.favorite ? "\u2605" : "\u2606"}
-              </button>
-            </PropertyRow>
-          )}
+          <PropertyRow label="favorite">
+            <button
+              onClick={() => !readOnly && onFieldChange("favorite", !metadata.favorite || undefined)}
+              className={`cursor-pointer text-xs ${metadata.favorite ? "text-yellow-500" : "text-muted-foreground/50 hover:text-yellow-500"} transition-colors`}
+              disabled={readOnly}
+              title={metadata.favorite ? "Unfavorite" : "Favorite"}
+            >
+              {metadata.favorite ? "\u2605" : "\u2606"}
+            </button>
+          </PropertyRow>
 
           {/* Date fields (read-only) */}
-          {metadata.date && (
-            <PropertyRow label="created">
-              <span className="text-[11px] text-muted-foreground">
-                {formatDate(metadata.date)}
-              </span>
-            </PropertyRow>
-          )}
-          {metadata.updated && (
-            <PropertyRow label="modified">
-              <span className="text-[11px] text-muted-foreground">
-                {formatDate(metadata.updated)}
-              </span>
-            </PropertyRow>
-          )}
+          <PropertyRow label="created">
+            <span className="text-[11px] text-muted-foreground">
+              {metadata.date ? formatDate(metadata.date) : "\u2014"}
+            </span>
+          </PropertyRow>
+          <PropertyRow label="modified">
+            <span className="text-[11px] text-muted-foreground">
+              {metadata.updated ? formatDate(metadata.updated) : "\u2014"}
+            </span>
+          </PropertyRow>
 
           {/* Unknown fields */}
           {Object.keys(unknownFields).length > 0 && (
@@ -165,8 +148,8 @@ export function PropertiesPanel({
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3">
-      <span className="text-[11px] text-muted-foreground w-16 shrink-0 pt-0.5 text-right">
+    <div className="flex items-center gap-3 min-h-[24px]">
+      <span className="text-[11px] text-muted-foreground w-16 shrink-0 text-right">
         {label}
       </span>
       <div className="flex-1 min-w-0">{children}</div>
@@ -259,7 +242,7 @@ function TagPills({
                 onChange(tags.slice(0, -1));
               }
             }}
-            placeholder={tags.length === 0 ? "Add tags..." : ""}
+            placeholder={tags.length === 0 ? "e.g. work, meeting, project" : ""}
             className="w-full bg-transparent text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none py-0"
             aria-label="Add tag"
           />

@@ -9,6 +9,7 @@ import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@co
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { imageUploadExtension } from "../editor/imageUpload.ts";
 import { hideFrontmatter as hideFrontmatterExt } from "../editor/frontmatterFold.ts";
+import { highlightFrontmatter as highlightFrontmatterExt } from "../editor/frontmatterHighlight.ts";
 import { livePreview } from "../editor/livePreview.ts";
 import { tableAutoFormat } from "../editor/tableAutoFormat.ts";
 import { formatTableChanges } from "../lib/tableMarkdown.ts";
@@ -404,6 +405,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const onImageUploadRef = useRef(onImageUpload);
   const lineNumberCompartment = useRef(new Compartment());
   const frontmatterCompartment = useRef(new Compartment());
+  const frontmatterHighlightCompartment = useRef(new Compartment());
   const wordWrapCompartment = useRef(new Compartment());
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
@@ -493,10 +495,13 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             syntaxHighlighting(isDark ? createDarkHighlightStyle(accent) : createLightHighlightStyle(accent)),
           ]),
           lineNumberCompartment.current.of(
-            showLineNumbers ? lineNumbers() : [],
+            showLineNumbers && !hideFm ? lineNumbers() : [],
           ),
           frontmatterCompartment.current.of(
             hideFm ? hideFrontmatterExt() : [],
+          ),
+          frontmatterHighlightCompartment.current.of(
+            hideFm ? [] : highlightFrontmatterExt(),
           ),
           wordWrapCompartment.current.of(
             wordWrap ? EditorView.lineWrapping : [],
@@ -635,23 +640,36 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    // When frontmatter is hidden, the fold extension provides its own
+    // offset line numbers gutter — disable the standard one to avoid
+    // duplicate/conflicting gutters.
     view.dispatch({
       effects: lineNumberCompartment.current.reconfigure(
-        showLineNumbers ? lineNumbers() : [],
+        showLineNumbers && !hideFm ? lineNumbers() : [],
       ),
     });
-  }, [showLineNumbers]);
+  }, [showLineNumbers, hideFm]);
 
   // Toggle frontmatter visibility
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({
-      effects: frontmatterCompartment.current.reconfigure(
-        hideFm ? hideFrontmatterExt() : [],
-      ),
+      effects: [
+        frontmatterCompartment.current.reconfigure(
+          hideFm ? hideFrontmatterExt() : [],
+        ),
+        frontmatterHighlightCompartment.current.reconfigure(
+          hideFm ? [] : highlightFrontmatterExt(),
+        ),
+        // Swap line numbers gutter: offset gutter is in the fold extension,
+        // standard lineNumbers() is used in source mode
+        lineNumberCompartment.current.reconfigure(
+          showLineNumbers && !hideFm ? lineNumbers() : [],
+        ),
+      ],
     });
-  }, [hideFm]);
+  }, [hideFm, showLineNumbers]);
 
   // Toggle word wrap
   useEffect(() => {

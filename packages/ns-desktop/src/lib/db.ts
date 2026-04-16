@@ -19,6 +19,7 @@ import {
   parseFrontmatter,
   updateFrontmatterField,
   injectFrontmatter,
+  hasFrontmatter,
 } from "@derekentringer/ns-shared";
 import { DB_URI } from "./dbName.ts";
 
@@ -1735,14 +1736,11 @@ const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";
  * don't have it yet. Checks a flag in sync_meta so it only runs once.
  * Safe to call on every app startup — returns immediately if already done.
  */
-export async function migrateFrontmatter(): Promise<void> {
+export async function migrateFrontmatter(): Promise<boolean> {
   const done = await getSyncMeta(FRONTMATTER_MIGRATION_KEY);
-  if (done === "1") return;
+  if (done === "1") return false;
 
   const db = await getDb();
-  const { hasFrontmatter: hasFm, injectFrontmatter: injectFm } = await import(
-    "@derekentringer/ns-shared"
-  );
 
   // Fetch all notes (including soft-deleted)
   const rows = await db.select<
@@ -1760,8 +1758,6 @@ export async function migrateFrontmatter(): Promise<void> {
 
   let updated = 0;
   for (const row of rows) {
-    if (hasFm(row.content)) continue;
-
     let tags: string[] = [];
     try {
       tags = JSON.parse(row.tags);
@@ -1769,7 +1765,7 @@ export async function migrateFrontmatter(): Promise<void> {
       /* ignore */
     }
 
-    const newContent = injectFm(row.content, {
+    const newContent = injectFrontmatter(row.content, {
       title: row.title || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -1777,6 +1773,9 @@ export async function migrateFrontmatter(): Promise<void> {
       summary: row.summary || undefined,
       favorite: row.favorite === 1 || undefined,
     });
+
+    // Skip if content didn't change (already has complete frontmatter)
+    if (newContent === row.content) continue;
 
     await db.execute("UPDATE notes SET content = $1 WHERE id = $2", [
       newContent,
@@ -1798,4 +1797,5 @@ export async function migrateFrontmatter(): Promise<void> {
   if (updated > 0) {
     console.log(`[frontmatter migration] Updated ${updated} of ${rows.length} notes`);
   }
+  return updated > 0;
 }

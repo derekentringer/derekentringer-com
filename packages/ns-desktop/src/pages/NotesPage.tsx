@@ -87,8 +87,7 @@ import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
 import { TagBrowser, type TagLayout, type TagSort } from "../components/TagBrowser.tsx";
-import { PropertiesPanel, type PropertiesMode } from "../components/PropertiesPanel.tsx";
-import { updateFrontmatterField } from "@derekentringer/ns-shared";
+import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { TagInput } from "../components/TagInput.tsx";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { DiffView } from "../components/DiffView.tsx";
@@ -375,6 +374,9 @@ export function NotesPage() {
   const [isSuggestingTags, setIsSuggestingTags] = useState(false);
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [confirmDeleteSummary, setConfirmDeleteSummary] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState("");
   const titleRef = useRef(title);
   titleRef.current = title;
   const contentRef = useRef(content);
@@ -670,7 +672,11 @@ export function NotesPage() {
     try {
       await initFts();
       // One-time migration: inject frontmatter into existing notes
-      await migrateFrontmatter();
+      const migrated = await migrateFrontmatter();
+      if (migrated) {
+        // Clear tab cache so open tabs reload content with frontmatter
+        tabNoteCacheRef.current.clear();
+      }
       const [notesResult, foldersResult, tagsResult] = await Promise.all([
         fetchNotes({ sortBy, sortOrder }),
         fetchFolders(),
@@ -3237,7 +3243,7 @@ export function NotesPage() {
             {/* Read-only preview */}
             <div className="flex-1 overflow-auto">
               <MarkdownPreview
-                content={selectedNote.content}
+                content={stripFrontmatter(selectedNote.content)}
                 className="flex-1"
               />
             </div>
@@ -3385,31 +3391,93 @@ export function NotesPage() {
               </p>
             </div>
 
-            {/* Properties panel (replaces summary + tags) */}
-            <PropertiesPanel
-              content={content}
-              onFieldChange={(field, value) => {
-                if (!selectedId) return;
-                const newContent = updateFrontmatterField(content, field, value);
-                setContent(newContent);
-                // Also update the database cache columns directly
-                if (field === "tags") {
-                  const newTags = Array.isArray(value) ? value as string[] : [];
-                  handleUpdateTags(selectedId, newTags);
-                } else if (field === "description") {
-                  updateNote(selectedId, { summary: typeof value === "string" ? value : null }).catch(() => {});
-                } else if (field === "favorite") {
-                  updateNote(selectedId, { favorite: !!value }).then((updated) => {
-                    setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
-                    loadFavoriteNotes();
-                  }).catch(() => {});
-                }
-              }}
-              mode={editorSettings.propertiesMode as PropertiesMode}
-              onModeChange={(mode) => updateEditorSetting("propertiesMode", mode)}
-              collapsed={editorSettings.propertiesCollapsed}
-              onToggleCollapsed={() => updateEditorSetting("propertiesCollapsed", !editorSettings.propertiesCollapsed)}
+            {/* Summary */}
+            {selectedNote?.summary && (
+              <div className="px-4 py-1.5 border-b border-border">
+                <div className="flex items-start gap-1">
+                  <button
+                    onClick={() => setSummaryExpanded((prev) => !prev)}
+                    className="shrink-0 mt-[5px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    title={summaryExpanded ? "Collapse summary" : "Expand summary"}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={`transition-transform duration-300 ease-in-out ${summaryExpanded ? "" : "-rotate-90"}`}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                  {editingSummary ? (
+                    <textarea
+                      autoFocus
+                      value={summaryDraft}
+                      onChange={(e) => setSummaryDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          const trimmed = summaryDraft.trim();
+                          if (trimmed && selectedId) {
+                            updateNote(selectedId, { summary: trimmed }).then((updated) => {
+                              setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+                              notifyLocalChange();
+                            }).catch(() => showError("Failed to update summary"));
+                          }
+                          setEditingSummary(false);
+                        } else if (e.key === "Escape") {
+                          setEditingSummary(false);
+                        }
+                      }}
+                      onBlur={() => setEditingSummary(false)}
+                      className="flex-1 min-w-0 text-sm text-muted-foreground italic bg-transparent border border-border rounded px-1 py-0 focus:outline-none focus:border-primary resize-none"
+                      rows={3}
+                    />
+                  ) : (
+                    <p
+                      className={`flex-1 min-w-0 text-sm text-muted-foreground italic cursor-default ${summaryExpanded ? "" : "truncate"}`}
+                      onDoubleClick={() => {
+                        setSummaryDraft(selectedNote.summary ?? "");
+                        setSummaryExpanded(true);
+                        setEditingSummary(true);
+                      }}
+                      title="Double-click to edit"
+                    >
+                      {selectedNote.summary}
+                    </p>
+                  )}
+                  <button
+                    onClick={() => setConfirmDeleteSummary(true)}
+                    className="shrink-0 mt-[3px] w-4 h-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    title="Remove summary"
+                  >
+                    &times;
+                  </button>
+                </div>
+              </div>
+            )}
+            {confirmDeleteSummary && (
+              <ConfirmDialog
+                title="Delete Summary"
+                message={selectedNote?.title || "Untitled"}
+                onConfirm={() => {
+                  handleDeleteSummary();
+                  setConfirmDeleteSummary(false);
+                }}
+                onCancel={() => setConfirmDeleteSummary(false)}
+              />
+            )}
+            {/* Tag input */}
+            <TagInput
+              tags={selectedNote.tags}
               allTags={tags.map((t) => t.name)}
+              onChange={(newTags) => handleUpdateTags(selectedId!, newTags)}
             />
 
             {/* Suggested tags */}
@@ -3438,17 +3506,6 @@ export function NotesPage() {
                   </span>
                 ))}
               </div>
-            )}
-            {confirmDeleteSummary && (
-              <ConfirmDialog
-                title="Delete Summary"
-                message={selectedNote?.title || "Untitled"}
-                onConfirm={() => {
-                  handleDeleteSummary();
-                  setConfirmDeleteSummary(false);
-                }}
-                onCancel={() => setConfirmDeleteSummary(false)}
-              />
             )}
 
             {localFileDiffView ? (
@@ -3503,6 +3560,8 @@ export function NotesPage() {
                   onTable={() => editorRef.current?.insertTable()}
                   showLineNumbers={showLineNumbers}
                   onToggleLineNumbers={() => setShowLineNumbers((prev) => !prev)}
+                  showFrontmatter={editorSettings.propertiesMode === "source"}
+                  onToggleFrontmatter={() => updateEditorSetting("propertiesMode", editorSettings.propertiesMode === "source" ? "panel" : "source")}
                 />
 
                 {/* Content */}
@@ -3581,7 +3640,7 @@ export function NotesPage() {
                   )}
                   {(viewMode === "split" || viewMode === "preview") && (
                     <MarkdownPreview
-                      content={content}
+                      content={stripFrontmatter(content)}
                       className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1 overflow-auto"}
                       wikiLinkTitleMap={wikiLinkTitleMap}
                       onWikiLinkClick={handleWikiLinkClick}
