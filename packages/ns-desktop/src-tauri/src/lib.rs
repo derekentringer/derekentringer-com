@@ -102,6 +102,12 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/014.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 15,
+            description: "add managed_directories table",
+            sql: include_str!("../migrations/015.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

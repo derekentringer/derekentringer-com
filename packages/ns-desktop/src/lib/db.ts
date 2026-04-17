@@ -1727,6 +1727,106 @@ export async function fetchImageById(imageId: string): Promise<ImageSyncData | n
   };
 }
 
+// --- Managed directories ---
+
+export interface ManagedDirectory {
+  id: string;
+  path: string;
+  rootFolderId: string | null;
+  createdAt: string;
+}
+
+interface ManagedDirectoryRow {
+  id: string;
+  path: string;
+  root_folder_id: string | null;
+  created_at: string;
+}
+
+function rowToManagedDir(r: ManagedDirectoryRow): ManagedDirectory {
+  return {
+    id: r.id,
+    path: r.path,
+    rootFolderId: r.root_folder_id,
+    createdAt: r.created_at,
+  };
+}
+
+export async function listManagedDirectories(): Promise<ManagedDirectory[]> {
+  const db = await getDb();
+  const rows = await db.select<ManagedDirectoryRow[]>(
+    "SELECT id, path, root_folder_id, created_at FROM managed_directories ORDER BY created_at ASC",
+  );
+  return rows.map(rowToManagedDir);
+}
+
+export async function addManagedDirectory(
+  path: string,
+  rootFolderId?: string | null,
+): Promise<ManagedDirectory> {
+  const db = await getDb();
+  const { v4: uuidv4 } = await import("uuid");
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  await db.execute(
+    "INSERT INTO managed_directories (id, path, root_folder_id, created_at) VALUES ($1, $2, $3, $4)",
+    [id, path, rootFolderId ?? null, now],
+  );
+  return { id, path, rootFolderId: rootFolderId ?? null, createdAt: now };
+}
+
+export async function removeManagedDirectory(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM managed_directories WHERE id = $1", [id]);
+}
+
+export async function getManagedDirectoryByPath(
+  path: string,
+): Promise<ManagedDirectory | null> {
+  const db = await getDb();
+  const rows = await db.select<ManagedDirectoryRow[]>(
+    "SELECT id, path, root_folder_id, created_at FROM managed_directories WHERE path = $1",
+    [path],
+  );
+  return rows.length > 0 ? rowToManagedDir(rows[0]) : null;
+}
+
+/**
+ * Check if a path is inside any managed directory or contains a managed directory.
+ * Used to prevent nested managed directories.
+ */
+export async function isPathConflicting(
+  candidatePath: string,
+): Promise<{ conflicts: boolean; reason?: string }> {
+  const dirs = await listManagedDirectories();
+  const normalized = candidatePath.endsWith("/") ? candidatePath : candidatePath + "/";
+  for (const dir of dirs) {
+    const dirNormalized = dir.path.endsWith("/") ? dir.path : dir.path + "/";
+    if (normalized.startsWith(dirNormalized)) {
+      return { conflicts: true, reason: `Already inside managed directory: ${dir.path}` };
+    }
+    if (dirNormalized.startsWith(normalized)) {
+      return { conflicts: true, reason: `Contains existing managed directory: ${dir.path}` };
+    }
+  }
+  return { conflicts: false };
+}
+
+/**
+ * Get all notes that are local files inside a managed directory.
+ */
+export async function fetchNotesInManagedDirectory(
+  dirPath: string,
+): Promise<Note[]> {
+  const db = await getDb();
+  const prefix = dirPath.endsWith("/") ? dirPath : dirPath + "/";
+  const rows = await db.select<NoteRow[]>(
+    "SELECT * FROM notes WHERE is_local_file = 1 AND local_path LIKE $1 AND is_deleted = 0",
+    [prefix + "%"],
+  );
+  return rows.map(rowToNote);
+}
+
 // --- Data migrations ---
 
 const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";
