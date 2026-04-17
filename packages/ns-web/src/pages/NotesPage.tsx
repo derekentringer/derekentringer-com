@@ -2637,7 +2637,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
             <div className="relative border-b border-border">
               <div className="absolute left-2 bottom-1.5 flex items-center">
                 {selectedNote?.isLocalFile && (
-                  <span className="shrink-0 text-muted-foreground mr-0.5" title="Managed locally">
+                  <span className="shrink-0 text-muted-foreground/50 mr-0.5" title="Managed locally on desktop">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="7 10 12 15 17 10" />

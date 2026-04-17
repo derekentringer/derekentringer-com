@@ -124,7 +124,7 @@ function SortableNoteItem({
         <span className="flex items-center gap-1 overflow-hidden">
           {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
           {note.isLocalFile && (
-            <span className="shrink-0 mr-1 text-muted-foreground" title="Managed locally">
+            <span className="shrink-0 mr-1 text-muted-foreground/50" title="Managed locally on desktop">
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="7 10 12 15 17 10" />
