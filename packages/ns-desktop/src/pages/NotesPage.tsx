@@ -3950,7 +3950,16 @@ export function NotesPage() {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-2 bottom-1.5">
+              <div className="absolute left-2 bottom-1.5 flex items-center">
+                {selectedNote?.isLocalFile && (
+                  <span className="shrink-0 text-muted-foreground mr-0.5" title="Managed locally">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  </span>
+                )}
                 <FolderPicker
                   selectedId={selectedNote?.folderId ?? null}
                   folders={flatFolders}
@@ -3997,16 +4006,7 @@ export function NotesPage() {
                 placeholder="Note title"
                 className="w-full px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
               />
-              <p className="pl-9 pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate flex items-center gap-1">
-                {selectedNote?.isLocalFile && (
-                  <span className="shrink-0 text-muted-foreground" title="Managed locally">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                  </span>
-                )}
+              <p className={`pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate ${selectedNote?.isLocalFile ? "pl-[52px]" : "pl-9"}`}>
                 {selectedNote?.folderId
                   ? getFolderBreadcrumb(folders, selectedNote.folderId).map((f) => f.name).join(" / ")
                   : "Unfiled"}
