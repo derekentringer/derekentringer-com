@@ -733,8 +733,39 @@ export async function createFolder(
   parentId?: string,
 ): Promise<FolderInfo> {
   const db = await getDb();
-  const id = uuidv4();
   const now = new Date().toISOString();
+
+  // Check for a soft-deleted folder with the same name and parent — restore it
+  // instead of creating a new one to avoid sync conflicts (duplicate UUID vs
+  // unique constraint on name+parent).
+  const softDeleted = await db.select<{ id: string }[]>(
+    parentId
+      ? "SELECT id FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NOT NULL LIMIT 1"
+      : "SELECT id FROM folders WHERE name = $1 AND parent_id IS NULL AND deleted_at IS NOT NULL LIMIT 1",
+    parentId ? [name, parentId] : [name],
+  );
+
+  if (softDeleted.length > 0) {
+    const restoredId = softDeleted[0].id;
+    await db.execute(
+      "UPDATE folders SET deleted_at = NULL, updated_at = $1 WHERE id = $2",
+      [now, restoredId],
+    );
+    enqueueSyncAction("update", restoredId, "folder").catch(() => {});
+    return {
+      id: restoredId,
+      name,
+      parentId: parentId ?? null,
+      sortOrder: 0,
+      favorite: false,
+      count: 0,
+      totalCount: 0,
+      createdAt: now,
+      children: [],
+    };
+  }
+
+  const id = uuidv4();
 
   await db.execute(
     "INSERT INTO folders (id, name, parent_id, sort_order, favorite, created_at, updated_at) VALUES ($1, $2, $3, 0, 0, $4, $4)",
