@@ -1842,6 +1842,60 @@ export async function fetchTrackedFilesInDirectory(
   return rows.map((r) => ({ id: r.id, localPath: r.local_path, localFileHash: r.local_file_hash }));
 }
 
+/**
+ * Resolve the NoteSync folder ID for a file path relative to a managed directory.
+ * Creates intermediate folders as needed to match the directory structure.
+ *
+ * For example, given:
+ *   managedDirPath = "/Users/me/notes"
+ *   rootFolderId = "folder-abc"
+ *   filePath = "/Users/me/notes/work/q2/meeting.md"
+ *
+ * This creates folders "work" (child of rootFolderId) and "q2" (child of "work"),
+ * then returns the ID of "q2".
+ *
+ * If the file is directly in the managed directory root, returns rootFolderId.
+ */
+export async function resolveFolderForPath(
+  managedDirPath: string,
+  rootFolderId: string | null,
+  filePath: string,
+): Promise<string | null> {
+  const dirRoot = managedDirPath.endsWith("/") ? managedDirPath : managedDirPath + "/";
+  const relativePath = filePath.startsWith(dirRoot) ? filePath.slice(dirRoot.length) : filePath;
+
+  // Get the directory parts (exclude the filename)
+  const parts = relativePath.replace(/\\/g, "/").split("/");
+  parts.pop(); // Remove filename
+
+  if (parts.length === 0) return rootFolderId; // File is in the root
+
+  const db = await getDb();
+  let parentId = rootFolderId;
+
+  for (const dirName of parts) {
+    if (!dirName) continue;
+
+    // Check if this folder already exists
+    const existing = await db.select<{ id: string }[]>(
+      parentId
+        ? "SELECT id FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NULL"
+        : "SELECT id FROM folders WHERE name = $1 AND parent_id IS NULL AND deleted_at IS NULL",
+      parentId ? [dirName, parentId] : [dirName],
+    );
+
+    if (existing.length > 0) {
+      parentId = existing[0].id;
+    } else {
+      // Create the folder (createFolder already enqueues sync)
+      const folder = await createFolder(dirName, parentId ?? undefined);
+      parentId = folder.id;
+    }
+  }
+
+  return parentId;
+}
+
 // --- Data migrations ---
 
 const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";

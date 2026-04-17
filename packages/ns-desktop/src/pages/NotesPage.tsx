@@ -74,6 +74,7 @@ import {
   isPathConflicting,
   fetchTrackedFilesInDirectory,
   fetchNotesInManagedDirectory,
+  resolveFolderForPath,
   type SearchMode,
 } from "../lib/db.ts";
 import { AboutDialog } from "../components/AboutDialog.tsx";
@@ -2417,7 +2418,7 @@ export function NotesPage() {
 
   // --- Directory watcher event handlers ---
 
-  async function handleDirectoryFileEvent(filePath: string, _dirPath: string) {
+  async function handleDirectoryFileEvent(filePath: string, dirPath: string) {
     // Check if this file is already tracked
     const existing = await findNoteByLocalPath(filePath);
     if (existing) {
@@ -2428,13 +2429,20 @@ export function NotesPage() {
       return;
     }
 
-    // New file — auto-index it
+    // New file — auto-index it, resolving folder from directory structure
     try {
+      // Find the managed directory to get the root folder ID
+      const managedDir = await getManagedDirectoryByPath(dirPath);
+      const folderId = managedDir
+        ? (await resolveFolderForPath(dirPath, managedDir.rootFolderId, filePath)) ?? undefined
+        : undefined;
+
       const result = await autoIndexFile(
         filePath,
         createNote,
         linkNoteToLocalFile,
         findNoteByLocalPath,
+        folderId,
       );
       if (result?.isNew) {
         setLocalFileStatuses((prev) => {
