@@ -316,11 +316,61 @@ export interface DirectoryWatcherCallbacks {
   onFileModified: (path: string) => void;
   /** A file was deleted */
   onFileDeleted: (path: string) => void;
+  /** A file was renamed/moved (old path resolved to new path) */
+  onFileRenamed?: (oldPath: string, newPath: string) => void;
 }
 
 const directoryWatchers = new Map<string, UnwatchFn>();
 const pendingEvents = new Map<string, ReturnType<typeof setTimeout>>();
+const lastKnownHashes = new Map<string, string>();
 const DEBOUNCE_MS = 200;
+const RENAME_BUFFER_MS = 500;
+
+/** Pending delete buffer for rename detection */
+interface PendingDelete {
+  path: string;
+  hash: string | null;
+  timer: ReturnType<typeof setTimeout>;
+}
+const pendingDeletes = new Map<string, PendingDelete>();
+
+/**
+ * Check if a newly created file matches a pending delete (rename/move detection).
+ * Matches by content hash. Returns the old path if matched, null otherwise.
+ */
+async function matchPendingDelete(newPath: string): Promise<string | null> {
+  if (pendingDeletes.size === 0) return null;
+
+  try {
+    const content = await readTextFile(newPath);
+    const newHash = await computeContentHash(content);
+
+    for (const [oldPath, pending] of pendingDeletes) {
+      if (pending.hash && pending.hash === newHash) {
+        // Match found — cancel the pending delete
+        clearTimeout(pending.timer);
+        pendingDeletes.delete(oldPath);
+        return oldPath;
+      }
+    }
+
+    // Also try frontmatter title+date match
+    const { metadata: newMeta } = parseFrontmatter(content);
+    if (newMeta.title && newMeta.date) {
+      for (const [oldPath, pending] of pendingDeletes) {
+        // We need the old file's metadata — but the file is deleted.
+        // We can only match by hash (above). For frontmatter matching,
+        // we'd need to have cached the metadata before deletion.
+        // Skip frontmatter matching for now — hash matching covers most cases.
+        void oldPath;
+        void pending;
+      }
+    }
+  } catch {
+    // Can't read new file — no match
+  }
+  return null;
+}
 
 /**
  * Start a recursive watcher on a managed directory.
@@ -368,13 +418,35 @@ export async function startDirectoryWatching(
               try {
                 const fileStillExists = await exists(filePath);
                 if (!fileStillExists) {
-                  callbacks.onFileDeleted(filePath);
+                  // File deleted — buffer it for rename detection
+                  // Get the hash before we lose the reference
+                  const hashForMatch = lastKnownHashes.get(filePath) ?? null;
+                  const deleteTimer = setTimeout(() => {
+                    // No matching create within RENAME_BUFFER_MS — real delete
+                    pendingDeletes.delete(filePath);
+                    callbacks.onFileDeleted(filePath);
+                  }, RENAME_BUFFER_MS);
+                  pendingDeletes.set(filePath, {
+                    path: filePath,
+                    hash: hashForMatch,
+                    timer: deleteTimer,
+                  });
                 } else {
-                  // Check if this is a new file or modification
-                  // The callback handler will determine this based on DB state
                   const s = await stat(filePath);
                   if (s.isFile) {
-                    callbacks.onFileCreated(filePath);
+                    // Check if this create matches a pending delete (rename/move)
+                    const oldPath = await matchPendingDelete(filePath);
+                    if (oldPath && callbacks.onFileRenamed) {
+                      callbacks.onFileRenamed(oldPath, filePath);
+                    } else {
+                      callbacks.onFileCreated(filePath);
+                    }
+                    // Cache the hash for future rename detection
+                    try {
+                      const content = await readTextFile(filePath);
+                      const hash = await computeContentHash(content);
+                      lastKnownHashes.set(filePath, hash);
+                    } catch { /* ignore */ }
                   }
                 }
               } catch {
@@ -400,12 +472,23 @@ export async function stopDirectoryWatching(dirPath: string): Promise<void> {
     unwatch();
     directoryWatchers.delete(dirPath);
   }
-  // Clear any pending debounced events for paths under this directory
+  // Clear any pending debounced events and rename buffers for paths under this directory
   const prefix = dirPath.endsWith("/") ? dirPath : dirPath + "/";
   for (const [path, timer] of pendingEvents) {
     if (path.startsWith(prefix) || path === dirPath) {
       clearTimeout(timer);
       pendingEvents.delete(path);
+    }
+  }
+  for (const [path, pending] of pendingDeletes) {
+    if (path.startsWith(prefix) || path === dirPath) {
+      clearTimeout(pending.timer);
+      pendingDeletes.delete(path);
+    }
+  }
+  for (const path of lastKnownHashes.keys()) {
+    if (path.startsWith(prefix) || path === dirPath) {
+      lastKnownHashes.delete(path);
     }
   }
 }

@@ -2118,6 +2118,7 @@ export function NotesPage() {
               onFileCreated: (path) => handleDirectoryFileEvent(path, dirPath),
               onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
               onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+            onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
             });
           }
         }
@@ -2348,6 +2349,7 @@ export function NotesPage() {
             onFileCreated: (path) => handleDirectoryFileEvent(path, dir.path),
             onFileModified: (path) => handleDirectoryFileEvent(path, dir.path),
             onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+            onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
           });
         }
       }
@@ -2490,6 +2492,39 @@ export function NotesPage() {
       };
     } catch (err) {
       console.error("[dir-watcher] Failed to soft-delete note:", err);
+    }
+  }
+
+  async function handleDirectoryFileRenamed(oldPath: string, newPath: string) {
+    const existing = await findNoteByLocalPath(oldPath);
+    if (!existing) return;
+
+    try {
+      // Update the local path
+      const content = await readLocalFile(newPath);
+      const hash = await computeContentHash(content);
+      await linkNoteToLocalFile(existing.id, newPath, hash);
+      lastProcessedHashRef.current.set(existing.id, hash);
+
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(existing.id, "synced");
+        return next;
+      });
+
+      // Derive new title from filename if it changed
+      const { titleFromFilename } = await import("../lib/localFileService.ts");
+      const newTitle = titleFromFilename(newPath);
+      const note = notes.find((n) => n.id === existing.id);
+      if (note && note.title !== newTitle) {
+        await updateNote(existing.id, { title: newTitle });
+        await refreshSidebarData();
+      }
+
+      notifyLocalChange();
+      console.log(`[dir-watcher] Rename detected: ${oldPath} → ${newPath}`);
+    } catch (err) {
+      console.error("[dir-watcher] Failed to handle rename:", err);
     }
   }
 
