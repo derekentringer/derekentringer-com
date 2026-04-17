@@ -2472,8 +2472,9 @@ export function NotesPage() {
       const localNotes = await fetchLocalFileNotes();
       // Track which notes are hosted on THIS device
       setLocallyHostedNoteIds(new Set(localNotes.map((n) => n.id)));
-      if (localNotes.length === 0) return;
+      // Don't return early — managed directory logic must run even with 0 local notes
 
+      if (localNotes.length > 0) {
       const results = await reestablishWatchers(
         localNotes.map((n) => ({ id: n.id, localPath: n.localPath, localFileHash: n.localFileHash })),
         handleExternalChange,
@@ -2503,12 +2504,18 @@ export function NotesPage() {
         handleExternalChange,
         handleFileDeleted,
       );
+      } // end if (localNotes.length > 0)
 
       // --- Managed directory reconciliation and watchers ---
       const managedDirs = await listManagedDirectories();
       // Update managed folder IDs for context menu display
       // Collect managed root IDs AND all their descendant folder IDs
       const mfIds = new Set<string>();
+      // Always add the root folder IDs first
+      for (const dir of managedDirs) {
+        if (dir.rootFolderId) mfIds.add(dir.rootFolderId);
+      }
+      // Then add all descendant folder IDs
       const allFoldersNow = await fetchFolders();
       function collectDescendantIds(items: FolderInfo[], ids: Set<string>) {
         for (const f of items) {
@@ -2516,19 +2523,20 @@ export function NotesPage() {
           collectDescendantIds(f.children, ids);
         }
       }
-      function findAndCollect(items: FolderInfo[], rootId: string, ids: Set<string>) {
-        for (const f of items) {
-          if (f.id === rootId) {
-            ids.add(f.id);
-            collectDescendantIds(f.children, ids);
-            return;
-          }
-          findAndCollect(f.children, rootId, ids);
-        }
-      }
       for (const dir of managedDirs) {
         if (dir.rootFolderId) {
-          findAndCollect(allFoldersNow, dir.rootFolderId, mfIds);
+          // Find the root in the tree and collect its children
+          function findAndCollect(items: FolderInfo[]) {
+            for (const f of items) {
+              if (f.id === dir.rootFolderId) {
+                collectDescendantIds(f.children, mfIds);
+                return true;
+              }
+              if (findAndCollect(f.children)) return true;
+            }
+            return false;
+          }
+          findAndCollect(allFoldersNow);
         }
       }
       setManagedFolderIds(mfIds);
