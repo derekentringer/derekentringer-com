@@ -1,4 +1,4 @@
-import { readTextFile, writeTextFile, exists, stat, remove, watch, watchImmediate, readDir, rename, type WatchEvent } from "@tauri-apps/plugin-fs";
+import { readTextFile, writeTextFile, exists, stat, remove, watch, readDir, rename } from "@tauri-apps/plugin-fs";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { parseFrontmatter, injectFrontmatter } from "@derekentringer/ns-shared";
 
@@ -371,36 +371,13 @@ const DEBOUNCE_MS = 200;
 const DIR_RECONCILE_INTERVAL_MS = 30_000; // Periodic reconciliation for managed directories
 
 /**
- * Helper to extract the event kind from a WatchEvent.
- * Returns: "create", "modify", "remove", "rename-from", "rename-to", or null.
- */
-function getEventKind(event: WatchEvent): string | null {
-  const type = event.type;
-  if (type === "any" || type === "other") return null;
-  if (typeof type === "object") {
-    if ("create" in type) return "create";
-    if ("remove" in type) return "remove";
-    if ("modify" in type) {
-      const mod = type.modify;
-      if (typeof mod === "object" && "kind" in mod && mod.kind === "rename") {
-        const mode = "mode" in mod ? mod.mode : "any";
-        if (mode === "from") return "rename-from";
-        if (mode === "to") return "rename-to";
-        return "rename-both";
-      }
-      return "modify";
-    }
-  }
-  return null;
-}
-
-/** Track the "from" path of a rename pair */
-let pendingRenameFrom: string | null = null;
-
-/**
  * Start a recursive watcher on a managed directory.
- * Uses watchImmediate for access to native OS event types (FSEvents on macOS,
- * ReadDirectoryChangesW on Windows) including proper rename events.
+ * Uses watch() with debouncing. On each event, checks the filesystem state
+ * to determine what happened (create, modify, delete, rename).
+ *
+ * Rename detection: the 30-second periodic reconciliation handles renames
+ * by detecting new paths and cleaning up old ones. The watcher handles
+ * real-time file content changes and new file detection.
  */
 export async function startDirectoryWatching(
   dirPath: string,
@@ -408,99 +385,55 @@ export async function startDirectoryWatching(
 ): Promise<void> {
   await stopDirectoryWatching(dirPath);
 
-  const unwatch = await watchImmediate(
+  const unwatch = await watch(
     dirPath,
-    async (event: WatchEvent) => {
-      const kind = getEventKind(event);
-      if (!kind) return;
+    async (event) => {
+      const events = Array.isArray(event) ? event : [event];
 
-      const paths = event.paths ?? [];
-      for (const filePath of paths) {
-        if (!filePath || typeof filePath !== "string") continue;
+      for (const ev of events) {
+        const paths = Array.isArray(ev.paths) ? ev.paths : [];
 
-        const parts = filePath.replace(/\\/g, "/").split("/");
-        const fileName = parts[parts.length - 1];
-        if (isIgnored(fileName)) continue;
-        if (suppressedPaths.has(filePath)) continue;
+        for (const filePath of paths) {
+          if (!filePath || typeof filePath !== "string") continue;
 
-        // --- Native rename events ---
-        if (kind === "rename-from") {
-          pendingRenameFrom = filePath;
-          continue;
-        }
-        if (kind === "rename-to") {
-          const fromPath = pendingRenameFrom;
-          pendingRenameFrom = null;
-          if (fromPath) {
-            // Determine if this is a file or directory rename
-            try {
-              const s = await stat(filePath);
-              if (s.isDirectory) {
-                callbacks.onDirectoryRenamed?.(fromPath, filePath);
-              } else if (s.isFile) {
-                if (isSupportedExtension(filePath) || isSupportedExtension(fromPath)) {
-                  callbacks.onFileRenamed?.(fromPath, filePath);
+          const parts = filePath.replace(/\\/g, "/").split("/");
+          const fileName = parts[parts.length - 1];
+          if (isIgnored(fileName)) continue;
+          if (suppressedPaths.has(filePath)) continue;
+
+          // Debounce per-path
+          const existing = pendingEvents.get(filePath);
+          if (existing) clearTimeout(existing);
+
+          pendingEvents.set(
+            filePath,
+            setTimeout(async () => {
+              pendingEvents.delete(filePath);
+              try {
+                const fileStillExists = await exists(filePath);
+                if (!fileStillExists) {
+                  // File or directory was removed (or renamed away)
+                  if (isSupportedExtension(filePath)) {
+                    callbacks.onFileDeleted(filePath);
+                  } else {
+                    callbacks.onDirectoryDeleted?.(filePath);
+                  }
+                } else {
+                  const s = await stat(filePath);
+                  if (s.isDirectory) {
+                    // Directory exists — could be new or just modified
+                    callbacks.onDirectoryCreated?.(filePath);
+                  } else if (s.isFile && isSupportedExtension(filePath)) {
+                    // File exists — could be new or modified
+                    // The callback handler determines which based on DB state
+                    callbacks.onFileCreated(filePath);
+                  }
                 }
+              } catch {
+                // Ignore errors for individual events
               }
-            } catch {
-              // Stat failed — treat as file rename if extensions match
-              if (isSupportedExtension(filePath) || isSupportedExtension(fromPath)) {
-                callbacks.onFileRenamed?.(fromPath, filePath);
-              }
-            }
-          }
-          continue;
-        }
-        if (kind === "rename-both" && paths.length >= 2) {
-          // Both paths in one event — first is "from", second is "to"
-          // Already handled by iterating paths; skip to avoid double processing
-          continue;
-        }
-
-        // --- Create events ---
-        if (kind === "create") {
-          // Debounce to batch rapid creates (e.g. git checkout)
-          const existingTimer = pendingEvents.get(filePath);
-          if (existingTimer) clearTimeout(existingTimer);
-          pendingEvents.set(filePath, setTimeout(async () => {
-            pendingEvents.delete(filePath);
-            try {
-              const s = await stat(filePath);
-              if (s.isDirectory) {
-                callbacks.onDirectoryCreated?.(filePath);
-              } else if (s.isFile && isSupportedExtension(filePath)) {
-                callbacks.onFileCreated(filePath);
-              }
-            } catch { /* ignore */ }
-          }, DEBOUNCE_MS));
-          continue;
-        }
-
-        // --- Modify events (file content changed) ---
-        if (kind === "modify") {
-          if (!isSupportedExtension(filePath)) continue;
-          const existingTimer = pendingEvents.get(filePath);
-          if (existingTimer) clearTimeout(existingTimer);
-          pendingEvents.set(filePath, setTimeout(() => {
-            pendingEvents.delete(filePath);
-            callbacks.onFileModified(filePath);
-          }, DEBOUNCE_MS));
-          continue;
-        }
-
-        // --- Remove events ---
-        if (kind === "remove") {
-          const existingTimer = pendingEvents.get(filePath);
-          if (existingTimer) clearTimeout(existingTimer);
-          pendingEvents.set(filePath, setTimeout(() => {
-            pendingEvents.delete(filePath);
-            if (isSupportedExtension(filePath)) {
-              callbacks.onFileDeleted(filePath);
-            } else {
-              callbacks.onDirectoryDeleted?.(filePath);
-            }
-          }, DEBOUNCE_MS));
-          continue;
+            }, DEBOUNCE_MS),
+          );
         }
       }
     },
@@ -532,7 +465,6 @@ export async function stopDirectoryWatching(dirPath: string): Promise<void> {
       lastKnownHashes.delete(path);
     }
   }
-  pendingRenameFrom = null;
 }
 
 /**
