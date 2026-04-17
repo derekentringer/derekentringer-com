@@ -22,7 +22,12 @@ type UnwatchFn = () => void;
 // ---------------------------------------------------------------------------
 
 const watchers = new Map<string, UnwatchFn>();
-const suppressedPaths = new Set<string>();
+export const suppressedPaths = new Set<string>();
+
+export function suppressPath(path: string, durationMs = 500): void {
+  suppressedPaths.add(path);
+  setTimeout(() => suppressedPaths.delete(path), durationMs);
+}
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 // ---------------------------------------------------------------------------
@@ -351,12 +356,19 @@ export interface DirectoryWatcherCallbacks {
   onFileDeleted: (path: string) => void;
   /** A file was renamed/moved (old path resolved to new path) */
   onFileRenamed?: (oldPath: string, newPath: string) => void;
+  /** A new subdirectory was created */
+  onDirectoryCreated?: (path: string) => void;
+  /** A subdirectory was deleted */
+  onDirectoryDeleted?: (path: string) => void;
+  /** A subdirectory was renamed */
+  onDirectoryRenamed?: (oldPath: string, newPath: string) => void;
 }
 
 const directoryWatchers = new Map<string, UnwatchFn>();
 const pendingEvents = new Map<string, ReturnType<typeof setTimeout>>();
 const lastKnownHashes = new Map<string, string>();
 const DEBOUNCE_MS = 200;
+const DIR_CREATE_DEBOUNCE_MS = 2000; // Longer debounce for directory creation (user may be typing name)
 const RENAME_BUFFER_MS = 500;
 
 /** Pending delete buffer for rename detection */
@@ -434,9 +446,6 @@ export async function startDirectoryWatching(
           // Skip ignored files/directories
           if (isIgnored(fileName)) continue;
 
-          // Only process supported file extensions
-          if (!isSupportedExtension(filePath)) continue;
-
           // Skip suppressed paths (our own writes)
           if (suppressedPaths.has(filePath)) continue;
 
@@ -451,13 +460,23 @@ export async function startDirectoryWatching(
               try {
                 const fileStillExists = await exists(filePath);
                 if (!fileStillExists) {
-                  // File deleted — buffer it for rename detection
-                  // Get the hash before we lose the reference
+                  // Cancel any pending directory create timer (this is likely a rename)
+                  const pendingDirCreate = pendingEvents.get("dir:" + filePath);
+                  if (pendingDirCreate) {
+                    clearTimeout(pendingDirCreate);
+                    pendingEvents.delete("dir:" + filePath);
+                  }
+
+                  // Buffer the delete for rename detection (works for both files and directories)
                   const hashForMatch = lastKnownHashes.get(filePath) ?? null;
+                  const isFile = isSupportedExtension(filePath);
                   const deleteTimer = setTimeout(() => {
-                    // No matching create within RENAME_BUFFER_MS — real delete
                     pendingDeletes.delete(filePath);
-                    callbacks.onFileDeleted(filePath);
+                    if (isFile) {
+                      callbacks.onFileDeleted(filePath);
+                    } else {
+                      callbacks.onDirectoryDeleted?.(filePath);
+                    }
                   }, RENAME_BUFFER_MS);
                   pendingDeletes.set(filePath, {
                     path: filePath,
@@ -466,7 +485,31 @@ export async function startDirectoryWatching(
                   });
                 } else {
                   const s = await stat(filePath);
-                  if (s.isFile) {
+                  if (s.isDirectory) {
+                    // Check if this matches a pending directory delete (rename)
+                    let matched = false;
+                    for (const [oldPath, pending] of pendingDeletes) {
+                      if (!isSupportedExtension(oldPath)) {
+                        // Directory rename detected
+                        clearTimeout(pending.timer);
+                        pendingDeletes.delete(oldPath);
+                        callbacks.onDirectoryRenamed?.(oldPath, filePath);
+                        matched = true;
+                        break;
+                      }
+                    }
+                    if (!matched) {
+                      // Cancel any existing directory create timer for this path
+                      const existingDirTimer = pendingEvents.get("dir:" + filePath);
+                      if (existingDirTimer) clearTimeout(existingDirTimer);
+                      // Use a longer debounce for directory creation
+                      // (user might still be typing the folder name)
+                      pendingEvents.set("dir:" + filePath, setTimeout(() => {
+                        pendingEvents.delete("dir:" + filePath);
+                        callbacks.onDirectoryCreated?.(filePath);
+                      }, DIR_CREATE_DEBOUNCE_MS));
+                    }
+                  } else if (s.isFile && isSupportedExtension(filePath)) {
                     // Check if this create matches a pending delete (rename/move)
                     const oldPath = await matchPendingDelete(filePath);
                     if (oldPath && callbacks.onFileRenamed) {

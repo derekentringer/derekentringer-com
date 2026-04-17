@@ -157,6 +157,7 @@ import {
   startDirectoryWatching,
   stopDirectoryWatching,
   stopAllDirectoryWatchers,
+  suppressPath,
   reconcileAllDirectories,
   autoIndexFile,
   pickDirectory,
@@ -1534,8 +1535,82 @@ export function NotesPage() {
     }
   }
 
+  /**
+   * Find the local disk path for a NoteSync folder by looking at notes
+   * inside it that have a local_path, then deriving the parent directory.
+   */
+  async function findLocalDirForFolder(folderId: string): Promise<{ dirPath: string; managedDir: { id: string; path: string; rootFolderId: string | null } } | null> {
+    const managedDirs = await listManagedDirectories();
+
+    // Check if this IS a root managed folder
+    const rootDir = managedDirs.find((d) => d.rootFolderId === folderId);
+    if (rootDir) return { dirPath: rootDir.path, managedDir: rootDir };
+
+    // Check if any notes in this folder have a local_path — derive directory from it
+    const folderNotes = notes.filter((n) => n.folderId === folderId && n.isLocalFile);
+    if (folderNotes.length > 0) {
+      const noteWithPath = folderNotes[0];
+      const localPath = await getNoteLocalPath(noteWithPath.id);
+      if (localPath) {
+        const dirPath = localPath.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+        const parentDir = managedDirs.find((d) => dirPath.startsWith(d.path));
+        if (parentDir) return { dirPath, managedDir: parentDir };
+      }
+    }
+
+    return null;
+  }
+
   async function handleRenameFolder(folderId: string, newName: string) {
     try {
+      // If this folder maps to a local directory, rename it on disk
+      const localInfo = await findLocalDirForFolder(folderId);
+      if (localInfo) {
+        try {
+          const { rename: fsRename } = await import("@tauri-apps/plugin-fs");
+          const parts = localInfo.dirPath.replace(/\\/g, "/").split("/");
+          parts[parts.length - 1] = newName.replace(/[/\\:*?"<>|]/g, "_");
+          const newPath = parts.join("/");
+
+          // Suppress watcher events for both old and new paths
+          suppressPath(localInfo.dirPath, 1000);
+          suppressPath(newPath, 1000);
+
+          console.log(`[folder-rename] Renaming ${localInfo.dirPath} → ${newPath}`);
+          await fsRename(localInfo.dirPath, newPath);
+
+          // If this is a root managed folder, update the managed directory path
+          if (localInfo.managedDir.rootFolderId === folderId) {
+            await stopDirectoryWatching(localInfo.dirPath);
+            await removeManagedDirectory(localInfo.managedDir.id);
+            await addManagedDirectory(newPath, folderId);
+            // Restart watcher on new path
+            await startDirectoryWatching(newPath, {
+              onFileCreated: (path) => handleDirectoryFileEvent(path, newPath),
+              onFileModified: (path) => handleDirectoryFileEvent(path, newPath),
+              onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+              onFileRenamed: (oldP, newP) => handleDirectoryFileRenamed(oldP, newP),
+              onDirectoryCreated: (path) => handleDirectoryCreated(path, newPath),
+              onDirectoryDeleted: (path) => handleDirectoryDeleted(path, newPath),
+              onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, newPath),
+            });
+          }
+
+          // Update local_path for all notes inside this folder
+          const folderNotes = notes.filter((n) => n.folderId === folderId && n.isLocalFile);
+          for (const note of folderNotes) {
+            const oldNotePath = await getNoteLocalPath(note.id);
+            if (oldNotePath && oldNotePath.startsWith(localInfo.dirPath)) {
+              const newNotePath = newPath + oldNotePath.slice(localInfo.dirPath.length);
+              const hash = await computeContentHash(note.content);
+              await linkNoteToLocalFile(note.id, newNotePath, hash);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to rename directory on disk:", err);
+        }
+      }
+
       await renameFolder(folderId, newName);
       await refreshFolders();
       notifyLocalChange();
@@ -1614,6 +1689,10 @@ export function NotesPage() {
         onFileCreated: (path) => handleDirectoryFileEvent(path, dirPath),
         onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
         onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+        onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
+        onDirectoryCreated: (path) => handleDirectoryCreated(path, dirPath),
+        onDirectoryDeleted: (path) => handleDirectoryDeleted(path, dirPath),
+        onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, dirPath),
       });
 
       await refreshSidebarData();
@@ -1731,6 +1810,27 @@ export function NotesPage() {
 
   async function handleDeleteFolder(folderId: string, mode: "move-up" | "recursive") {
     try {
+      // If this folder maps to a local directory, delete it on disk
+      const localInfo = await findLocalDirForFolder(folderId);
+      if (localInfo) {
+        try {
+          // If this is the root managed folder, stop watching and unregister
+          if (localInfo.managedDir.rootFolderId === folderId) {
+            await stopDirectoryWatching(localInfo.dirPath);
+            await removeManagedDirectory(localInfo.managedDir.id);
+            setManagedFolderIds((prev) => {
+              const next = new Set(prev);
+              next.delete(folderId);
+              return next;
+            });
+          }
+          const { remove: fsRemove } = await import("@tauri-apps/plugin-fs");
+          await fsRemove(localInfo.dirPath, { recursive: true });
+        } catch (err) {
+          console.error("Failed to delete directory on disk:", err);
+        }
+      }
+
       await deleteFolder(folderId, mode);
       if (activeFolder === folderId) {
         setActiveFolder(null);
@@ -2135,7 +2235,10 @@ export function NotesPage() {
               onFileCreated: (path) => handleDirectoryFileEvent(path, dirPath),
               onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
               onFileDeleted: (path) => handleDirectoryFileDeleted(path),
-            onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
+              onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
+              onDirectoryCreated: (path) => handleDirectoryCreated(path, dirPath),
+              onDirectoryDeleted: (path) => handleDirectoryDeleted(path, dirPath),
+              onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, dirPath),
             });
           }
         }
@@ -2367,6 +2470,9 @@ export function NotesPage() {
             onFileModified: (path) => handleDirectoryFileEvent(path, dir.path),
             onFileDeleted: (path) => handleDirectoryFileDeleted(path),
             onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
+            onDirectoryCreated: (path) => handleDirectoryCreated(path, dir.path),
+            onDirectoryDeleted: (path) => handleDirectoryDeleted(path, dir.path),
+            onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, dir.path),
           });
         }
       }
@@ -2549,6 +2655,67 @@ export function NotesPage() {
       console.log(`[dir-watcher] Rename detected: ${oldPath} → ${newPath}`);
     } catch (err) {
       console.error("[dir-watcher] Failed to handle rename:", err);
+    }
+  }
+
+  async function handleDirectoryCreated(dirCreatedPath: string, managedDirPath: string) {
+    try {
+      const managedDir = await getManagedDirectoryByPath(managedDirPath);
+      if (!managedDir) return;
+
+      // Create a NoteSync folder matching this subdirectory
+      // resolveFolderForPath needs a file path — append a dummy filename
+      await resolveFolderForPath(managedDirPath, managedDir.rootFolderId, dirCreatedPath + "/_.md");
+      await refreshSidebarData();
+      notifyLocalChange();
+    } catch (err) {
+      console.error("[dir-watcher] Failed to create folder for directory:", err);
+    }
+  }
+
+  async function handleDirectoryDeleted(dirDeletedPath: string, managedDirPath: string) {
+    try {
+      const managedDir = await getManagedDirectoryByPath(managedDirPath);
+      if (!managedDir) return;
+
+      // Find the NoteSync folder matching this directory and soft-delete it
+      const dirName = dirDeletedPath.replace(/\\/g, "/").split("/").pop();
+      if (!dirName) return;
+
+      // resolveFolderForPath would create it — we need to find it instead
+      const allFolders = await fetchFolders();
+      const flatList = flattenFolderTree(allFolders);
+      const match = flatList.find((f) => f.name === dirName);
+      if (match) {
+        await deleteFolder(match.id, "move-up");
+        await refreshSidebarData();
+        notifyLocalChange();
+      }
+    } catch (err) {
+      console.error("[dir-watcher] Failed to delete folder for directory:", err);
+    }
+  }
+
+  async function handleDirectoryRenamed(oldPath: string, newPath: string, managedDirPath: string) {
+    try {
+      const managedDir = await getManagedDirectoryByPath(managedDirPath);
+      if (!managedDir) return;
+
+      const oldName = oldPath.replace(/\\/g, "/").split("/").pop();
+      const newName = newPath.replace(/\\/g, "/").split("/").pop();
+      if (!oldName || !newName) return;
+
+      // Find the folder with the old name and rename it
+      const allFolders = await fetchFolders();
+      const flatList = flattenFolderTree(allFolders);
+      const match = flatList.find((f) => f.name === oldName);
+      if (match) {
+        await renameFolder(match.id, newName);
+        await refreshSidebarData();
+        notifyLocalChange();
+      }
+    } catch (err) {
+      console.error("[dir-watcher] Failed to rename folder for directory:", err);
     }
   }
 

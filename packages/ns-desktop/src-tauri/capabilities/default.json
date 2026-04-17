@@ -18,6 +18,7 @@
     "fs:allow-exists",
     "fs:allow-stat",
     "fs:allow-remove",
+    "fs:allow-rename",
     "fs:allow-watch",
     "fs:allow-read-dir",
     "fs:allow-unwatch",
