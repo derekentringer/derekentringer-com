@@ -88,6 +88,15 @@ export async function deleteLocalFile(path: string): Promise<void> {
 }
 
 /**
+ * Move a file or directory to the OS trash (macOS Trash / Windows Recycle Bin).
+ * Uses the native trash API via a Tauri command.
+ */
+export async function moveToTrash(path: string): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("move_to_trash", { path });
+}
+
+/**
  * Rename a local file on disk. Returns the new path.
  * Sanitizes the new name to remove characters that are invalid in filenames.
  */

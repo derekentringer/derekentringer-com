@@ -159,6 +159,7 @@ import {
   stopDirectoryWatching,
   stopAllDirectoryWatchers,
   suppressPath,
+  moveToTrash,
   startDirectoryReconcileTimer,
   stopDirectoryReconcileTimer,
   scanDirectory,
@@ -679,7 +680,7 @@ export function NotesPage() {
         // and the reconciliation (for files deleted while app was closed).
       },
       onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
-        // Delete local directory if this folder is managed locally
+        // Move local directory to OS trash if this folder is managed locally
         try {
           const dirs = await listManagedDirectories();
           for (const dir of dirs) {
@@ -689,7 +690,7 @@ export function NotesPage() {
               const dirPath = `${dir.path}/${folderName}`;
               if (await fileExists(dirPath)) {
                 suppressPath(dirPath, 2000);
-                await deleteLocalFile(dirPath);
+                await moveToTrash(dirPath);
               }
               return;
             }
@@ -697,7 +698,7 @@ export function NotesPage() {
             if (dir.rootFolderId === folderId) {
               if (await fileExists(dir.path)) {
                 suppressPath(dir.path, 2000);
-                await deleteLocalFile(dir.path);
+                await moveToTrash(dir.path);
               }
               return;
             }
@@ -1904,7 +1905,7 @@ export function NotesPage() {
             });
           }
           const { remove: fsRemove } = await import("@tauri-apps/plugin-fs");
-          await fsRemove(localInfo.dirPath, { recursive: true });
+          await moveToTrash(localInfo.dirPath);
         } catch (err) {
           console.error("Failed to delete directory on disk:", err);
         }
@@ -2582,12 +2583,13 @@ export function NotesPage() {
           const currentDirs = await listManagedDirectories();
           for (const dir of currentDirs) {
             // Clean up notes whose local files no longer exist on disk
+            // Hard-delete — no soft-delete for locally managed files
             const trackedNotes = await fetchTrackedFilesInDirectory(dir.path);
             for (const tracked of trackedNotes) {
               const stillExists = await fileExists(tracked.localPath);
               if (!stillExists) {
-                await softDeleteNote(tracked.id).catch(() => {});
                 enqueueSyncAction("delete", tracked.id, "note").catch(() => {});
+                await hardDeleteNote(tracked.id).catch(() => {});
                 changed = true;
               }
             }
@@ -2773,8 +2775,7 @@ export function NotesPage() {
   }
 
   async function handleDirectoryFileDeleted(filePath: string) {
-    // findNoteByLocalPath excludes soft-deleted notes, but the reconciliation
-    // may have already soft-deleted it. Query directly to include soft-deleted.
+    // Find the note by local path (check all notes including any state)
     const { default: Database } = await import("@tauri-apps/plugin-sql");
     const db = await Database.load((await import("../lib/dbName.ts")).DB_URI);
     const rows = await db.select<{ id: string; title: string }[]>(
@@ -2787,8 +2788,11 @@ export function NotesPage() {
     const noteTitle = rows[0].title || "Untitled";
 
     try {
-      // Soft-delete the note (may already be soft-deleted by reconciliation)
-      await softDeleteNote(noteId).catch(() => {});
+      // Hard-delete the note — no soft-delete for locally managed files.
+      // The file is already gone from disk (or in OS trash).
+      // Enqueue sync delete first, then remove from DB.
+      enqueueSyncAction("delete", noteId, "note").catch(() => {});
+      await hardDeleteNote(noteId).catch(() => {});
 
       // Remove from notes list
       setNotes((prev) => prev.filter((n) => n.id !== noteId));

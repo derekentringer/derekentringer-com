@@ -152,6 +152,11 @@ fn remove_secure_item(key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn move_to_trash(path: String) -> Result<(), String> {
+    trash::delete(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn download_file(url: String, save_path: String) -> Result<(), String> {
     let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
@@ -373,7 +378,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
-        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled])
+        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, move_to_trash, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:notesync.db", get_migrations())
