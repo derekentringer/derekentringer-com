@@ -666,15 +666,28 @@ export function NotesPage() {
           }
         } catch { /* ignore */ }
       },
-      onFolderRemoteDeleted: async (folderId, _folderName, _parentId) => {
+      onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
         // Delete local directory if this folder is managed locally
         try {
-          const localInfo = await findLocalDirForFolder(folderId);
-          if (localInfo) {
-            const { exists: dirExists, remove: fsRemove } = await import("@tauri-apps/plugin-fs");
-            if (await dirExists(localInfo.dirPath)) {
-              suppressPath(localInfo.dirPath, 1000);
-              await fsRemove(localInfo.dirPath, { recursive: true });
+          const dirs = await listManagedDirectories();
+          for (const dir of dirs) {
+            if (!dir.rootFolderId) continue;
+            // Direct child of managed root
+            if (dir.rootFolderId === parentId) {
+              const dirPath = `${dir.path}/${folderName}`;
+              if (await fileExists(dirPath)) {
+                suppressPath(dirPath, 2000);
+                await deleteLocalFile(dirPath);
+              }
+              return;
+            }
+            // This IS the managed root being deleted
+            if (dir.rootFolderId === folderId) {
+              if (await fileExists(dir.path)) {
+                suppressPath(dir.path, 2000);
+                await deleteLocalFile(dir.path);
+              }
+              return;
             }
           }
         } catch { /* ignore */ }
