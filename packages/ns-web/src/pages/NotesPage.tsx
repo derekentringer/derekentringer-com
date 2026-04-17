@@ -1721,6 +1721,15 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
   const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
+  // Derive managed folder IDs from notes that are locally managed
+  const managedFolderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const note of notes) {
+      if (note.isLocalFile && note.folderId) ids.add(note.folderId);
+    }
+    return ids;
+  }, [notes]);
+
   // Resolve "system" theme to actual "dark" or "light" for CodeMirror
   const resolvedTheme = useMemo((): "dark" | "light" => {
     if (editorSettings.theme === "system") {
@@ -2184,6 +2193,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                     onMoveFolder={handleMoveFolder}
                     onExportFolder={handleExportFolder}
                     onToggleFavorite={handleToggleFolderFavorite}
+                    managedFolderIds={managedFolderIds}
                   />
                 </div>
               )}
