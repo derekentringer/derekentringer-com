@@ -590,10 +590,17 @@ export async function autoIndexFile(
   linkNoteFn: (noteId: string, localPath: string, hash: string) => Promise<void>,
   findByPathFn: (path: string) => Promise<{ id: string } | null>,
   folderId?: string,
+  restoreByPathFn?: (path: string) => Promise<{ id: string; title: string } | null>,
 ): Promise<AutoIndexResult | null> {
-  // Check if already tracked
+  // Check if already tracked (active note)
   const existing = await findByPathFn(filePath);
   if (existing) return { noteId: existing.id, title: "", isNew: false };
+
+  // Check if a soft-deleted note exists for this path — restore it
+  if (restoreByPathFn) {
+    const restored = await restoreByPathFn(filePath);
+    if (restored) return { noteId: restored.id, title: restored.title, isNew: true };
+  }
 
   // Check file size
   try {

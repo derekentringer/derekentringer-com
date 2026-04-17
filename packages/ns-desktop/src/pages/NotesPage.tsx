@@ -75,6 +75,7 @@ import {
   fetchTrackedFilesInDirectory,
   fetchNotesInManagedDirectory,
   resolveFolderForPath,
+  restoreNoteByLocalPath,
   type SearchMode,
 } from "../lib/db.ts";
 import { AboutDialog } from "../components/AboutDialog.tsx";
@@ -2580,6 +2581,17 @@ export function NotesPage() {
           let changed = false;
           const currentDirs = await listManagedDirectories();
           for (const dir of currentDirs) {
+            // Clean up notes whose local files no longer exist on disk
+            const trackedNotes = await fetchTrackedFilesInDirectory(dir.path);
+            for (const tracked of trackedNotes) {
+              const stillExists = await fileExists(tracked.localPath);
+              if (!stillExists) {
+                await softDeleteNote(tracked.id).catch(() => {});
+                enqueueSyncAction("delete", tracked.id, "note").catch(() => {});
+                changed = true;
+              }
+            }
+
             // Index new files (creates folders as needed via resolveFolderForPath)
             const filesOnDisk = await scanDirectory(dir.path);
             for (const filePath of filesOnDisk) {
@@ -2588,7 +2600,7 @@ export function NotesPage() {
                 const folderId = dir.rootFolderId
                   ? (await resolveFolderForPath(dir.path, dir.rootFolderId, filePath)) ?? undefined
                   : undefined;
-                const result = await autoIndexFile(filePath, createNote, linkNoteToLocalFile, findNoteByLocalPath, folderId);
+                const result = await autoIndexFile(filePath, createNote, linkNoteToLocalFile, findNoteByLocalPath, folderId, restoreNoteByLocalPath);
                 if (result?.isNew) changed = true;
               }
             }
@@ -2744,6 +2756,7 @@ export function NotesPage() {
         linkNoteToLocalFile,
         findNoteByLocalPath,
         folderId,
+        restoreNoteByLocalPath,
       );
       if (result?.isNew) {
         setLocalFileStatuses((prev) => {

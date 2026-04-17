@@ -1594,30 +1594,34 @@ export async function fetchLocalFileNotes(): Promise<(Note & { localPath: string
  */
 export async function findNoteByLocalPath(path: string): Promise<Note | null> {
   const db = await getDb();
-  // First check active notes
-  const active = await db.select<NoteRow[]>(
+  const rows = await db.select<NoteRow[]>(
     "SELECT * FROM notes WHERE local_path = $1 AND is_deleted = 0",
     [path],
   );
-  if (active.length > 0) return rowToNote(active[0]);
+  return rows.length > 0 ? rowToNote(rows[0]) : null;
+}
 
-  // Check soft-deleted notes — restore if found (reuse UUID to avoid sync conflicts)
+/**
+ * Find a soft-deleted note by local path and restore it.
+ * Used by the auto-indexer to reuse UUIDs when files are re-added
+ * to a managed directory. Returns the restored note or null.
+ */
+export async function restoreNoteByLocalPath(path: string): Promise<Note | null> {
+  const db = await getDb();
   const deleted = await db.select<NoteRow[]>(
     "SELECT * FROM notes WHERE local_path = $1 AND is_deleted = 1 ORDER BY updated_at DESC LIMIT 1",
     [path],
   );
-  if (deleted.length > 0) {
-    const note = deleted[0];
-    const now = new Date().toISOString();
-    await db.execute(
-      "UPDATE notes SET is_deleted = 0, deleted_at = NULL, updated_at = $1 WHERE id = $2",
-      [now, note.id],
-    );
-    enqueueSyncAction("update", note.id, "note").catch(() => {});
-    return rowToNote({ ...note, is_deleted: 0, deleted_at: null, updated_at: now });
-  }
+  if (deleted.length === 0) return null;
 
-  return null;
+  const note = deleted[0];
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE notes SET is_deleted = 0, deleted_at = NULL, updated_at = $1 WHERE id = $2",
+    [now, note.id],
+  );
+  enqueueSyncAction("update", note.id, "note").catch(() => {});
+  return rowToNote({ ...note, is_deleted: 0, deleted_at: null, updated_at: now });
 }
 
 /**
