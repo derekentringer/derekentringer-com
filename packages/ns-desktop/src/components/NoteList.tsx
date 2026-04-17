@@ -58,26 +58,15 @@ interface SortableNoteItemProps {
   onViewDiff?: (noteId: string) => void;
 }
 
-function LocalFileIndicator({ status }: { status: LocalFileStatus }) {
-  const colorClass =
-    status === "synced"
-      ? "bg-green-500"
-      : status === "missing"
-        ? "bg-red-500"
-        : "bg-amber-500";
-  const title =
-    status === "synced"
-      ? "Local file in sync"
-      : status === "missing"
-        ? "Local file missing"
-        : status === "cloud_newer"
-          ? "Cloud version is newer"
-          : "File changed externally";
+function LocalFileIndicator() {
   return (
-    <span
-      className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ml-1 ${colorClass}`}
-      title={title}
-    />
+    <span className="shrink-0 mr-1 text-muted-foreground" title="Managed locally">
+      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+    </span>
   );
 }
 
@@ -168,8 +157,8 @@ function SortableNoteItem({
         {/* Title row */}
         <span className="flex items-center gap-1 overflow-hidden">
           {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+          {note.isLocalFile && <LocalFileIndicator />}
           <span className={`text-sm font-medium truncate ${isSelected ? "text-foreground" : "text-foreground/70"}`}>{note.title || "Untitled"}</span>
-          {localFileStatus && <LocalFileIndicator status={localFileStatus} />}
         </span>
         {/* Content preview */}
         {searchNote.headline ? (

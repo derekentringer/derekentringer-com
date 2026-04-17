@@ -31,6 +31,7 @@ interface FolderTreeNodeProps {
   setRenamingFolder: (id: string | null) => void;
   setRenameValue: (value: string) => void;
   onRenameSubmit: (folderId: string) => void;
+  managedFolderIds?: Set<string>;
   onContextMenu: (e: React.MouseEvent, folder: FolderInfo) => void;
   creatingIn: string | null;
   newFolderName: string;
@@ -109,6 +110,7 @@ function FolderTreeNode({
   setCreatingIn,
   setNewFolderName,
   onCreateSubmit,
+  managedFolderIds,
 }: FolderTreeNodeProps) {
   const isExpanded = expandedMap.get(folder.id) ?? false;
   const hasChildren = folder.children.length > 0;
@@ -156,6 +158,15 @@ function FolderTreeNode({
               {isExpanded ? "\u25BC" : "\u25B6"}
             </span>
             <span className="truncate">{folder.name}</span>
+            {managedFolderIds?.has(folder.id) && (
+              <span className="shrink-0 ml-1 text-muted-foreground" title="Managed locally">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </span>
+            )}
             {folder.favorite && (
               <span className="text-[10px] text-primary shrink-0 ml-0.5">
                 ★
@@ -212,6 +223,7 @@ function FolderTreeNode({
             setCreatingIn={setCreatingIn}
             setNewFolderName={setNewFolderName}
             onCreateSubmit={onCreateSubmit}
+            managedFolderIds={managedFolderIds}
           />
         ))}
     </div>
@@ -464,6 +476,7 @@ export function FolderTree({
               setCreatingIn={setCreatingIn}
               setNewFolderName={setNewFolderName}
               onCreateSubmit={handleCreateInSubmit}
+              managedFolderIds={managedFolderIds}
             />
           ))}
 

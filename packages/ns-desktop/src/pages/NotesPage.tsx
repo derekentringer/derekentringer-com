@@ -988,7 +988,20 @@ export function NotesPage() {
           try {
             const exists = await fileExists(localPath);
             if (exists) {
-              const hash = await writeLocalFile(localPath, content);
+              // Check if title changed — rename the file on disk
+              const { titleFromFilename, renameLocalFile } = await import("../lib/localFileService.ts");
+              const currentFileTitle = titleFromFilename(localPath);
+              let activePath = localPath;
+              if (title && title !== currentFileTitle && title !== "Untitled") {
+                try {
+                  activePath = await renameLocalFile(localPath, title);
+                  await linkNoteToLocalFile(selectedId, activePath, "");
+                } catch {
+                  // Rename failed — continue with old path
+                  activePath = localPath;
+                }
+              }
+              const hash = await writeLocalFile(activePath, content);
               lastProcessedHashRef.current.set(selectedId, hash);
               await updateLocalFileHash(selectedId, hash);
               setLocalFileStatuses((prev) => {
@@ -2114,6 +2127,9 @@ export function NotesPage() {
           const existing = await getManagedDirectoryByPath(dirPath);
           if (!existing) {
             await addManagedDirectory(dirPath, targetFolderId);
+            if (targetFolderId) {
+              setManagedFolderIds((prev) => new Set([...prev, targetFolderId]));
+            }
             // Start watching the directory
             await startDirectoryWatching(dirPath, {
               onFileCreated: (path) => handleDirectoryFileEvent(path, dirPath),
@@ -3093,6 +3109,7 @@ export function NotesPage() {
         showTrash={sidebarView === "notes"}
         onImportFiles={(files) => handleImportFiles(files)}
         onImportDirectory={(files) => handleImportFiles(files)}
+        onImportDirectoryPath={(path) => handleImportPaths([path])}
         showImport={sidebarView === "notes"}
         onSettings={() => setShowSettings(true)}
         onSignOut={logout}

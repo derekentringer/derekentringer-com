@@ -1,4 +1,4 @@
-import { readTextFile, writeTextFile, exists, stat, remove, watch, readDir } from "@tauri-apps/plugin-fs";
+import { readTextFile, writeTextFile, exists, stat, remove, watch, readDir, rename } from "@tauri-apps/plugin-fs";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { parseFrontmatter, injectFrontmatter } from "@derekentringer/ns-shared";
 
@@ -80,6 +80,39 @@ export function validateFileSize(sizeBytes: number): boolean {
 
 export async function deleteLocalFile(path: string): Promise<void> {
   await remove(path);
+}
+
+/**
+ * Rename a local file on disk. Returns the new path.
+ * Sanitizes the new name to remove characters that are invalid in filenames.
+ */
+export async function renameLocalFile(
+  oldPath: string,
+  newTitle: string,
+): Promise<string> {
+  const parts = oldPath.replace(/\\/g, "/").split("/");
+  const oldName = parts[parts.length - 1];
+  const ext = oldName.includes(".") ? oldName.slice(oldName.lastIndexOf(".")) : ".md";
+  const sanitized = newTitle.replace(/[/\\:*?"<>|]/g, "_").trim() || "Untitled";
+  const newName = `${sanitized}${ext}`;
+
+  if (newName === oldName) return oldPath;
+
+  const dir = parts.slice(0, -1).join("/");
+  const newPath = `${dir}/${newName}`;
+
+  // Add to suppressed paths to prevent watcher from firing on the rename
+  suppressedPaths.add(oldPath);
+  suppressedPaths.add(newPath);
+
+  await rename(oldPath, newPath);
+
+  setTimeout(() => {
+    suppressedPaths.delete(oldPath);
+    suppressedPaths.delete(newPath);
+  }, 200);
+
+  return newPath;
 }
 
 // ---------------------------------------------------------------------------

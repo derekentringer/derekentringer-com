@@ -26,6 +26,7 @@ interface RibbonProps {
   // Import
   onImportFiles: (files: FileList) => void;
   onImportDirectory: (files: FileList) => void;
+  onImportDirectoryPath?: (path: string) => void;
   showImport: boolean;
   // Settings
   onSettings: () => void;
@@ -50,6 +51,7 @@ export function Ribbon({
   showTrash,
   onImportFiles,
   onImportDirectory,
+  onImportDirectoryPath,
   showImport,
   onSettings,
   onSignOut,
@@ -147,6 +149,7 @@ export function Ribbon({
           <ImportButton
             onImportFiles={onImportFiles}
             onImportDirectory={onImportDirectory}
+            onImportDirectoryPath={onImportDirectoryPath}
           />
         )}
         {onGame && (

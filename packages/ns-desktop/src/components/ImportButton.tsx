@@ -3,9 +3,10 @@ import { useState, useRef, useEffect } from "react";
 interface ImportButtonProps {
   onImportFiles: (files: FileList) => void;
   onImportDirectory: (files: FileList) => void;
+  onImportDirectoryPath?: (path: string) => void;
 }
 
-export function ImportButton({ onImportFiles, onImportDirectory }: ImportButtonProps) {
+export function ImportButton({ onImportFiles, onImportDirectory, onImportDirectoryPath }: ImportButtonProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -31,28 +32,37 @@ export function ImportButton({ onImportFiles, onImportDirectory }: ImportButtonP
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 mb-1 z-50 py-1 bg-card border border-border rounded-md shadow-lg w-fit">
+        <div className="absolute bottom-full left-0 mb-1 z-50 py-1 bg-card border border-border rounded-md shadow-lg min-w-[130px]">
           <button
             onClick={() => {
               setOpen(false);
               fileInputRef.current?.click();
             }}
-            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer whitespace-nowrap"
           >
             Import Files
           </button>
           <button
             onClick={() => {
               setOpen(false);
-              dirInputRef.current?.click();
+              if (onImportDirectoryPath) {
+                // Use native Tauri folder picker for real filesystem paths
+                import("../lib/localFileService.ts").then(({ pickDirectory }) => {
+                  pickDirectory().then((path) => {
+                    if (path) onImportDirectoryPath(path);
+                  });
+                });
+              } else {
+                dirInputRef.current?.click();
+              }
             }}
-            className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer whitespace-nowrap"
           >
             Import Folder
           </button>

@@ -415,9 +415,8 @@ describe("NoteList", () => {
   // Local file indicator dot tests
   // ---------------------------------------------------------------------------
 
-  it("shows green indicator dot for synced local file", () => {
-    const notes = [makeNote({ id: "1", title: "Synced Note", isLocalFile: true })];
-    const statuses = new Map<string, LocalFileStatus>([["1", "synced"]]);
+  it("shows managed locally icon for local file notes", () => {
+    const notes = [makeNote({ id: "1", title: "Local Note", isLocalFile: true })];
 
     render(
       <DndWrapper>
@@ -426,77 +425,12 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           sortByManual={false}
-          localFileStatuses={statuses}
         />
       </DndWrapper>,
     );
 
-    const indicator = screen.getByTitle("Local file in sync");
+    const indicator = screen.getByTitle("Managed locally");
     expect(indicator).toBeInTheDocument();
-    expect(indicator.className).toContain("bg-green-500");
-  });
-
-  it("shows amber indicator dot for cloud_newer status", () => {
-    const notes = [makeNote({ id: "1", title: "Cloud Newer Note", isLocalFile: true })];
-    const statuses = new Map<string, LocalFileStatus>([["1", "cloud_newer"]]);
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={notes}
-          selectedId={null}
-          onSelect={vi.fn()}
-          sortByManual={false}
-          localFileStatuses={statuses}
-        />
-      </DndWrapper>,
-    );
-
-    const indicator = screen.getByTitle("Cloud version is newer");
-    expect(indicator).toBeInTheDocument();
-    expect(indicator.className).toContain("bg-amber-500");
-  });
-
-  it("shows amber indicator dot for external_change status", () => {
-    const notes = [makeNote({ id: "1", title: "Changed Note", isLocalFile: true })];
-    const statuses = new Map<string, LocalFileStatus>([["1", "external_change"]]);
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={notes}
-          selectedId={null}
-          onSelect={vi.fn()}
-          sortByManual={false}
-          localFileStatuses={statuses}
-        />
-      </DndWrapper>,
-    );
-
-    const indicator = screen.getByTitle("File changed externally");
-    expect(indicator).toBeInTheDocument();
-    expect(indicator.className).toContain("bg-amber-500");
-  });
-
-  it("shows red indicator dot for missing local file", () => {
-    const notes = [makeNote({ id: "1", title: "Missing Note", isLocalFile: true })];
-    const statuses = new Map<string, LocalFileStatus>([["1", "missing"]]);
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={notes}
-          selectedId={null}
-          onSelect={vi.fn()}
-          sortByManual={false}
-          localFileStatuses={statuses}
-        />
-      </DndWrapper>,
-    );
-
-    const indicator = screen.getByTitle("Local file missing");
-    expect(indicator).toBeInTheDocument();
-    expect(indicator.className).toContain("bg-red-500");
   });
 
   it("does not show indicator dot when no localFileStatuses provided", () => {

@@ -47,16 +47,16 @@ export function ImportChoiceDialog({
           >
             Import to NoteSync
             <span className="block text-xs text-muted-foreground">
-              Copy file contents into NoteSync. The original file will not be edited or tracked.
+              Copy file contents into NoteSync. The original files will not be tracked.
             </span>
           </button>
           <button
             onClick={onKeepLocal}
             className="px-3 py-2 rounded-md border border-border text-sm text-foreground hover:bg-accent transition-colors text-left cursor-pointer"
           >
-            Keep Local
+            Start Managing Locally
             <span className="block text-xs text-muted-foreground">
-              Open the file in NoteSync. The original file will be editable and tracked in NoteSync.
+              Track and sync files from their current location. Changes on disk are reflected in NoteSync and vice versa.
             </span>
           </button>
           <button
