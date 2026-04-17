@@ -84,6 +84,7 @@ export interface SyncEngineCallbacks {
   onDataChanged: () => void;
   onLocalFileCloudUpdate?: (noteId: string) => void;
   onNoteRemoteDeleted?: (noteId: string) => void;
+  onFolderRemoteDeleted?: (folderId: string) => void;
   onSyncRejections?: (
     rejections: SyncRejection[],
     forcePush: (changeIds: string[]) => Promise<void>,
@@ -93,6 +94,7 @@ export interface SyncEngineCallbacks {
 }
 
 let noteRemoteDeletedCallback: ((noteId: string) => void) | null = null;
+let folderRemoteDeletedCallback: ((folderId: string) => void) | null = null;
 let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
 let chatChangedCallback: (() => void) | null = null;
 
@@ -101,6 +103,7 @@ export async function initSyncEngine(callbacks: SyncEngineCallbacks): Promise<vo
   dataChangedCallback = callbacks.onDataChanged;
   localFileCloudUpdateCallback = callbacks.onLocalFileCloudUpdate ?? null;
   noteRemoteDeletedCallback = callbacks.onNoteRemoteDeleted ?? null;
+  folderRemoteDeletedCallback = callbacks.onFolderRemoteDeleted ?? null;
   syncRejectionsCallback = callbacks.onSyncRejections ?? null;
   chatChangedCallback = callbacks.onChatChanged ?? null;
 
@@ -148,6 +151,7 @@ export function destroySyncEngine(): void {
   dataChangedCallback = null;
   localFileCloudUpdateCallback = null;
   noteRemoteDeletedCallback = null;
+  folderRemoteDeletedCallback = null;
   syncRejectionsCallback = null;
   syncInProgress = false;
   deviceId = null;
@@ -666,6 +670,7 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
     const folderData = change.data as FolderSyncData | null;
     if (folderData) await upsertFolderFromRemote(folderData);
     await softDeleteFolderFromRemote(change.id);
+    folderRemoteDeletedCallback?.(change.id);
     return;
   }
 

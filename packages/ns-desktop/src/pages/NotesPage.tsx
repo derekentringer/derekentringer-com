@@ -652,8 +652,32 @@ export function NotesPage() {
           return next;
         });
       },
-      onNoteRemoteDeleted: (noteId) => {
+      onNoteRemoteDeleted: async (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
+        // Delete local file if this note is managed locally
+        try {
+          const localPath = await getNoteLocalPath(noteId);
+          if (localPath) {
+            const { exists: fileExists, remove: fsRemove } = await import("@tauri-apps/plugin-fs");
+            if (await fileExists(localPath)) {
+              suppressPath(localPath, 1000);
+              await fsRemove(localPath);
+            }
+          }
+        } catch { /* ignore */ }
+      },
+      onFolderRemoteDeleted: async (folderId) => {
+        // Delete local directory if this folder is managed locally
+        try {
+          const localInfo = await findLocalDirForFolder(folderId);
+          if (localInfo) {
+            const { exists: dirExists, remove: fsRemove } = await import("@tauri-apps/plugin-fs");
+            if (await dirExists(localInfo.dirPath)) {
+              suppressPath(localInfo.dirPath, 1000);
+              await fsRemove(localInfo.dirPath, { recursive: true });
+            }
+          }
+        } catch { /* ignore */ }
       },
       onSyncRejections: async (rejections, forcePush, discard) => {
         // Resolve entity names from local DB
