@@ -3662,6 +3662,10 @@ export function NotesPage() {
                       onExportNote={handleExportNote}
                       onToggleFavorite={handleToggleNoteFavorite}
                       onCreate={handleCreate}
+                      localFileStatuses={localFileStatuses}
+                      locallyHostedNoteIds={locallyHostedNoteIds}
+                      onUnlinkLocalFile={handleUnlinkLocalFile}
+                      onSaveAsLocalFile={handleSaveAsLocalFile}
                     />
                 </div>
               </>
