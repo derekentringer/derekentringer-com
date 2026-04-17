@@ -257,6 +257,7 @@ export function NotesPage() {
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [managedFolderIds, setManagedFolderIds] = useState<Set<string>>(new Set());
+  const [locallyHostedNoteIds, setLocallyHostedNoteIds] = useState<Set<string>>(new Set());
 
   // Favorites
   const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
@@ -2423,6 +2424,8 @@ export function NotesPage() {
   async function initLocalFileWatchers() {
     try {
       const localNotes = await fetchLocalFileNotes();
+      // Track which notes are hosted on THIS device
+      setLocallyHostedNoteIds(new Set(localNotes.map((n) => n.id)));
       if (localNotes.length === 0) return;
 
       const results = await reestablishWatchers(
@@ -3734,6 +3737,7 @@ export function NotesPage() {
                 onToggleFavorite={handleToggleNoteFavorite}
                 onCreate={handleCreate}
                 localFileStatuses={localFileStatuses}
+                locallyHostedNoteIds={locallyHostedNoteIds}
                 onUnlinkLocalFile={handleUnlinkLocalFile}
                 onSaveAsLocalFile={handleSaveAsLocalFile}
                 onSaveToFile={handleSaveToFile}
@@ -3950,9 +3954,12 @@ export function NotesPage() {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-2 bottom-1.5 flex items-center">
+              <div className={`absolute bottom-1.5 flex items-center ${selectedNote?.isLocalFile ? "left-4" : "left-2"}`}>
                 {selectedNote?.isLocalFile && (
-                  <span className="shrink-0 text-muted-foreground mr-0.5" title="Managed locally">
+                  <span
+                    className={`shrink-0 mr-0.5 ${selectedId && locallyHostedNoteIds.has(selectedId) ? "text-primary" : "text-muted-foreground"}`}
+                    title={selectedId && locallyHostedNoteIds.has(selectedId) ? "Managed locally on this device" : "Managed locally on another device"}
+                  >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                       <polyline points="7 10 12 15 17 10" />
@@ -4006,7 +4013,7 @@ export function NotesPage() {
                 placeholder="Note title"
                 className="w-full px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
               />
-              <p className={`pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate ${selectedNote?.isLocalFile ? "pl-[52px]" : "pl-9"}`}>
+              <p className={`pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate ${selectedNote?.isLocalFile ? "pl-[60px]" : "pl-9"}`}>
                 {selectedNote?.folderId
                   ? getFolderBreadcrumb(folders, selectedNote.folderId).map((f) => f.name).join(" / ")
                   : "Unfiled"}
