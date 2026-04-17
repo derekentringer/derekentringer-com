@@ -2527,46 +2527,61 @@ export function NotesPage() {
               }
             }
 
-            // Clean up NoteSync folders whose directories no longer exist on disk.
-            // Scan actual subdirectories on disk, compare against NoteSync child folders.
+            // Recursively sync NoteSync folders with disk directories.
             if (dir.rootFolderId) {
               try {
                 const { readDir: fsReadDir } = await import("@tauri-apps/plugin-fs");
-                const diskEntries = await fsReadDir(dir.path);
-                const diskDirNames = new Set(
-                  diskEntries
-                    .filter((e) => e.isDirectory && !e.name.startsWith("."))
-                    .map((e) => e.name),
-                );
-
-                // Find NoteSync child folders under this managed root
                 const allFolders = await fetchFolders();
-                function findChildren(items: FolderInfo[], parentId: string): FolderInfo[] {
+
+                // Find a folder node by ID in the tree
+                function findNode(items: FolderInfo[], id: string): FolderInfo | null {
                   for (const f of items) {
-                    if (f.id === parentId) return f.children;
-                    const found = findChildren(f.children, parentId);
-                    if (found.length > 0) return found;
+                    if (f.id === id) return f;
+                    const found = findNode(f.children, id);
+                    if (found) return found;
                   }
-                  return [];
-                }
-                const childFolders = findChildren(allFolders, dir.rootFolderId);
-
-                // Remove NoteSync folders that don't exist on disk
-                for (const child of childFolders) {
-                  if (!diskDirNames.has(child.name)) {
-                    await deleteFolder(child.id, "move-up");
-                    changed = true;
-                  }
+                  return null;
                 }
 
-                // Create NoteSync folders for directories on disk that don't exist in NoteSync
-                const childFolderNames = new Set(childFolders.map((f) => f.name));
-                for (const dirName of diskDirNames) {
-                  if (!childFolderNames.has(dirName)) {
-                    await createFolder(dirName, dir.rootFolderId);
-                    changed = true;
+                // Recursively sync a disk directory with a NoteSync folder
+                async function syncLevel(diskPath: string, noteSyncParentId: string) {
+                  const diskEntries = await fsReadDir(diskPath);
+                  const diskDirNames = new Set(
+                    diskEntries
+                      .filter((e) => e.isDirectory && !e.name.startsWith("."))
+                      .map((e) => e.name),
+                  );
+
+                  const parentNode = findNode(allFolders, noteSyncParentId);
+                  const childFolders = parentNode?.children ?? [];
+
+                  // Remove NoteSync folders not on disk
+                  for (const child of childFolders) {
+                    if (!diskDirNames.has(child.name)) {
+                      await deleteFolder(child.id, "move-up");
+                      changed = true;
+                    }
+                  }
+
+                  // Create/recurse into matching folders
+                  const childMap = new Map(childFolders.map((f) => [f.name, f]));
+                  for (const dirName of diskDirNames) {
+                    const childDiskPath = `${diskPath}/${dirName}`;
+                    let nsFolder = childMap.get(dirName);
+                    if (!nsFolder) {
+                      // Create NoteSync folder for this directory
+                      const created = await createFolder(dirName, noteSyncParentId);
+                      changed = true;
+                      // Recurse into the new folder
+                      await syncLevel(childDiskPath, created.id);
+                    } else {
+                      // Recurse into existing folder
+                      await syncLevel(childDiskPath, nsFolder.id);
+                    }
                   }
                 }
+
+                await syncLevel(dir.path, dir.rootFolderId);
               } catch {
                 // Ignore errors during reconciliation scan
               }
