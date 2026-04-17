@@ -123,13 +123,16 @@ function SortableNoteItem({
         {/* Title row */}
         <span className="flex items-center gap-1 overflow-hidden">
           {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
-          <span className={`text-sm font-medium truncate ${isSelected ? "text-foreground" : "text-foreground/70"}`}>{note.title || "Untitled"}</span>
           {note.isLocalFile && (
-            <span
-              className="inline-block w-1.5 h-1.5 rounded-full shrink-0 bg-muted-foreground/50"
-              title="This note is linked to a local file"
-            />
+            <span className="shrink-0 mr-1 text-muted-foreground" title="Managed locally">
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </span>
           )}
+          <span className={`text-sm font-medium truncate ${isSelected ? "text-foreground" : "text-foreground/70"}`}>{note.title || "Untitled"}</span>
         </span>
         {/* Content preview */}
         {note.headline ? (
