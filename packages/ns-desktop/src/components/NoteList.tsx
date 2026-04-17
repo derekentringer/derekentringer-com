@@ -249,7 +249,7 @@ function SortableNoteItem({
               }}
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
-              Save As Local File
+              Start Managing Locally
             </button>
           )}
           {note.isLocalFile && onUnlinkLocalFile && (
@@ -260,40 +260,7 @@ function SortableNoteItem({
               }}
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
-              Unlink Local File
-            </button>
-          )}
-          {note.isLocalFile && localFileStatus === "cloud_newer" && onSaveToFile && (
-            <button
-              onClick={() => {
-                onSaveToFile(note.id);
-                onContextMenuClose();
-              }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              Save to File
-            </button>
-          )}
-          {note.isLocalFile && localFileStatus === "external_change" && onUseLocalVersion && (
-            <button
-              onClick={() => {
-                onUseLocalVersion(note.id);
-                onContextMenuClose();
-              }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              Use Local Version
-            </button>
-          )}
-          {note.isLocalFile && (localFileStatus === "cloud_newer" || localFileStatus === "external_change") && onViewDiff && (
-            <button
-              onClick={() => {
-                onViewDiff(note.id);
-                onContextMenuClose();
-              }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              View Diff
+              Stop Managing Locally
             </button>
           )}
           {onDeleteNote && (

@@ -14,6 +14,9 @@ interface FolderTreeProps {
   onMoveFolder: (folderId: string, parentId: string | null) => void;
   onExportFolder?: (folderId: string) => void;
   onToggleFavorite?: (folderId: string, favorite: boolean) => void;
+  onSaveLocally?: (folderId: string) => void;
+  onStopManagingLocally?: (folderId: string) => void;
+  managedFolderIds?: Set<string>;
 }
 
 interface FolderTreeNodeProps {
@@ -246,6 +249,9 @@ export function FolderTree({
   onMoveFolder,
   onExportFolder,
   onToggleFavorite,
+  onSaveLocally,
+  onStopManagingLocally,
+  managedFolderIds,
 }: FolderTreeProps) {
   const [expandedMap, setExpandedMap] = useState<Map<string, boolean>>(() => {
     const stored = loadExpandedState();
@@ -522,6 +528,28 @@ export function FolderTree({
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
               Export as .zip
+            </button>
+          )}
+          {onSaveLocally && !managedFolderIds?.has(contextMenu.folder.id) && (
+            <button
+              onClick={() => {
+                onSaveLocally(contextMenu.folder.id);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              Start Managing Locally
+            </button>
+          )}
+          {onStopManagingLocally && managedFolderIds?.has(contextMenu.folder.id) && (
+            <button
+              onClick={() => {
+                onStopManagingLocally(contextMenu.folder.id);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              Stop Managing Locally
             </button>
           )}
           {onToggleFavorite && (

@@ -86,6 +86,12 @@ export async function deleteLocalFile(path: string): Promise<void> {
 // File picker dialogs
 // ---------------------------------------------------------------------------
 
+export async function pickDirectory(): Promise<string | null> {
+  const result = await open({ directory: true, multiple: false });
+  if (!result) return null;
+  return Array.isArray(result) ? result[0] ?? null : result;
+}
+
 export async function pickLocalFiles(): Promise<string[] | null> {
   const result = await open({
     multiple: true,

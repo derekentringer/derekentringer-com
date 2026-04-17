@@ -69,9 +69,11 @@ import {
   migrateFrontmatter,
   listManagedDirectories,
   addManagedDirectory,
+  removeManagedDirectory,
   getManagedDirectoryByPath,
   isPathConflicting,
   fetchTrackedFilesInDirectory,
+  fetchNotesInManagedDirectory,
   type SearchMode,
 } from "../lib/db.ts";
 import { AboutDialog } from "../components/AboutDialog.tsx";
@@ -152,9 +154,11 @@ import {
   startPollTimer,
   stopPollTimer,
   startDirectoryWatching,
+  stopDirectoryWatching,
   stopAllDirectoryWatchers,
   reconcileAllDirectories,
   autoIndexFile,
+  pickDirectory,
   type LocalFileStatus,
 } from "../lib/localFileService.ts";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -247,6 +251,7 @@ export function NotesPage() {
   // Folders
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [managedFolderIds, setManagedFolderIds] = useState<Set<string>>(new Set());
 
   // Favorites
   const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
@@ -1551,6 +1556,96 @@ export function NotesPage() {
     }
   }
 
+  async function handleSaveFolderLocally(folderId: string) {
+    try {
+      // Pick a local directory
+      const dirPath = await pickDirectory();
+      if (!dirPath) return;
+
+      // Check for conflicts
+      const { conflicts, reason } = await isPathConflicting(dirPath);
+      if (conflicts) {
+        showError(reason || "Directory conflicts with an existing managed directory");
+        return;
+      }
+
+      // Register as managed directory
+      await addManagedDirectory(dirPath, folderId);
+      setManagedFolderIds((prev) => new Set([...prev, folderId]));
+
+      // Export notes in this folder as .md files to the local directory
+      const folderNotes = notes.filter((n) => n.folderId === folderId);
+      let exported = 0;
+      for (const note of folderNotes) {
+        try {
+          const fileName = `${(note.title || "Untitled").replace(/[/\\:*?"<>|]/g, "_")}.md`;
+          const filePath = `${dirPath}/${fileName}`;
+          const hash = await writeLocalFile(filePath, note.content);
+          await linkNoteToLocalFile(note.id, filePath, hash);
+          await updateNote(note.id, { isLocalFile: true });
+          setLocalFileStatuses((prev) => {
+            const next = new Map(prev);
+            next.set(note.id, "synced");
+            return next;
+          });
+          exported++;
+        } catch (err) {
+          console.error(`Failed to export note ${note.title}:`, err);
+        }
+      }
+
+      // Start directory watcher
+      await startDirectoryWatching(dirPath, {
+        onFileCreated: (path) => handleDirectoryFileEvent(path, dirPath),
+        onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
+        onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+      });
+
+      await refreshSidebarData();
+      notifyLocalChange();
+      if (exported > 0) {
+        setSuccessToast(`Exported ${exported} note${exported === 1 ? "" : "s"} to ${dirPath}`);
+        setTimeout(() => setSuccessToast(null), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to save folder locally:", err);
+      showError("Failed to save folder locally");
+    }
+  }
+
+  async function handleStopManagingFolderLocally(folderId: string) {
+    try {
+      const managedDirs = await listManagedDirectories();
+      const dir = managedDirs.find((d) => d.rootFolderId === folderId);
+      if (!dir) return;
+
+      // Stop watching
+      await stopDirectoryWatching(dir.path);
+
+      // Unlink all notes in this directory
+      const dirNotes = await fetchNotesInManagedDirectory(dir.path);
+      for (const note of dirNotes) {
+        await unlinkLocalFile(note.id);
+      }
+
+      // Remove managed directory
+      await removeManagedDirectory(dir.id);
+      setManagedFolderIds((prev) => {
+        const next = new Set(prev);
+        next.delete(folderId);
+        return next;
+      });
+
+      await refreshSidebarData();
+      notifyLocalChange();
+      setSuccessToast("Stopped managing folder locally");
+      setTimeout(() => setSuccessToast(null), 3000);
+    } catch (err) {
+      console.error("Failed to stop managing folder locally:", err);
+      showError("Failed to stop managing folder locally");
+    }
+  }
+
   function handleFavSortByChange(field: NoteSortField) {
     setFavSortBy(field);
     try { localStorage.setItem("ns-fav-sort-by", field); } catch {}
@@ -2209,6 +2304,13 @@ export function NotesPage() {
 
       // --- Managed directory reconciliation and watchers ---
       const managedDirs = await listManagedDirectories();
+      // Update managed folder IDs for context menu display
+      const mfIds = new Set<string>();
+      for (const dir of managedDirs) {
+        if (dir.rootFolderId) mfIds.add(dir.rootFolderId);
+      }
+      setManagedFolderIds(mfIds);
+
       if (managedDirs.length > 0) {
         // Reconcile: detect new/missing/changed files
         const reconcileResults = await reconcileAllDirectories(
@@ -2942,6 +3044,9 @@ export function NotesPage() {
                     onMoveFolder={handleMoveFolder}
                     onExportFolder={handleExportFolder}
                     onToggleFavorite={handleToggleFolderFavorite}
+                    onSaveLocally={handleSaveFolderLocally}
+                    onStopManagingLocally={handleStopManagingFolderLocally}
+                    managedFolderIds={managedFolderIds}
                   />
                 </div>
               )}
