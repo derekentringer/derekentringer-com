@@ -672,17 +672,10 @@ export function NotesPage() {
       },
       onNoteRemoteDeleted: async (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
-        // Delete local file if this note is managed locally
-        try {
-          const localPath = await getNoteLocalPath(noteId);
-          if (localPath) {
-            const { exists: fileExists, remove: fsRemove } = await import("@tauri-apps/plugin-fs");
-            if (await fileExists(localPath)) {
-              suppressPath(localPath, 1000);
-              await fsRemove(localPath);
-            }
-          }
-        } catch { /* ignore */ }
+        // NOTE: Do NOT delete local files here. The sync pull may contain
+        // stale deletes for notes that were just re-created by the auto-indexer.
+        // Local file deletion is handled by handleDirectoryFileDeleted (watcher)
+        // and the reconciliation (for files deleted while app was closed).
       },
       onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
         // Delete local directory if this folder is managed locally
