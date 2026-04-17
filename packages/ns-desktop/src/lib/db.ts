@@ -735,9 +735,32 @@ export async function createFolder(
   const db = await getDb();
   const now = new Date().toISOString();
 
+  // Check for an existing active folder with the same name and parent — return
+  // it to avoid creating a duplicate. This handles the case where the server
+  // synced a folder that the reconciliation is also trying to create.
+  const existing = await db.select<{ id: string; name: string; sort_order: number; favorite: number; created_at: string }[]>(
+    parentId
+      ? "SELECT id, name, sort_order, favorite, created_at FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NULL LIMIT 1"
+      : "SELECT id, name, sort_order, favorite, created_at FROM folders WHERE name = $1 AND parent_id IS NULL AND deleted_at IS NULL LIMIT 1",
+    parentId ? [name, parentId] : [name],
+  );
+
+  if (existing.length > 0) {
+    return {
+      id: existing[0].id,
+      name: existing[0].name,
+      parentId: parentId ?? null,
+      sortOrder: existing[0].sort_order,
+      favorite: existing[0].favorite === 1,
+      count: 0,
+      totalCount: 0,
+      createdAt: existing[0].created_at,
+      children: [],
+    };
+  }
+
   // Check for a soft-deleted folder with the same name and parent — restore it
-  // instead of creating a new one to avoid sync conflicts (duplicate UUID vs
-  // unique constraint on name+parent).
+  // instead of creating a new one to avoid sync conflicts.
   const softDeleted = await db.select<{ id: string }[]>(
     parentId
       ? "SELECT id FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NOT NULL LIMIT 1"
