@@ -4,9 +4,12 @@ interface TagInputProps {
   tags: string[];
   allTags: string[];
   onChange: (tags: string[]) => void;
+  autoFocus?: boolean;
+  onBlurEmpty?: () => void;
+  loading?: boolean;
 }
 
-export function TagInput({ tags, allTags, onChange }: TagInputProps) {
+export function TagInput({ tags, allTags, onChange, autoFocus, onBlurEmpty, loading }: TagInputProps) {
   const [input, setInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -20,6 +23,10 @@ export function TagInput({ tags, allTags, onChange }: TagInputProps) {
         )
         .slice(0, 5)
     : [];
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   useEffect(() => {
     if (!showSuggestions) return;
@@ -74,6 +81,11 @@ export function TagInput({ tags, allTags, onChange }: TagInputProps) {
           </button>
         </span>
       ))}
+      {loading && (
+        <span className="text-xs text-muted-foreground">
+          <span className="inline-flex gap-0.5 mr-1.5"><span className="bounce-dot" /><span className="bounce-dot" /><span className="bounce-dot" /></span>Generating tags
+        </span>
+      )}
       <div className="relative flex-1 min-w-[80px]">
         <input
           ref={inputRef}
@@ -84,8 +96,11 @@ export function TagInput({ tags, allTags, onChange }: TagInputProps) {
             setShowSuggestions(true);
           }}
           onFocus={() => setShowSuggestions(true)}
+          onBlur={() => {
+            if (tags.length === 0 && !input.trim() && onBlurEmpty) onBlurEmpty();
+          }}
           onKeyDown={handleKeyDown}
-          placeholder={tags.length === 0 ? "Add tags..." : ""}
+          placeholder={tags.length === 0 ? "e.g. work, meeting, project" : ""}
           className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none py-0.5"
           aria-label="Add tag"
         />

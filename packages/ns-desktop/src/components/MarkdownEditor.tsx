@@ -669,6 +669,12 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         ),
       ],
     });
+    // When showing frontmatter (source mode), scroll to top so YAML is visible
+    if (!hideFm) {
+      requestAnimationFrame(() => {
+        view.scrollDOM.scrollTop = 0;
+      });
+    }
   }, [hideFm, showLineNumbers]);
 
   // Toggle word wrap

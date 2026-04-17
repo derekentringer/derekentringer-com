@@ -377,6 +377,25 @@ export function NotesPage() {
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [editingSummary, setEditingSummary] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
+  const [showManualSummary, setShowManualSummary] = useState(false);
+  const [showManualTags, setShowManualTags] = useState(false);
+  const [summaryOverflows, setSummaryOverflows] = useState(false);
+  const summaryTextRef = useRef<HTMLParagraphElement>(null);
+
+  // Detect if summary text is truncated (overflows its container)
+  useEffect(() => {
+    const el = summaryTextRef.current;
+    if (!el) { setSummaryOverflows(false); return; }
+    function check() {
+      if (summaryTextRef.current) {
+        setSummaryOverflows(summaryTextRef.current.scrollWidth > summaryTextRef.current.clientWidth);
+      }
+    }
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [selectedId, notes]);
   const titleRef = useRef(title);
   titleRef.current = title;
   const contentRef = useRef(content);
@@ -905,6 +924,10 @@ export function NotesPage() {
     setSelectedVersion(null);
     setSuggestedTags([]);
     setConfirmDeleteSummary(false);
+    setSummaryExpanded(false);
+    setEditingSummary(false);
+    setShowManualSummary(false);
+    setShowManualTags(false);
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -2630,45 +2653,24 @@ export function NotesPage() {
   }
 
   async function handleSuggestTags() {
-    if (!selectedId || isSuggestingTags) return;
+    if (!selectedId || !selectedNote || isSuggestingTags) return;
     setIsSuggestingTags(true);
     try {
       if (isDirty()) {
         await handleSave();
       }
-      const tags = await suggestTagsApi(selectedId);
-      setSuggestedTags(tags);
+      const suggested = await suggestTagsApi(selectedId);
+      // Add suggested tags directly to the note, deduplicating
+      const currentTags = selectedNote.tags ?? [];
+      const newTags = [...new Set([...currentTags, ...suggested])];
+      if (newTags.length > currentTags.length) {
+        await handleUpdateTags(selectedId, newTags);
+      }
     } catch {
       showError("Failed to suggest tags");
     } finally {
       setIsSuggestingTags(false);
     }
-  }
-
-  async function handleAcceptTag(tag: string) {
-    if (!selectedId || !selectedNote) return;
-    const currentTags = selectedNote.tags ?? [];
-    if (currentTags.includes(tag)) {
-      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
-      return;
-    }
-    try {
-      const newTags = [...currentTags, tag];
-      const updated = await updateNote(selectedId, { tags: newTags });
-      setNotes((prev) =>
-        prev.map((n) => (n.id === updated.id ? updated : n)),
-      );
-      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
-      await refreshTags();
-      setDashboardKey((k) => k + 1);
-      notifyLocalChange();
-    } catch {
-      showError("Failed to add tag");
-    }
-  }
-
-  function handleDismissTag(tag: string) {
-    setSuggestedTags((prev) => prev.filter((t) => t !== tag));
   }
 
   async function handleVersionRestore(noteId: string, versionId: string) {
@@ -3268,28 +3270,38 @@ export function NotesPage() {
                 Modified {new Date(selectedNote.updatedAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
               </span>
               <div className="flex-1" />
-              {aiSettings.masterAiEnabled && aiSettings.summarize && (
-                <button
-                  onClick={handleSummarize}
-                  disabled={isSummarizing}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title={isSummarizing ? "Summarizing..." : "Summarize"}
-                  aria-label="Summarize"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
-                </button>
-              )}
-              {aiSettings.masterAiEnabled && aiSettings.tagSuggestions && (
-                <button
-                  onClick={handleSuggestTags}
-                  disabled={isSuggestingTags}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title={isSuggestingTags ? "Suggesting..." : "Suggest tags"}
-                  aria-label="Suggest tags"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  if (aiSettings.masterAiEnabled && aiSettings.summarize) {
+                    handleSummarize();
+                  } else {
+                    setShowManualSummary(true);
+                    setSummaryDraft("");
+                    setEditingSummary(true);
+                  }
+                }}
+                disabled={isSummarizing}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={isSummarizing ? "Summarizing..." : aiSettings.masterAiEnabled && aiSettings.summarize ? "Summarize" : "Add summary"}
+                aria-label="Summarize"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
+              </button>
+              <button
+                onClick={() => {
+                  if (aiSettings.masterAiEnabled && aiSettings.tagSuggestions) {
+                    handleSuggestTags();
+                  } else {
+                    setShowManualTags(true);
+                  }
+                }}
+                disabled={isSuggestingTags}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={isSuggestingTags ? "Suggesting..." : aiSettings.masterAiEnabled && aiSettings.tagSuggestions ? "Suggest tags" : "Add tags"}
+                aria-label="Tags"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+              </button>
               {selectedNote?.transcript && (
                 <button
                   onClick={() => setShowTranscript((v) => !v)}
@@ -3392,30 +3404,36 @@ export function NotesPage() {
             </div>
 
             {/* Summary */}
-            {selectedNote?.summary && (
+            {(selectedNote?.summary || showManualSummary || isSummarizing) && (
               <div className="px-4 py-1.5 border-b border-border">
                 <div className="flex items-start gap-1">
-                  <button
-                    onClick={() => setSummaryExpanded((prev) => !prev)}
-                    className="shrink-0 mt-[5px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                    title={summaryExpanded ? "Collapse summary" : "Expand summary"}
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="10"
-                      height="10"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className={`transition-transform duration-300 ease-in-out ${summaryExpanded ? "" : "-rotate-90"}`}
+                  {selectedNote?.summary && !editingSummary && (summaryOverflows || summaryExpanded) && (
+                    <button
+                      onClick={() => setSummaryExpanded((prev) => !prev)}
+                      className="shrink-0 mt-[5px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      title={summaryExpanded ? "Collapse summary" : "Expand summary"}
                     >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                  {editingSummary ? (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={`transition-transform duration-300 ease-in-out ${summaryExpanded ? "" : "-rotate-90"}`}
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                  )}
+                  {isSummarizing ? (
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground italic">
+                      <span className="inline-flex gap-0.5 mr-1.5"><span className="bounce-dot" /><span className="bounce-dot" /><span className="bounce-dot" /></span>Generating summary
+                    </span>
+                  ) : editingSummary ? (
                     <textarea
                       autoFocus
                       value={summaryDraft}
@@ -3431,34 +3449,43 @@ export function NotesPage() {
                             }).catch(() => showError("Failed to update summary"));
                           }
                           setEditingSummary(false);
+                          setShowManualSummary(false);
                         } else if (e.key === "Escape") {
                           setEditingSummary(false);
+                          setShowManualSummary(false);
                         }
                       }}
-                      onBlur={() => setEditingSummary(false)}
+                      onBlur={() => {
+                        setEditingSummary(false);
+                        setShowManualSummary(false);
+                      }}
+                      placeholder="Add a summary..."
                       className="flex-1 min-w-0 text-sm text-muted-foreground italic bg-transparent border border-border rounded px-1 py-0 focus:outline-none focus:border-primary resize-none"
-                      rows={3}
+                      rows={2}
                     />
                   ) : (
                     <p
+                      ref={summaryTextRef}
                       className={`flex-1 min-w-0 text-sm text-muted-foreground italic cursor-default ${summaryExpanded ? "" : "truncate"}`}
                       onDoubleClick={() => {
-                        setSummaryDraft(selectedNote.summary ?? "");
+                        setSummaryDraft(selectedNote?.summary ?? "");
                         setSummaryExpanded(true);
                         setEditingSummary(true);
                       }}
                       title="Double-click to edit"
                     >
-                      {selectedNote.summary}
+                      {selectedNote?.summary}
                     </p>
                   )}
-                  <button
-                    onClick={() => setConfirmDeleteSummary(true)}
-                    className="shrink-0 mt-[3px] w-4 h-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                    title="Remove summary"
-                  >
-                    &times;
-                  </button>
+                  {selectedNote?.summary && !editingSummary && (
+                    <button
+                      onClick={() => setConfirmDeleteSummary(true)}
+                      className="shrink-0 mt-[3px] w-4 h-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      title="Remove summary"
+                    >
+                      &times;
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -3473,39 +3500,27 @@ export function NotesPage() {
                 onCancel={() => setConfirmDeleteSummary(false)}
               />
             )}
-            {/* Tag input */}
-            <TagInput
-              tags={selectedNote.tags}
-              allTags={tags.map((t) => t.name)}
-              onChange={(newTags) => handleUpdateTags(selectedId!, newTags)}
-            />
-
-            {/* Suggested tags */}
-            {suggestedTags.length > 0 && (
-              <div className="px-4 py-2 border-b border-border flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground">Suggested:</span>
-                {suggestedTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center rounded-full bg-accent text-xs text-foreground border border-border overflow-hidden"
-                  >
-                    <button
-                      onClick={() => handleAcceptTag(tag)}
-                      className="px-2 py-0.5 hover:bg-primary/20 transition-colors cursor-pointer"
-                      title="Add tag"
-                    >
-                      {tag}
-                    </button>
-                    <button
-                      onClick={() => handleDismissTag(tag)}
-                      className="px-1 py-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border-l border-border"
-                      title="Dismiss"
-                    >
-                      ✕
-                    </button>
+            {/* Tag input — shown when tags exist, manually opened, or generating */}
+            {(selectedNote.tags.length > 0 || showManualTags || isSuggestingTags) && (
+              isSuggestingTags && selectedNote.tags.length === 0 ? (
+                <div className="flex items-center gap-1 px-4 py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">
+                    <span className="inline-flex gap-0.5 mr-1.5"><span className="bounce-dot" /><span className="bounce-dot" /><span className="bounce-dot" /></span>Generating tags
                   </span>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <TagInput
+                  tags={selectedNote.tags}
+                  allTags={tags.map((t) => t.name)}
+                  onChange={(newTags) => {
+                    handleUpdateTags(selectedId!, newTags);
+                    if (newTags.length === 0) setShowManualTags(false);
+                  }}
+                  autoFocus={showManualTags && selectedNote.tags.length === 0}
+                  onBlurEmpty={() => setShowManualTags(false)}
+                  loading={isSuggestingTags}
+                />
+              )
             )}
 
             {localFileDiffView ? (
