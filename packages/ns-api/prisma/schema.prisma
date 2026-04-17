@@ -145,7 +145,9 @@ model Folder {
   deletedAt DateTime?
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, parentId, name])
+  // Uniqueness enforced by partial indexes in migration 20260312100000
+  // (excludes soft-deleted rows): folders_root_name_key and
+  // folders_userId_parentId_name_key
   @@index([userId])
   @@index([parentId])
   @@index([deletedAt])
