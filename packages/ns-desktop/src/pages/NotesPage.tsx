@@ -2747,39 +2747,45 @@ export function NotesPage() {
   }
 
   async function handleDirectoryFileDeleted(filePath: string) {
-    const existing = await findNoteByLocalPath(filePath);
-    if (!existing) return;
+    // findNoteByLocalPath excludes soft-deleted notes, but the reconciliation
+    // may have already soft-deleted it. Query directly to include soft-deleted.
+    const { default: Database } = await import("@tauri-apps/plugin-sql");
+    const db = await Database.load((await import("../lib/dbName.ts")).DB_URI);
+    const rows = await db.select<{ id: string; title: string }[]>(
+      "SELECT id, title FROM notes WHERE local_path = $1 LIMIT 1",
+      [filePath],
+    );
+    if (rows.length === 0) return;
 
-    // Fetch from DB to get the title (notes state may be filtered)
-    const noteFromDb = await fetchNoteById(existing.id);
-    const noteTitle = noteFromDb?.title || "Untitled";
+    const noteId = rows[0].id;
+    const noteTitle = rows[0].title || "Untitled";
 
     try {
-      // Soft-delete the note
-      await softDeleteNote(existing.id);
+      // Soft-delete the note (may already be soft-deleted by reconciliation)
+      await softDeleteNote(noteId).catch(() => {});
 
       // Remove from notes list
-      setNotes((prev) => prev.filter((n) => n.id !== existing.id));
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
 
       // Close tab if open
-      closeDeletedNoteTabRef.current(existing.id);
+      closeDeletedNoteTabRef.current(noteId);
 
       // Clean up local file status
       setLocalFileStatuses((prev) => {
         const next = new Map(prev);
-        next.delete(existing.id);
+        next.delete(noteId);
         return next;
       });
 
       // Enqueue sync delete
-      enqueueSyncAction("delete", existing.id, "note").catch(() => {});
+      enqueueSyncAction("delete", noteId, "note").catch(() => {});
 
       await refreshSidebarData();
       notifyLocalChange();
 
       // Toast with undo
       showToast(`"${noteTitle}" removed — file deleted from disk`, 30000, {
-        noteId: existing.id,
+        noteId,
         filePath,
       });
     } catch (err) {
