@@ -1562,6 +1562,33 @@ export function NotesPage() {
       }
     }
 
+    // Walk up the folder tree to find a managed root, then build the disk path
+    // Build a parent map from the FolderInfo tree
+    const parentMap = new Map<string, { name: string; parentId: string | null }>();
+    function buildParentMap(items: FolderInfo[], parentId: string | null) {
+      for (const f of items) {
+        parentMap.set(f.id, { name: f.name, parentId });
+        buildParentMap(f.children, f.id);
+      }
+    }
+    buildParentMap(folders, null);
+
+    const pathSegments: string[] = [];
+    let currentId: string | null = folderId;
+    while (currentId) {
+      const entry = parentMap.get(currentId);
+      if (!entry) break;
+      // Check if this ancestor is a managed root
+      const ancestorDir = managedDirs.find((d) => d.rootFolderId === currentId);
+      if (ancestorDir) {
+        const childPath = pathSegments.reverse().join("/");
+        const dirPath = childPath ? `${ancestorDir.path}/${childPath}` : ancestorDir.path;
+        return { dirPath, managedDir: ancestorDir };
+      }
+      pathSegments.push(entry.name);
+      currentId = entry.parentId;
+    }
+
     return null;
   }
 
@@ -2480,25 +2507,27 @@ export function NotesPage() {
           });
         }
 
-        // Start periodic reconciliation (5s) as a safety net
+        // Start periodic reconciliation (5s) as a safety net.
+        // Only indexes new FILES — does NOT create new folders.
+        // Folder creation is handled exclusively by the watcher's
+        // onDirectoryCreated event, which has rename detection to
+        // handle macOS's "untitled folder → user-typed name" flow.
         startDirectoryReconcileTimer(async () => {
+          let changed = false;
           const currentDirs = await listManagedDirectories();
           for (const dir of currentDirs) {
-            // Scan for new subdirectories not yet in NoteSync
             const filesOnDisk = await scanDirectory(dir.path);
             for (const filePath of filesOnDisk) {
               const existing = await findNoteByLocalPath(filePath);
               if (!existing) {
-                // New file found — auto-index it
-                const folderId = dir.rootFolderId
-                  ? (await resolveFolderForPath(dir.path, dir.rootFolderId, filePath)) ?? undefined
-                  : undefined;
-                await autoIndexFile(filePath, createNote, linkNoteToLocalFile, findNoteByLocalPath, folderId);
+                // Auto-index into the root folder only — don't create
+                // intermediate folders (the watcher handles that)
+                const result = await autoIndexFile(filePath, createNote, linkNoteToLocalFile, findNoteByLocalPath, dir.rootFolderId ?? undefined);
+                if (result?.isNew) changed = true;
               }
             }
           }
-          // Refresh if anything changed
-          await refreshSidebarData();
+          if (changed) await refreshSidebarData();
         });
       }
     } catch (err) {
