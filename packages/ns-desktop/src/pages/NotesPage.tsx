@@ -2512,9 +2512,29 @@ export function NotesPage() {
       // --- Managed directory reconciliation and watchers ---
       const managedDirs = await listManagedDirectories();
       // Update managed folder IDs for context menu display
+      // Collect managed root IDs AND all their descendant folder IDs
       const mfIds = new Set<string>();
+      const allFoldersNow = await fetchFolders();
+      function collectDescendantIds(items: FolderInfo[], ids: Set<string>) {
+        for (const f of items) {
+          ids.add(f.id);
+          collectDescendantIds(f.children, ids);
+        }
+      }
+      function findAndCollect(items: FolderInfo[], rootId: string, ids: Set<string>) {
+        for (const f of items) {
+          if (f.id === rootId) {
+            ids.add(f.id);
+            collectDescendantIds(f.children, ids);
+            return;
+          }
+          findAndCollect(f.children, rootId, ids);
+        }
+      }
       for (const dir of managedDirs) {
-        if (dir.rootFolderId) mfIds.add(dir.rootFolderId);
+        if (dir.rootFolderId) {
+          findAndCollect(allFoldersNow, dir.rootFolderId, mfIds);
+        }
       }
       setManagedFolderIds(mfIds);
 

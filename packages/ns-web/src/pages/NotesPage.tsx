@@ -1722,12 +1722,16 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
   // Derive managed folder IDs from notes that are locally managed
+  // Accumulate all folder IDs that contain locally managed notes across
+  // all note loads (not just the current filtered view)
+  const managedFolderIdsRef = useRef(new Set<string>());
   const managedFolderIds = useMemo(() => {
-    const ids = new Set<string>();
     for (const note of notes) {
-      if (note.isLocalFile && note.folderId) ids.add(note.folderId);
+      if (note.isLocalFile && note.folderId) {
+        managedFolderIdsRef.current.add(note.folderId);
+      }
     }
-    return ids;
+    return new Set(managedFolderIdsRef.current);
   }, [notes]);
 
   // Resolve "system" theme to actual "dark" or "light" for CodeMirror
@@ -2635,7 +2639,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-2 bottom-1.5 flex items-center">
+              <div className={`absolute bottom-1.5 flex items-center ${selectedNote?.isLocalFile ? "left-4" : "left-2"}`}>
                 {selectedNote?.isLocalFile && (
                   <span className="shrink-0 text-muted-foreground/50 mr-0.5" title="Managed locally on desktop">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2694,7 +2698,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                 placeholder="Note title"
                 className="w-full px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
               />
-              <p className={`pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate ${selectedNote?.isLocalFile ? "pl-[52px]" : "pl-9"}`}>
+              <p className={`pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate ${selectedNote?.isLocalFile ? "pl-[60px]" : "pl-9"}`}>
                 {selectedNote?.folderId
                   ? getFolderBreadcrumb(folders, selectedNote.folderId).map((f) => f.name).join(" / ")
                   : "Unfiled"}
