@@ -2507,23 +2507,68 @@ export function NotesPage() {
           });
         }
 
-        // Start periodic reconciliation (5s) as a safety net.
-        // Only indexes new FILES — does NOT create new folders.
-        // Folder creation is handled exclusively by the watcher's
-        // onDirectoryCreated event, which has rename detection to
-        // handle macOS's "untitled folder → user-typed name" flow.
+        // Start periodic reconciliation (30s) as a safety net.
+        // Indexes new files into correct folders and cleans up stale
+        // NoteSync folders that no longer exist on disk.
         startDirectoryReconcileTimer(async () => {
           let changed = false;
           const currentDirs = await listManagedDirectories();
           for (const dir of currentDirs) {
+            // Index new files (creates folders as needed via resolveFolderForPath)
             const filesOnDisk = await scanDirectory(dir.path);
             for (const filePath of filesOnDisk) {
               const existing = await findNoteByLocalPath(filePath);
               if (!existing) {
-                // Auto-index into the root folder only — don't create
-                // intermediate folders (the watcher handles that)
-                const result = await autoIndexFile(filePath, createNote, linkNoteToLocalFile, findNoteByLocalPath, dir.rootFolderId ?? undefined);
+                const folderId = dir.rootFolderId
+                  ? (await resolveFolderForPath(dir.path, dir.rootFolderId, filePath)) ?? undefined
+                  : undefined;
+                const result = await autoIndexFile(filePath, createNote, linkNoteToLocalFile, findNoteByLocalPath, folderId);
                 if (result?.isNew) changed = true;
+              }
+            }
+
+            // Clean up NoteSync folders whose directories no longer exist on disk.
+            // Scan actual subdirectories on disk, compare against NoteSync child folders.
+            if (dir.rootFolderId) {
+              try {
+                const { readDir: fsReadDir } = await import("@tauri-apps/plugin-fs");
+                const diskEntries = await fsReadDir(dir.path);
+                const diskDirNames = new Set(
+                  diskEntries
+                    .filter((e) => e.isDirectory && !e.name.startsWith("."))
+                    .map((e) => e.name),
+                );
+
+                // Find NoteSync child folders under this managed root
+                const allFolders = await fetchFolders();
+                function findChildren(items: FolderInfo[], parentId: string): FolderInfo[] {
+                  for (const f of items) {
+                    if (f.id === parentId) return f.children;
+                    const found = findChildren(f.children, parentId);
+                    if (found.length > 0) return found;
+                  }
+                  return [];
+                }
+                const childFolders = findChildren(allFolders, dir.rootFolderId);
+
+                // Remove NoteSync folders that don't exist on disk
+                for (const child of childFolders) {
+                  if (!diskDirNames.has(child.name)) {
+                    await deleteFolder(child.id, "move-up");
+                    changed = true;
+                  }
+                }
+
+                // Create NoteSync folders for directories on disk that don't exist in NoteSync
+                const childFolderNames = new Set(childFolders.map((f) => f.name));
+                for (const dirName of diskDirNames) {
+                  if (!childFolderNames.has(dirName)) {
+                    await createFolder(dirName, dir.rootFolderId);
+                    changed = true;
+                  }
+                }
+              } catch {
+                // Ignore errors during reconciliation scan
               }
             }
           }
@@ -2717,8 +2762,7 @@ export function NotesPage() {
       const managedDir = await getManagedDirectoryByPath(managedDirPath);
       if (!managedDir) return;
 
-      // Create a NoteSync folder matching this subdirectory
-      // resolveFolderForPath needs a file path — append a dummy filename
+      // Create a NoteSync folder matching this subdirectory (idempotent)
       await resolveFolderForPath(managedDirPath, managedDir.rootFolderId, dirCreatedPath + "/_.md");
       await refreshSidebarData();
       notifyLocalChange();

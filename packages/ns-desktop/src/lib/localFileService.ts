@@ -368,7 +368,7 @@ const directoryWatchers = new Map<string, UnwatchFn>();
 const pendingEvents = new Map<string, ReturnType<typeof setTimeout>>();
 const lastKnownHashes = new Map<string, string>();
 const DEBOUNCE_MS = 200;
-const DIR_RECONCILE_INTERVAL_MS = 30_000; // Periodic reconciliation for managed directories
+const DIR_RECONCILE_INTERVAL_MS = 10_000; // Periodic reconciliation for managed directories
 
 /**
  * Start a recursive watcher on a managed directory.
