@@ -552,3 +552,150 @@ export async function autoIndexFile(
 
   return { noteId: note.id, title: note.title, isNew: true };
 }
+
+// ---------------------------------------------------------------------------
+// Startup reconciliation for managed directories
+// ---------------------------------------------------------------------------
+
+export interface ReconciliationResult {
+  dirPath: string;
+  newFiles: number;
+  missingFiles: number;
+  changedFiles: number;
+  totalFiles: number;
+}
+
+/**
+ * Reconcile a managed directory against the database on startup.
+ *
+ * 1. Scan the directory for all supported files
+ * 2. Compare against known local_path values in SQLite
+ * 3. New files → auto-index
+ * 4. Missing files → mark status as "missing"
+ * 5. Changed files → report as "external_change"
+ *
+ * Returns a summary of what was found.
+ */
+export async function reconcileDirectory(
+  dirPath: string,
+  /** Get all notes with local_path under this directory */
+  getTrackedNotes: () => Promise<{ id: string; localPath: string; localFileHash: string | null }[]>,
+  /** Create a note from a file (auto-index) */
+  createNoteFn: (data: {
+    title: string;
+    content: string;
+    tags?: string[];
+    folderId?: string;
+    isLocalFile: boolean;
+  }) => Promise<{ id: string; title: string }>,
+  /** Link a note to its local file path */
+  linkNoteFn: (noteId: string, localPath: string, hash: string) => Promise<void>,
+  /** Check if a file is already tracked */
+  findByPathFn: (path: string) => Promise<{ id: string } | null>,
+  /** Called for files that changed while app was closed */
+  onExternalChange?: (noteId: string, content: string, hash: string) => void,
+  /** Called for files that went missing while app was closed */
+  onFileMissing?: (noteId: string) => void,
+): Promise<ReconciliationResult> {
+  const result: ReconciliationResult = {
+    dirPath,
+    newFiles: 0,
+    missingFiles: 0,
+    changedFiles: 0,
+    totalFiles: 0,
+  };
+
+  // 1. Scan the directory for all files on disk
+  const filesOnDisk = await scanDirectory(dirPath);
+  const filesOnDiskSet = new Set(filesOnDisk);
+  result.totalFiles = filesOnDisk.length;
+
+  // 2. Get all tracked notes for this directory
+  const trackedNotes = await getTrackedNotes();
+  const trackedPathSet = new Set(trackedNotes.map((n) => n.localPath));
+
+  // 3. Find new files (on disk but not tracked)
+  for (const filePath of filesOnDisk) {
+    if (!trackedPathSet.has(filePath)) {
+      try {
+        const indexed = await autoIndexFile(
+          filePath,
+          createNoteFn,
+          linkNoteFn,
+          findByPathFn,
+        );
+        if (indexed?.isNew) result.newFiles++;
+      } catch (err) {
+        console.error(`[reconcile] Failed to auto-index ${filePath}:`, err);
+      }
+    }
+  }
+
+  // 4. Find missing files (tracked but not on disk) and changed files
+  for (const note of trackedNotes) {
+    if (!filesOnDiskSet.has(note.localPath)) {
+      // File is missing
+      result.missingFiles++;
+      onFileMissing?.(note.id);
+    } else if (note.localFileHash) {
+      // File exists — check if content changed
+      try {
+        const content = await readTextFile(note.localPath);
+        const currentHash = await computeContentHash(content);
+        if (currentHash !== note.localFileHash) {
+          result.changedFiles++;
+          onExternalChange?.(note.id, content, currentHash);
+        }
+      } catch {
+        // Can't read file — treat as missing
+        result.missingFiles++;
+        onFileMissing?.(note.id);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Reconcile all managed directories on startup.
+ * Returns aggregated results.
+ */
+export async function reconcileAllDirectories(
+  directories: { path: string }[],
+  getTrackedNotes: (dirPath: string) => Promise<{ id: string; localPath: string; localFileHash: string | null }[]>,
+  createNoteFn: (data: {
+    title: string;
+    content: string;
+    tags?: string[];
+    folderId?: string;
+    isLocalFile: boolean;
+  }) => Promise<{ id: string; title: string }>,
+  linkNoteFn: (noteId: string, localPath: string, hash: string) => Promise<void>,
+  findByPathFn: (path: string) => Promise<{ id: string } | null>,
+  onExternalChange?: (noteId: string, content: string, hash: string) => void,
+  onFileMissing?: (noteId: string) => void,
+): Promise<ReconciliationResult[]> {
+  const results: ReconciliationResult[] = [];
+
+  for (const dir of directories) {
+    const result = await reconcileDirectory(
+      dir.path,
+      () => getTrackedNotes(dir.path),
+      createNoteFn,
+      linkNoteFn,
+      findByPathFn,
+      onExternalChange,
+      onFileMissing,
+    );
+    results.push(result);
+
+    if (result.newFiles > 0 || result.missingFiles > 0 || result.changedFiles > 0) {
+      console.log(
+        `[reconcile] ${dir.path}: ${result.newFiles} new, ${result.missingFiles} missing, ${result.changedFiles} changed (${result.totalFiles} total)`,
+      );
+    }
+  }
+
+  return results;
+}

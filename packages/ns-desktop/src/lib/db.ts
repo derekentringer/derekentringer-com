@@ -1827,6 +1827,21 @@ export async function fetchNotesInManagedDirectory(
   return rows.map(rowToNote);
 }
 
+/**
+ * Get tracked local file notes with their local_path and hash for reconciliation.
+ */
+export async function fetchTrackedFilesInDirectory(
+  dirPath: string,
+): Promise<{ id: string; localPath: string; localFileHash: string | null }[]> {
+  const db = await getDb();
+  const prefix = dirPath.endsWith("/") ? dirPath : dirPath + "/";
+  const rows = await db.select<{ id: string; local_path: string; local_file_hash: string | null }[]>(
+    "SELECT id, local_path, local_file_hash FROM notes WHERE is_local_file = 1 AND local_path LIKE $1 AND is_deleted = 0",
+    [prefix + "%"],
+  );
+  return rows.map((r) => ({ id: r.id, localPath: r.local_path, localFileHash: r.local_file_hash }));
+}
+
 // --- Data migrations ---
 
 const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";
