@@ -666,7 +666,7 @@ export function NotesPage() {
           }
         } catch { /* ignore */ }
       },
-      onFolderRemoteDeleted: async (folderId) => {
+      onFolderRemoteDeleted: async (folderId, _folderName, _parentId) => {
         // Delete local directory if this folder is managed locally
         try {
           const localInfo = await findLocalDirForFolder(folderId);

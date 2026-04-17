@@ -84,7 +84,7 @@ export interface SyncEngineCallbacks {
   onDataChanged: () => void;
   onLocalFileCloudUpdate?: (noteId: string) => void;
   onNoteRemoteDeleted?: (noteId: string) => void;
-  onFolderRemoteDeleted?: (folderId: string) => void;
+  onFolderRemoteDeleted?: (folderId: string, folderName: string, parentId: string | null) => void;
   onSyncRejections?: (
     rejections: SyncRejection[],
     forcePush: (changeIds: string[]) => Promise<void>,
@@ -94,7 +94,7 @@ export interface SyncEngineCallbacks {
 }
 
 let noteRemoteDeletedCallback: ((noteId: string) => void) | null = null;
-let folderRemoteDeletedCallback: ((folderId: string) => void) | null = null;
+let folderRemoteDeletedCallback: ((folderId: string, folderName: string, parentId: string | null) => void) | null = null;
 let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
 let chatChangedCallback: (() => void) | null = null;
 
@@ -669,8 +669,11 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
     const folderData = change.data as FolderSyncData | null;
     if (folderData) await upsertFolderFromRemote(folderData);
+    // Fire callback BEFORE soft-delete so the handler can still look up the folder
+    if (folderData) {
+      folderRemoteDeletedCallback?.(change.id, folderData.name, folderData.parentId ?? null);
+    }
     await softDeleteFolderFromRemote(change.id);
-    folderRemoteDeletedCallback?.(change.id);
     return;
   }
 
