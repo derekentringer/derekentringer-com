@@ -368,8 +368,8 @@ const directoryWatchers = new Map<string, UnwatchFn>();
 const pendingEvents = new Map<string, ReturnType<typeof setTimeout>>();
 const lastKnownHashes = new Map<string, string>();
 const DEBOUNCE_MS = 200;
-const DIR_CREATE_DEBOUNCE_MS = 2000; // Longer debounce for directory creation (user may be typing name)
 const RENAME_BUFFER_MS = 500;
+const DIR_RECONCILE_INTERVAL_MS = 5000; // Periodic reconciliation for managed directories
 
 /** Pending delete buffer for rename detection */
 interface PendingDelete {
@@ -460,13 +460,6 @@ export async function startDirectoryWatching(
               try {
                 const fileStillExists = await exists(filePath);
                 if (!fileStillExists) {
-                  // Cancel any pending directory create timer (this is likely a rename)
-                  const pendingDirCreate = pendingEvents.get("dir:" + filePath);
-                  if (pendingDirCreate) {
-                    clearTimeout(pendingDirCreate);
-                    pendingEvents.delete("dir:" + filePath);
-                  }
-
                   // Buffer the delete for rename detection (works for both files and directories)
                   const hashForMatch = lastKnownHashes.get(filePath) ?? null;
                   const isFile = isSupportedExtension(filePath);
@@ -499,15 +492,9 @@ export async function startDirectoryWatching(
                       }
                     }
                     if (!matched) {
-                      // Cancel any existing directory create timer for this path
-                      const existingDirTimer = pendingEvents.get("dir:" + filePath);
-                      if (existingDirTimer) clearTimeout(existingDirTimer);
-                      // Use a longer debounce for directory creation
-                      // (user might still be typing the folder name)
-                      pendingEvents.set("dir:" + filePath, setTimeout(() => {
-                        pendingEvents.delete("dir:" + filePath);
-                        callbacks.onDirectoryCreated?.(filePath);
-                      }, DIR_CREATE_DEBOUNCE_MS));
+                      // Process directory creation immediately — the handler
+                      // must be idempotent (no duplicate folders if called twice)
+                      callbacks.onDirectoryCreated?.(filePath);
                     }
                   } else if (s.isFile && isSupportedExtension(filePath)) {
                     // Check if this create matches a pending delete (rename/move)
@@ -575,6 +562,39 @@ export async function stopDirectoryWatching(dirPath: string): Promise<void> {
 export async function stopAllDirectoryWatchers(): Promise<void> {
   for (const dirPath of Array.from(directoryWatchers.keys())) {
     await stopDirectoryWatching(dirPath);
+  }
+  stopDirectoryReconcileTimer();
+}
+
+// ---------------------------------------------------------------------------
+// Periodic directory reconciliation
+// ---------------------------------------------------------------------------
+
+let dirReconcileTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start a periodic reconciliation timer for managed directories.
+ * Runs every DIR_RECONCILE_INTERVAL_MS (5s) as a safety net to catch
+ * any filesystem changes the watcher missed — new folders, removed files,
+ * or changes that occurred during brief watcher gaps.
+ */
+export function startDirectoryReconcileTimer(
+  reconcileFn: () => Promise<void>,
+): void {
+  stopDirectoryReconcileTimer();
+  dirReconcileTimer = setInterval(async () => {
+    try {
+      await reconcileFn();
+    } catch (err) {
+      console.error("[dir-reconcile] Periodic reconciliation failed:", err);
+    }
+  }, DIR_RECONCILE_INTERVAL_MS);
+}
+
+export function stopDirectoryReconcileTimer(): void {
+  if (dirReconcileTimer) {
+    clearInterval(dirReconcileTimer);
+    dirReconcileTimer = null;
   }
 }
 

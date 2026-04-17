@@ -158,6 +158,9 @@ import {
   stopDirectoryWatching,
   stopAllDirectoryWatchers,
   suppressPath,
+  startDirectoryReconcileTimer,
+  stopDirectoryReconcileTimer,
+  scanDirectory,
   reconcileAllDirectories,
   autoIndexFile,
   pickDirectory,
@@ -679,6 +682,7 @@ export function NotesPage() {
       destroySyncEngine();
       stopAllWatchers();
       stopAllDirectoryWatchers();
+      stopDirectoryReconcileTimer();
       stopPollTimer();
     };
   }, []);
@@ -2475,6 +2479,27 @@ export function NotesPage() {
             onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, dir.path),
           });
         }
+
+        // Start periodic reconciliation (5s) as a safety net
+        startDirectoryReconcileTimer(async () => {
+          const currentDirs = await listManagedDirectories();
+          for (const dir of currentDirs) {
+            // Scan for new subdirectories not yet in NoteSync
+            const filesOnDisk = await scanDirectory(dir.path);
+            for (const filePath of filesOnDisk) {
+              const existing = await findNoteByLocalPath(filePath);
+              if (!existing) {
+                // New file found — auto-index it
+                const folderId = dir.rootFolderId
+                  ? (await resolveFolderForPath(dir.path, dir.rootFolderId, filePath)) ?? undefined
+                  : undefined;
+                await autoIndexFile(filePath, createNote, linkNoteToLocalFile, findNoteByLocalPath, folderId);
+              }
+            }
+          }
+          // Refresh if anything changed
+          await refreshSidebarData();
+        });
       }
     } catch (err) {
       console.error("Failed to init local file watchers:", err);
