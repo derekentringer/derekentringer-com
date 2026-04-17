@@ -2750,8 +2750,9 @@ export function NotesPage() {
     const existing = await findNoteByLocalPath(filePath);
     if (!existing) return;
 
-    const note = notes.find((n) => n.id === existing.id);
-    const noteTitle = note?.title || "Untitled";
+    // Fetch from DB to get the title (notes state may be filtered)
+    const noteFromDb = await fetchNoteById(existing.id);
+    const noteTitle = noteFromDb?.title || "Untitled";
 
     try {
       // Soft-delete the note
