@@ -472,7 +472,25 @@ export function NotesPage() {
     };
   }, []);
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
-  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [toastStack, setToastStack] = useState<{ id: number; message: string; undoData?: { noteId: string; filePath: string } }[]>([]);
+  const toastIdRef = useRef(0);
+
+  function showToast(message: string, durationMs = 5000, undoData?: { noteId: string; filePath: string }) {
+    const id = ++toastIdRef.current;
+    setToastStack((prev) => [...prev, { id, message, undoData }]);
+    setTimeout(() => {
+      setToastStack((prev) => prev.filter((t) => t.id !== id));
+    }, durationMs);
+  }
+
+  function dismissToast(id: number) {
+    setToastStack((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  // Keep backward compat: setSuccessToast calls still work
+  function setSuccessToast(msg: string | null) {
+    if (msg) showToast(msg);
+  }
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
   const [dashboardKey, setDashboardKey] = useState(0);
 
@@ -493,7 +511,7 @@ export function NotesPage() {
   // Local file support
   const [localFileStatuses, setLocalFileStatuses] = useState<Map<string, LocalFileStatus>>(new Map());
   const lastProcessedHashRef = useRef<Map<string, string>>(new Map());
-  const pendingUndoRef = useRef<{ noteId: string; filePath: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  // pendingUndoRef removed — undo data is stored per-toast in toastStack
   const [importChoiceDialog, setImportChoiceDialog] = useState<{ files: FileList | File[]; paths?: string[]; fileNames: string[]; autoSelect: boolean; folderName?: string; dirPath?: string } | null>(null);
   const [localFileDeleteDialog, setLocalFileDeleteDialog] = useState<{ noteId: string; noteTitle: string } | null>(null);
   const [externalChangeDialog, setExternalChangeDialog] = useState<{ noteId: string; noteTitle: string; content: string; hash: string } | null>(null);
@@ -1768,7 +1786,6 @@ export function NotesPage() {
       notifyLocalChange();
       if (exported > 0) {
         setSuccessToast(`Exported ${exported} note${exported === 1 ? "" : "s"} to ${dirPath}`);
-        setTimeout(() => setSuccessToast(null), 3000);
       }
     } catch (err) {
       console.error("Failed to save folder locally:", err);
@@ -1802,7 +1819,6 @@ export function NotesPage() {
       await refreshSidebarData();
       notifyLocalChange();
       setSuccessToast("Stopped managing folder locally");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch (err) {
       console.error("Failed to stop managing folder locally:", err);
       showError("Failed to stop managing folder locally");
@@ -2270,7 +2286,6 @@ export function NotesPage() {
       showError(`Imported ${result.successCount}, failed ${result.failedCount}`);
     } else {
       setSuccessToast(`Imported ${result.successCount} note${result.successCount === 1 ? "" : "s"}`);
-      setTimeout(() => setSuccessToast(null), 3000);
     }
   }
 
@@ -2398,7 +2413,6 @@ export function NotesPage() {
       showError(`Linked ${successCount}, failed ${failedCount}`);
     } else if (successCount > 0) {
       setSuccessToast(`Linked ${successCount} file${successCount === 1 ? "" : "s"}`);
-      setTimeout(() => setSuccessToast(null), 3000);
     }
   }
 
@@ -2531,7 +2545,6 @@ export function NotesPage() {
         }
         if (totalMissing > 0) {
           setSuccessToast(`${totalMissing} note${totalMissing === 1 ? "" : "s"} removed — file${totalMissing === 1 ? "" : "s"} no longer on disk`);
-          setTimeout(() => setSuccessToast(null), 5000);
         }
 
         // Start directory watchers
@@ -2679,7 +2692,6 @@ export function NotesPage() {
         return next;
       });
       setSuccessToast("File updated externally");
-      setTimeout(() => setSuccessToast(null), 3000);
     }
   }
 
@@ -2765,15 +2777,10 @@ export function NotesPage() {
       notifyLocalChange();
 
       // Toast with undo
-      setSuccessToast(`"${noteTitle}" removed — file deleted from disk`);
-      const undoTimer = setTimeout(() => setSuccessToast(null), 30000);
-
-      // Store undo data for potential restoration
-      pendingUndoRef.current = {
+      showToast(`"${noteTitle}" removed — file deleted from disk`, 30000, {
         noteId: existing.id,
         filePath,
-        timer: undoTimer,
-      };
+      });
     } catch (err) {
       console.error("[dir-watcher] Failed to soft-delete note:", err);
     }
@@ -2893,7 +2900,6 @@ export function NotesPage() {
       setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, isLocalFile: true } : n));
       notifyLocalChange();
       setSuccessToast("Linked to local file");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch (err) {
       console.error("Failed to save as local file:", err);
       showError("Failed to save as local file");
@@ -2913,7 +2919,6 @@ export function NotesPage() {
       setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, isLocalFile: false } : n));
       notifyLocalChange();
       setSuccessToast("Unlinked from local file");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch (err) {
       console.error("Failed to unlink local file:", err);
       showError("Failed to unlink local file");
@@ -2934,7 +2939,6 @@ export function NotesPage() {
         return next;
       });
       setSuccessToast("Saved to local file");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch (err) {
       console.error("Failed to save to file:", err);
       showError("Failed to save to file");
@@ -3320,7 +3324,6 @@ export function NotesPage() {
       setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
       setSelectedVersion(null);
       setSuccessToast("Version restored");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch {
       showError("Failed to restore version");
     }
@@ -4466,56 +4469,48 @@ export function NotesPage() {
       )}
 
       {/* Success toast */}
-      {successToast && (
-        <div className="fixed bottom-4 right-4 bg-card border border-primary rounded-md px-4 py-3 shadow-lg flex items-center gap-3">
-          <span className="text-sm text-foreground">{successToast}</span>
-          {pendingUndoRef.current && (
-            <button
-              onClick={async () => {
-                const undo = pendingUndoRef.current;
-                if (!undo) return;
-                clearTimeout(undo.timer);
-                pendingUndoRef.current = null;
-                try {
-                  // Restore the note
-                  await restoreNote(undo.noteId);
-                  // Re-read from DB and re-create the file
-                  const restored = await fetchNoteById(undo.noteId);
-                  if (restored) {
-                    const hash = await writeLocalFile(undo.filePath, restored.content);
-                    await linkNoteToLocalFile(undo.noteId, undo.filePath, hash);
-                    setLocalFileStatuses((prev) => {
-                      const next = new Map(prev);
-                      next.set(undo.noteId, "synced");
-                      return next;
-                    });
-                  }
-                  await refreshSidebarData();
-                  notifyLocalChange();
-                  setSuccessToast("Note restored");
-                  setTimeout(() => setSuccessToast(null), 3000);
-                } catch {
-                  showError("Failed to undo deletion");
-                  setSuccessToast(null);
-                }
-              }}
-              className="text-primary hover:text-primary/80 text-sm font-medium cursor-pointer"
-            >
-              Undo
-            </button>
-          )}
-          <button
-            onClick={() => {
-              if (pendingUndoRef.current) {
-                clearTimeout(pendingUndoRef.current.timer);
-                pendingUndoRef.current = null;
-              }
-              setSuccessToast(null);
-            }}
-            className="text-muted-foreground hover:text-foreground text-sm cursor-pointer"
-          >
-            Dismiss
-          </button>
+      {toastStack.length > 0 && (
+        <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
+          {toastStack.map((toast) => (
+            <div key={toast.id} className="bg-card border border-primary rounded-md px-4 py-3 shadow-lg flex items-center gap-3 animate-fade-in">
+              <span className="text-sm text-foreground">{toast.message}</span>
+              {toast.undoData && (
+                <button
+                  onClick={async () => {
+                    const undo = toast.undoData!;
+                    dismissToast(toast.id);
+                    try {
+                      await restoreNote(undo.noteId);
+                      const restored = await fetchNoteById(undo.noteId);
+                      if (restored) {
+                        const hash = await writeLocalFile(undo.filePath, restored.content);
+                        await linkNoteToLocalFile(undo.noteId, undo.filePath, hash);
+                        setLocalFileStatuses((prev) => {
+                          const next = new Map(prev);
+                          next.set(undo.noteId, "synced");
+                          return next;
+                        });
+                      }
+                      await refreshSidebarData();
+                      notifyLocalChange();
+                      showToast("Note restored", 3000);
+                    } catch {
+                      showError("Failed to undo deletion");
+                    }
+                  }}
+                  className="text-primary hover:text-primary/80 text-sm font-medium cursor-pointer"
+                >
+                  Undo
+                </button>
+              )}
+              <button
+                onClick={() => dismissToast(toast.id)}
+                className="text-muted-foreground hover:text-foreground text-sm cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
