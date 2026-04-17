@@ -487,6 +487,7 @@ export function NotesPage() {
   // Local file support
   const [localFileStatuses, setLocalFileStatuses] = useState<Map<string, LocalFileStatus>>(new Map());
   const lastProcessedHashRef = useRef<Map<string, string>>(new Map());
+  const pendingUndoRef = useRef<{ noteId: string; filePath: string; timer: ReturnType<typeof setTimeout> } | null>(null);
   const [importChoiceDialog, setImportChoiceDialog] = useState<{ files: FileList | File[]; paths?: string[]; fileNames: string[]; autoSelect: boolean; folderName?: string; dirPath?: string } | null>(null);
   const [localFileDeleteDialog, setLocalFileDeleteDialog] = useState<{ noteId: string; noteTitle: string } | null>(null);
   const [externalChangeDialog, setExternalChangeDialog] = useState<{ noteId: string; noteTitle: string; content: string; hash: string } | null>(null);
@@ -2313,6 +2314,7 @@ export function NotesPage() {
 
       if (managedDirs.length > 0) {
         // Reconcile: detect new/missing/changed files
+        const missingNoteIds: string[] = [];
         const reconcileResults = await reconcileAllDirectories(
           managedDirs,
           (dirPath) => fetchTrackedFilesInDirectory(dirPath),
@@ -2320,14 +2322,24 @@ export function NotesPage() {
           linkNoteToLocalFile,
           findNoteByLocalPath,
           handleExternalChange,
-          (noteId) => handleFileDeleted(noteId),
+          (noteId) => {
+            // Soft-delete notes whose files are missing from managed directories
+            softDeleteNote(noteId).catch(() => {});
+            enqueueSyncAction("delete", noteId, "note").catch(() => {});
+            closeDeletedNoteTabRef.current(noteId);
+            missingNoteIds.push(noteId);
+          },
         );
 
-        // Refresh sidebar if any new files were indexed
         const totalNew = reconcileResults.reduce((sum, r) => sum + r.newFiles, 0);
-        if (totalNew > 0) {
+        const totalMissing = reconcileResults.reduce((sum, r) => sum + r.missingFiles, 0);
+        if (totalNew > 0 || totalMissing > 0) {
           await refreshSidebarData();
           notifyLocalChange();
+        }
+        if (totalMissing > 0) {
+          setSuccessToast(`${totalMissing} note${totalMissing === 1 ? "" : "s"} removed — file${totalMissing === 1 ? "" : "s"} no longer on disk`);
+          setTimeout(() => setSuccessToast(null), 5000);
         }
 
         // Start directory watchers
@@ -2438,8 +2450,46 @@ export function NotesPage() {
 
   async function handleDirectoryFileDeleted(filePath: string) {
     const existing = await findNoteByLocalPath(filePath);
-    if (existing) {
-      handleFileDeleted(existing.id);
+    if (!existing) return;
+
+    const note = notes.find((n) => n.id === existing.id);
+    const noteTitle = note?.title || "Untitled";
+
+    try {
+      // Soft-delete the note
+      await softDeleteNote(existing.id);
+
+      // Remove from notes list
+      setNotes((prev) => prev.filter((n) => n.id !== existing.id));
+
+      // Close tab if open
+      closeDeletedNoteTabRef.current(existing.id);
+
+      // Clean up local file status
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.delete(existing.id);
+        return next;
+      });
+
+      // Enqueue sync delete
+      enqueueSyncAction("delete", existing.id, "note").catch(() => {});
+
+      await refreshSidebarData();
+      notifyLocalChange();
+
+      // Toast with undo
+      setSuccessToast(`"${noteTitle}" removed — file deleted from disk`);
+      const undoTimer = setTimeout(() => setSuccessToast(null), 30000);
+
+      // Store undo data for potential restoration
+      pendingUndoRef.current = {
+        noteId: existing.id,
+        filePath,
+        timer: undoTimer,
+      };
+    } catch (err) {
+      console.error("[dir-watcher] Failed to soft-delete note:", err);
     }
   }
 
@@ -4022,8 +4072,49 @@ export function NotesPage() {
       {successToast && (
         <div className="fixed bottom-4 right-4 bg-card border border-primary rounded-md px-4 py-3 shadow-lg flex items-center gap-3">
           <span className="text-sm text-foreground">{successToast}</span>
+          {pendingUndoRef.current && (
+            <button
+              onClick={async () => {
+                const undo = pendingUndoRef.current;
+                if (!undo) return;
+                clearTimeout(undo.timer);
+                pendingUndoRef.current = null;
+                try {
+                  // Restore the note
+                  await restoreNote(undo.noteId);
+                  // Re-read from DB and re-create the file
+                  const restored = await fetchNoteById(undo.noteId);
+                  if (restored) {
+                    const hash = await writeLocalFile(undo.filePath, restored.content);
+                    await linkNoteToLocalFile(undo.noteId, undo.filePath, hash);
+                    setLocalFileStatuses((prev) => {
+                      const next = new Map(prev);
+                      next.set(undo.noteId, "synced");
+                      return next;
+                    });
+                  }
+                  await refreshSidebarData();
+                  notifyLocalChange();
+                  setSuccessToast("Note restored");
+                  setTimeout(() => setSuccessToast(null), 3000);
+                } catch {
+                  showError("Failed to undo deletion");
+                  setSuccessToast(null);
+                }
+              }}
+              className="text-primary hover:text-primary/80 text-sm font-medium cursor-pointer"
+            >
+              Undo
+            </button>
+          )}
           <button
-            onClick={() => setSuccessToast(null)}
+            onClick={() => {
+              if (pendingUndoRef.current) {
+                clearTimeout(pendingUndoRef.current.timer);
+                pendingUndoRef.current = null;
+              }
+              setSuccessToast(null);
+            }}
             className="text-muted-foreground hover:text-foreground text-sm cursor-pointer"
           >
             Dismiss
