@@ -877,6 +877,17 @@ export async function deleteFolder(
   }
 }
 
+/**
+ * Hard-delete a folder from SQLite. Used for locally managed folders
+ * where soft-delete causes duplication issues with sync round-trips.
+ */
+export async function hardDeleteFolder(id: string): Promise<void> {
+  const db = await getDb();
+  // Enqueue sync delete before removing from DB
+  enqueueSyncAction("delete", id, "folder").catch(() => {});
+  await db.execute("DELETE FROM folders WHERE id = $1", [id]);
+}
+
 async function collectDescendantFolderIds(parentId: string): Promise<string[]> {
   const db = await getDb();
   const children = await db.select<{ id: string }[]>(

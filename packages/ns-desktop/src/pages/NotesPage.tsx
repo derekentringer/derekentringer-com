@@ -34,6 +34,7 @@ import {
   updateNote,
   softDeleteNote,
   hardDeleteNote,
+  hardDeleteFolder,
   searchNotes,
   fetchFolders,
   createFolder,
@@ -680,7 +681,7 @@ export function NotesPage() {
         // and the reconciliation (for files deleted while app was closed).
       },
       onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
-        // Move local directory to OS trash if this folder is managed locally
+        // Move local directory to OS trash and hard-delete the folder
         try {
           const dirs = await listManagedDirectories();
           for (const dir of dirs) {
@@ -692,6 +693,8 @@ export function NotesPage() {
                 suppressPath(dirPath, 2000);
                 await moveToTrash(dirPath);
               }
+              // Hard-delete the folder from SQLite (prevents soft-delete duplication)
+              await hardDeleteFolder(folderId);
               return;
             }
             // This IS the managed root being deleted
@@ -700,6 +703,7 @@ export function NotesPage() {
                 suppressPath(dir.path, 2000);
                 await moveToTrash(dir.path);
               }
+              await hardDeleteFolder(folderId);
               return;
             }
           }
@@ -2643,10 +2647,10 @@ export function NotesPage() {
                   const parentNode = findNode(allFolders, noteSyncParentId);
                   const childFolders = parentNode?.children ?? [];
 
-                  // Remove NoteSync folders not on disk
+                  // Remove NoteSync folders not on disk — hard-delete for managed folders
                   for (const child of childFolders) {
                     if (!diskDirNames.has(child.name)) {
-                      await deleteFolder(child.id, "move-up");
+                      await hardDeleteFolder(child.id);
                       changed = true;
                     }
                   }
@@ -2892,7 +2896,7 @@ export function NotesPage() {
       const flatList = flattenFolderTree(allFolders);
       const match = flatList.find((f) => f.name === dirName);
       if (match) {
-        await deleteFolder(match.id, "move-up");
+        await hardDeleteFolder(match.id);
         await refreshSidebarData();
         notifyLocalChange();
       }
