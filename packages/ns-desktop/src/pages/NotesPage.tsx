@@ -67,6 +67,11 @@ import {
   getNoteLocalPath,
   enqueueSyncAction,
   migrateFrontmatter,
+  listManagedDirectories,
+  addManagedDirectory,
+  getManagedDirectoryByPath,
+  isPathConflicting,
+  fetchTrackedFilesInDirectory,
   type SearchMode,
 } from "../lib/db.ts";
 import { AboutDialog } from "../components/AboutDialog.tsx";
@@ -146,6 +151,10 @@ import {
   reestablishWatchers,
   startPollTimer,
   stopPollTimer,
+  startDirectoryWatching,
+  stopAllDirectoryWatchers,
+  reconcileAllDirectories,
+  autoIndexFile,
   type LocalFileStatus,
 } from "../lib/localFileService.ts";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -473,7 +482,7 @@ export function NotesPage() {
   // Local file support
   const [localFileStatuses, setLocalFileStatuses] = useState<Map<string, LocalFileStatus>>(new Map());
   const lastProcessedHashRef = useRef<Map<string, string>>(new Map());
-  const [importChoiceDialog, setImportChoiceDialog] = useState<{ files: FileList | File[]; paths?: string[]; fileNames: string[]; autoSelect: boolean; folderName?: string } | null>(null);
+  const [importChoiceDialog, setImportChoiceDialog] = useState<{ files: FileList | File[]; paths?: string[]; fileNames: string[]; autoSelect: boolean; folderName?: string; dirPath?: string } | null>(null);
   const [localFileDeleteDialog, setLocalFileDeleteDialog] = useState<{ noteId: string; noteTitle: string } | null>(null);
   const [externalChangeDialog, setExternalChangeDialog] = useState<{ noteId: string; noteTitle: string; content: string; hash: string } | null>(null);
   const [localFileDiffView, setLocalFileDiffView] = useState<{ noteId: string; noteTitle: string; cloudContent: string; localContent: string } | null>(null);
@@ -661,6 +670,7 @@ export function NotesPage() {
     return () => {
       destroySyncEngine();
       stopAllWatchers();
+      stopAllDirectoryWatchers();
       stopPollTimer();
     };
   }, []);
@@ -1941,7 +1951,7 @@ export function NotesPage() {
       showError("Could not read any of the dropped files");
       return;
     }
-    setImportChoiceDialog({ files, paths: filePaths, fileNames, autoSelect, folderName });
+    setImportChoiceDialog({ files, paths: filePaths, fileNames, autoSelect, folderName, dirPath: folderName ? paths[0] : undefined });
   }
 
   async function handleImportToNoteSync() {
@@ -1987,7 +1997,7 @@ export function NotesPage() {
 
   async function handleKeepLocal() {
     if (!importChoiceDialog) return;
-    const { files, paths, autoSelect, folderName } = importChoiceDialog;
+    const { files, paths, autoSelect, folderName, dirPath } = importChoiceDialog;
     setImportChoiceDialog(null);
     let targetFolderId = activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null;
 
@@ -1995,6 +2005,29 @@ export function NotesPage() {
     if (folderName) {
       const folder = await createFolder(folderName, targetFolderId ?? undefined);
       targetFolderId = folder.id;
+    }
+
+    // Register as a managed directory if a folder was dropped
+    if (dirPath) {
+      try {
+        const { conflicts, reason } = await isPathConflicting(dirPath);
+        if (conflicts) {
+          showError(reason || "Directory conflicts with an existing managed directory");
+        } else {
+          const existing = await getManagedDirectoryByPath(dirPath);
+          if (!existing) {
+            await addManagedDirectory(dirPath, targetFolderId);
+            // Start watching the directory
+            await startDirectoryWatching(dirPath, {
+              onFileCreated: (path) => handleDirectoryFileEvent(path, dirPath),
+              onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
+              onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to register managed directory:", err);
+      }
     }
 
     let successCount = 0;
@@ -2173,6 +2206,37 @@ export function NotesPage() {
         handleExternalChange,
         handleFileDeleted,
       );
+
+      // --- Managed directory reconciliation and watchers ---
+      const managedDirs = await listManagedDirectories();
+      if (managedDirs.length > 0) {
+        // Reconcile: detect new/missing/changed files
+        const reconcileResults = await reconcileAllDirectories(
+          managedDirs,
+          (dirPath) => fetchTrackedFilesInDirectory(dirPath),
+          createNote,
+          linkNoteToLocalFile,
+          findNoteByLocalPath,
+          handleExternalChange,
+          (noteId) => handleFileDeleted(noteId),
+        );
+
+        // Refresh sidebar if any new files were indexed
+        const totalNew = reconcileResults.reduce((sum, r) => sum + r.newFiles, 0);
+        if (totalNew > 0) {
+          await refreshSidebarData();
+          notifyLocalChange();
+        }
+
+        // Start directory watchers
+        for (const dir of managedDirs) {
+          await startDirectoryWatching(dir.path, {
+            onFileCreated: (path) => handleDirectoryFileEvent(path, dir.path),
+            onFileModified: (path) => handleDirectoryFileEvent(path, dir.path),
+            onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+          });
+        }
+      }
     } catch (err) {
       console.error("Failed to init local file watchers:", err);
     }
@@ -2233,6 +2297,48 @@ export function NotesPage() {
       return next;
     });
     stopWatching(noteId);
+  }
+
+  // --- Directory watcher event handlers ---
+
+  async function handleDirectoryFileEvent(filePath: string, _dirPath: string) {
+    // Check if this file is already tracked
+    const existing = await findNoteByLocalPath(filePath);
+    if (existing) {
+      // File is tracked — treat as external change
+      const content = await readLocalFile(filePath);
+      const hash = await computeContentHash(content);
+      handleExternalChange(existing.id, content, hash);
+      return;
+    }
+
+    // New file — auto-index it
+    try {
+      const result = await autoIndexFile(
+        filePath,
+        createNote,
+        linkNoteToLocalFile,
+        findNoteByLocalPath,
+      );
+      if (result?.isNew) {
+        setLocalFileStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(result.noteId, "synced");
+          return next;
+        });
+        await refreshSidebarData();
+        notifyLocalChange();
+      }
+    } catch (err) {
+      console.error("[dir-watcher] Failed to auto-index:", err);
+    }
+  }
+
+  async function handleDirectoryFileDeleted(filePath: string) {
+    const existing = await findNoteByLocalPath(filePath);
+    if (existing) {
+      handleFileDeleted(existing.id);
+    }
   }
 
   async function handleSaveAsLocalFile(noteId: string) {
