@@ -561,11 +561,10 @@ export async function scanDirectory(dirPath: string): Promise<string[]> {
 export function titleFromFilename(filePath: string): string {
   const parts = filePath.replace(/\\/g, "/").split("/");
   const filename = parts[parts.length - 1];
-  // Remove extension
+  // Remove extension, keep the name as-is
   const dot = filename.lastIndexOf(".");
   const name = dot > 0 ? filename.slice(0, dot) : filename;
-  // Replace dashes/underscores with spaces, trim
-  return name.replace(/[-_]/g, " ").trim() || "Untitled";
+  return name.trim() || "Untitled";
 }
 
 export interface AutoIndexResult {
