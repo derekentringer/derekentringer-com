@@ -675,10 +675,16 @@ export function NotesPage() {
       },
       onNoteRemoteDeleted: async (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
-        // NOTE: Do NOT delete local files here. The sync pull may contain
-        // stale deletes for notes that were just re-created by the auto-indexer.
-        // Local file deletion is handled by handleDirectoryFileDeleted (watcher)
-        // and the reconciliation (for files deleted while app was closed).
+        // Move local file to OS trash if managed locally, then hard-delete the note
+        try {
+          const localPath = await getNoteLocalPath(noteId);
+          if (localPath && await fileExists(localPath)) {
+            suppressPath(localPath, 2000);
+            await moveToTrash(localPath);
+          }
+          // Hard-delete the note so it doesn't get re-indexed by reconciliation
+          await hardDeleteNote(noteId).catch(() => {});
+        } catch { /* ignore */ }
       },
       onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
         // Move local directory to OS trash and hard-delete the folder
