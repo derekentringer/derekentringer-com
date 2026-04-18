@@ -2333,9 +2333,16 @@ export function NotesPage() {
     setImportChoiceDialog(null);
     let targetFolderId = activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null;
 
-    // If a folder was dropped, create it and place notes inside
+    // If a folder was dropped, create it and place notes inside.
+    // When dirPath is set this import is registering the folder as a
+    // managed directory (see addManagedDirectory call below) — flag the
+    // container folder as managed-locally so the server + web see it.
     if (folderName) {
-      const folder = await createFolder(folderName, targetFolderId ?? undefined);
+      const folder = await createFolder(
+        folderName,
+        targetFolderId ?? undefined,
+        { isLocalFile: Boolean(dirPath) },
+      );
       targetFolderId = folder.id;
     }
 
@@ -2693,19 +2700,19 @@ export function NotesPage() {
                     }
                   }
 
-                  // Create/recurse into matching folders
+                  // Create/recurse into matching folders. Folders mirrored
+                  // from disk under a managed root inherit isLocalFile=true.
                   const childMap = new Map(childFolders.map((f) => [f.name, f]));
                   for (const dirName of diskDirNames) {
                     const childDiskPath = `${diskPath}/${dirName}`;
                     let nsFolder = childMap.get(dirName);
                     if (!nsFolder) {
-                      // Create NoteSync folder for this directory
-                      const created = await createFolder(dirName, noteSyncParentId);
+                      const created = await createFolder(dirName, noteSyncParentId, {
+                        isLocalFile: true,
+                      });
                       changed = true;
-                      // Recurse into the new folder
                       await syncLevel(childDiskPath, created.id);
                     } else {
-                      // Recurse into existing folder
                       await syncLevel(childDiskPath, nsFolder.id);
                     }
                   }

@@ -454,6 +454,7 @@ describe("createFolder", () => {
     expect(folder.name).toBe("My Folder");
     expect(folder.id).toBe("test-uuid-1234");
     expect(folder.parentId).toBeNull();
+    expect(folder.isLocalFile).toBe(false);
     expect(folder.children).toEqual([]);
   });
 
@@ -465,6 +466,60 @@ describe("createFolder", () => {
     expect(folder.parentId).toBe("parent-id");
     const [, params] = mockExecute.mock.calls[0];
     expect(params[2]).toBe("parent-id"); // parent_id parameter
+  });
+
+  it("inserts with is_local_file=1 when isLocalFile option is set", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const folder = await createFolder("Managed", undefined, { isLocalFile: true });
+
+    const [sql, params] = mockExecute.mock.calls[0];
+    expect(sql).toContain("INSERT INTO folders");
+    // params: (id, name, parent_id, is_local_file, now)
+    expect(params[3]).toBe(1);
+    expect(folder.isLocalFile).toBe(true);
+  });
+
+  it("defaults to is_local_file=0 without the option", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await createFolder("Regular");
+
+    const [, params] = mockExecute.mock.calls[0];
+    expect(params[3]).toBe(0);
+  });
+
+  it("adopts an existing unflagged folder when caller requests isLocalFile=true", async () => {
+    // First SELECT (active folder by name+parent) returns an existing
+    // unflagged folder. The function should UPDATE it to is_local_file=1
+    // and enqueue a sync.
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "existing-folder-id",
+        name: "Adoptable",
+        sort_order: 0,
+        favorite: 0,
+        is_local_file: 0,
+        created_at: "2024-01-01",
+      },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const folder = await createFolder("Adoptable", undefined, { isLocalFile: true });
+
+    // First execute is the UPDATE that flips the flag
+    const [updateSql, updateParams] = mockExecute.mock.calls[0];
+    expect(updateSql).toContain("UPDATE folders SET is_local_file = 1");
+    expect(updateParams[1]).toBe("existing-folder-id");
+
+    // Returned folder reflects the flip
+    expect(folder.isLocalFile).toBe(true);
+
+    // enqueue sync of the updated folder
+    const enqueueCall = mockExecute.mock.calls.find(([sql]) =>
+      typeof sql === "string" && sql.includes("INSERT INTO sync_queue"),
+    );
+    expect(enqueueCall).toBeDefined();
   });
 });
 

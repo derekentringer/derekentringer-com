@@ -360,9 +360,20 @@ describe("upsertFolderFromRemote", () => {
     expect(params[2]).toBeNull(); // parentId
     expect(params[3]).toBe(0); // sortOrder
     expect(params[4]).toBe(0); // favorite = false -> 0
-    expect(params[5]).toBe("2024-01-01T00:00:00.000Z"); // createdAt
-    expect(params[6]).toBe("2024-06-01T00:00:00.000Z"); // updatedAt
-    expect(params[7]).toBeNull(); // deletedAt
+    expect(params[5]).toBe(0); // is_local_file — omitted → defaults to 0
+    expect(params[6]).toBe("2024-01-01T00:00:00.000Z"); // createdAt
+    expect(params[7]).toBe("2024-06-01T00:00:00.000Z"); // updatedAt
+    expect(params[8]).toBeNull(); // deletedAt
+  });
+
+  it("persists isLocalFile=true on insert", async () => {
+    mockSelect.mockResolvedValue([]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await upsertFolderFromRemote({ ...remoteFolder, isLocalFile: true });
+
+    const [, params] = mockExecute.mock.calls[0];
+    expect(params[5]).toBe(1);
   });
 
   it("updates existing folder when it already exists locally", async () => {
@@ -382,7 +393,19 @@ describe("upsertFolderFromRemote", () => {
     expect(sql).toContain("UPDATE folders SET");
     expect(params[0]).toBe("Updated Work"); // name
     expect(params[3]).toBe(1); // favorite = true -> 1
-    expect(params[6]).toBe("remote-folder-1"); // WHERE id
+    expect(params[4]).toBe(0); // is_local_file — omitted → 0
+    expect(params[7]).toBe("remote-folder-1"); // WHERE id
+  });
+
+  it("flips is_local_file on update from remote", async () => {
+    mockSelect.mockResolvedValue([{ id: "remote-folder-1" }]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await upsertFolderFromRemote({ ...remoteFolder, isLocalFile: true });
+
+    const [sql, params] = mockExecute.mock.calls[0];
+    expect(sql).toContain("is_local_file");
+    expect(params[4]).toBe(1);
   });
 });
 

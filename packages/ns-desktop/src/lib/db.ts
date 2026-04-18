@@ -730,30 +730,57 @@ export async function fetchFolders(): Promise<FolderInfo[]> {
   return buildFolderTree(folderRows, noteCounts);
 }
 
+export interface CreateFolderOptions {
+  /**
+   * When true, the new folder is flagged as backed by an on-disk directory
+   * managed by this desktop instance. Set by the managed-directory flows
+   * (handleKeepLocal + resolveFolderForPath). Default false for normal
+   * user-created folders.
+   */
+  isLocalFile?: boolean;
+}
+
 export async function createFolder(
   name: string,
   parentId?: string,
+  options: CreateFolderOptions = {},
 ): Promise<FolderInfo> {
   const db = await getDb();
   const now = new Date().toISOString();
+  const isLocalFile = options.isLocalFile ? 1 : 0;
 
   // Check for an existing active folder with the same name and parent — return
   // it to avoid creating a duplicate. This handles the case where the server
   // synced a folder that the reconciliation is also trying to create.
-  const existing = await db.select<{ id: string; name: string; sort_order: number; favorite: number; created_at: string }[]>(
+  const existing = await db.select<{ id: string; name: string; sort_order: number; favorite: number; is_local_file: number; created_at: string }[]>(
     parentId
-      ? "SELECT id, name, sort_order, favorite, created_at FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NULL LIMIT 1"
-      : "SELECT id, name, sort_order, favorite, created_at FROM folders WHERE name = $1 AND parent_id IS NULL AND deleted_at IS NULL LIMIT 1",
+      ? "SELECT id, name, sort_order, favorite, is_local_file, created_at FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NULL LIMIT 1"
+      : "SELECT id, name, sort_order, favorite, is_local_file, created_at FROM folders WHERE name = $1 AND parent_id IS NULL AND deleted_at IS NULL LIMIT 1",
     parentId ? [name, parentId] : [name],
   );
 
   if (existing.length > 0) {
+    const existingId = existing[0].id;
+    const existingIsLocalFile = (existing[0].is_local_file ?? 0) === 1;
+
+    // Adopt an existing folder into managed status when the caller is the
+    // managed-directory flow (resolveFolderForPath). Matches the case where
+    // a folder predates the managed-directory registration.
+    if (options.isLocalFile && !existingIsLocalFile) {
+      await db.execute(
+        "UPDATE folders SET is_local_file = 1, updated_at = $1 WHERE id = $2",
+        [now, existingId],
+      );
+      enqueueSyncAction("update", existingId, "folder").catch(() => {});
+    }
+
     return {
-      id: existing[0].id,
+      id: existingId,
       name: existing[0].name,
       parentId: parentId ?? null,
       sortOrder: existing[0].sort_order,
       favorite: existing[0].favorite === 1,
+      isLocalFile: options.isLocalFile === true || existingIsLocalFile,
       count: 0,
       totalCount: 0,
       createdAt: existing[0].created_at,
@@ -773,8 +800,8 @@ export async function createFolder(
   if (softDeleted.length > 0) {
     const restoredId = softDeleted[0].id;
     await db.execute(
-      "UPDATE folders SET deleted_at = NULL, updated_at = $1 WHERE id = $2",
-      [now, restoredId],
+      "UPDATE folders SET deleted_at = NULL, is_local_file = $1, updated_at = $2 WHERE id = $3",
+      [isLocalFile, now, restoredId],
     );
     enqueueSyncAction("update", restoredId, "folder").catch(() => {});
     return {
@@ -783,6 +810,7 @@ export async function createFolder(
       parentId: parentId ?? null,
       sortOrder: 0,
       favorite: false,
+      isLocalFile: options.isLocalFile === true,
       count: 0,
       totalCount: 0,
       createdAt: now,
@@ -793,8 +821,8 @@ export async function createFolder(
   const id = uuidv4();
 
   await db.execute(
-    "INSERT INTO folders (id, name, parent_id, sort_order, favorite, created_at, updated_at) VALUES ($1, $2, $3, 0, 0, $4, $4)",
-    [id, name, parentId ?? null, now],
+    "INSERT INTO folders (id, name, parent_id, sort_order, favorite, is_local_file, created_at, updated_at) VALUES ($1, $2, $3, 0, 0, $4, $5, $5)",
+    [id, name, parentId ?? null, isLocalFile, now],
   );
 
   enqueueSyncAction("create", id, "folder").catch(() => {});
@@ -805,6 +833,7 @@ export async function createFolder(
     parentId: parentId ?? null,
     sortOrder: 0,
     favorite: false,
+    isLocalFile: options.isLocalFile === true,
     count: 0,
     totalCount: 0,
     createdAt: now,
@@ -1866,7 +1895,39 @@ export async function addManagedDirectory(
     "INSERT INTO managed_directories (id, path, root_folder_id, created_at) VALUES ($1, $2, $3, $4)",
     [id, path, rootFolderId ?? null, now],
   );
+
+  // Flag the root folder as managed-locally so the server, web, and
+  // other desktops all see that it's backed by an on-disk directory.
+  // No-op if the folder row doesn't exist locally (e.g. registration
+  // races a sync pull) — Phase 1.3's backfill picks up stragglers.
+  if (rootFolderId) {
+    await setFolderIsLocalFile(rootFolderId, true);
+  }
+
   return { id, path, rootFolderId: rootFolderId ?? null, createdAt: now };
+}
+
+/**
+ * Flip the is_local_file flag on a folder and enqueue a sync update so
+ * the server + other clients learn about the change. Idempotent:
+ * matches no rows if the folder doesn't exist locally (e.g. a folder
+ * arrived via a later sync batch than its addManagedDirectory call).
+ */
+export async function setFolderIsLocalFile(
+  folderId: string,
+  isLocalFile: boolean,
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const result = await db.execute(
+    "UPDATE folders SET is_local_file = $1, updated_at = $2 WHERE id = $3 AND is_local_file != $1",
+    [isLocalFile ? 1 : 0, now, folderId],
+  );
+  // rowsAffected is typed as number | undefined by @tauri-apps/plugin-sql
+  const changed = (result.rowsAffected ?? 0) > 0;
+  if (changed) {
+    enqueueSyncAction("update", folderId, "folder").catch(() => {});
+  }
 }
 
 export async function removeManagedDirectory(id: string): Promise<void> {
@@ -1964,27 +2025,19 @@ export async function resolveFolderForPath(
 
   if (parts.length === 0) return rootFolderId; // File is in the root
 
-  const db = await getDb();
   let parentId = rootFolderId;
 
   for (const dirName of parts) {
     if (!dirName) continue;
 
-    // Check if this folder already exists
-    const existing = await db.select<{ id: string }[]>(
-      parentId
-        ? "SELECT id FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NULL"
-        : "SELECT id FROM folders WHERE name = $1 AND parent_id IS NULL AND deleted_at IS NULL",
-      parentId ? [dirName, parentId] : [dirName],
-    );
-
-    if (existing.length > 0) {
-      parentId = existing[0].id;
-    } else {
-      // Create the folder (createFolder already enqueues sync)
-      const folder = await createFolder(dirName, parentId ?? undefined);
-      parentId = folder.id;
-    }
+    // Delegate to createFolder with isLocalFile: true — it handles
+    // dedup (existing active folder or soft-deleted), adoption (flips
+    // is_local_file on an existing un-flagged folder), and sync
+    // enqueue.
+    const folder = await createFolder(dirName, parentId ?? undefined, {
+      isLocalFile: true,
+    });
+    parentId = folder.id;
   }
 
   return parentId;
