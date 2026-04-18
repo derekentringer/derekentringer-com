@@ -584,16 +584,52 @@ function FolderDeleteDialog({
   const hasChildren = folder.children.length > 0;
   const isManaged = folder.isLocalFile === true;
 
-  // Managed-locally warning banner (Phase 1.6). Rendered inside both the
-  // no-children ConfirmDialog variant (via the message) and the
-  // has-children multi-button dialog.
+  // Managed-locally warning banner (Phase 1.6).
   const managedWarning = isManaged ? (
     <div className="mb-3 p-2 rounded border border-destructive/40 bg-destructive/10 text-xs text-destructive">
-      <strong>Managed on a desktop.</strong> Deleting this folder will
-      also move its on-disk files to the OS trash on the managing
-      desktop.
+      <strong>Managed on a desktop.</strong> This folder is backed by an
+      on-disk directory. Deleting it will move the folder and every file
+      inside to the OS trash on the managing desktop.
     </div>
   ) : null;
+
+  // Managed-locally: the "move contents to parent" mode has no on-disk
+  // analog — files stay inside the about-to-be-trashed directory on
+  // disk, but their note rows get reparented to a folder the files
+  // don't actually live in. The only coherent behavior is recursive
+  // delete, so that's the only option we offer.
+  if (isManaged) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-card border border-border rounded-lg shadow-lg p-5 max-w-sm w-full mx-4">
+          <h3 className="text-base font-medium text-foreground mb-1">
+            Delete Folder
+          </h3>
+          {managedWarning}
+          <p className="text-sm text-muted-foreground mb-4">
+            Delete &quot;{folder.name}&quot; and everything inside it?
+            {hasChildren
+              ? " All subfolders, notes, and their on-disk files will be trashed."
+              : " Any notes inside and their on-disk files will be trashed."}
+          </p>
+          <div className="flex justify-center gap-2">
+            <button
+              onClick={onCancel}
+              className="px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onConfirm("recursive")}
+              className="px-3 py-1.5 rounded-md bg-destructive text-foreground text-sm hover:bg-destructive-hover transition-colors cursor-pointer"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!hasChildren) {
     return (
@@ -602,7 +638,6 @@ function FolderDeleteDialog({
           <h3 className="text-base font-medium text-foreground mb-1">
             Delete Folder
           </h3>
-          {managedWarning}
           <p className="text-sm text-muted-foreground mb-4">
             Delete &quot;{folder.name}&quot;? Any notes inside will be moved to the
             parent folder.
@@ -632,7 +667,6 @@ function FolderDeleteDialog({
         <h3 className="text-base font-medium text-foreground mb-1">
           Delete Folder
         </h3>
-        {managedWarning}
         <p className="text-sm text-muted-foreground mb-4">
           &quot;{folder.name}&quot; has subfolders. What would you like to do?
         </p>

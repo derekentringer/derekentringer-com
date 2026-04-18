@@ -228,7 +228,7 @@ describe("FolderDeleteDialog — managed-locally warning (Phase 1.6)", () => {
     expect(screen.queryByText(/Managed on a desktop/i)).not.toBeInTheDocument();
   });
 
-  it("shows warning for a managed leaf folder", async () => {
+  it("shows warning for a managed leaf folder and only offers recursive delete", async () => {
     await openDeleteDialog({
       id: "f-managed",
       name: "Managed",
@@ -244,11 +244,16 @@ describe("FolderDeleteDialog — managed-locally warning (Phase 1.6)", () => {
 
     expect(screen.getByText(/Managed on a desktop/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/move its on-disk files to the OS trash/i),
+      screen.getByText(/move the folder and every file inside/i),
     ).toBeInTheDocument();
+    // Managed variant never exposes the "move contents to parent" option
+    // because there's no on-disk analog for it.
+    expect(
+      screen.queryByText(/Move contents to parent folder/i),
+    ).not.toBeInTheDocument();
   });
 
-  it("shows warning in the has-children dialog too", async () => {
+  it("managed folder with children: still only offers recursive delete (no move-up)", async () => {
     await openDeleteDialog({
       id: "f-managed-parent",
       name: "ManagedWithKids",
@@ -276,13 +281,48 @@ describe("FolderDeleteDialog — managed-locally warning (Phase 1.6)", () => {
     });
 
     expect(screen.getByText(/Managed on a desktop/i)).toBeInTheDocument();
-    // Multi-button layout still rendered
+    // No reparent option for managed folders — it has no on-disk meaning.
     expect(
-      screen.getByText(/Move contents to parent folder/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/Move contents to parent folder/i),
+    ).not.toBeInTheDocument();
+    // Text explicitly mentions subfolders since the folder has children.
     expect(
-      screen.getByText(/Delete folder and everything in it/i),
+      screen.getByText(/All subfolders, notes, and their on-disk files/i),
     ).toBeInTheDocument();
+  });
+
+  it("managed folder Delete button invokes recursive mode", async () => {
+    const user = userEvent.setup();
+    const onDeleteFolder = vi.fn();
+    renderFolderTree({
+      folders: [
+        {
+          id: "f-managed",
+          name: "Managed",
+          parentId: null,
+          sortOrder: 0,
+          favorite: false,
+          isLocalFile: true,
+          count: 0,
+          totalCount: 0,
+          createdAt: "2025-01-01",
+          children: [],
+        },
+      ],
+      onDeleteFolder,
+    });
+    const folderButton = screen.getByText("Managed").closest("button")!;
+    await user.pointer({ keys: "[MouseRight>]", target: folderButton });
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    // Confirm dialog Delete button
+    const dialogDelete = screen
+      .getAllByRole("button", { name: "Delete" })
+      .find((b) => b.className.includes("bg-destructive"));
+    expect(dialogDelete).toBeDefined();
+    await user.click(dialogDelete!);
+
+    expect(onDeleteFolder).toHaveBeenCalledWith("f-managed", "recursive");
   });
 });
 
