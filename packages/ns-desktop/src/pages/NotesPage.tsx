@@ -675,14 +675,22 @@ export function NotesPage() {
       },
       onNoteRemoteDeleted: async (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
-        // Move local file to OS trash if managed locally, then hard-delete the note
+        // Move local file to OS trash if managed locally
         try {
           const localPath = await getNoteLocalPath(noteId);
           if (localPath && await fileExists(localPath)) {
+            // Check if a DIFFERENT active note now owns this file path.
+            // If so, this is a stale delete — the file was re-added and
+            // re-indexed. Don't delete it.
+            const currentOwner = await findNoteByLocalPath(localPath);
+            if (currentOwner && currentOwner.id !== noteId) {
+              // Stale delete — file belongs to a newer note, skip
+              return;
+            }
             suppressPath(localPath, 2000);
             await moveToTrash(localPath);
           }
-          // Hard-delete the note so it doesn't get re-indexed by reconciliation
+          // Hard-delete the note so it doesn't get re-indexed
           await hardDeleteNote(noteId).catch(() => {});
         } catch { /* ignore */ }
       },
@@ -696,10 +704,18 @@ export function NotesPage() {
             if (dir.rootFolderId === parentId) {
               const dirPath = `${dir.path}/${folderName}`;
               if (await fileExists(dirPath)) {
+                // Check if this directory was just re-created (stale delete)
+                // by looking for active child folders with this name
+                const allFolders = await fetchFolders();
+                const flat = flattenFolderTree(allFolders);
+                const activeMatch = flat.find((f) => f.name === folderName);
+                if (activeMatch && activeMatch.id !== folderId) {
+                  // Stale delete — a newer folder owns this directory
+                  return;
+                }
                 suppressPath(dirPath, 2000);
                 await moveToTrash(dirPath);
               }
-              // Hard-delete the folder from SQLite (prevents soft-delete duplication)
               await hardDeleteFolder(folderId);
               return;
             }
