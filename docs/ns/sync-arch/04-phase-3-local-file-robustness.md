@@ -1,5 +1,7 @@
 # Phase 3 — Local File-Sync Robustness
 
+**Status**: ✅ Complete (commits `a3c8e68`…`c8b4890` on `develop-sync-arch-hardening`)
+
 ## Goal
 
 Close races and silent-corruption paths in the desktop file watcher and in the FK-less local SQLite. Three concrete fixes plus explicit lifecycle handling for managed directories.
@@ -66,6 +68,9 @@ Same shape for `applyImageChange` with `ref_type = "note"`.
 **Retry semantics**: pending refs older than 24h are logged as warnings (possible permanent orphan — parent was probably deleted before the child arrived); can be dropped after 7 days via a maintenance sweep.
 
 ### 3.3 — Reconcile-on-remote-delete for managed dirs
+
+**Note**: Shipped as part of Phase 1.5's `applyFolderTombstone` in `syncEngine.ts`. The required ordering (stop watcher → remove `managed_directories` row → moveToTrash → hard-delete) is already in place and covered by `tombstones.test.ts:151-212`. No additional Phase 3 work needed for this item.
+
 
 **Location**: `packages/ns-desktop/src/lib/syncEngine.ts:668-683`
 
