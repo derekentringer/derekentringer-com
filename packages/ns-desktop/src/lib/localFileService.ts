@@ -326,6 +326,7 @@ export function startPollTimer(
   getWatchedNotes: () => { noteId: string; path: string; hash: string | null }[],
   onExternalChange: (noteId: string, content: string, hash: string) => void,
   onFileDeleted: (noteId: string) => void,
+  onWatcherGap?: (noteId: string, path: string, oldHash: string, newHash: string) => void,
 ): void {
   stopPollTimer();
 
@@ -344,6 +345,17 @@ export function startPollTimer(
       const currentHash = await computeContentHash(content);
 
       if (note.hash && currentHash !== note.hash) {
+        // Phase 3.5: the watcher should have caught this sub-second; the
+        // fact that a 30s poll is the one surfacing it means either the
+        // watcher dropped the event (common under macOS FSEvents burst,
+        // Linux inotify queue overflow, Windows ReadDirectoryChangesW
+        // buffer overrun) or the system was suspended during the edit.
+        // Report the gap so we can quantify how often watchers miss.
+        console.warn(
+          `[watcher-gap] Poll detected change the watcher missed: ${note.path} (${note.hash} → ${currentHash})`,
+        );
+        onWatcherGap?.(note.noteId, note.path, note.hash, currentHash);
+
         onExternalChange(note.noteId, content, currentHash);
       }
     }

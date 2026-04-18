@@ -73,6 +73,7 @@ import {
   addManagedDirectory,
   removeManagedDirectory,
   unmanageManagedDirectory,
+  incrementWatcherGapCount,
   getManagedDirectoryByPath,
   isPathConflicting,
   fetchTrackedFilesInDirectory,
@@ -2563,6 +2564,12 @@ export function NotesPage() {
         },
         handleExternalChange,
         handleFileDeleted,
+        // Phase 3.5 watcher-gap counter — bump sync_meta so Settings can
+        // expose a diagnostic. Fire-and-forget; failure to record isn't
+        // worth escalating over a monitoring metric.
+        (_noteId, _path, _oldHash, _newHash) => {
+          incrementWatcherGapCount().catch(() => {});
+        },
       );
       } // end if (localNotes.length > 0)
 

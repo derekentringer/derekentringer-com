@@ -47,6 +47,8 @@ const {
   reorderFolders,
   backfillManagedFolders,
   unmanageManagedDirectory,
+  incrementWatcherGapCount,
+  getWatcherGapCount,
 } = await import("../lib/db.ts");
 
 const sampleRow = {
@@ -999,5 +1001,50 @@ describe("unmanageManagedDirectory (Phase 3.4)", () => {
     );
     expect(removeCall).toBeDefined();
     expect((removeCall![1] as unknown[])[0]).toBe("md-2");
+  });
+});
+
+describe("watcher gap counter (Phase 3.5)", () => {
+  it("returns 0 when no counter has been written", async () => {
+    mockSelect.mockResolvedValueOnce([]);
+    expect(await getWatcherGapCount()).toBe(0);
+  });
+
+  it("parses the stored counter", async () => {
+    mockSelect.mockResolvedValueOnce([{ value: "7" }]);
+    expect(await getWatcherGapCount()).toBe(7);
+  });
+
+  it("increments from zero on first call", async () => {
+    mockSelect.mockResolvedValueOnce([]); // first read → no row
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const next = await incrementWatcherGapCount();
+    expect(next).toBe(1);
+
+    const upsert = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INTO sync_meta") &&
+        (c[1] as unknown[])[0] === "watcher_gap_count",
+    );
+    expect(upsert).toBeDefined();
+    expect((upsert![1] as unknown[])[1]).toBe("1");
+  });
+
+  it("increments a non-zero counter", async () => {
+    mockSelect.mockResolvedValueOnce([{ value: "3" }]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const next = await incrementWatcherGapCount();
+    expect(next).toBe(4);
+  });
+
+  it("treats a garbage counter value as zero and recovers on increment", async () => {
+    mockSelect.mockResolvedValueOnce([{ value: "not-a-number" }]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const next = await incrementWatcherGapCount();
+    expect(next).toBe(1);
   });
 });

@@ -2505,3 +2505,31 @@ export async function countPendingRefs(): Promise<number> {
   );
   return rows[0]?.c ?? 0;
 }
+
+// ---------------------------------------------------------------------------
+// Watcher-gap counter (Phase 3.5)
+// ---------------------------------------------------------------------------
+
+const WATCHER_GAP_COUNT_KEY = "watcher_gap_count";
+
+/**
+ * Bump the counter tracking how often the 30s poll detected a change
+ * the filesystem watcher missed. Used as a diagnostic signal — a
+ * non-trivial rate means our watcher strategy is dropping events
+ * (platform watchers can overflow under bursty writes or during
+ * suspend/resume).
+ */
+export async function incrementWatcherGapCount(): Promise<number> {
+  const prev = await getSyncMeta(WATCHER_GAP_COUNT_KEY);
+  const prevN = prev ? parseInt(prev, 10) : 0;
+  const next = Number.isFinite(prevN) ? prevN + 1 : 1;
+  await setSyncMeta(WATCHER_GAP_COUNT_KEY, String(next));
+  return next;
+}
+
+export async function getWatcherGapCount(): Promise<number> {
+  const v = await getSyncMeta(WATCHER_GAP_COUNT_KEY);
+  if (!v) return 0;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : 0;
+}
