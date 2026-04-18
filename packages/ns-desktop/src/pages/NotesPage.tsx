@@ -1489,7 +1489,21 @@ export function NotesPage() {
     }
 
     try {
-      await softDeleteNote(selectedId);
+      // For locally managed files: move to OS trash + hard-delete
+      const selectedNote = notes.find((n) => n.id === selectedId);
+      if (selectedNote?.isLocalFile) {
+        const localPath = await getNoteLocalPath(selectedId);
+        if (localPath && await fileExists(localPath)) {
+          suppressPath(localPath, 2000);
+          await moveToTrash(localPath);
+        }
+        enqueueSyncAction("delete", selectedId, "note").catch(() => {});
+        await hardDeleteNote(selectedId);
+      } else {
+        await softDeleteNote(selectedId);
+        setTrashCount((c) => c + 1);
+      }
+
       if (selectedId === previewTabId) setPreviewTabId(null);
       setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
       tabNoteCacheRef.current.delete(selectedId);
@@ -1499,7 +1513,6 @@ export function NotesPage() {
       setTitle("");
       setContent("");
       setConfirmDelete(false);
-      setTrashCount((c) => c + 1);
       await refreshSidebarData();
       loadNoteTitles();
       notifyLocalChange();
@@ -1511,7 +1524,20 @@ export function NotesPage() {
 
   async function handleDeleteNote(noteId: string) {
     try {
-      await softDeleteNote(noteId);
+      // For locally managed files: move to OS trash + hard-delete
+      const note = notes.find((n) => n.id === noteId);
+      if (note?.isLocalFile) {
+        const localPath = await getNoteLocalPath(noteId);
+        if (localPath && await fileExists(localPath)) {
+          suppressPath(localPath, 2000);
+          await moveToTrash(localPath);
+        }
+        enqueueSyncAction("delete", noteId, "note").catch(() => {});
+        await hardDeleteNote(noteId);
+      } else {
+        await softDeleteNote(noteId);
+        setTrashCount((c) => c + 1);
+      }
       if (noteId === previewTabId) setPreviewTabId(null);
       const prevTabs = openTabs;
       const idx = prevTabs.indexOf(noteId);
@@ -1535,7 +1561,6 @@ export function NotesPage() {
       tabEditorStateRef.current.delete(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
       setFavoriteNotes((prev) => prev.filter((n) => n.id !== noteId));
-      setTrashCount((c) => c + 1);
       await refreshSidebarData();
       loadNoteTitles();
       loadFavoriteNotes();
