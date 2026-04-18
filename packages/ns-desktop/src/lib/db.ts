@@ -1680,6 +1680,80 @@ export async function findManagedDirForFolder(
   return rows.length > 0 ? rowToManagedDir(rows[0]) : null;
 }
 
+/**
+ * Phase 3.3 follow-up: compute the on-disk path for a folder that
+ * lives under a managed directory. Walks from the folder UP to its
+ * managed root, collects each ancestor's name, then returns
+ * `managed_root.path + "/" + ancestorNames.join("/")`.
+ *
+ * Returns null if the folder is not under any managed root, or if the
+ * folder IS the managed root itself (caller should handle that case
+ * with `managed_directories.path` directly since the root's row is
+ * about to be removed anyway).
+ */
+export async function getFolderManagedDiskPath(
+  folderId: string,
+): Promise<{ managedDirId: string; managedRootPath: string; diskPath: string } | null> {
+  const db = await getDb();
+
+  // Walk up from the folder collecting (id, name, parent_id). The
+  // recursive CTE seeds with the folder itself so we can reconstruct
+  // the name chain.
+  const chain = await db.select<
+    { id: string; name: string; parent_id: string | null; depth: number }[]
+  >(
+    `WITH RECURSIVE chain(id, name, parent_id, depth) AS (
+       SELECT id, name, parent_id, 0 AS depth FROM folders WHERE id = $1
+       UNION ALL
+       SELECT f.id, f.name, f.parent_id, c.depth + 1
+       FROM folders f JOIN chain c ON f.id = c.parent_id
+       WHERE f.parent_id IS NOT NULL OR f.id = c.parent_id
+     )
+     SELECT id, name, parent_id, depth FROM chain ORDER BY depth DESC`,
+    [folderId],
+  );
+
+  if (chain.length === 0) return null;
+
+  // The topmost ancestor (highest depth) should match some managed root.
+  // Find the first row in the chain that IS a managed root.
+  const ids = chain.map((r) => r.id);
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
+  const mdRows = await db.select<ManagedDirectoryRow[]>(
+    `SELECT id, path, root_folder_id, created_at
+     FROM managed_directories
+     WHERE root_folder_id IN (${placeholders})`,
+    ids,
+  );
+  if (mdRows.length === 0) return null;
+  const managed = rowToManagedDir(mdRows[0]);
+
+  // If the folder IS the managed root, return null — caller has the
+  // path already via the managed_directories row and tears the whole
+  // thing down as one operation.
+  if (managed.rootFolderId === folderId) return null;
+
+  // Build the relative path from the managed root DOWN to the target
+  // folder. `ORDER BY depth DESC` puts the oldest ancestor (highest
+  // depth) first and the target (depth 0) last. Segments start at the
+  // row AFTER the managed root and continue to the end.
+  const rootIdx = chain.findIndex((r) => r.id === managed.rootFolderId);
+  if (rootIdx < 0) return null;
+  const segments: string[] = [];
+  for (let i = rootIdx + 1; i < chain.length; i++) {
+    segments.push(chain[i].name);
+  }
+
+  const rootPath = managed.path.replace(/\/+$/, "");
+  const diskPath = segments.length > 0 ? `${rootPath}/${segments.join("/")}` : rootPath;
+
+  return {
+    managedDirId: managed.id,
+    managedRootPath: rootPath,
+    diskPath,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Local File Support
 // ---------------------------------------------------------------------------

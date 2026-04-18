@@ -18,6 +18,7 @@ import {
   getNoteLocalFileHash,
   getNoteLocalFileInfo,
   findManagedDirForFolder,
+  getFolderManagedDiskPath,
   removeManagedDirectory,
 } from "./db.ts";
 import {
@@ -768,11 +769,32 @@ async function applyFolderTombstone(tombstone: SyncTombstone): Promise<void> {
     } catch (err) {
       console.warn(`moveToTrash failed for ${managedDir.path}:`, err);
     }
+  } else if (managedDir) {
+    // Descendant of a managed root. Note tombstones already trashed
+    // the individual files inside, but the on-disk DIRECTORY itself
+    // remains. If we don't trash it here, the periodic reconciliation's
+    // `syncLevel` will see the empty directory, conclude it's a new
+    // folder under the managed root, re-create a folder row with the
+    // same name, enqueue a sync push — and the folder resurrects on
+    // every device.
+    //
+    // Compute the disk path from the folder tree BEFORE the hard-delete
+    // below wipes the ancestor chain. Then moveToTrash. The ancestor's
+    // directory watcher will fire an onDirectoryDeleted event, which is
+    // a no-op today (reconciliation handles it).
+    const pathInfo = await getFolderManagedDiskPath(tombstone.id);
+    if (pathInfo) {
+      try {
+        await moveToTrash(pathInfo.diskPath);
+      } catch (err) {
+        // Non-fatal: the dir may already be gone if an ancestor
+        // tombstone processed earlier in the same pull.
+        console.warn(`moveToTrash failed for ${pathInfo.diskPath}:`, err);
+      }
+    }
   }
-  // If the folder is a descendant of a managed root, the containing
-  // root's watcher sees file removals naturally when the ancestor is
-  // trashed — we only need to hard-delete the local row here. If the
-  // folder is unmanaged, same: no on-disk action required.
+  // Unmanaged folder: just the SQLite hard-delete below — no on-disk
+  // work required.
 
   await hardDeleteFolderFromRemote(tombstone.id);
 

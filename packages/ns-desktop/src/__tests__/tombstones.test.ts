@@ -43,6 +43,7 @@ const {
   hardDeleteNoteFromRemote,
   getNoteLocalFileInfo,
   findManagedDirForFolder,
+  getFolderManagedDiskPath,
   removeManagedDirectory,
 } = await import("../lib/db.ts");
 
@@ -208,5 +209,105 @@ describe("applyFolderTombstone (via syncEngine)", () => {
       ([sql]) => typeof sql === "string" && sql.includes("DELETE FROM folders"),
     );
     expect(folderDeleteCall).toBeDefined();
+  });
+});
+
+describe("getFolderManagedDiskPath (descendant trash fix)", () => {
+  it("returns the composed disk path for a descendant of a managed root", async () => {
+    // Seed the CTE walk: target folder is `test1` at depth 0, its
+    // parent is `mermaid_charts_examples` at depth 1 (the managed root).
+    mockSelect.mockImplementation((sql: string) => {
+      if (sql.includes("WITH RECURSIVE chain")) {
+        return Promise.resolve([
+          { id: "root-1", name: "mermaid_charts_examples", parent_id: null, depth: 1 },
+          { id: "test1", name: "test1", parent_id: "root-1", depth: 0 },
+        ]);
+      }
+      if (sql.includes("FROM managed_directories")) {
+        return Promise.resolve([
+          {
+            id: "md-1",
+            path: "/Users/me/Notes/mermaid_charts_examples",
+            root_folder_id: "root-1",
+            created_at: "2024-01-01",
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await getFolderManagedDiskPath("test1");
+    expect(result).not.toBeNull();
+    expect(result!.managedDirId).toBe("md-1");
+    expect(result!.managedRootPath).toBe("/Users/me/Notes/mermaid_charts_examples");
+    expect(result!.diskPath).toBe("/Users/me/Notes/mermaid_charts_examples/test1");
+  });
+
+  it("returns null when the folder IS the managed root (caller handles that case)", async () => {
+    mockSelect.mockImplementation((sql: string) => {
+      if (sql.includes("WITH RECURSIVE chain")) {
+        return Promise.resolve([
+          { id: "root-1", name: "mermaid_charts_examples", parent_id: null, depth: 0 },
+        ]);
+      }
+      if (sql.includes("FROM managed_directories")) {
+        return Promise.resolve([
+          {
+            id: "md-1",
+            path: "/Users/me/Notes/mermaid_charts_examples",
+            root_folder_id: "root-1",
+            created_at: "2024-01-01",
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await getFolderManagedDiskPath("root-1");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for an unmanaged folder", async () => {
+    mockSelect.mockImplementation((sql: string) => {
+      if (sql.includes("WITH RECURSIVE chain")) {
+        return Promise.resolve([
+          { id: "folder-99", name: "untracked", parent_id: null, depth: 0 },
+        ]);
+      }
+      if (sql.includes("FROM managed_directories")) {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await getFolderManagedDiskPath("folder-99");
+    expect(result).toBeNull();
+  });
+
+  it("composes multi-segment paths for deeply nested folders", async () => {
+    mockSelect.mockImplementation((sql: string) => {
+      if (sql.includes("WITH RECURSIVE chain")) {
+        return Promise.resolve([
+          { id: "root-1", name: "Notes", parent_id: null, depth: 3 },
+          { id: "work", name: "work", parent_id: "root-1", depth: 2 },
+          { id: "2026", name: "2026", parent_id: "work", depth: 1 },
+          { id: "q1", name: "q1", parent_id: "2026", depth: 0 },
+        ]);
+      }
+      if (sql.includes("FROM managed_directories")) {
+        return Promise.resolve([
+          {
+            id: "md-1",
+            path: "/Users/me/Notes",
+            root_folder_id: "root-1",
+            created_at: "2024-01-01",
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await getFolderManagedDiskPath("q1");
+    expect(result!.diskPath).toBe("/Users/me/Notes/work/2026/q1");
   });
 });
