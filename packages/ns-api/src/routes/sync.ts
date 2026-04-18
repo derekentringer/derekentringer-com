@@ -84,68 +84,49 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     let skipped = 0;
     const rejections: SyncRejection[] = [];
 
-    await prisma.$transaction(async (tx) => {
-      for (const change of changes) {
-        try {
+    // Per-change transactions. A single outer tx would enter
+    // `in_failed_sql_transaction` state on the first Postgres constraint
+    // violation (FK, unique), poisoning every subsequent statement in the
+    // batch. Running each change in its own tx isolates failures so a
+    // single bad change can't silently drop its 99 neighbors.
+    for (const change of changes) {
+      try {
+        const result = await prisma.$transaction(async (tx) => {
           if (change.type === "note") {
-            const result = await applyNoteChange(tx, userId, change);
-            if (result === "applied") {
-              applied++;
-            } else if (result === "timestamp_conflict") {
-              skipped++;
-              rejections.push({
-                changeId: change.id,
-                changeType: "note",
-                changeAction: change.action,
-                reason: "timestamp_conflict",
-                message: "Server has a newer version of this note",
-              });
-            } else {
-              skipped++;
-            }
-          } else if (change.type === "folder") {
-            const result = await applyFolderChange(tx, userId, change);
-            if (result === "applied") {
-              applied++;
-            } else if (result === "timestamp_conflict") {
-              skipped++;
-              rejections.push({
-                changeId: change.id,
-                changeType: "folder",
-                changeAction: change.action,
-                reason: "timestamp_conflict",
-                message: "Server has a newer version of this folder",
-              });
-            } else {
-              skipped++;
-            }
-          } else if (change.type === "image") {
-            const result = await applyImageChange(tx, userId, change);
-            if (result === "applied") {
-              applied++;
-            } else if (result === "timestamp_conflict") {
-              skipped++;
-              rejections.push({
-                changeId: change.id,
-                changeType: "image",
-                changeAction: change.action,
-                reason: "timestamp_conflict",
-                message: "Server has a newer version of this image",
-              });
-            } else {
-              skipped++;
-            }
-          } else {
-            rejected++;
+            return await applyNoteChange(tx, userId, change);
           }
-        } catch (err) {
+          if (change.type === "folder") {
+            return await applyFolderChange(tx, userId, change);
+          }
+          if (change.type === "image") {
+            return await applyImageChange(tx, userId, change);
+          }
+          return "unknown" as const;
+        });
+
+        if (result === "applied") {
+          applied++;
+        } else if (result === "timestamp_conflict") {
+          skipped++;
+          rejections.push({
+            changeId: change.id,
+            changeType: change.type,
+            changeAction: change.action,
+            reason: "timestamp_conflict",
+            message: `Server has a newer version of this ${change.type}`,
+          });
+        } else if (result === "unknown") {
           rejected++;
-          const rejection = classifyPrismaError(err, change);
-          rejections.push(rejection);
-          request.log.warn({ err, changeId: change.id }, "Sync change rejected");
+        } else {
+          skipped++;
         }
+      } catch (err) {
+        rejected++;
+        const rejection = classifyPrismaError(err, change);
+        rejections.push(rejection);
+        request.log.warn({ err, changeId: change.id }, "Sync change rejected");
       }
-    });
+    }
 
     const now = new Date();
     await upsertSyncCursor(userId, deviceId, now);

@@ -53,7 +53,7 @@ describe("Phase 2 reference: sync correctness bugs", () => {
   // Fix: per-change transactions or explicit SAVEPOINTs.
   // ─────────────────────────────────────────────────────────────────────
 
-  it.fails(
+  it(
     "2.1 — FK violation mid-batch does not cascade-fail surrounding changes",
     async () => {
       const client = await createSyncClient(app);
