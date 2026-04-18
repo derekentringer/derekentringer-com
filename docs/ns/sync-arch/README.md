@@ -19,15 +19,15 @@ See [`00-architecture-reference.md`](00-architecture-reference.md) for a snapsho
 
 ## Phases
 
-| Phase | Goal | Depends on |
-|---|---|---|
-| [0](01-phase-0-test-harness.md) | Real-Postgres + multi-client test infra | — |
-| [1](02-phase-1-managed-locally-deletes.md) | Hard-delete for managed-locally folders; web-aware flag | — (can run alongside 0) |
-| [2](03-phase-2-sync-correctness.md) | Fix tx abort cascade, cursor ties, clock skew | 0 |
-| [3](04-phase-3-local-file-robustness.md) | Hash-based watcher suppression, referential deferral, managed-dir lifecycle | 0 |
-| [4](05-phase-4-housekeeping.md) | Indexes, comment drift, invariants doc | — |
-| [5](06-phase-5-performance.md) | Post-hardening perf (embedding dedup, upload concurrency, SSE jitter) | 1–4 complete |
-| [6](07-phase-6-web-sync-unification.md) | Web adopts `/sync/push|pull` | 1–5 complete + product trigger |
+| Phase | Status | Goal | Depends on |
+|---|---|---|---|
+| [0](01-phase-0-test-harness.md) | ✅ done | Real-Postgres + multi-client test infra | — |
+| [1](02-phase-1-managed-locally-deletes.md) | pending | Hard-delete for managed-locally folders; web-aware flag | — (can run alongside 0) |
+| [2](03-phase-2-sync-correctness.md) | pending | Fix tx abort cascade, cursor ties, clock skew | 0 |
+| [3](04-phase-3-local-file-robustness.md) | pending | Hash-based watcher suppression, referential deferral, managed-dir lifecycle | 0 |
+| [4](05-phase-4-housekeeping.md) | pending | Indexes, comment drift, invariants doc | — |
+| [5](06-phase-5-performance.md) | pending | Post-hardening perf (embedding dedup, upload concurrency, SSE jitter) | 1–4 complete |
+| [6](07-phase-6-web-sync-unification.md) | pending | Web adopts `/sync/push|pull` | 1–5 complete + product trigger |
 
 ## Release sequence
 

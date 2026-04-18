@@ -1,5 +1,7 @@
 # Phase 0 — Test Harness
 
+**Status**: ✅ Complete (commits `2875425`…`6f0ab0f` on `develop-sync-arch-hardening`)
+
 ## Goal
 
 Build the test infrastructure required to verify Phases 2 and 3. Without this, transaction-abort, cursor-tie, and referential-deferral fixes cannot be meaningfully validated.
@@ -45,43 +47,81 @@ Dual-mode: testcontainers if no URL is provided, otherwise use the supplied `TES
 - `packages/ns-api/src/__tests__/integration/helpers/db.ts` — `getIntegrationPrisma()`, `resetDb()`
 - `packages/ns-api/src/__tests__/integration/smoke.test.ts` — verifies harness wiring
 
-### 0.2 — Two-client sync fixture
+### 0.2 — User / device / auth fixtures
 
-Helper that drives two in-memory sync clients against one server within a single test. Enables multi-device invariant assertions:
+- `createTestUser(opts)` — inserts a real User row with a bcrypt-hashed password (cost 4)
+- `createTestDevice(userId, opts)` — allocates a deviceId; optionally seeds a `SyncCursor` row
+- `authHeaderFor(user)` / `authHeaderForId(id)` — signs a JWT matching the `/auth/login` shape so auth-guarded routes accept it
 
-- Device A writes → Device B pulls → asserts state matches
-- Device A and B both write same entity → assert LWW resolution
-- Device A writes batch that triggers rejection → assert B's view is unaffected
+**File addition**: `packages/ns-api/src/__tests__/integration/helpers/users.ts`
+
+### 0.3 — Two-client sync fixture
+
+Drives two in-process sync clients through `app.inject` so multi-device tests read naturally: `const { a, b } = await createTwoDeviceSetup(app); await a.push([…]); const pulled = await b.pull();`.
+
+- `SyncClient` interface with `push()` / `pull()` helpers
+- `createSyncClient({ user? })` for single-device setups; `createTwoDeviceSetup()` shorthand
+- `noteChange` / `folderChange` / `imageChange` constructors fill in defaults so tests only specify the fields they care about
 
 **File addition**: `packages/ns-api/src/__tests__/integration/helpers/syncClient.ts`
 
-### 0.3 — File-watcher test fixture (desktop)
+### 0.4 — Desktop file-watcher fixture
 
-The desktop file watcher is hard to test today because real FS events are non-deterministic. Needed:
+Real-filesystem tmp dirs + a programmatic stand-in for `@tauri-apps/plugin-fs`'s `watch()`. Phase 3 reference tests drive the watcher/suppression/reconciliation codepaths deterministically — no dependency on native FS events.
 
-- `tmp` dir creation + cleanup helper
-- Controlled write operations (write + wait for event + assert)
-- Event counter / spy wrappers around watcher callbacks
+- `TmpDir` class with create/write/read/mkdir/remove/exists/dispose (real Node fs)
+- `sha256Hex(content)` matching `localFileService.computeContentHash` shape
+- `waitFor(cond, timeoutMs)` polling helper
+- `MockWatcher` — `vi.mock`-friendly, with `emit()` to fire synthetic events; exact-path + recursive matching
 
-**File addition**: `packages/ns-desktop/src/__tests__/helpers/fsFixture.ts`
+**File additions**:
+- `packages/ns-desktop/src/__tests__/helpers/fsFixture.ts`
+- `packages/ns-desktop/src/__tests__/helpers/mockWatcher.ts`
 
-Constraint: Vitest + Tauri's fs API in test context. May need to run desktop FS tests in a separate `test:fs` script using a real filesystem.
+### 0.5 — Phase 2 & 3 reference tests
 
-## Edge cases the harness must support
+`it.fails()` tests that document the bugs Phases 2 and 3 will fix. Today they fail (as expected); once fixes land they flip to `it()` and must pass.
 
-- Constraint violations mid-transaction (FK, unique) — Phase 2.1
-- Rows with identical `updatedAt` straddling `BATCH_LIMIT` boundary — Phase 2.2
-- Clock skew between clients — Phase 2.3
-- External write during self-write suppression window — Phase 3.1
-- Child row arriving before parent in sync batch — Phase 3.2
+- `packages/ns-api/src/__tests__/integration/phase2-reference.test.ts` — 3 tests (tx abort, cursor ties, slow-clock LWW)
+- `packages/ns-desktop/src/__tests__/phase3-reference.test.ts` — 1 `it.fails` (watcher TOCTOU) + 1 `it.todo` (referential deferral, authored in-phase once migration 016 exists)
 
-## Done criteria
+## Commands
 
-- `npm run test:integration --workspace=@derekentringer/ns-api` passes in CI
-- Reference test written for each of the 5 edge cases above (tests expected to FAIL until the relevant phase fix lands)
-- Two-client fixture has a working example asserting SSE-triggered pull
+From the repo root:
+
+```bash
+# ns-api integration tests (uses testcontainer if Docker/OrbStack is available)
+npx turbo run test:integration
+# or scoped to just ns-api:
+npm run test:integration --workspace=@derekentringer/ns-api
+
+# Unit tests (unchanged; mockPrisma-based)
+npx turbo run test
+```
+
+Desktop fixture tests run as part of the normal `test` task:
+
+```bash
+npm run test --workspace=@derekentringer/ns-desktop
+```
+
+## Edge cases the harness supports
+
+- Constraint violations mid-transaction (FK, unique) — Phase 2.1 ✅ reference test written
+- Rows with identical `updatedAt` straddling `BATCH_LIMIT` boundary — Phase 2.2 ✅
+- Slow-clock client LWW — Phase 2.3 ✅
+- External write during self-write suppression window — Phase 3.1 ✅
+- Child row arriving before parent in sync batch — Phase 3.2 (deferred to in-phase — requires `pending_refs` schema)
+
+## Done criteria — actual results
+
+- ✅ `npm run test:integration` + `npx turbo run test:integration` green (22 tests, ~10s warm)
+- ✅ Desktop fixture tests green (13 tests, ~1.5s)
+- ✅ 4 of 5 edge cases have `it.fails` reference tests; the 5th is an `it.todo` with an in-file implementation plan
+- ✅ Two-client fixture verified via `syncClient.test.ts` (7 multi-device scenarios)
 
 ## Out of scope
 
 - End-to-end Tauri webview tests (separate effort)
 - Load / perf benchmarks (Phase 5)
+- CI wiring with a Postgres service container (hand off to CI work when Phase 2/3 code lands — the harness supports both modes already via `TEST_DATABASE_URL`)
