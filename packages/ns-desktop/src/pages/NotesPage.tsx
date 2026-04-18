@@ -2718,8 +2718,25 @@ export function NotesPage() {
                   const parentNode = findNode(allFolders, noteSyncParentId);
                   const childFolders = parentNode?.children ?? [];
 
-                  // Remove NoteSync folders not on disk — hard-delete for managed folders
+                  // Remove NoteSync folders whose disk mirror is gone, but
+                  // ONLY if they're actually disk-backed (isLocalFile=true).
+                  //
+                  // A regular (non-managed) folder can sit under a managed
+                  // root — e.g. the user created it on web before we
+                  // started cascading isLocalFile, or a client synced a
+                  // folder without the flag set. Those folders have no
+                  // disk mirror by design. The pre-guard version of this
+                  // loop aggressively hard-deleted them on every
+                  // reconciliation tick, which caused "Move to Root" from
+                  // web to synthesize a silent delete: the move took the
+                  // folder OUT of the managed subtree as far as the
+                  // server was concerned, but desktop reconciliation —
+                  // running between the pull and the next state refresh —
+                  // saw the same folder still under the managed root in
+                  // its stale view, noticed no disk match, and enqueued
+                  // a hard-delete that the server then tombstoned.
                   for (const child of childFolders) {
+                    if (child.isLocalFile !== true) continue;
                     if (!diskDirNames.has(child.name)) {
                       await hardDeleteFolder(child.id);
                       changed = true;
