@@ -679,14 +679,6 @@ export function NotesPage() {
         try {
           const localPath = await getNoteLocalPath(noteId);
           if (localPath && await fileExists(localPath)) {
-            // Check if a DIFFERENT active note now owns this file path.
-            // If so, this is a stale delete — the file was re-added and
-            // re-indexed. Don't delete it.
-            const currentOwner = await findNoteByLocalPath(localPath);
-            if (currentOwner && currentOwner.id !== noteId) {
-              // Stale delete — file belongs to a newer note, skip
-              return;
-            }
             suppressPath(localPath, 2000);
             await moveToTrash(localPath);
           }
@@ -2784,7 +2776,10 @@ export function NotesPage() {
   // Used by reconciliation to show toast when a note is deleted
   async function processDeletedNote(noteId: string, noteTitle: string, filePath: string) {
     try {
-      enqueueSyncAction("delete", noteId, "note").catch(() => {});
+      // Hard-delete locally only — do NOT enqueue sync delete.
+      // The reconciliation detects missing files and cleans up locally.
+      // Sync deletes are only triggered by explicit user actions (web/desktop UI).
+      // This prevents stale sync deletes from round-tripping.
       await hardDeleteNote(noteId).catch(() => {});
 
       // Remove from notes list
@@ -2799,9 +2794,6 @@ export function NotesPage() {
         next.delete(noteId);
         return next;
       });
-
-      // Enqueue sync delete
-      enqueueSyncAction("delete", noteId, "note").catch(() => {});
 
       await refreshSidebarData();
       notifyLocalChange();
