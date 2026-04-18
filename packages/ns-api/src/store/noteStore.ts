@@ -528,10 +528,19 @@ export async function updateNote(
 export async function softDeleteNote(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
-    await prisma.note.update({
-      where: { id, userId, deletedAt: null },
-      data: { deletedAt: new Date(), favorite: false },
-    });
+    // Check if this is a locally managed file — hard-delete instead of soft-delete
+    // to prevent stale soft-deleted entries from causing duplication on re-add.
+    const note = await prisma.note.findUnique({ where: { id, userId } });
+    if (!note || note.deletedAt) return false;
+
+    if (note.isLocalFile) {
+      await prisma.note.delete({ where: { id, userId } });
+    } else {
+      await prisma.note.update({
+        where: { id, userId, deletedAt: null },
+        data: { deletedAt: new Date(), favorite: false },
+      });
+    }
     return true;
   } catch (error) {
     if (isNotFoundError(error)) return false;

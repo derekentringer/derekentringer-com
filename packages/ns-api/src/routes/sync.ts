@@ -318,13 +318,18 @@ async function applyNoteChange(
   const noteData = change.data as Note | null;
 
   if (change.action === "delete") {
-    // Soft-delete the note
     const existing = await prisma.note.findUnique({ where: { id: change.id } });
     if (existing && existing.userId === userId) {
-      await prisma.note.update({
-        where: { id: change.id },
-        data: { deletedAt: new Date(change.timestamp), favorite: false },
-      });
+      if (existing.isLocalFile) {
+        // Hard-delete locally managed files to prevent stale entries
+        await prisma.note.delete({ where: { id: change.id } });
+      } else {
+        // Soft-delete regular notes (NoteSync trash)
+        await prisma.note.update({
+          where: { id: change.id },
+          data: { deletedAt: new Date(change.timestamp), favorite: false },
+        });
+      }
       return "applied";
     }
     return "skipped";
