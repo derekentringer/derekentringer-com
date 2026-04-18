@@ -706,6 +706,7 @@ async function readLocalFolder(folderId: string): Promise<FolderSyncData | null>
     parent_id: string | null;
     sort_order: number;
     favorite: number;
+    is_local_file: number;
     created_at: string;
     updated_at: string;
     deleted_at: string | null;
@@ -721,6 +722,7 @@ async function readLocalFolder(folderId: string): Promise<FolderSyncData | null>
     parentId: r.parent_id,
     sortOrder: r.sort_order,
     favorite: r.favorite === 1,
+    isLocalFile: (r.is_local_file ?? 0) === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     deletedAt: r.deleted_at,

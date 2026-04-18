@@ -32,6 +32,7 @@ interface FolderRow {
   parent_id: string | null;
   sort_order: number;
   favorite: number;
+  is_local_file: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -188,14 +189,15 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
 
   await db.runAsync(
     `INSERT OR REPLACE INTO folders (
-      id, name, parent_id, sort_order, favorite, created_at, updated_at, deleted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, name, parent_id, sort_order, favorite, is_local_file, created_at, updated_at, deleted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       folder.id,
       folder.name,
       folder.parentId ?? null,
       folder.sortOrder,
       folder.favorite ? 1 : 0,
+      folder.isLocalFile ? 1 : 0,
       folder.createdAt,
       folder.updatedAt,
       folder.deletedAt ?? null,
@@ -516,6 +518,7 @@ export async function getFolders(): Promise<FolderInfo[]> {
     parentId: row.parent_id,
     sortOrder: row.sort_order,
     favorite: row.favorite === 1,
+    isLocalFile: (row.is_local_file ?? 0) === 1,
     count: countMap.get(row.id) ?? 0,
     totalCount: countMap.get(row.id) ?? 0,
     createdAt: row.created_at,
@@ -717,6 +720,7 @@ export async function readFolderForSync(id: string): Promise<FolderSyncData | nu
     parentId: row.parent_id,
     sortOrder: row.sort_order,
     favorite: row.favorite === 1,
+    isLocalFile: (row.is_local_file ?? 0) === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,

@@ -57,6 +57,14 @@ export interface FolderInfo {
   count: number;
   totalCount: number;
   createdAt: string;
+  /**
+   * True when this folder is backed by an on-disk directory managed by a
+   * desktop instance. Reading clients (e.g. web) use this to decide
+   * whether deleting the folder should hard-delete and warn the user
+   * about on-disk consequences. Optional because older wire payloads
+   * may omit it.
+   */
+  isLocalFile?: boolean;
   children: FolderInfo[];
 }
 
@@ -105,6 +113,13 @@ export interface FolderSyncData {
   parentId: string | null;
   sortOrder: number;
   favorite: boolean;
+  /**
+   * True when this folder is backed by an on-disk directory managed by a
+   * desktop instance. Optional on the wire for backward compatibility —
+   * clients written before Phase 1 may omit it; the server treats the
+   * absence as `false`.
+   */
+  isLocalFile?: boolean;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

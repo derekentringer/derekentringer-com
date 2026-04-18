@@ -377,11 +377,16 @@ describe("Sync routes", () => {
       expect(mockPrisma.folder.create).toHaveBeenCalledTimes(1);
     });
 
-    it("deletes a folder", async () => {
-      mockPrisma.folder.findUnique.mockResolvedValue(makeMockFolderRow());
-      mockPrisma.folder.update.mockResolvedValue(
-        makeMockFolderRow({ deletedAt: new Date("2024-01-03") }),
+    it("hard-deletes a folder and reparents its children/notes", async () => {
+      // Folder delete via sync push hard-deletes (commit 756e26b). Before
+      // the delete: notes in the folder are re-filed to the folder's parent
+      // and child folders have their parentId re-pointed.
+      mockPrisma.folder.findUnique.mockResolvedValue(
+        makeMockFolderRow({ parentId: null }),
       );
+      mockPrisma.note.updateMany.mockResolvedValue({ count: 0 });
+      mockPrisma.folder.updateMany.mockResolvedValue({ count: 0 });
+      mockPrisma.folder.delete.mockResolvedValue(makeMockFolderRow());
       mockPrisma.syncCursor.upsert.mockResolvedValue({});
 
       const res = await app.inject({
@@ -405,9 +410,16 @@ describe("Sync routes", () => {
       expect(res.statusCode).toBe(200);
       expect(res.json().applied).toBe(1);
       expect(res.json().skipped).toBe(0);
-      expect(mockPrisma.folder.update).toHaveBeenCalledWith({
+      expect(mockPrisma.note.updateMany).toHaveBeenCalledWith({
+        where: { folderId: "folder-1" },
+        data: { folderId: null },
+      });
+      expect(mockPrisma.folder.updateMany).toHaveBeenCalledWith({
+        where: { parentId: "folder-1" },
+        data: { parentId: null },
+      });
+      expect(mockPrisma.folder.delete).toHaveBeenCalledWith({
         where: { id: "folder-1" },
-        data: { deletedAt: expect.any(Date) },
       });
     });
 

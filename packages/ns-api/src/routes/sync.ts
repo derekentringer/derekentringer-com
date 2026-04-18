@@ -37,6 +37,7 @@ function toFolderSyncData(f: PrismaFolder): FolderSyncData {
     parentId: f.parentId,
     sortOrder: f.sortOrder,
     favorite: f.favorite,
+    isLocalFile: f.isLocalFile,
     createdAt: f.createdAt.toISOString(),
     updatedAt: f.updatedAt.toISOString(),
     deletedAt: f.deletedAt ? f.deletedAt.toISOString() : null,
@@ -469,6 +470,7 @@ async function applyFolderChange(
       parentId: folderData.parentId,
       sortOrder: folderData.sortOrder,
       favorite: folderData.favorite,
+      isLocalFile: folderData.isLocalFile ?? false,
       deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
     };
 
@@ -499,6 +501,7 @@ async function applyFolderChange(
           parentId: folderData.parentId,
           sortOrder: folderData.sortOrder ?? 0,
           favorite: folderData.favorite ?? false,
+          isLocalFile: folderData.isLocalFile ?? false,
           deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
         },
       });
@@ -512,6 +515,7 @@ async function applyFolderChange(
             parentId: null,
             sortOrder: folderData.sortOrder ?? 0,
             favorite: folderData.favorite ?? false,
+            isLocalFile: folderData.isLocalFile ?? false,
             deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
           },
         });

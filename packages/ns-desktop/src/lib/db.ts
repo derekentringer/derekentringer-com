@@ -619,6 +619,7 @@ interface FolderRow {
   parent_id: string | null;
   sort_order: number;
   favorite: number;
+  is_local_file: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -637,6 +638,7 @@ function buildFolderTree(
       parentId: row.parent_id ?? null,
       sortOrder: row.sort_order,
       favorite: row.favorite === 1,
+      isLocalFile: (row.is_local_file ?? 0) === 1,
       count: noteCounts.get(row.id) ?? 0,
       totalCount: 0,
       createdAt: row.created_at,
@@ -1469,16 +1471,19 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
     [folder.id],
   );
 
+  const isLocalFile = folder.isLocalFile ? 1 : 0;
+
   if (existing.length > 0) {
     await db.execute(
       `UPDATE folders SET name = $1, parent_id = $2, sort_order = $3, favorite = $4,
-       updated_at = $5, deleted_at = $6
-       WHERE id = $7`,
+       is_local_file = $5, updated_at = $6, deleted_at = $7
+       WHERE id = $8`,
       [
         folder.name,
         folder.parentId,
         folder.sortOrder,
         folder.favorite ? 1 : 0,
+        isLocalFile,
         folder.updatedAt,
         folder.deletedAt,
         folder.id,
@@ -1486,14 +1491,15 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
     );
   } else {
     await db.execute(
-      `INSERT INTO folders (id, name, parent_id, sort_order, favorite, created_at, updated_at, deleted_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO folders (id, name, parent_id, sort_order, favorite, is_local_file, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         folder.id,
         folder.name,
         folder.parentId,
         folder.sortOrder,
         folder.favorite ? 1 : 0,
+        isLocalFile,
         folder.createdAt,
         folder.updatedAt,
         folder.deletedAt,

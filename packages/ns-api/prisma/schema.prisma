@@ -131,19 +131,24 @@ model Setting {
 }
 
 model Folder {
-  id        String    @id @default(uuid())
-  userId    String
-  name      String
-  parentId  String?
-  sortOrder Int       @default(0)
-  favorite  Boolean   @default(false)
-  parent    Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Folder[]  @relation("FolderTree")
-  notes     Note[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @default(now()) @updatedAt
-  deletedAt DateTime?
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid())
+  userId      String
+  name        String
+  parentId    String?
+  sortOrder   Int       @default(0)
+  favorite    Boolean   @default(false)
+  // True when this folder is backed by an on-disk directory managed by a
+  // desktop instance. Drives hard-delete semantics on the server REST path
+  // (see sync hardening Phase 1) and is the authority the web UI reads to
+  // warn users about on-disk consequences.
+  isLocalFile Boolean   @default(false)
+  parent      Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Folder[]  @relation("FolderTree")
+  notes       Note[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  deletedAt   DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Uniqueness enforced by partial indexes in migration 20260312100000
   // (excludes soft-deleted rows): folders_root_name_key and

@@ -108,6 +108,12 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/015.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 16,
+            description: "add is_local_file to folders",
+            sql: include_str!("../migrations/016.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
