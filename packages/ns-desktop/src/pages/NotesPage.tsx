@@ -1946,6 +1946,15 @@ export function NotesPage() {
     try {
       // If this folder maps to a local directory, delete it on disk
       const localInfo = await findLocalDirForFolder(folderId);
+      // Managed-locally folders must always delete recursively: the disk
+      // directory + every file inside is about to be trashed, so
+      // reparenting notes to the parent would leave them pointing at
+      // files that no longer exist. Belt-and-suspenders check — the
+      // dialog already only offers recursive for managed folders, but
+      // force it here too in case a future code path calls this
+      // handler with a different mode.
+      const effectiveMode: "move-up" | "recursive" = localInfo ? "recursive" : mode;
+
       if (localInfo) {
         try {
           // If this is the root managed folder, stop watching and unregister
@@ -1965,7 +1974,7 @@ export function NotesPage() {
         }
       }
 
-      await deleteFolder(folderId, mode);
+      await deleteFolder(folderId, effectiveMode);
       if (activeFolder === folderId) {
         setActiveFolder(null);
       }
