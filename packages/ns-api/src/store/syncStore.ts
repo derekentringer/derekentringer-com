@@ -32,17 +32,28 @@ export async function upsertSyncCursor(
   });
 }
 
+// Keyset pagination on (updatedAt, id): `updatedAt > since` alone can
+// straddle rows sharing an identical updatedAt across BATCH_LIMIT. The
+// tie-breaker `lastId` lets the next page resume without skipping.
 export async function getNotesChangedSince(
   userId: string,
   since: Date,
+  lastId?: string,
 ): Promise<PrismaNote[]> {
   const prisma = getPrisma();
   return prisma.note.findMany({
     where: {
       userId,
-      updatedAt: { gt: since },
+      ...(lastId
+        ? {
+            OR: [
+              { updatedAt: { gt: since } },
+              { updatedAt: since, id: { gt: lastId } },
+            ],
+          }
+        : { updatedAt: { gt: since } }),
     },
-    orderBy: { updatedAt: "asc" },
+    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: BATCH_LIMIT,
   });
 }
@@ -50,14 +61,22 @@ export async function getNotesChangedSince(
 export async function getFoldersChangedSince(
   userId: string,
   since: Date,
+  lastId?: string,
 ): Promise<PrismaFolder[]> {
   const prisma = getPrisma();
   return prisma.folder.findMany({
     where: {
       userId,
-      updatedAt: { gt: since },
+      ...(lastId
+        ? {
+            OR: [
+              { updatedAt: { gt: since } },
+              { updatedAt: since, id: { gt: lastId } },
+            ],
+          }
+        : { updatedAt: { gt: since } }),
     },
-    orderBy: { updatedAt: "asc" },
+    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: BATCH_LIMIT,
   });
 }
@@ -65,14 +84,22 @@ export async function getFoldersChangedSince(
 export async function getImagesChangedSince(
   userId: string,
   since: Date,
+  lastId?: string,
 ): Promise<PrismaImage[]> {
   const prisma = getPrisma();
   return prisma.image.findMany({
     where: {
       userId,
-      updatedAt: { gt: since },
+      ...(lastId
+        ? {
+            OR: [
+              { updatedAt: { gt: since } },
+              { updatedAt: since, id: { gt: lastId } },
+            ],
+          }
+        : { updatedAt: { gt: since } }),
     },
-    orderBy: { updatedAt: "asc" },
+    orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
     take: BATCH_LIMIT,
   });
 }
@@ -80,14 +107,22 @@ export async function getImagesChangedSince(
 export async function getTombstonesChangedSince(
   userId: string,
   since: Date,
+  lastEntityId?: string,
 ): Promise<PrismaTombstone[]> {
   const prisma = getPrisma();
   return prisma.entityTombstone.findMany({
     where: {
       userId,
-      deletedAt: { gt: since },
+      ...(lastEntityId
+        ? {
+            OR: [
+              { deletedAt: { gt: since } },
+              { deletedAt: since, entityId: { gt: lastEntityId } },
+            ],
+          }
+        : { deletedAt: { gt: since } }),
     },
-    orderBy: { deletedAt: "asc" },
+    orderBy: [{ deletedAt: "asc" }, { entityId: "asc" }],
     take: BATCH_LIMIT,
   });
 }

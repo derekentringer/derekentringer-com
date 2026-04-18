@@ -161,6 +161,21 @@ export interface SyncRejection {
 export interface SyncCursor {
   deviceId: string;
   lastSyncedAt: string;
+  /**
+   * Per-entity-type keyset pagination cursor (Phase 2.2). When a pull
+   * batch hits BATCH_LIMIT for a given type, the server returns the
+   * last returned item's id here so the next pull can resume with
+   * `(updatedAt > lastSyncedAt) OR (updatedAt = lastSyncedAt AND id > lastId)`.
+   * Without this, rows sharing a single updatedAt value can straddle
+   * the BATCH_LIMIT boundary and be silently skipped. Optional for
+   * backward compatibility with pre-Phase-2 clients.
+   */
+  lastIds?: {
+    notes?: string;
+    folders?: string;
+    images?: string;
+    tombstones?: string;
+  };
 }
 
 export interface SyncPushRequest {
@@ -171,6 +186,13 @@ export interface SyncPushRequest {
 export interface SyncPullRequest {
   deviceId: string;
   since: string;
+  /** Per-type keyset tie-breaker ids; see SyncCursor.lastIds. */
+  lastIds?: {
+    notes?: string;
+    folders?: string;
+    images?: string;
+    tombstones?: string;
+  };
 }
 
 /**

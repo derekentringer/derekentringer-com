@@ -176,7 +176,7 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
   // POST /sync/pull
   app.post<{ Body: SyncPullRequest }>("/pull", async (request, reply) => {
     const userId = request.user.sub;
-    const { deviceId, since } = request.body;
+    const { deviceId, since, lastIds } = request.body;
 
     if (!deviceId || !since) {
       return reply.status(400).send({ error: "Invalid request" });
@@ -185,10 +185,10 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     const sinceDate = new Date(since);
 
     const [notes, folders, images, tombstones] = await Promise.all([
-      getNotesChangedSince(userId, sinceDate),
-      getFoldersChangedSince(userId, sinceDate),
-      getImagesChangedSince(userId, sinceDate),
-      getTombstonesChangedSince(userId, sinceDate),
+      getNotesChangedSince(userId, sinceDate, lastIds?.notes),
+      getFoldersChangedSince(userId, sinceDate, lastIds?.folders),
+      getImagesChangedSince(userId, sinceDate, lastIds?.images),
+      getTombstonesChangedSince(userId, sinceDate, lastIds?.tombstones),
     ]);
 
     const noteChanges: SyncChange[] = notes.map((n) => ({
@@ -280,6 +280,23 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     }
     await upsertSyncCursor(userId, deviceId, cursorDate);
 
+    // Keyset tie-breakers for capped types. A type that hit BATCH_LIMIT may
+    // have additional rows sharing the same updatedAt as its last returned
+    // item — the next pull uses these ids to resume past them.
+    const responseLastIds: Record<string, string> = {};
+    if (notes.length >= BATCH_LIMIT) {
+      responseLastIds.notes = notes[notes.length - 1].id;
+    }
+    if (folders.length >= BATCH_LIMIT) {
+      responseLastIds.folders = folders[folders.length - 1].id;
+    }
+    if (images.length >= BATCH_LIMIT) {
+      responseLastIds.images = images[images.length - 1].id;
+    }
+    if (tombstones.length >= BATCH_LIMIT) {
+      responseLastIds.tombstones = tombstones[tombstones.length - 1].entityId;
+    }
+
     // hasMore is true if ANY per-type query hit its BATCH_LIMIT cap, meaning
     // more items of that type exist beyond what we fetched.
     const hasMore =
@@ -290,7 +307,13 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
 
     const response: SyncPullResponse = {
       changes: allChanges,
-      cursor: { deviceId, lastSyncedAt: cursorDate.toISOString() },
+      cursor: {
+        deviceId,
+        lastSyncedAt: cursorDate.toISOString(),
+        ...(Object.keys(responseLastIds).length > 0
+          ? { lastIds: responseLastIds }
+          : {}),
+      },
       hasMore,
       ...(tombstoneData.length > 0 ? { tombstones: tombstoneData } : {}),
     };

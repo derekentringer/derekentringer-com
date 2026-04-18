@@ -106,7 +106,7 @@ describe("Phase 2 reference: sync correctness bugs", () => {
   // Fix: keyset pagination on (updatedAt, id).
   // ─────────────────────────────────────────────────────────────────────
 
-  it.fails(
+  it(
     "2.2 — rows with identical updatedAt straddling BATCH_LIMIT boundary are not skipped",
     async () => {
       const client = await createSyncClient(app);
@@ -136,12 +136,14 @@ describe("Phase 2 reference: sync correctness bugs", () => {
       // doesn't hang the test.
       const seenIds = new Set<string>();
       let cursor: string | undefined;
+      let lastIds: { notes?: string; folders?: string; images?: string; tombstones?: string } | undefined;
       for (let page = 0; page < 10; page++) {
-        const res = await client.pull(cursor);
+        const res = await client.pull(cursor, lastIds);
         for (const change of res.changes) {
           seenIds.add(change.id);
         }
         cursor = res.cursor.lastSyncedAt;
+        lastIds = res.cursor.lastIds;
         if (!res.hasMore) break;
       }
 

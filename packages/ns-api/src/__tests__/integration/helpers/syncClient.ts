@@ -29,7 +29,10 @@ export interface SyncClient {
   deviceId: string;
   authHeader: { Authorization: string };
   push(changes: SyncChange[]): Promise<SyncPushResponse>;
-  pull(since?: string | Date): Promise<SyncPullResponse>;
+  pull(
+    since?: string | Date,
+    lastIds?: SyncPullRequest["lastIds"],
+  ): Promise<SyncPullResponse>;
 }
 
 // Tests that need raw app.inject (e.g. SSE streams) can use the underlying
@@ -71,9 +74,16 @@ export async function createSyncClient(
       return res.json() as SyncPushResponse;
     },
 
-    async pull(since: string | Date = new Date(0)): Promise<SyncPullResponse> {
+    async pull(
+      since: string | Date = new Date(0),
+      lastIds?: SyncPullRequest["lastIds"],
+    ): Promise<SyncPullResponse> {
       const sinceIso = since instanceof Date ? since.toISOString() : since;
-      const body: SyncPullRequest = { deviceId, since: sinceIso };
+      const body: SyncPullRequest = {
+        deviceId,
+        since: sinceIso,
+        ...(lastIds ? { lastIds } : {}),
+      };
       const res = await app.inject({
         method: "POST",
         url: "/sync/pull",

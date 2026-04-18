@@ -56,6 +56,7 @@ const MAX_BACKOFF_MS = 60_000;
 const BATCH_LIMIT = 100;
 const DEVICE_ID_KEY = "deviceId";
 const LAST_PULL_KEY = "lastPullAt";
+const LAST_PULL_IDS_KEY = "lastPullIds";
 
 let syncStatus: SyncStatus = "idle";
 let syncError: string | null = null;
@@ -579,7 +580,26 @@ async function pullChanges(id: string): Promise<void> {
   const lastPull = await getSyncMeta(LAST_PULL_KEY);
   const since = lastPull ?? new Date(0).toISOString();
 
-  const payload: SyncPullRequest = { deviceId: id, since };
+  // Load per-type keyset tie-breakers from the previous pull, if any
+  // (Phase 2.2). A missing or unparseable value behaves like a fresh cursor.
+  const lastIdsRaw = await getSyncMeta(LAST_PULL_IDS_KEY);
+  let lastIds: SyncPullRequest["lastIds"] | undefined;
+  if (lastIdsRaw) {
+    try {
+      const parsed = JSON.parse(lastIdsRaw);
+      if (parsed && typeof parsed === "object") {
+        lastIds = parsed;
+      }
+    } catch {
+      lastIds = undefined;
+    }
+  }
+
+  const payload: SyncPullRequest = {
+    deviceId: id,
+    since,
+    ...(lastIds ? { lastIds } : {}),
+  };
 
   const response = await apiFetch("/sync/pull", {
     method: "POST",
@@ -644,6 +664,13 @@ async function pullChanges(id: string): Promise<void> {
 
   // Update cursor
   await setSyncMeta(LAST_PULL_KEY, result.cursor.lastSyncedAt);
+  // Persist keyset tie-breakers for the next pull (Phase 2.2). Clear the
+  // slot when the server no longer reports any capped types.
+  if (result.cursor.lastIds && Object.keys(result.cursor.lastIds).length > 0) {
+    await setSyncMeta(LAST_PULL_IDS_KEY, JSON.stringify(result.cursor.lastIds));
+  } else {
+    await setSyncMeta(LAST_PULL_IDS_KEY, "");
+  }
 
   // Notify UI if data changed
   if (hadChanges) {
