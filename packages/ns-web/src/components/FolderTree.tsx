@@ -582,15 +582,47 @@ function FolderDeleteDialog({
   onCancel: () => void;
 }) {
   const hasChildren = folder.children.length > 0;
+  const isManaged = folder.isLocalFile === true;
+
+  // Managed-locally warning banner (Phase 1.6). Rendered inside both the
+  // no-children ConfirmDialog variant (via the message) and the
+  // has-children multi-button dialog.
+  const managedWarning = isManaged ? (
+    <div className="mb-3 p-2 rounded border border-destructive/40 bg-destructive/10 text-xs text-destructive">
+      <strong>Managed on a desktop.</strong> Deleting this folder will
+      also move its on-disk files to the OS trash on the managing
+      desktop.
+    </div>
+  ) : null;
 
   if (!hasChildren) {
     return (
-      <ConfirmDialog
-        title="Delete Folder"
-        message={`Delete "${folder.name}"? Notes in this folder will be unfiled.`}
-        onConfirm={() => onConfirm("move-up")}
-        onCancel={onCancel}
-      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-card border border-border rounded-lg shadow-lg p-5 max-w-sm w-full mx-4">
+          <h3 className="text-base font-medium text-foreground mb-1">
+            Delete Folder
+          </h3>
+          {managedWarning}
+          <p className="text-sm text-muted-foreground mb-4">
+            Delete &quot;{folder.name}&quot;? Any notes inside will be moved to the
+            parent folder.
+          </p>
+          <div className="flex justify-center gap-2">
+            <button
+              onClick={onCancel}
+              className="px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onConfirm("move-up")}
+              className="px-3 py-1.5 rounded-md bg-destructive text-foreground text-sm hover:bg-destructive-hover transition-colors cursor-pointer"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -600,28 +632,32 @@ function FolderDeleteDialog({
         <h3 className="text-base font-medium text-foreground mb-1">
           Delete Folder
         </h3>
+        {managedWarning}
         <p className="text-sm text-muted-foreground mb-4">
-          "{folder.name}" has subfolders. What would you like to do?
+          &quot;{folder.name}&quot; has subfolders. What would you like to do?
         </p>
         <div className="flex flex-col gap-2">
           <button
             onClick={() => onConfirm("move-up")}
-            className="px-3 py-2 rounded-md border border-border text-sm text-foreground hover:bg-accent transition-colors text-left"
+            className="px-3 py-2 rounded-md border border-border text-sm text-foreground hover:bg-accent transition-colors text-left cursor-pointer"
           >
             Move contents to parent folder
+            <span className="block text-xs opacity-70">
+              This folder is deleted; subfolders and notes move up
+            </span>
           </button>
           <button
             onClick={() => onConfirm("recursive")}
-            className="px-3 py-2 rounded-md border border-destructive text-sm text-destructive hover:bg-destructive/10 transition-colors text-left"
+            className="px-3 py-2 rounded-md border border-destructive text-sm text-destructive hover:bg-destructive/10 transition-colors text-left cursor-pointer"
           >
-            Delete folder and all subfolders
+            Delete folder and everything in it
             <span className="block text-xs opacity-70">
-              Notes will be unfiled
+              All subfolders and notes are permanently deleted
             </span>
           </button>
           <button
             onClick={onCancel}
-            className="px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             Cancel
           </button>

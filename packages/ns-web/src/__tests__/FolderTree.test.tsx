@@ -194,6 +194,98 @@ describe("flattenFolderTree", () => {
   });
 });
 
+describe("FolderDeleteDialog — managed-locally warning (Phase 1.6)", () => {
+  async function openDeleteDialog(folder: FolderInfo) {
+    const user = userEvent.setup();
+    const onDeleteFolder = vi.fn();
+    renderFolderTree({
+      folders: [folder],
+      onDeleteFolder,
+    });
+    // Open context menu on the folder
+    const folderButton = screen.getByText(folder.name).closest("button")!;
+    await user.pointer({ keys: "[MouseRight>]", target: folderButton });
+    // Click "Delete"
+    const deleteMenuItem = screen.getByRole("button", { name: "Delete" });
+    await user.click(deleteMenuItem);
+    return { user, onDeleteFolder };
+  }
+
+  it("no warning for an unmanaged folder with no children", async () => {
+    await openDeleteDialog({
+      id: "f-leaf",
+      name: "Regular",
+      parentId: null,
+      sortOrder: 0,
+      favorite: false,
+      isLocalFile: false,
+      count: 0,
+      totalCount: 0,
+      createdAt: "2025-01-01",
+      children: [],
+    });
+
+    expect(screen.queryByText(/Managed on a desktop/i)).not.toBeInTheDocument();
+  });
+
+  it("shows warning for a managed leaf folder", async () => {
+    await openDeleteDialog({
+      id: "f-managed",
+      name: "Managed",
+      parentId: null,
+      sortOrder: 0,
+      favorite: false,
+      isLocalFile: true,
+      count: 0,
+      totalCount: 0,
+      createdAt: "2025-01-01",
+      children: [],
+    });
+
+    expect(screen.getByText(/Managed on a desktop/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/move its on-disk files to the OS trash/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows warning in the has-children dialog too", async () => {
+    await openDeleteDialog({
+      id: "f-managed-parent",
+      name: "ManagedWithKids",
+      parentId: null,
+      sortOrder: 0,
+      favorite: false,
+      isLocalFile: true,
+      count: 0,
+      totalCount: 1,
+      createdAt: "2025-01-01",
+      children: [
+        {
+          id: "f-child",
+          name: "Child",
+          parentId: "f-managed-parent",
+          sortOrder: 0,
+          favorite: false,
+          isLocalFile: true,
+          count: 1,
+          totalCount: 1,
+          createdAt: "2025-01-02",
+          children: [],
+        },
+      ],
+    });
+
+    expect(screen.getByText(/Managed on a desktop/i)).toBeInTheDocument();
+    // Multi-button layout still rendered
+    expect(
+      screen.getByText(/Move contents to parent folder/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Delete folder and everything in it/i),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("getFolderBreadcrumb", () => {
   it("returns path from root to target folder", () => {
     const result = getFolderBreadcrumb(mockFolders, "f2");
