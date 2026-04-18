@@ -2045,6 +2045,63 @@ export async function resolveFolderForPath(
 
 // --- Data migrations ---
 
+const MANAGED_FOLDER_BACKFILL_KEY = "managed_folders_backfill_done";
+
+/**
+ * One-time desktop startup pass: walk every row in managed_directories and
+ * flip folders.is_local_file = 1 on the root folder and every descendant,
+ * enqueueing a sync update for each flip so the server + other clients see
+ * the change.
+ *
+ * Idempotent: the sync_meta flag short-circuits subsequent invocations.
+ * Callable on every startup; the no-work fast path is a single row read.
+ *
+ * Intended for installs that registered managed_directories before Phase 1
+ * introduced folders.is_local_file. After this runs once, the
+ * Phase 1.2 set-points keep future installs consistent.
+ */
+export async function backfillManagedFolders(): Promise<number> {
+  const done = await getSyncMeta(MANAGED_FOLDER_BACKFILL_KEY);
+  if (done === "1") return 0;
+
+  const db = await getDb();
+  const dirs = await listManagedDirectories();
+  let flipped = 0;
+
+  for (const dir of dirs) {
+    if (!dir.rootFolderId) continue;
+
+    // Walk the folder subtree rooted at rootFolderId via a CTE. SQLite
+    // WITH RECURSIVE handles arbitrary depth without a round-trip loop.
+    const rows = await db.select<{ id: string }[]>(
+      `WITH RECURSIVE descendants(id) AS (
+         SELECT id FROM folders WHERE id = $1 AND deleted_at IS NULL
+         UNION ALL
+         SELECT f.id FROM folders f
+           JOIN descendants d ON f.parent_id = d.id
+           WHERE f.deleted_at IS NULL
+       )
+       SELECT d.id FROM descendants d
+         JOIN folders f ON f.id = d.id
+         WHERE f.is_local_file = 0`,
+      [dir.rootFolderId],
+    );
+
+    for (const row of rows) {
+      await setFolderIsLocalFile(row.id, true);
+      flipped++;
+    }
+  }
+
+  await setSyncMeta(MANAGED_FOLDER_BACKFILL_KEY, "1");
+  if (flipped > 0) {
+    console.log(
+      `[managed-folder backfill] Flagged ${flipped} folder(s) as is_local_file across ${dirs.length} managed directory(ies)`,
+    );
+  }
+  return flipped;
+}
+
 const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";
 
 /**

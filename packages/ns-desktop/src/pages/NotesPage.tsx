@@ -68,6 +68,7 @@ import {
   getNoteLocalPath,
   enqueueSyncAction,
   migrateFrontmatter,
+  backfillManagedFolders,
   listManagedDirectories,
   addManagedDirectory,
   removeManagedDirectory,
@@ -787,6 +788,10 @@ export function NotesPage() {
         // Clear tab cache so open tabs reload content with frontmatter
         tabNoteCacheRef.current.clear();
       }
+      // One-time Phase 1.3 backfill: any managed_directories row registered
+      // before folders.is_local_file existed gets its root + descendants
+      // flagged so the server + web see they're managed-locally.
+      await backfillManagedFolders();
       const [notesResult, foldersResult, tagsResult] = await Promise.all([
         fetchNotes({ sortBy, sortOrder }),
         fetchFolders(),

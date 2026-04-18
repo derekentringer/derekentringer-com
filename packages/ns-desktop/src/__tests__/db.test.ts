@@ -45,6 +45,7 @@ const {
   reorderNotes,
   moveFolderParent,
   reorderFolders,
+  backfillManagedFolders,
 } = await import("../lib/db.ts");
 
 const sampleRow = {
@@ -852,5 +853,85 @@ describe("purgeOldTrash", () => {
     expect(count).toBe(0);
     expect(mockSelect).not.toHaveBeenCalled();
     expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("backfillManagedFolders", () => {
+  it("returns 0 and skips work when the backfill flag is already set", async () => {
+    // getSyncMeta SELECT returns the "1" flag
+    mockSelect.mockResolvedValueOnce([{ value: "1" }]);
+
+    const flipped = await backfillManagedFolders();
+
+    expect(flipped).toBe(0);
+    // Only one SELECT (the flag read); no UPDATEs
+    expect(mockSelect).toHaveBeenCalledTimes(1);
+    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("flags the root folder + descendants for each managed directory", async () => {
+    // getSyncMeta SELECT returns empty — backfill has not run
+    mockSelect.mockResolvedValueOnce([]);
+    // listManagedDirectories SELECT returns one managed dir
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "md-1",
+        path: "/Users/me/notes",
+        root_folder_id: "root-1",
+        created_at: "2024-01-01",
+      },
+    ]);
+    // The recursive CTE returns root + 2 unflagged descendants
+    mockSelect.mockResolvedValueOnce([
+      { id: "root-1" },
+      { id: "child-1" },
+      { id: "child-2" },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const flipped = await backfillManagedFolders();
+
+    expect(flipped).toBe(3);
+
+    // 3 UPDATEs to flip each folder's is_local_file
+    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(3);
+    expect(updateCalls.map((c) => (c[1] as unknown[])[2])).toEqual([
+      "root-1",
+      "child-1",
+      "child-2",
+    ]);
+
+    // Sets the sync_meta flag after
+    const flagSet = mockExecute.mock.calls.find((c: unknown[]) =>
+      typeof c[0] === "string" && c[0].includes("INTO sync_meta"),
+    );
+    expect(flagSet).toBeDefined();
+  });
+
+  it("skips managed directories without a rootFolderId", async () => {
+    mockSelect.mockResolvedValueOnce([]); // flag not set
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "md-1",
+        path: "/Users/me/notes",
+        root_folder_id: null, // no root — nothing to flag
+        created_at: "2024-01-01",
+      },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const flipped = await backfillManagedFolders();
+
+    expect(flipped).toBe(0);
+    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(0);
   });
 });
