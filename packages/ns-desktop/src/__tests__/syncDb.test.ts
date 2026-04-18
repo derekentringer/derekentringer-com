@@ -253,9 +253,13 @@ describe("upsertNoteFromRemote", () => {
   };
 
   it("inserts new note when it does not exist locally", async () => {
+    // Phase 3.2 folder-exists check → parent is present so we don't defer
+    mockSelect.mockResolvedValueOnce([{ id: "folder-1" }]);
     // SELECT id check returns empty (note does not exist)
     mockSelect.mockResolvedValueOnce([]);
     // ftsUpdate: fts_map lookup returns empty (no FTS entry)
+    mockSelect.mockResolvedValueOnce([]);
+    // drainPendingRefsForNote: no parked images
     mockSelect.mockResolvedValueOnce([]);
     mockExecute.mockResolvedValue({ lastInsertId: 1, rowsAffected: 1 });
 
@@ -282,9 +286,15 @@ describe("upsertNoteFromRemote", () => {
   });
 
   it("updates existing note when it already exists locally", async () => {
-    // SELECT id check returns a row (note exists)
-    mockSelect.mockResolvedValueOnce([{ id: "remote-note-1" }]);
+    // Phase 3.2 folder-exists check
+    mockSelect.mockResolvedValueOnce([{ id: "folder-1" }]);
+    // SELECT id, updated_at check returns a row (note exists, older than incoming)
+    mockSelect.mockResolvedValueOnce([
+      { id: "remote-note-1", updated_at: "2024-05-01T00:00:00.000Z" },
+    ]);
     // ftsUpdate: fts_map lookup returns empty
+    mockSelect.mockResolvedValueOnce([]);
+    // drainPendingRefsForNote: none
     mockSelect.mockResolvedValueOnce([]);
     mockExecute.mockResolvedValue({ lastInsertId: 1, rowsAffected: 1 });
 
@@ -309,10 +319,14 @@ describe("upsertNoteFromRemote", () => {
       deletedAt: "2024-07-01T00:00:00.000Z",
     };
 
+    // Phase 3.2 folder-exists check
+    mockSelect.mockResolvedValueOnce([{ id: "folder-1" }]);
     // SELECT id check returns empty (new note)
     mockSelect.mockResolvedValueOnce([]);
     // ftsDelete: fts_map lookup returns a row
     mockSelect.mockResolvedValueOnce([{ fts_rowid: 42 }]);
+    // drainPendingRefsForNote: none
+    mockSelect.mockResolvedValueOnce([]);
     mockExecute.mockResolvedValue({ lastInsertId: 1, rowsAffected: 1 });
 
     await upsertNoteFromRemote(deletedNote);

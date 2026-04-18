@@ -1421,6 +1421,28 @@ export async function getSyncQueueCount(): Promise<number> {
  */
 export async function upsertNoteFromRemote(note: Note): Promise<void> {
   const db = await getDb();
+
+  // Phase 3.2 referential deferral: if the note points at a folder we
+  // haven't yet materialized locally, park the payload in pending_refs
+  // and skip the upsert. Replayed when the folder lands via
+  // drainPendingRefsForFolder.
+  if (note.folderId) {
+    const folderRows = await db.select<{ id: string }[]>(
+      "SELECT id FROM folders WHERE id = $1",
+      [note.folderId],
+    );
+    if (folderRows.length === 0) {
+      await enqueuePendingRef(
+        "note",
+        note.id,
+        "folder",
+        note.folderId,
+        JSON.stringify(note),
+      );
+      return;
+    }
+  }
+
   const existing = await db.select<{ id: string; updated_at: string }[]>(
     "SELECT id, updated_at FROM notes WHERE id = $1",
     [note.id],
@@ -1488,6 +1510,10 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
   } else {
     await ftsDelete(note.id);
   }
+
+  // Any image payloads that were deferred waiting on this note can now
+  // be applied.
+  await drainPendingRefsForNote(note.id);
 }
 
 /**
@@ -1535,6 +1561,10 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
       ],
     );
   }
+
+  // Phase 3.2: drain any note payloads that were deferred waiting on
+  // this folder.
+  await drainPendingRefsForFolder(folder.id);
 }
 
 /**
@@ -1794,6 +1824,28 @@ export async function fetchAudioNotes(limit = 10): Promise<Note[]> {
 
 export async function upsertImageFromRemote(image: ImageSyncData): Promise<void> {
   const db = await getDb();
+
+  // Phase 3.2 referential deferral: an image pull can arrive before its
+  // note when a single logical create (note + N images) gets split
+  // across BATCH_LIMIT boundaries. Park the payload and wait for the
+  // note.
+  if (image.noteId) {
+    const noteRows = await db.select<{ id: string }[]>(
+      "SELECT id FROM notes WHERE id = $1",
+      [image.noteId],
+    );
+    if (noteRows.length === 0) {
+      await enqueuePendingRef(
+        "image",
+        image.id,
+        "note",
+        image.noteId,
+        JSON.stringify(image),
+      );
+      return;
+    }
+  }
+
   const existing = await db.select<{ id: string; updated_at: string }[]>(
     "SELECT id, updated_at FROM images WHERE id = $1",
     [image.id],
@@ -2249,4 +2301,152 @@ export async function migrateFrontmatter(): Promise<boolean> {
     console.log(`[frontmatter migration] Updated ${updated} of ${rows.length} notes`);
   }
   return updated > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Pending refs (Phase 3.2) — buffered sync payloads waiting on a parent
+// ---------------------------------------------------------------------------
+
+export interface PendingRefRow {
+  id: number;
+  entityType: "note" | "image";
+  entityId: string;
+  refType: "folder" | "note";
+  refId: string;
+  payload: string;
+  enqueuedAt: string;
+}
+
+/**
+ * Park a sync payload whose referenced parent is not yet in local SQLite.
+ * `(entity_type, entity_id)` is NOT unique — retries of the same payload
+ * while the parent is still missing overwrite via delete-then-insert so
+ * the most recent payload is what gets replayed.
+ */
+export async function enqueuePendingRef(
+  entityType: "note" | "image",
+  entityId: string,
+  refType: "folder" | "note",
+  refId: string,
+  payload: string,
+): Promise<void> {
+  const db = await getDb();
+  // Replace any prior deferral for this same entity so we don't
+  // accumulate duplicates if the same upsert is retried while the
+  // parent is still missing.
+  await db.execute(
+    "DELETE FROM pending_refs WHERE entity_type = $1 AND entity_id = $2",
+    [entityType, entityId],
+  );
+  await db.execute(
+    `INSERT INTO pending_refs (entity_type, entity_id, ref_type, ref_id, payload)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [entityType, entityId, refType, refId, payload],
+  );
+}
+
+async function fetchPendingRefs(
+  refType: "folder" | "note",
+  refId: string,
+): Promise<PendingRefRow[]> {
+  const db = await getDb();
+  const rows = await db.select<
+    {
+      id: number;
+      entity_type: "note" | "image";
+      entity_id: string;
+      ref_type: "folder" | "note";
+      ref_id: string;
+      payload: string;
+      enqueued_at: string;
+    }[]
+  >(
+    "SELECT id, entity_type, entity_id, ref_type, ref_id, payload, enqueued_at FROM pending_refs WHERE ref_type = $1 AND ref_id = $2 ORDER BY id ASC",
+    [refType, refId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    entityType: r.entity_type,
+    entityId: r.entity_id,
+    refType: r.ref_type,
+    refId: r.ref_id,
+    payload: r.payload,
+    enqueuedAt: r.enqueued_at,
+  }));
+}
+
+async function deletePendingRef(id: number): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM pending_refs WHERE id = $1", [id]);
+}
+
+/**
+ * Replay pending note-payloads whose referenced folder just arrived.
+ * Called by `upsertFolderFromRemote`. Replay recurses into
+ * `upsertNoteFromRemote`, which may itself drain additional pending
+ * image-refs once the note materializes.
+ */
+export async function drainPendingRefsForFolder(folderId: string): Promise<void> {
+  const rows = await fetchPendingRefs("folder", folderId);
+  for (const row of rows) {
+    if (row.entityType !== "note") continue;
+    try {
+      const note = JSON.parse(row.payload) as Note;
+      await deletePendingRef(row.id);
+      await upsertNoteFromRemote(note);
+    } catch (err) {
+      console.warn(`[pending_refs] Failed to drain note ${row.entityId}:`, err);
+    }
+  }
+}
+
+/**
+ * Replay pending image-payloads whose referenced note just arrived.
+ * Called by `upsertNoteFromRemote`.
+ */
+export async function drainPendingRefsForNote(noteId: string): Promise<void> {
+  const rows = await fetchPendingRefs("note", noteId);
+  for (const row of rows) {
+    if (row.entityType !== "image") continue;
+    try {
+      const image = JSON.parse(row.payload) as ImageSyncData;
+      await deletePendingRef(row.id);
+      await upsertImageFromRemote(image);
+    } catch (err) {
+      console.warn(`[pending_refs] Failed to drain image ${row.entityId}:`, err);
+    }
+  }
+}
+
+/**
+ * Maintenance: drop pending refs older than `maxAgeDays` (default 7).
+ * A ref that's been parked that long means the parent was probably
+ * deleted server-side before the child ever reached a live client —
+ * the child is a permanent orphan and will never apply. Returns the
+ * count removed.
+ */
+export async function sweepStalePendingRefs(maxAgeDays = 7): Promise<number> {
+  const db = await getDb();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - maxAgeDays);
+  const cutoffSql = cutoff.toISOString().replace("T", " ").replace("Z", "");
+  // Use datetime() so the comparison works against the `datetime('now')`
+  // default value format stored in enqueued_at.
+  const before = await db.select<{ c: number }[]>(
+    "SELECT COUNT(*) AS c FROM pending_refs WHERE datetime(enqueued_at) < datetime($1)",
+    [cutoffSql],
+  );
+  await db.execute(
+    "DELETE FROM pending_refs WHERE datetime(enqueued_at) < datetime($1)",
+    [cutoffSql],
+  );
+  return before[0]?.c ?? 0;
+}
+
+export async function countPendingRefs(): Promise<number> {
+  const db = await getDb();
+  const rows = await db.select<{ c: number }[]>(
+    "SELECT COUNT(*) AS c FROM pending_refs",
+  );
+  return rows[0]?.c ?? 0;
 }

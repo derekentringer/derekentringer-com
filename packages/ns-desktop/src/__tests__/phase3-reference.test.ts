@@ -123,40 +123,4 @@ describe("Phase 3 reference: local file + sync-apply robustness", () => {
     },
   );
 
-  // ─────────────────────────────────────────────────────────────────────
-  // 3.2 — Referential deferral on sync pull
-  //
-  // The desktop SQLite deliberately has no FK constraints on columns
-  // populated from sync payloads (migrations 013, 014). That solved a
-  // data-loss bug at the cost of silently accepting orphan references:
-  // if an image pull delivers before the image's note (e.g. across a
-  // BATCH_LIMIT boundary), the image is inserted with a dangling
-  // note_id. If the note is soft-deleted on the server before its pull
-  // arrives, the orphan remains in local SQLite forever.
-  //
-  // Fix: pending_refs SQLite table (migration 016). When an
-  // upsertImageFromRemote arrives and its referenced note is not in
-  // local SQLite, write to pending_refs instead of images. After each
-  // successful note upsert, drain pending_refs entries whose ref_id
-  // matches. Retry with an expiry (7 days) before dropping as permanent
-  // orphan.
-  //
-  // TODO in Phase 3.2: swap this `it.todo` for a full `it.fails(...)`
-  // test that uses the plugin-sql mock to assert:
-  //   - upsertImageFromRemote with non-existent noteId does NOT insert
-  //     into `images`
-  //   - instead inserts into `pending_refs` with ref_type="note",
-  //     ref_id=<noteId>
-  //   - after upsertNoteFromRemote lands for that noteId, the image is
-  //     materialized in `images` and the pending_refs row is removed
-  //
-  // Writing this test requires the `pending_refs` table to exist (it
-  // doesn't yet), so the reference-test contract is captured in-phase
-  // instead — once the migration lands, this test is authored alongside
-  // the fix and must pass.
-  // ─────────────────────────────────────────────────────────────────────
-
-  it.todo(
-    "3.2 — image pull referencing missing note defers via pending_refs (implement in Phase 3.2)",
-  );
 });

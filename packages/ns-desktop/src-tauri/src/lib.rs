@@ -114,6 +114,12 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/016.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 17,
+            description: "pending_refs table for deferred sync payloads",
+            sql: include_str!("../migrations/017.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
