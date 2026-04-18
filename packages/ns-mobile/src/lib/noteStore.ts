@@ -222,6 +222,29 @@ export async function softDeleteFolderFromRemote(folderId: string, timestamp: st
   );
 }
 
+/**
+ * Hard-delete a note from a remote tombstone (Phase 1.5). Mobile has no
+ * on-disk file mirroring, so this is just a local SQLite + FTS cleanup.
+ */
+export async function hardDeleteNoteFromRemote(noteId: string): Promise<void> {
+  const db = await getDatabase();
+  await ftsDelete(noteId);
+  await db.runAsync("DELETE FROM notes WHERE id = ?", [noteId]);
+}
+
+/**
+ * Hard-delete a folder from a remote tombstone (Phase 1.5). Unfiles any
+ * notes defensively then removes the row.
+ */
+export async function hardDeleteFolderFromRemote(folderId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    "UPDATE notes SET folder_id = NULL WHERE folder_id = ?",
+    [folderId],
+  );
+  await db.runAsync("DELETE FROM folders WHERE id = ?", [folderId]);
+}
+
 // ─── Local CRUD functions (mutations — DO enqueue) ─────────
 
 export async function createNoteLocal(data: {

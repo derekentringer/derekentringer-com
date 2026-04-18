@@ -13,6 +13,8 @@ import {
   upsertFolderFromRemote,
   softDeleteNoteFromRemote,
   softDeleteFolderFromRemote,
+  hardDeleteNoteFromRemote,
+  hardDeleteFolderFromRemote,
 } from "./noteStore";
 import type {
   SyncChange,
@@ -562,6 +564,22 @@ async function pullChanges(id: string): Promise<void> {
     } else if (change.type === "folder") {
       await applyFolderChange(change);
       hadChanges = true;
+    }
+  }
+
+  // Phase 1.5: process tombstones for hard-deleted entities. Mobile has
+  // no on-disk file mirroring, so this is just local SQLite + FTS
+  // cleanup — simpler than desktop's cleanup path.
+  for (const t of result.tombstones ?? []) {
+    try {
+      if (t.type === "note") {
+        await hardDeleteNoteFromRemote(t.id);
+      } else if (t.type === "folder") {
+        await hardDeleteFolderFromRemote(t.id);
+      }
+      hadChanges = true;
+    } catch (err) {
+      console.warn(`Failed to apply ${t.type} tombstone ${t.id}:`, err);
     }
   }
 

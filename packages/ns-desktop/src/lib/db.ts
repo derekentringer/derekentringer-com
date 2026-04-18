@@ -1572,6 +1572,84 @@ export async function softDeleteFolderFromRemote(folderId: string): Promise<void
   );
 }
 
+/**
+ * Hard-delete a folder from a remote tombstone (Phase 1.5).
+ *
+ * Unfiles notes still referencing it (defensive — server should have
+ * already re-parented or tombstoned them) and removes the row
+ * completely. Caller is responsible for on-disk cleanup when the folder
+ * was managed-locally (see syncEngine.applyFolderTombstone).
+ */
+export async function hardDeleteFolderFromRemote(folderId: string): Promise<void> {
+  const db = await getDb();
+  // Defensive: clear any lingering folder_id pointers so we don't leave
+  // notes pointing at a deleted parent.
+  await db.execute(
+    "UPDATE notes SET folder_id = NULL WHERE folder_id = $1",
+    [folderId],
+  );
+  await db.execute("DELETE FROM folders WHERE id = $1", [folderId]);
+}
+
+/**
+ * Hard-delete a note from a remote tombstone (Phase 1.5).
+ *
+ * Removes the note row, its FTS entry, and any note_embeddings or
+ * note_versions (cascade via FK). Caller is responsible for on-disk
+ * cleanup when the note had a local_path.
+ */
+export async function hardDeleteNoteFromRemote(noteId: string): Promise<void> {
+  const db = await getDb();
+  await ftsDelete(noteId);
+  await db.execute("DELETE FROM notes WHERE id = $1", [noteId]);
+}
+
+/**
+ * Look up the on-disk path + managed-dir info for a note, if any.
+ * Returns null if the note isn't a local-file note.
+ */
+export async function getNoteLocalFileInfo(
+  noteId: string,
+): Promise<{ localPath: string } | null> {
+  const db = await getDb();
+  const rows = await db.select<{ local_path: string | null; is_local_file: number }[]>(
+    "SELECT local_path, is_local_file FROM notes WHERE id = $1",
+    [noteId],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  if (!r.local_path || r.is_local_file !== 1) return null;
+  return { localPath: r.local_path };
+}
+
+/**
+ * Find the managed_directories row whose root_folder_id matches the given
+ * folder ID, or whose root is an ancestor of the folder. Returns null if
+ * the folder isn't under any managed directory on this desktop.
+ *
+ * Uses a recursive CTE to walk the folder tree upward from folderId.
+ */
+export async function findManagedDirForFolder(
+  folderId: string,
+): Promise<ManagedDirectory | null> {
+  const db = await getDb();
+  const rows = await db.select<ManagedDirectoryRow[]>(
+    `WITH RECURSIVE ancestors(id) AS (
+       SELECT $1
+       UNION ALL
+       SELECT f.parent_id FROM folders f
+         JOIN ancestors a ON f.id = a.id
+         WHERE f.parent_id IS NOT NULL
+     )
+     SELECT md.id, md.path, md.root_folder_id, md.created_at
+     FROM managed_directories md
+     WHERE md.root_folder_id IN (SELECT id FROM ancestors)
+     LIMIT 1`,
+    [folderId],
+  );
+  return rows.length > 0 ? rowToManagedDir(rows[0]) : null;
+}
+
 // ---------------------------------------------------------------------------
 // Local File Support
 // ---------------------------------------------------------------------------

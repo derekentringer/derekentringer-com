@@ -12,10 +12,21 @@ import {
   softDeleteNoteFromRemote,
   softDeleteFolderFromRemote,
   softDeleteImageFromRemote,
+  hardDeleteFolderFromRemote,
+  hardDeleteNoteFromRemote,
   getNoteLocalPath,
   getNoteLocalFileHash,
+  getNoteLocalFileInfo,
+  findManagedDirForFolder,
+  removeManagedDirectory,
 } from "./db.ts";
-import { computeContentHash, fileExists } from "./localFileService.ts";
+import {
+  computeContentHash,
+  fileExists,
+  moveToTrash,
+  stopDirectoryWatching,
+  stopWatching,
+} from "./localFileService.ts";
 import type {
   SyncChange,
   SyncRejection,
@@ -23,6 +34,7 @@ import type {
   SyncPullRequest,
   SyncPullResponse,
   SyncPushResponse,
+  SyncTombstone,
   Note,
   FolderSyncData,
   ImageSyncData,
@@ -606,6 +618,30 @@ async function pullChanges(id: string): Promise<void> {
     }
   }
 
+  // Process tombstones for hard-deleted entities (Phase 1.5). Notes
+  // before folders so managed notes are reported individually before
+  // their parent managed dir goes away in one shot.
+  const tombstones = result.tombstones ?? [];
+  const noteTombstones = tombstones.filter((t) => t.type === "note");
+  const folderTombstones = tombstones.filter((t) => t.type === "folder");
+
+  for (const t of noteTombstones) {
+    try {
+      await applyNoteTombstone(t);
+      hadChanges = true;
+    } catch (err) {
+      console.warn(`Failed to apply note tombstone ${t.id}:`, err);
+    }
+  }
+  for (const t of folderTombstones) {
+    try {
+      await applyFolderTombstone(t);
+      hadChanges = true;
+    } catch (err) {
+      console.warn(`Failed to apply folder tombstone ${t.id}:`, err);
+    }
+  }
+
   // Update cursor
   await setSyncMeta(LAST_PULL_KEY, result.cursor.lastSyncedAt);
 
@@ -680,6 +716,68 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
   const folderData = change.data as FolderSyncData | null;
   if (!folderData) return;
   await upsertFolderFromRemote(folderData);
+}
+
+/**
+ * Apply a folder tombstone (Phase 1.5). If this desktop manages the
+ * folder's on-disk directory (self or ancestor), stop the watcher,
+ * remove the managed_directories row, move the path to OS trash, then
+ * hard-delete the local folder row. Otherwise just hard-delete the row.
+ *
+ * Ordering is critical: watcher + managed_directories must go before
+ * moveToTrash so the trash move doesn't synthesize phantom watcher
+ * events.
+ */
+async function applyFolderTombstone(tombstone: SyncTombstone): Promise<void> {
+  const managedDir = await findManagedDirForFolder(tombstone.id);
+
+  if (managedDir && managedDir.rootFolderId === tombstone.id) {
+    // The tombstoned folder IS the managed root — tear the whole thing
+    // down (watcher + managed_directories row + on-disk directory).
+    await stopDirectoryWatching(managedDir.path);
+    await removeManagedDirectory(managedDir.id);
+    try {
+      await moveToTrash(managedDir.path);
+    } catch (err) {
+      console.warn(`moveToTrash failed for ${managedDir.path}:`, err);
+    }
+  }
+  // If the folder is a descendant of a managed root, the containing
+  // root's watcher sees file removals naturally when the ancestor is
+  // trashed — we only need to hard-delete the local row here. If the
+  // folder is unmanaged, same: no on-disk action required.
+
+  await hardDeleteFolderFromRemote(tombstone.id);
+
+  // Fire the existing folder-remote-deleted callback so UI state (tabs,
+  // active folder selection, etc.) can react.
+  folderRemoteDeletedCallback?.(tombstone.id, "", null);
+}
+
+/**
+ * Apply a note tombstone (Phase 1.5). If the note has a local_path on
+ * disk, move the file to OS trash before hard-deleting the local row.
+ * The per-note watcher is stopped first to avoid a phantom watcher
+ * event during the trash move.
+ */
+async function applyNoteTombstone(tombstone: SyncTombstone): Promise<void> {
+  const localInfo = await getNoteLocalFileInfo(tombstone.id);
+
+  if (localInfo) {
+    await stopWatching(tombstone.id);
+    try {
+      await moveToTrash(localInfo.localPath);
+    } catch (err) {
+      // File may already be gone (e.g. ancestor managed dir was just
+      // trashed in this same pull, or the user deleted it externally).
+      // Non-fatal.
+      console.warn(`moveToTrash failed for ${localInfo.localPath}:`, err);
+    }
+  }
+
+  await hardDeleteNoteFromRemote(tombstone.id);
+
+  noteRemoteDeletedCallback?.(tombstone.id);
 }
 
 async function applyImageChange(change: SyncChange): Promise<void> {
