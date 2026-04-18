@@ -27,7 +27,7 @@ Post-hardening contract (Phases 1–3 outcomes): [`invariants.md`](invariants.md
 | [1](02-phase-1-managed-locally-deletes.md) | ✅ done | Hard-delete + tombstones for folders & managed notes; web-aware flag | — |
 | [2](03-phase-2-sync-correctness.md) | ✅ done | Fix tx abort cascade, cursor ties, clock skew | 0 |
 | [3](04-phase-3-local-file-robustness.md) | ✅ done | Hash-based watcher suppression, referential deferral, managed-dir lifecycle | 0 |
-| [4](05-phase-4-housekeeping.md) | pending | Indexes, comment drift, invariants doc | — |
+| [4](05-phase-4-housekeeping.md) | ✅ done | Indexes, comment drift, invariants doc | — |
 | [5](06-phase-5-performance.md) | pending | Post-hardening perf (embedding dedup, upload concurrency, SSE jitter) | 1–4 complete |
 | [6](07-phase-6-web-sync-unification.md) | pending | Web adopts `/sync/push|pull` | 1–5 complete + product trigger |
 

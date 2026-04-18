@@ -1,5 +1,7 @@
 # Phase 4 — Housekeeping
 
+**Status**: ✅ Complete (commits `c2b183e`…`d07a7d3` on `develop-sync-arch-hardening`)
+
 ## Goal
 
 Small independent changes that reduce future regression risk: add the composite indexes the pull query needs, fix known code/comment drift, and document the hardened invariants so future changes don't silently erode them.
