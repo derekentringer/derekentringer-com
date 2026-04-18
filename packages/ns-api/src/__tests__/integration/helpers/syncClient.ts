@@ -162,7 +162,7 @@ export function noteChange(input: NoteChangeInput): SyncChange {
 type FolderChangeInput =
   | { action: "create"; id?: string; data: Partial<FolderSyncData>; timestamp?: string; force?: boolean }
   | { action: "update"; id: string; data: Partial<FolderSyncData>; timestamp?: string; force?: boolean }
-  | { action: "delete"; id: string; timestamp?: string; force?: boolean; data?: FolderSyncData | null };
+  | { action: "delete"; id: string; timestamp?: string; force?: boolean; data?: Partial<FolderSyncData> | null };
 
 export function folderChange(input: FolderChangeInput): SyncChange {
   const now = new Date().toISOString();
@@ -172,7 +172,9 @@ export function folderChange(input: FolderChangeInput): SyncChange {
       id: input.id,
       type: "folder",
       action: "delete",
-      data: input.data ?? null,
+      // Server applyFolderChange delete branch ignores `data` (uses the
+      // DB row it looks up), so we can widen to any shape here.
+      data: (input.data as FolderSyncData | null | undefined) ?? null,
       timestamp: input.timestamp ?? now,
       ...(input.force ? { force: true } : {}),
     };

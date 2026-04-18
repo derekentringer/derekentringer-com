@@ -874,6 +874,22 @@ export async function reorderFolders(
 
 export type FolderDeleteMode = "move-up" | "recursive";
 
+/**
+ * Hard-delete a folder from the REST path and emit tombstones so every
+ * client learns about the deletion via `/sync/pull`.
+ *
+ * This is a structural delete — folders have no user-facing trash/restore
+ * UI, so soft-deleting was only ever a zombie-row generator (see Phase 1.5
+ * design notes in docs/ns/sync-arch/02-phase-1-managed-locally-deletes.md).
+ *
+ * - recursive mode: hard-delete all notes in folder+descendants AND all
+ *   descendant folders AND the folder itself. Tombstones written for
+ *   every folder + every note that had isLocalFile=true (managed notes).
+ *   Non-managed notes are still hard-deleted from this path and also
+ *   tombstoned so clients learn about the deletion.
+ * - move-up mode: re-file child folders and notes to the parent, then
+ *   hard-delete the folder and emit one folder tombstone.
+ */
 export async function deleteFolderById(
   userId: string,
   folderId: string,
@@ -882,54 +898,57 @@ export async function deleteFolderById(
   const prisma = getPrisma();
 
   const folder = await prisma.folder.findUnique({ where: { id: folderId } });
-  if (!folder || folder.userId !== userId || folder.deletedAt) return 0;
-
-  // Managed-locally folders (Phase 1): hard-delete instead of soft-delete.
-  // Matches the sync-push delete path (sync.ts applyFolderChange) so the
-  // outcome is the same regardless of which client initiated the delete.
-  // Desktop pull-side (Phase 1.5) observes the hard-delete and moves the
-  // on-disk directory to OS trash.
-  if (folder.isLocalFile) {
-    return hardDeleteFolderById(prisma, userId, folder, mode);
-  }
-
-  return softDeleteFolderById(prisma, userId, folderId, folder.parentId, mode);
-}
-
-async function softDeleteFolderById(
-  prisma: ReturnType<typeof getPrisma>,
-  userId: string,
-  folderId: string,
-  parentId: string | null,
-  mode: FolderDeleteMode,
-): Promise<number> {
-  const now = new Date();
+  if (!folder || folder.userId !== userId) return 0;
 
   if (mode === "recursive") {
     const descendantIds = await getDescendantIds(folderId);
-    const allIds = [folderId, ...descendantIds];
+    const allFolderIds = [folderId, ...descendantIds];
 
-    // Unfile all notes in this folder and descendants
-    const result = await prisma.note.updateMany({
-      where: { userId, folderId: { in: allIds }, deletedAt: null },
-      data: { folderId: null, folder: null },
+    // Capture note IDs before we delete them so we can tombstone each one.
+    const notesInSubtree = await prisma.note.findMany({
+      where: { userId, folderId: { in: allFolderIds } },
+      select: { id: true },
+    });
+
+    const result = await prisma.note.deleteMany({
+      where: { userId, folderId: { in: allFolderIds } },
     });
 
     if (descendantIds.length > 0) {
-      await prisma.folder.updateMany({
-        where: { id: { in: descendantIds } },
-        data: { deletedAt: now },
+      await prisma.folder.deleteMany({ where: { id: { in: descendantIds } } });
+    }
+    await prisma.folder.delete({ where: { id: folderId } });
+
+    // Emit tombstones for every deleted entity so all clients can clean
+    // up their local caches + any on-disk directories/files.
+    const now = new Date();
+    const tombstoneRows = [
+      ...allFolderIds.map((id) => ({
+        userId,
+        entityType: "folder",
+        entityId: id,
+        deletedAt: now,
+      })),
+      ...notesInSubtree.map((n) => ({
+        userId,
+        entityType: "note",
+        entityId: n.id,
+        deletedAt: now,
+      })),
+    ];
+    for (const row of tombstoneRows) {
+      await prisma.entityTombstone.upsert({
+        where: { userId_entityId: { userId, entityId: row.entityId } },
+        create: row,
+        update: { deletedAt: now, entityType: row.entityType },
       });
     }
-    await prisma.folder.update({
-      where: { id: folderId },
-      data: { deletedAt: now },
-    });
 
     return result.count;
   }
 
-  // "move-up" mode: children and notes move to parent folder
+  // "move-up" mode: re-file children to the parent, then hard-delete
+  const parentId = folder.parentId;
   await prisma.folder.updateMany({
     where: { parentId: folderId, deletedAt: null },
     data: { parentId },
@@ -938,60 +957,19 @@ async function softDeleteFolderById(
     where: { userId, folderId, deletedAt: null },
     data: { folderId: parentId, folder: null },
   });
-  await prisma.folder.update({
-    where: { id: folderId },
-    data: { deletedAt: now },
+  await prisma.folder.delete({ where: { id: folderId } });
+
+  const now = new Date();
+  await prisma.entityTombstone.upsert({
+    where: { userId_entityId: { userId, entityId: folderId } },
+    create: {
+      userId,
+      entityType: "folder",
+      entityId: folderId,
+      deletedAt: now,
+    },
+    update: { deletedAt: now, entityType: "folder" },
   });
-
-  return result.count;
-}
-
-/**
- * Hard-delete a managed-locally folder. Mirrors the sync-push delete
- * semantics so desktop + web produce identical server state.
- *
- * - recursive mode: hard-delete all notes in folder+descendants AND all
- *   descendant folders AND the folder itself. Leaves nothing behind.
- * - move-up mode: re-file child folders and notes to the parent, then
- *   hard-delete the folder itself. Notes that were in the managed folder
- *   keep their isLocalFile flag; desktop sync will resolve the on-disk
- *   situation for the files in the trashed directory.
- */
-async function hardDeleteFolderById(
-  prisma: ReturnType<typeof getPrisma>,
-  userId: string,
-  folder: { id: string; parentId: string | null },
-  mode: FolderDeleteMode,
-): Promise<number> {
-  if (mode === "recursive") {
-    const descendantIds = await getDescendantIds(folder.id);
-    const allIds = [folder.id, ...descendantIds];
-
-    // Hard-delete every note in the subtree (managed + any non-managed).
-    const result = await prisma.note.deleteMany({
-      where: { userId, folderId: { in: allIds } },
-    });
-
-    if (descendantIds.length > 0) {
-      await prisma.folder.deleteMany({
-        where: { id: { in: descendantIds } },
-      });
-    }
-    await prisma.folder.delete({ where: { id: folder.id } });
-
-    return result.count;
-  }
-
-  // "move-up" mode
-  await prisma.folder.updateMany({
-    where: { parentId: folder.id, deletedAt: null },
-    data: { parentId: folder.parentId },
-  });
-  const result = await prisma.note.updateMany({
-    where: { userId, folderId: folder.id, deletedAt: null },
-    data: { folderId: folder.parentId, folder: null },
-  });
-  await prisma.folder.delete({ where: { id: folder.id } });
 
   return result.count;
 }

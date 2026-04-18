@@ -31,6 +31,7 @@ export interface MockPrisma {
   setting: MockModel;
   syncCursor: MockModel;
   refreshToken: MockModel;
+  entityTombstone: MockModel;
   $disconnect: Mock;
   $transaction: Mock;
   $queryRawUnsafe: Mock;
@@ -67,6 +68,7 @@ export function createMockPrisma(): MockPrisma {
     setting: createMockModel(),
     syncCursor: createMockModel(),
     refreshToken: createMockModel(),
+    entityTombstone: createMockModel(),
     $disconnect: vi.fn(),
     $transaction: vi.fn(),
     $queryRawUnsafe: vi.fn(),
@@ -82,8 +84,11 @@ export function createMockPrisma(): MockPrisma {
     },
   );
 
-  // Default image.findMany to empty array (sync pull queries images)
+  // Default image.findMany + entityTombstone.findMany to empty array so
+  // sync pull doesn't crash when those aren't configured per-test.
   mock.image.findMany.mockResolvedValue([]);
+  mock.entityTombstone.findMany.mockResolvedValue([]);
+  mock.entityTombstone.upsert.mockResolvedValue({});
 
   setPrisma(mock as unknown as PrismaClient);
   return mock;

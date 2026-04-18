@@ -3,6 +3,7 @@ import type {
   Note as PrismaNote,
   Folder as PrismaFolder,
   Image as PrismaImage,
+  EntityTombstone as PrismaTombstone,
 } from "../generated/prisma/client.js";
 
 const BATCH_LIMIT = 100;
@@ -73,6 +74,40 @@ export async function getImagesChangedSince(
     },
     orderBy: { updatedAt: "asc" },
     take: BATCH_LIMIT,
+  });
+}
+
+export async function getTombstonesChangedSince(
+  userId: string,
+  since: Date,
+): Promise<PrismaTombstone[]> {
+  const prisma = getPrisma();
+  return prisma.entityTombstone.findMany({
+    where: {
+      userId,
+      deletedAt: { gt: since },
+    },
+    orderBy: { deletedAt: "asc" },
+    take: BATCH_LIMIT,
+  });
+}
+
+/**
+ * Upsert a tombstone inside a transaction. `tx` is the prisma transaction
+ * client passed from `applyFolderChange` / `applyNoteChange` so the hard
+ * delete + tombstone write happen atomically.
+ */
+export async function writeTombstone(
+  tx: Pick<ReturnType<typeof getPrisma>, "entityTombstone">,
+  userId: string,
+  entityType: "folder" | "note",
+  entityId: string,
+): Promise<void> {
+  const now = new Date();
+  await tx.entityTombstone.upsert({
+    where: { userId_entityId: { userId, entityId } },
+    create: { userId, entityType, entityId, deletedAt: now },
+    update: { deletedAt: now, entityType },
   });
 }
 

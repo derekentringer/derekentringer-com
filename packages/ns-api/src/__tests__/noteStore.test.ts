@@ -647,50 +647,73 @@ describe("noteStore", () => {
   });
 
   describe("deleteFolderById", () => {
-    it("move-up mode: promotes children and notes to parent", async () => {
+    it("move-up mode: re-files children to parent and hard-deletes the folder with a tombstone", async () => {
       mockPrisma.folder.findUnique.mockResolvedValue({
         id: "f1",
         userId: TEST_USER_ID,
         name: "work",
-        parentId: null,
+        parentId: "parent-id",
         sortOrder: 0,
+        isLocalFile: false,
         createdAt: new Date(),
         deletedAt: null,
       });
       mockPrisma.folder.updateMany.mockResolvedValue({ count: 2 });
       mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
-      mockPrisma.folder.update.mockResolvedValue({});
+      mockPrisma.folder.delete.mockResolvedValue({});
 
       const result = await deleteFolderById(TEST_USER_ID, "f1", "move-up");
 
       expect(result).toBe(3);
+      // Children re-parented
       expect(mockPrisma.folder.updateMany).toHaveBeenCalledWith({
         where: { parentId: "f1", deletedAt: null },
-        data: { parentId: null },
+        data: { parentId: "parent-id" },
       });
+      // Notes re-filed
+      expect(mockPrisma.note.updateMany).toHaveBeenCalledWith({
+        where: { userId: TEST_USER_ID, folderId: "f1", deletedAt: null },
+        data: { folderId: "parent-id", folder: null },
+      });
+      // Folder hard-deleted (not soft)
+      expect(mockPrisma.folder.delete).toHaveBeenCalledWith({ where: { id: "f1" } });
+      // Single tombstone for the folder
+      expect(mockPrisma.entityTombstone.upsert).toHaveBeenCalledTimes(1);
     });
 
-    it("recursive mode: deletes descendants and unfiles notes", async () => {
+    it("recursive mode: hard-deletes descendants + notes and emits tombstones", async () => {
       mockPrisma.folder.findUnique.mockResolvedValue({
         id: "f1",
         userId: TEST_USER_ID,
         name: "work",
         parentId: null,
         sortOrder: 0,
+        isLocalFile: false,
         createdAt: new Date(),
       });
       mockPrisma.$queryRawUnsafe.mockResolvedValue([{ id: "f2" }, { id: "f3" }]);
-      mockPrisma.note.updateMany.mockResolvedValue({ count: 5 });
+      // Notes in the subtree that will be captured for tombstones
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1" },
+        { id: "n2" },
+        { id: "n3" },
+        { id: "n4" },
+        { id: "n5" },
+      ]);
+      mockPrisma.note.deleteMany.mockResolvedValue({ count: 5 });
       mockPrisma.folder.deleteMany.mockResolvedValue({ count: 2 });
       mockPrisma.folder.delete.mockResolvedValue({});
 
       const result = await deleteFolderById(TEST_USER_ID, "f1", "recursive");
 
       expect(result).toBe(5);
-      expect(mockPrisma.note.updateMany).toHaveBeenCalledWith({
-        where: { userId: TEST_USER_ID, folderId: { in: ["f1", "f2", "f3"] }, deletedAt: null },
-        data: { folderId: null, folder: null },
+      // Notes are hard-deleted, not unfiled
+      expect(mockPrisma.note.deleteMany).toHaveBeenCalledWith({
+        where: { userId: TEST_USER_ID, folderId: { in: ["f1", "f2", "f3"] } },
       });
+      // Tombstones upserted for every folder + every note in the subtree
+      // (8 total: 3 folders + 5 notes)
+      expect(mockPrisma.entityTombstone.upsert).toHaveBeenCalledTimes(8);
     });
 
     it("returns 0 when folder not found", async () => {

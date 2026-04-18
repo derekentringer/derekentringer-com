@@ -8,16 +8,18 @@ import {
 import { createTestUser, authHeaderFor } from "./helpers/users.js";
 
 /**
- * Phase 1.4 — REST DELETE /notes/folders/:id branches on isLocalFile.
+ * Phase 1.4/1.5 — REST DELETE /notes/folders/:id always hard-deletes and
+ * writes tombstones so clients learn about the deletion via `/sync/pull`.
  *
- *   - Unmanaged folder (isLocalFile=false): soft-delete (today's behavior)
- *   - Managed folder   (isLocalFile=true ): hard-delete, mirroring the
- *                                            sync-push delete path.
+ * Folders have no trash/restore UI, so soft-deleting was only ever a
+ * zombie-row generator. All folder deletes (managed or not) now hard-
+ * delete and tombstone. For `recursive` deletes, every note in the
+ * subtree is also hard-deleted and tombstoned.
  *
- * Both modes (`move-up` and `recursive`) are verified for both branches.
+ * Both modes (`move-up` and `recursive`) are verified end-to-end.
  */
 
-describe("Phase 1.4 — REST folder delete branches on isLocalFile", () => {
+describe("Phase 1.4/1.5 — REST folder delete hard-deletes + tombstones", () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
@@ -36,7 +38,7 @@ describe("Phase 1.4 — REST folder delete branches on isLocalFile", () => {
   });
 
   describe("unmanaged folder (isLocalFile=false)", () => {
-    it("move-up mode soft-deletes the folder and re-files notes", async () => {
+    it("move-up mode hard-deletes the folder, re-files notes, writes folder tombstone", async () => {
       const prisma = getIntegrationPrisma();
       const user = await createTestUser();
       const folder = await prisma.folder.create({
@@ -54,18 +56,22 @@ describe("Phase 1.4 — REST folder delete branches on isLocalFile", () => {
 
       expect(res.statusCode).toBe(200);
 
-      // Folder is soft-deleted, note unfiled but still alive
-      const f = await prisma.folder.findUnique({ where: { id: folder.id } });
-      expect(f).not.toBeNull();
-      expect(f?.deletedAt).not.toBeNull();
+      // Folder is HARD-deleted (not soft), note unfiled but still alive
+      expect(await prisma.folder.findUnique({ where: { id: folder.id } })).toBeNull();
 
       const n = await prisma.note.findUnique({ where: { id: note.id } });
       expect(n).not.toBeNull();
       expect(n?.folderId).toBeNull();
       expect(n?.deletedAt).toBeNull();
+
+      // Tombstone written for the folder, none for the note
+      const tombstones = await prisma.entityTombstone.findMany({ where: { userId: user.id } });
+      expect(tombstones).toHaveLength(1);
+      expect(tombstones[0].entityType).toBe("folder");
+      expect(tombstones[0].entityId).toBe(folder.id);
     });
 
-    it("recursive mode soft-deletes the tree but unfiles notes", async () => {
+    it("recursive mode hard-deletes the whole tree, tombstones every folder + note", async () => {
       const prisma = getIntegrationPrisma();
       const user = await createTestUser();
       const parent = await prisma.folder.create({
@@ -86,13 +92,15 @@ describe("Phase 1.4 — REST folder delete branches on isLocalFile", () => {
 
       expect(res.statusCode).toBe(200);
 
-      // Both folders soft-deleted; note unfiled but not deleted
-      expect((await prisma.folder.findUnique({ where: { id: parent.id } }))?.deletedAt).not.toBeNull();
-      expect((await prisma.folder.findUnique({ where: { id: child.id } }))?.deletedAt).not.toBeNull();
+      // Everything in the subtree is hard-deleted
+      expect(await prisma.folder.findUnique({ where: { id: parent.id } })).toBeNull();
+      expect(await prisma.folder.findUnique({ where: { id: child.id } })).toBeNull();
+      expect(await prisma.note.findUnique({ where: { id: note.id } })).toBeNull();
 
-      const n = await prisma.note.findUnique({ where: { id: note.id } });
-      expect(n).not.toBeNull();
-      expect(n?.folderId).toBeNull();
+      // Tombstones for both folders + the note
+      const tombstones = await prisma.entityTombstone.findMany({ where: { userId: user.id } });
+      const ids = tombstones.map((t) => t.entityId).sort();
+      expect(ids).toEqual([child.id, note.id, parent.id].sort());
     });
   });
 

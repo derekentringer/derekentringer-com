@@ -518,10 +518,18 @@ describe("Note routes", () => {
         name: "work",
         parentId: null,
         sortOrder: 0,
+        isLocalFile: false,
         createdAt: new Date(),
       });
       mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
-      mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
+      // Phase 1.5 hard-delete path: findMany to capture note IDs for
+      // tombstones, then deleteMany the notes, then delete the folder
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1" },
+        { id: "n2" },
+        { id: "n3" },
+      ]);
+      mockPrisma.note.deleteMany.mockResolvedValue({ count: 3 });
       mockPrisma.folder.delete.mockResolvedValue({});
 
       const res = await app.inject({

@@ -173,8 +173,29 @@ export interface SyncPullRequest {
   since: string;
 }
 
+/**
+ * Tombstone for a hard-deleted entity. Delivered via `/sync/pull` so
+ * clients that still have the entity in their local cache can remove it.
+ *
+ * Scope: folders (all deletes) and notes with isLocalFile=true (the
+ * sync-push path hard-deletes these). Regular notes use deletedAt-style
+ * soft-deletes delivered as a normal SyncChange with action="delete".
+ */
+export interface SyncTombstone {
+  id: string;
+  type: "folder" | "note";
+  deletedAt: string;
+}
+
 export interface SyncPullResponse {
   changes: SyncChange[];
+  /**
+   * Tombstones for hard-deleted entities. Optional for backward
+   * compatibility — clients that predate Phase 1.5 simply ignore the
+   * field (and their local rows go stale, which is the pre-existing
+   * behavior they already tolerate).
+   */
+  tombstones?: SyncTombstone[];
   cursor: SyncCursor;
   hasMore: boolean;
 }

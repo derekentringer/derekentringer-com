@@ -17,6 +17,8 @@ import {
   getNotesChangedSince,
   getFoldersChangedSince,
   getImagesChangedSince,
+  getTombstonesChangedSince,
+  writeTombstone,
 } from "../store/syncStore.js";
 import { getPrisma } from "../lib/prisma.js";
 import { toNote } from "../lib/mappers.js";
@@ -26,7 +28,7 @@ import type {
   Image as PrismaImage,
 } from "../generated/prisma/client.js";
 
-type PrismaLike = Pick<ReturnType<typeof getPrisma>, "note" | "folder" | "image">;
+type PrismaLike = Pick<ReturnType<typeof getPrisma>, "note" | "folder" | "image" | "entityTombstone">;
 
 const BATCH_LIMIT = 100;
 
@@ -201,10 +203,11 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
 
     const sinceDate = new Date(since);
 
-    const [notes, folders, images] = await Promise.all([
+    const [notes, folders, images, tombstones] = await Promise.all([
       getNotesChangedSince(userId, sinceDate),
       getFoldersChangedSince(userId, sinceDate),
       getImagesChangedSince(userId, sinceDate),
+      getTombstonesChangedSince(userId, sinceDate),
     ]);
 
     const noteChanges: SyncChange[] = notes.map((n) => ({
@@ -253,20 +256,42 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     // Global cursor = min(safe advance across all types). This guarantees the
     // next pull cannot skip items of any capped type, because we never
     // advance past that type's last-seen boundary.
-    const safeAdvance = (items: { updatedAt: Date }[]): number =>
-      items.length >= BATCH_LIMIT
-        ? items[items.length - 1].updatedAt.getTime()
-        : Number.POSITIVE_INFINITY;
+    const safeAdvance = (
+      items: Array<{ updatedAt?: Date; deletedAt?: Date | null }>,
+    ): number => {
+      if (items.length < BATCH_LIMIT) return Number.POSITIVE_INFINITY;
+      const last = items[items.length - 1];
+      // Regular entities carry updatedAt; tombstones carry deletedAt.
+      const ts = last.updatedAt ?? last.deletedAt;
+      return ts ? ts.getTime() : Number.POSITIVE_INFINITY;
+    };
 
-    const minSafe = Math.min(safeAdvance(notes), safeAdvance(folders), safeAdvance(images));
+    const minSafe = Math.min(
+      safeAdvance(notes),
+      safeAdvance(folders),
+      safeAdvance(images),
+      safeAdvance(tombstones),
+    );
+
+    const tombstoneData = tombstones.map((t) => ({
+      id: t.entityId,
+      type: t.entityType as "folder" | "note",
+      deletedAt: t.deletedAt.toISOString(),
+    }));
 
     let cursorDate: Date;
     if (Number.isFinite(minSafe)) {
       // At least one type is capped — advance cursor only as far as safe.
       cursorDate = new Date(minSafe);
-    } else if (allChanges.length > 0) {
+    } else if (allChanges.length > 0 || tombstoneData.length > 0) {
       // All types fully drained — advance to the last returned item.
-      cursorDate = new Date(allChanges[allChanges.length - 1].timestamp);
+      const lastChangeTs = allChanges.length > 0
+        ? new Date(allChanges[allChanges.length - 1].timestamp).getTime()
+        : 0;
+      const lastTombstoneTs = tombstones.length > 0
+        ? tombstones[tombstones.length - 1].deletedAt.getTime()
+        : 0;
+      cursorDate = new Date(Math.max(lastChangeTs, lastTombstoneTs));
     } else {
       // Nothing returned — hold cursor at wall-clock so the client doesn't
       // re-pull the same empty range forever.
@@ -279,12 +304,14 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     const hasMore =
       notes.length >= BATCH_LIMIT ||
       folders.length >= BATCH_LIMIT ||
-      images.length >= BATCH_LIMIT;
+      images.length >= BATCH_LIMIT ||
+      tombstones.length >= BATCH_LIMIT;
 
     const response: SyncPullResponse = {
       changes: allChanges,
       cursor: { deviceId, lastSyncedAt: cursorDate.toISOString() },
       hasMore,
+      ...(tombstoneData.length > 0 ? { tombstones: tombstoneData } : {}),
     };
 
     return reply.send(response);
@@ -322,8 +349,10 @@ async function applyNoteChange(
     const existing = await prisma.note.findUnique({ where: { id: change.id } });
     if (existing && existing.userId === userId) {
       if (existing.isLocalFile) {
-        // Hard-delete locally managed files to prevent stale entries
+        // Hard-delete locally managed files to prevent stale entries + write
+        // a tombstone so other clients learn about the deletion via pull.
         await prisma.note.delete({ where: { id: change.id } });
+        await writeTombstone(prisma, userId, "note", change.id);
       } else {
         // Soft-delete regular notes (NoteSync trash)
         await prisma.note.update({
@@ -448,8 +477,10 @@ async function applyFolderChange(
         where: { parentId: change.id },
         data: { parentId: existing.parentId },
       });
-      // Hard-delete the folder to prevent stale entries
+      // Hard-delete the folder + write a tombstone so other clients see the
+      // deletion on their next pull.
       await prisma.folder.delete({ where: { id: change.id } });
+      await writeTombstone(prisma, userId, "folder", change.id);
       return "applied";
     }
     return "skipped";

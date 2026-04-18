@@ -26,6 +26,7 @@ model User {
   refreshTokens      RefreshToken[]
   passkeys           Passkey[]
   chatMessages       ChatMessage[]
+  tombstones         EntityTombstone[]
 
   @@map("users")
 }
@@ -205,6 +206,32 @@ model Image {
   @@index([updatedAt])
   @@index([deletedAt])
   @@map("images")
+}
+
+/// Tombstone for a hard-deleted entity so clients still learn about the
+/// deletion on their next `/sync/pull`. Used for folders (all deletes —
+/// folders have no restore UI) and for isLocalFile notes (the sync-push
+/// path hard-deletes these to prevent zombie entries when the on-disk
+/// file is gone). Regular-note soft-deletes are NOT tombstoned — the
+/// web trash/restore UX depends on deletedAt-marked rows.
+///
+/// Sweep (Phase 4 housekeeping): after every active sync_cursor has
+/// advanced past `deletedAt`, the tombstone is safe to purge.
+model EntityTombstone {
+  id         String   @id @default(uuid())
+  userId     String
+  entityType String // "folder" | "note"
+  entityId   String
+  deletedAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One tombstone per entity — if a delete is somehow re-emitted we just
+  // update the existing row's timestamp rather than piling up rows.
+  @@unique([userId, entityId])
+  @@index([userId, deletedAt])
+  @@index([deletedAt])
+  @@map("entity_tombstones")
 }
 
 model ChatMessage {
