@@ -135,7 +135,7 @@ function FolderTreeNode({
             }}
             autoFocus
             style={{ paddingLeft }}
-            className="w-full pr-2 py-1 rounded text-sm bg-input border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full pr-2 py-1 rounded text-sm bg-input border border-border text-foreground focus:outline-none"
           />
         ) : (
           <button
