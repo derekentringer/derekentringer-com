@@ -17,6 +17,8 @@ Hardening scope covers Phases 0–4. Performance work and architectural unificat
 
 See [`00-architecture-reference.md`](00-architecture-reference.md) for a snapshot of both sync systems as they exist today — key files, tables, wire protocol, and load-bearing asymmetries.
 
+Post-hardening contract (Phases 1–3 outcomes): [`invariants.md`](invariants.md).
+
 ## Phases
 
 | Phase | Status | Goal | Depends on |
