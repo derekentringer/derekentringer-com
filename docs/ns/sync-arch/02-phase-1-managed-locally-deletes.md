@@ -1,8 +1,18 @@
 # Phase 1 — Managed-Locally Delete Consistency
 
+**Status**: ✅ Complete (commits `66d6aeb`…`bc39807` on `develop-sync-arch-hardening`)
+
 ## Goal
 
 Kill the soft-delete ambiguity for folders (and descendant notes) that are backed by on-disk files. When a user deletes a managed-locally folder — whether from web, desktop, or mobile — the outcome should be deterministic and match user expectation: on-disk files move to OS trash on the managing desktop, and the folder is fully removed from the cloud.
+
+## Design note: tombstones (added after planning)
+
+The original plan had the server hard-delete managed folders on the REST path. While implementing, we discovered hard-deletes on the server don't propagate via `/sync/pull` — the row is gone before clients can observe it, so desktops never learn to clean up on-disk directories.
+
+The zombie-folder problem you flagged separately (deleted-and-soft-preserved folders colliding with re-creation under the same name) made soft-delete unattractive regardless. Solution: **hard-delete + tombstone** — the server hard-deletes the row AND writes an `EntityTombstone`. Pull returns tombstones alongside changes so every client learns about the deletion and can clean up. Scoped to folders (no folder restore UI) and `isLocalFile` notes (the sync-push path already hard-deletes these); regular-note soft-deletes keep driving the web trash/restore UX.
+
+Sweep for accumulated tombstones is Phase 4 (option a: delete after every active `sync_cursor` has advanced past the tombstone's `deletedAt`).
 
 ## Why this matters
 
@@ -40,24 +50,53 @@ Startup self-heal on desktop:
 4. Enqueue sync updates.
 5. Gate behind a `sync_meta` flag (`managed_folder_backfill_done = 1`) so it runs once per install.
 
-### 1.4 — REST delete branch
+### 1.4 — REST delete: all folders hard-delete + tombstone
 
-In `packages/ns-api/src/store/noteStore.ts:877` (`deleteFolderById`):
+In `packages/ns-api/src/store/noteStore.ts` (`deleteFolderById`):
 
-- Load the folder once at the top.
-- If `folder.isLocalFile === true`, follow the hard-delete path used in the sync handler (`sync.ts:437-454`): unfile notes OR recurse based on `mode`, then `prisma.folder.delete()` on the folder and descendants.
-- Otherwise keep the current soft-delete behavior.
+- Every folder delete (managed or not) now hard-deletes and writes an `EntityTombstone`. Folders have no user-facing trash/restore UI, so soft-delete only ever generated zombie rows.
+- `recursive` mode: hard-delete every folder + every note in the subtree; tombstone each one.
+- `move-up` mode: re-file children + notes to the parent; hard-delete the folder; tombstone just the folder.
 
-Make sure descendants of the managed folder are also hard-deleted — their `isLocalFile` flag may or may not be set (old data), but if the parent is managed, they should go with it.
+### 1.5 — Tombstones infrastructure + pull-side cleanup
 
-### 1.5 — Pull-side on-disk cleanup (desktop)
+**Server side** (ns-api):
 
-In desktop's `applyFolderChange` (`syncEngine.ts:668`) delete branch, before or after `softDeleteFolderFromRemote`:
+- `EntityTombstone` model + migration `20260418000001_add_entity_tombstones`. Columns: `(id, userId, entityType, entityId, deletedAt)`. `(userId, entityId)` unique so re-emits upsert.
+- `writeTombstone(tx, userId, type, id)` helper in `syncStore.ts`; called from:
+  - REST folder delete (`noteStore.deleteFolderById`)
+  - Sync-push folder delete (`sync.applyFolderChange`)
+  - Sync-push `isLocalFile` note delete (`sync.applyNoteChange`)
+- `getTombstonesChangedSince(userId, since)` + `SyncPullResponse.tombstones` deliver them to clients. Cursor-math extended so tombstones participate in the per-type `safeAdvance` calculation.
 
-1. Look up the folder's path by walking `managed_directories` — is the deleted folder a root, or a descendant of a managed root?
-2. If a managed root: stop watcher, remove from `managed_directories`, call `moveToTrash(path)` via the existing Tauri command, hard-delete from local SQLite.
-3. If a descendant: resolve the on-disk path via parent chain, `moveToTrash(path)`, hard-delete from local SQLite.
-4. If not managed anywhere: keep today's behavior.
+**Wire** (ns-shared):
+
+```ts
+export interface SyncTombstone {
+  id: string;
+  type: "folder" | "note";
+  deletedAt: string;
+}
+export interface SyncPullResponse {
+  changes: SyncChange[];
+  tombstones?: SyncTombstone[];   // added
+  cursor: SyncCursor;
+  hasMore: boolean;
+}
+```
+
+**Desktop client** (ns-desktop):
+
+- `db.ts`: `hardDeleteFolderFromRemote`, `hardDeleteNoteFromRemote`, `getNoteLocalFileInfo`, `findManagedDirForFolder` (recursive CTE walking ancestors).
+- `syncEngine.ts`: `pullChanges` processes tombstones after regular changes. Notes before folders so per-note trash moves see files that still exist even if their ancestor is about to go.
+- **Folder tombstone for a managed root**: stop watcher → remove `managed_directories` row → `moveToTrash(path)` → hard-delete local row. Ordering is critical — watcher cleanup must precede trash move to prevent phantom events.
+- **Note tombstone with a `local_path`**: stop per-note watcher → `moveToTrash(file)` → hard-delete local row.
+- `moveToTrash` failures (file already trashed with its ancestor) are logged as warnings, not fatal.
+
+**Mobile client** (ns-mobile):
+
+- `noteStore.ts`: `hardDeleteNoteFromRemote`, `hardDeleteFolderFromRemote`. No on-disk mirror, so just SQLite + FTS cleanup.
+- `syncEngine.ts`: `pullChanges` processes tombstones inline.
 
 ### 1.6 — Web UX warning
 

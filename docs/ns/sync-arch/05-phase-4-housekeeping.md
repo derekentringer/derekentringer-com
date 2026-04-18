@@ -48,6 +48,31 @@ After Phases 1–3 land, document the hardened invariants in one place so future
 
 Add a short link in project root `CLAUDE.md` under the NoteSync section pointing to `docs/ns/sync-arch/README.md` so future assistants load this context.
 
+### 4.5 — Tombstone sweep
+
+Phase 1.5 introduced `EntityTombstone` rows for every hard-deleted folder and every `isLocalFile` note. Tombstones accumulate until every device has had a chance to observe them on `/sync/pull`.
+
+**Sweep strategy (option a — deterministic, self-cleaning)**:
+
+Run periodically (daily cron or on-demand from an admin endpoint):
+
+```sql
+DELETE FROM entity_tombstones t
+WHERE NOT EXISTS (
+  SELECT 1 FROM sync_cursors c
+  WHERE c.userId = t.userId
+    AND c.lastSyncedAt <= t.deletedAt
+);
+```
+
+A tombstone is safe to drop only once every active `sync_cursor` row for the user has advanced past `deletedAt`. Stale cursors (device uninstalled, browser localStorage cleared) block the sweep; the existing `cleanupStaleCursors(days = 90)` handles that by deleting cursors that haven't been updated in 90 days. The sweep should run AFTER `cleanupStaleCursors` so expired cursors don't hold tombstones forever.
+
+**Implementation shape**:
+
+- New `sweepTombstones()` helper in `packages/ns-api/src/store/syncStore.ts`.
+- Cron-style trigger: either a scheduled Railway task or an admin-only route `POST /admin/maintenance/sweep-tombstones` that admins can invoke.
+- Log the count of rows removed per sweep; alert if a single sweep removes >10k rows (unexpected accumulation signals a bug).
+
 ## Edge cases covered
 
 None new — this phase documents and indexes, doesn't fix bugs.
