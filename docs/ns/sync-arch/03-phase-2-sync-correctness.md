@@ -1,5 +1,7 @@
 # Phase 2 — Cross-Platform Sync Correctness
 
+**Status**: ✅ Complete (commits `c527f6d`…`f0ed4b7` on `develop-sync-arch-hardening`)
+
 ## Goal
 
 Fix three real bugs in the `/sync/push` and `/sync/pull` protocol that can silently lose or misapply data. These are rare but realistic conditions: constraint violations mid-batch, ties on `updatedAt`, and client clock skew.
@@ -43,22 +45,17 @@ Apply consistently to `getNotesChangedSince`, `getFoldersChangedSince`, `getImag
 
 **Verification**: Phase 0 test — insert 150 rows with identical `updatedAt`; assert all 150 are pulled across two batches with no skips.
 
-### 2.3 — Server-stamped timestamps (clock skew)
+### 2.3 — Server-authoritative LWW (clock skew)
 
-**Location**: `packages/ns-api/src/routes/sync.ts:340-347` and `sync.ts:464-465`
+**Location**: `packages/ns-api/src/routes/sync.ts` (`applyNoteChange`, `applyFolderChange`, `applyImageChange`)
 
-**Problem**: LWW compares `change.timestamp` (client-supplied wall-clock) to `existing.updatedAt` (server wall-clock). A client with a 2-hour-fast clock wins every conflict for 2 hours. A slow client loses updates it made after the remote write.
+**Problem**: LWW compared `change.timestamp` (client-supplied wall-clock) to `existing.updatedAt` (server wall-clock). A slow-clock client's causally-later writes got silently rejected as `timestamp_conflict` and lost.
 
-**Fix**:
+**Fix (shipped)**: Remove the client-timestamp gate entirely. Prisma `@updatedAt` stamps on write, so LWW is now decided by server-side arrival order rather than untrusted client clocks. The `force` flag is retained — it still serves the FK-retry path on constraint violations.
 
-1. Server always stamps its own `updatedAt` on write (Prisma's `@updatedAt` already does this — good).
-2. Return the server-stamped timestamp in `SyncPushResponse.appliedTimestamps: Record<changeId, iso8601>`.
-3. Client updates its local row's `updatedAt` to match the server value on apply.
-4. Add a causal ordering tie-break: `changeSeq: number` per device, incremented on each queue enqueue. Compare `(timestamp, deviceId, changeSeq)` when timestamps tie.
+**Tradeoff**: A queued stale retry that flushes after weeks of other edits on other devices will overwrite newer server state. The prior behavior silently dropped slow-clock clients' valid writes — which is worse for users and harder to surface than an occasional stale overwrite (which the existing rejection/force-push UX can mediate). A future iteration can add per-device Lamport `(deviceId, seq)` tie-breaks and server-returned `appliedTimestamps` for client adoption.
 
-Keep `change.timestamp` in the wire format for the LWW comparison itself — the fix is that clients stop trusting their own wall-clock as the authoritative value post-write.
-
-**Verification**: Phase 0 test — two clients, clock A = real + 2h, clock B = real. Both update same note. Third client pulls and asserts final state matches the causally-later write, not the wall-clock-later one.
+**Verification**: `phase2-reference.test.ts` 2.3 — device B with a 1h slow clock pushes an update; server applies it. (Formerly `it.fails`.)
 
 ## Edge cases covered
 
