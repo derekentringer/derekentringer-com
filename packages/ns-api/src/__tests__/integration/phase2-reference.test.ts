@@ -171,7 +171,7 @@ describe("Phase 2 reference: sync correctness bugs", () => {
   // server-observed instant.
   // ─────────────────────────────────────────────────────────────────────
 
-  it.fails(
+  it(
     "2.3 — slow-clock client's causally-later write is not silently rejected as stale",
     async () => {
       const { a, b } = await createTwoDeviceSetup(app);

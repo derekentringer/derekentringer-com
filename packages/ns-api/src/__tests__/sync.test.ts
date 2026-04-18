@@ -256,10 +256,17 @@ describe("Sync routes", () => {
       expect(mockPrisma.note.update).toHaveBeenCalledTimes(1);
     });
 
-    it("rejects update when server is newer (LWW - server wins)", async () => {
-      // Server note has updatedAt of Jan 5, client timestamp is Jan 3 -> server wins, change is rejected
+    it("applies update even when client timestamp is older (Phase 2.3 server-authoritative LWW)", async () => {
+      // Server note has updatedAt of Jan 5, client timestamp is Jan 3.
+      // Pre-Phase-2.3 this was rejected as timestamp_conflict; now the
+      // server always applies the client's write and relies on its own
+      // @updatedAt stamp for LWW. This is what lets slow-clock clients
+      // stop silently losing their writes.
       mockPrisma.note.findUnique.mockResolvedValue(
         makeMockNoteRow({ updatedAt: new Date("2024-01-05") }),
+      );
+      mockPrisma.note.update.mockResolvedValue(
+        makeMockNoteRow({ title: "Stale Update" }),
       );
       mockPrisma.syncCursor.upsert.mockResolvedValue({});
 
@@ -297,11 +304,9 @@ describe("Sync routes", () => {
       });
 
       expect(res.statusCode).toBe(200);
-      // The change is skipped (LWW rejection). The note.update should NOT be called.
-      expect(mockPrisma.note.update).not.toHaveBeenCalled();
-      // The route correctly counts it as skipped
-      expect(res.json().applied).toBe(0);
-      expect(res.json().skipped).toBe(1);
+      expect(mockPrisma.note.update).toHaveBeenCalledTimes(1);
+      expect(res.json().applied).toBe(1);
+      expect(res.json().skipped).toBe(0);
       expect(res.json().rejected).toBe(0);
     });
 
@@ -479,11 +484,16 @@ describe("Sync routes", () => {
       expect(body.cursor.lastSyncedAt).toBeDefined();
     });
 
-    it("returns rejection details with timestamp_conflict reason", async () => {
-      // Server note has updatedAt of Jan 5, client timestamp is Jan 3 -> server wins
+    it("no longer returns timestamp_conflict for older-timestamp pushes (Phase 2.3)", async () => {
+      // Pre-Phase-2.3 this scenario (server newer than client timestamp)
+      // produced a timestamp_conflict rejection. The gate is removed;
+      // server stamps its own updatedAt on arrival. Keeping this test
+      // as a regression sentinel — the code path that emits this
+      // rejection reason is dead for note/folder/image updates.
       mockPrisma.note.findUnique.mockResolvedValue(
         makeMockNoteRow({ updatedAt: new Date("2024-01-05") }),
       );
+      mockPrisma.note.update.mockResolvedValue(makeMockNoteRow());
       mockPrisma.syncCursor.upsert.mockResolvedValue({});
 
       const res = await app.inject({
@@ -521,12 +531,9 @@ describe("Sync routes", () => {
 
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.skipped).toBe(1);
-      expect(body.rejections).toBeDefined();
-      expect(body.rejections).toHaveLength(1);
-      expect(body.rejections[0].changeId).toBe("note-1");
-      expect(body.rejections[0].reason).toBe("timestamp_conflict");
-      expect(body.rejections[0].changeType).toBe("note");
+      expect(body.applied).toBe(1);
+      expect(body.skipped).toBe(0);
+      expect(body.rejections ?? []).toEqual([]);
     });
 
     it("applies update with force flag despite older timestamp", async () => {

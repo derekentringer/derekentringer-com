@@ -377,8 +377,12 @@ async function applyNoteChange(
   if (existing) {
     if (existing.userId !== userId) return "skipped";
 
-    const clientTime = new Date(change.timestamp);
-    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
+    // Server-authoritative LWW (Phase 2.3): do not gate on the client's
+    // wall-clock `change.timestamp`. A device with a slow clock would
+    // otherwise have its causally-later writes silently rejected as
+    // timestamp_conflict. The server's `@updatedAt` stamp + arrival
+    // order define LWW. The `force` flag is retained because it also
+    // enables FK-retry behavior below.
 
     const noteUpdateData: Record<string, unknown> = {
       title: noteData.title,
@@ -497,8 +501,7 @@ async function applyFolderChange(
   if (existing) {
     if (existing.userId !== userId) return "skipped";
 
-    const clientTime = new Date(change.timestamp);
-    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
+    // Server-authoritative LWW (Phase 2.3) — see applyNoteChange.
 
     const folderUpdateData: Record<string, unknown> = {
       name: folderData.name,
@@ -597,8 +600,7 @@ async function applyImageChange(
   if (existing) {
     if (existing.userId !== userId) return "skipped";
 
-    const clientTime = new Date(change.timestamp);
-    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
+    // Server-authoritative LWW (Phase 2.3) — see applyNoteChange.
 
     await prisma.image.update({
       where: { id: change.id },
