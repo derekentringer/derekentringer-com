@@ -93,6 +93,10 @@ model Note {
   @@index([sortOrder])
   @@index([favoriteSortOrder])
   @@index([updatedAt])
+  // Phase 4.1: covers the sync-pull hot path which filters by userId
+  // and ranges on updatedAt (plus id for keyset tie-break). Postgres
+  // can only pick one index per scan so the composite form matters.
+  @@index([userId, updatedAt])
   @@map("notes")
 }
 
@@ -158,6 +162,8 @@ model Folder {
   @@index([parentId])
   @@index([deletedAt])
   @@index([updatedAt])
+  // Phase 4.1: sync-pull filter+range composite.
+  @@index([userId, updatedAt])
   @@map("folders")
 }
 
@@ -205,6 +211,8 @@ model Image {
   @@index([userId])
   @@index([updatedAt])
   @@index([deletedAt])
+  // Phase 4.1: sync-pull filter+range composite.
+  @@index([userId, updatedAt])
   @@map("images")
 }
 
