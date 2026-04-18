@@ -437,10 +437,18 @@ async function applyFolderChange(
   if (change.action === "delete") {
     const existing = await prisma.folder.findUnique({ where: { id: change.id } });
     if (existing && existing.userId === userId) {
-      await prisma.folder.update({
-        where: { id: change.id },
-        data: { deletedAt: new Date(change.timestamp) },
+      // Unfile any notes still in this folder
+      await prisma.note.updateMany({
+        where: { folderId: change.id },
+        data: { folderId: existing.parentId },
       });
+      // Move child folders to parent
+      await prisma.folder.updateMany({
+        where: { parentId: change.id },
+        data: { parentId: existing.parentId },
+      });
+      // Hard-delete the folder to prevent stale entries
+      await prisma.folder.delete({ where: { id: change.id } });
       return "applied";
     }
     return "skipped";
