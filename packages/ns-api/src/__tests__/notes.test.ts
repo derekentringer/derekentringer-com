@@ -956,6 +956,14 @@ describe("Note routes", () => {
   describe("DELETE /notes/:id", () => {
     it("soft-deletes note (204)", async () => {
       const token = await getAccessToken();
+      // softDeleteNote looks up the note first to branch on isLocalFile
+      // (Phase 1). The mock returns a regular (non-isLocalFile) note so
+      // the soft-delete path runs.
+      mockPrisma.note.findUnique.mockResolvedValue({
+        id: VALID_UUID,
+        isLocalFile: false,
+        deletedAt: null,
+      });
       mockPrisma.note.update.mockResolvedValue({});
 
       const res = await app.inject({
@@ -969,9 +977,8 @@ describe("Note routes", () => {
 
     it("returns 404 if not found", async () => {
       const token = await getAccessToken();
-      const notFoundError = new Error("Not found") as Error & { code: string };
-      notFoundError.code = "P2025";
-      mockPrisma.note.update.mockRejectedValue(notFoundError);
+      // softDeleteNote's findUnique returns null → returns false → 404
+      mockPrisma.note.findUnique.mockResolvedValue(null);
 
       const res = await app.inject({
         method: "DELETE",

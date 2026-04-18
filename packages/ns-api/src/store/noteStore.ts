@@ -11,6 +11,7 @@ import type { Note as PrismaNote, Folder as PrismaFolder } from "../generated/pr
 import { generateQueryEmbedding } from "../services/embeddingService.js";
 import { syncNoteLinks } from "./linkStore.js";
 import { captureVersion } from "./versionStore.js";
+import { writeTombstone } from "./syncStore.js";
 import {
   parseFrontmatter,
   serializeFrontmatter,
@@ -534,7 +535,14 @@ export async function softDeleteNote(userId: string, id: string): Promise<boolea
     if (!note || note.deletedAt) return false;
 
     if (note.isLocalFile) {
-      await prisma.note.delete({ where: { id, userId } });
+      // Hard-delete + tombstone atomically so desktop clients learn
+      // about the deletion on their next `/sync/pull` and trash the
+      // on-disk file. Without the tombstone the row is silently gone
+      // from server but remains in every client's SQLite + disk.
+      await prisma.$transaction(async (tx) => {
+        await tx.note.delete({ where: { id, userId } });
+        await writeTombstone(tx, userId, "note", id);
+      });
     } else {
       await prisma.note.update({
         where: { id, userId, deletedAt: null },
