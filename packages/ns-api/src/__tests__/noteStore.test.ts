@@ -515,13 +515,25 @@ describe("noteStore", () => {
       const result = await createFolder(TEST_USER_ID, "work");
 
       expect(result.name).toBe("work");
+      // Root folder → no parent lookup, isLocalFile defaults to false.
       expect(mockPrisma.folder.create).toHaveBeenCalledWith({
-        data: { userId: TEST_USER_ID, name: "work", parentId: null, sortOrder: 3 },
+        data: {
+          userId: TEST_USER_ID,
+          name: "work",
+          parentId: null,
+          sortOrder: 3,
+          isLocalFile: false,
+        },
       });
     });
 
-    it("creates a nested folder with parentId", async () => {
+    it("creates a nested folder with parentId (non-managed parent)", async () => {
       mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      // Parent lookup: non-managed, so child inherits isLocalFile = false.
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        isLocalFile: false,
+        userId: TEST_USER_ID,
+      });
       mockPrisma.folder.create.mockResolvedValue({
         id: "folder-2",
         userId: TEST_USER_ID,
@@ -535,7 +547,72 @@ describe("noteStore", () => {
 
       expect(result.parentId).toBe("folder-1");
       expect(mockPrisma.folder.create).toHaveBeenCalledWith({
-        data: { userId: TEST_USER_ID, name: "projects", parentId: "folder-1", sortOrder: 1 },
+        data: {
+          userId: TEST_USER_ID,
+          name: "projects",
+          parentId: "folder-1",
+          sortOrder: 1,
+          isLocalFile: false,
+        },
+      });
+    });
+
+    it("inherits isLocalFile=true from a managed-locally parent", async () => {
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        isLocalFile: true,
+        userId: TEST_USER_ID,
+      });
+      mockPrisma.folder.create.mockResolvedValue({
+        id: "folder-3",
+        userId: TEST_USER_ID,
+        name: "new-subdir",
+        parentId: "managed-root",
+        sortOrder: 1,
+        isLocalFile: true,
+        createdAt: new Date(),
+      });
+
+      await createFolder(TEST_USER_ID, "new-subdir", "managed-root");
+
+      expect(mockPrisma.folder.create).toHaveBeenCalledWith({
+        data: {
+          userId: TEST_USER_ID,
+          name: "new-subdir",
+          parentId: "managed-root",
+          sortOrder: 1,
+          isLocalFile: true,
+        },
+      });
+    });
+
+    it("does NOT inherit from a parent belonging to a different user", async () => {
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      // Parent belongs to a different user — security check must prevent
+      // isLocalFile from leaking across user boundaries.
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        isLocalFile: true,
+        userId: "other-user",
+      });
+      mockPrisma.folder.create.mockResolvedValue({
+        id: "folder-4",
+        userId: TEST_USER_ID,
+        name: "attempt",
+        parentId: "other-user-folder",
+        sortOrder: 1,
+        createdAt: new Date(),
+      });
+
+      await createFolder(TEST_USER_ID, "attempt", "other-user-folder");
+
+      expect(mockPrisma.folder.create).toHaveBeenCalledWith({
+        data: {
+          userId: TEST_USER_ID,
+          name: "attempt",
+          parentId: "other-user-folder",
+          sortOrder: 1,
+          isLocalFile: false,
+        },
       });
     });
   });

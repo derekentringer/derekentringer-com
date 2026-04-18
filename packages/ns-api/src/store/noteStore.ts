@@ -620,12 +620,30 @@ export async function createFolder(
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
+  // Inherit `isLocalFile` from the parent. A folder created under a
+  // managed-locally parent is itself part of the managed tree — every
+  // client (web, desktop, mobile) should see it as such so the delete
+  // UX + tombstone semantics stay consistent. Desktop would have
+  // stamped this for itself via resolveFolderForPath, but a folder
+  // created on web via REST needs the server to cascade the flag.
+  let inheritIsLocalFile = false;
+  if (parentId) {
+    const parent = await prisma.folder.findUnique({
+      where: { id: parentId },
+      select: { isLocalFile: true, userId: true },
+    });
+    if (parent && parent.userId === userId && parent.isLocalFile) {
+      inheritIsLocalFile = true;
+    }
+  }
+
   return prisma.folder.create({
     data: {
       userId,
       name,
       parentId: parentId ?? null,
       sortOrder: nextSortOrder,
+      isLocalFile: inheritIsLocalFile,
     },
   });
 }
@@ -683,6 +701,11 @@ function buildFolderTree(
       parentId: f.parentId,
       sortOrder: f.sortOrder,
       favorite: f.favorite,
+      // Include isLocalFile so web can render the managed-locally
+      // delete variant and warnings. Server is authoritative; desktop
+      // stamps the flag on managed-dir folders and backfills
+      // descendants on startup.
+      isLocalFile: f.isLocalFile,
       count: f.count,
       totalCount: f.count,
       createdAt: f.createdAt.toISOString(),
