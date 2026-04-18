@@ -1676,9 +1676,9 @@ export function NotesPage() {
               onFileModified: (path) => handleDirectoryFileEvent(path, newPath),
               onFileDeleted: (path) => handleDirectoryFileDeleted(path),
               onFileRenamed: (oldP, newP) => handleDirectoryFileRenamed(oldP, newP),
-              onDirectoryCreated: (path) => handleDirectoryCreated(path, newPath),
-              onDirectoryDeleted: (path) => handleDirectoryDeleted(path, newPath),
-              onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, newPath),
+              onDirectoryCreated: () => handleDirectoryCreated(),
+              onDirectoryDeleted: () => handleDirectoryDeleted(),
+              onDirectoryRenamed: () => handleDirectoryRenamed(),
             });
           }
 
@@ -1776,9 +1776,9 @@ export function NotesPage() {
         onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
         onFileDeleted: (path) => handleDirectoryFileDeleted(path),
         onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
-        onDirectoryCreated: (path) => handleDirectoryCreated(path, dirPath),
-        onDirectoryDeleted: (path) => handleDirectoryDeleted(path, dirPath),
-        onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, dirPath),
+        onDirectoryCreated: () => handleDirectoryCreated(),
+        onDirectoryDeleted: () => handleDirectoryDeleted(),
+        onDirectoryRenamed: () => handleDirectoryRenamed(),
       });
 
       await refreshSidebarData();
@@ -2319,9 +2319,9 @@ export function NotesPage() {
               onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
               onFileDeleted: (path) => handleDirectoryFileDeleted(path),
               onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
-              onDirectoryCreated: (path) => handleDirectoryCreated(path, dirPath),
-              onDirectoryDeleted: (path) => handleDirectoryDeleted(path, dirPath),
-              onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, dirPath),
+              onDirectoryCreated: () => handleDirectoryCreated(),
+              onDirectoryDeleted: () => handleDirectoryDeleted(),
+              onDirectoryRenamed: () => handleDirectoryRenamed(),
             });
           }
         }
@@ -2581,9 +2581,9 @@ export function NotesPage() {
             onFileModified: (path) => handleDirectoryFileEvent(path, dir.path),
             onFileDeleted: (path) => handleDirectoryFileDeleted(path),
             onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
-            onDirectoryCreated: (path) => handleDirectoryCreated(path, dir.path),
-            onDirectoryDeleted: (path) => handleDirectoryDeleted(path, dir.path),
-            onDirectoryRenamed: (oldP, newP) => handleDirectoryRenamed(oldP, newP, dir.path),
+            onDirectoryCreated: () => handleDirectoryCreated(),
+            onDirectoryDeleted: () => handleDirectoryDeleted(),
+            onDirectoryRenamed: () => handleDirectoryRenamed(),
           });
         }
 
@@ -2595,13 +2595,12 @@ export function NotesPage() {
           const currentDirs = await listManagedDirectories();
           for (const dir of currentDirs) {
             // Clean up notes whose local files no longer exist on disk
-            // Hard-delete — no soft-delete for locally managed files
             const trackedNotes = await fetchTrackedFilesInDirectory(dir.path);
             for (const tracked of trackedNotes) {
               const stillExists = await fileExists(tracked.localPath);
               if (!stillExists) {
-                enqueueSyncAction("delete", tracked.id, "note").catch(() => {});
-                await hardDeleteNote(tracked.id).catch(() => {});
+                const noteForToast = await fetchNoteById(tracked.id);
+                await processDeletedNote(tracked.id, noteForToast?.title || "Untitled", tracked.localPath);
                 changed = true;
               }
             }
@@ -2745,64 +2744,24 @@ export function NotesPage() {
 
   // --- Directory watcher event handlers ---
 
-  async function handleDirectoryFileEvent(filePath: string, dirPath: string) {
-    // Check if this file is already tracked
+  async function handleDirectoryFileEvent(filePath: string, _dirPath: string) {
+    // Watcher only handles modifications to existing tracked files.
+    // New file indexing and deletions are handled by the reconciliation timer.
     const existing = await findNoteByLocalPath(filePath);
     if (existing) {
-      // File is tracked — treat as external change
       const content = await readLocalFile(filePath);
       const hash = await computeContentHash(content);
       handleExternalChange(existing.id, content, hash);
-      return;
-    }
-
-    // New file — auto-index it, resolving folder from directory structure
-    try {
-      // Find the managed directory to get the root folder ID
-      const managedDir = await getManagedDirectoryByPath(dirPath);
-      const folderId = managedDir
-        ? (await resolveFolderForPath(dirPath, managedDir.rootFolderId, filePath)) ?? undefined
-        : undefined;
-
-      const result = await autoIndexFile(
-        filePath,
-        createNote,
-        linkNoteToLocalFile,
-        findNoteByLocalPath,
-        folderId,
-        restoreNoteByLocalPath,
-      );
-      if (result?.isNew) {
-        setLocalFileStatuses((prev) => {
-          const next = new Map(prev);
-          next.set(result.noteId, "synced");
-          return next;
-        });
-        await refreshSidebarData();
-        notifyLocalChange();
-      }
-    } catch (err) {
-      console.error("[dir-watcher] Failed to auto-index:", err);
     }
   }
 
-  async function handleDirectoryFileDeleted(filePath: string) {
-    // Find the note by local path (check all notes including any state)
-    const { default: Database } = await import("@tauri-apps/plugin-sql");
-    const db = await Database.load((await import("../lib/dbName.ts")).DB_URI);
-    const rows = await db.select<{ id: string; title: string }[]>(
-      "SELECT id, title FROM notes WHERE local_path = $1 LIMIT 1",
-      [filePath],
-    );
-    if (rows.length === 0) return;
+  async function handleDirectoryFileDeleted(_filePath: string) {
+    // No-op: file deletion handled by reconciliation timer
+  }
 
-    const noteId = rows[0].id;
-    const noteTitle = rows[0].title || "Untitled";
-
+  // Used by reconciliation to show toast when a note is deleted
+  async function processDeletedNote(noteId: string, noteTitle: string, filePath: string) {
     try {
-      // Hard-delete the note — no soft-delete for locally managed files.
-      // The file is already gone from disk (or in OS trash).
-      // Enqueue sync delete first, then remove from DB.
       enqueueSyncAction("delete", noteId, "note").catch(() => {});
       await hardDeleteNote(noteId).catch(() => {});
 
@@ -2868,65 +2827,11 @@ export function NotesPage() {
     }
   }
 
-  async function handleDirectoryCreated(dirCreatedPath: string, managedDirPath: string) {
-    try {
-      const managedDir = await getManagedDirectoryByPath(managedDirPath);
-      if (!managedDir) return;
-
-      // Create a NoteSync folder matching this subdirectory (idempotent)
-      await resolveFolderForPath(managedDirPath, managedDir.rootFolderId, dirCreatedPath + "/_.md");
-      await refreshSidebarData();
-      notifyLocalChange();
-    } catch (err) {
-      console.error("[dir-watcher] Failed to create folder for directory:", err);
-    }
-  }
-
-  async function handleDirectoryDeleted(dirDeletedPath: string, managedDirPath: string) {
-    try {
-      const managedDir = await getManagedDirectoryByPath(managedDirPath);
-      if (!managedDir) return;
-
-      // Find the NoteSync folder matching this directory and soft-delete it
-      const dirName = dirDeletedPath.replace(/\\/g, "/").split("/").pop();
-      if (!dirName) return;
-
-      // resolveFolderForPath would create it — we need to find it instead
-      const allFolders = await fetchFolders();
-      const flatList = flattenFolderTree(allFolders);
-      const match = flatList.find((f) => f.name === dirName);
-      if (match) {
-        await hardDeleteFolder(match.id);
-        await refreshSidebarData();
-        notifyLocalChange();
-      }
-    } catch (err) {
-      console.error("[dir-watcher] Failed to delete folder for directory:", err);
-    }
-  }
-
-  async function handleDirectoryRenamed(oldPath: string, newPath: string, managedDirPath: string) {
-    try {
-      const managedDir = await getManagedDirectoryByPath(managedDirPath);
-      if (!managedDir) return;
-
-      const oldName = oldPath.replace(/\\/g, "/").split("/").pop();
-      const newName = newPath.replace(/\\/g, "/").split("/").pop();
-      if (!oldName || !newName) return;
-
-      // Find the folder with the old name and rename it
-      const allFolders = await fetchFolders();
-      const flatList = flattenFolderTree(allFolders);
-      const match = flatList.find((f) => f.name === oldName);
-      if (match) {
-        await renameFolder(match.id, newName);
-        await refreshSidebarData();
-        notifyLocalChange();
-      }
-    } catch (err) {
-      console.error("[dir-watcher] Failed to rename folder for directory:", err);
-    }
-  }
+  // Directory create/delete/rename are all handled by the reconciliation timer.
+  // Watcher callbacks are no-ops to avoid race conditions.
+  async function handleDirectoryCreated() { /* reconciliation handles */ }
+  async function handleDirectoryDeleted() { /* reconciliation handles */ }
+  async function handleDirectoryRenamed() { /* reconciliation handles */ }
 
   async function handleSaveAsLocalFile(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
