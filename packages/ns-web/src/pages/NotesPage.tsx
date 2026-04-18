@@ -1109,6 +1109,13 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
 
     try {
+      // isLocalFile notes are hard-deleted server-side (+tombstone) and
+      // never touch the trash UI. Soft-deleted notes land in trash and
+      // increment the badge. Check the flag before the optimistic bump.
+      const target = notes.find((n) => n.id === selectedId)
+        ?? tabNoteCacheRef.current.get(selectedId);
+      const isHardDelete = target?.isLocalFile === true;
+
       await deleteNote(selectedId);
       if (selectedId === previewTabId) setPreviewTabId(null);
       setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
@@ -1119,7 +1126,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       setContent("");
       setIsDirty(false);
       setConfirmDelete(false);
-      setTrashTotal((prev) => prev + 1);
+      if (!isHardDelete) setTrashTotal((prev) => prev + 1);
       loadFolders();
       loadNoteTitles();
       navigate("/", { replace: true });
@@ -1130,6 +1137,12 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
   async function handleDeleteNoteById(noteId: string) {
     try {
+      // Capture isLocalFile before we strip the note from state so the
+      // trash badge doesn't flash incorrectly for hard-deletes.
+      const target = notes.find((n) => n.id === noteId)
+        ?? tabNoteCacheRef.current.get(noteId);
+      const isHardDelete = target?.isLocalFile === true;
+
       await deleteNote(noteId);
       if (noteId === previewTabId) setPreviewTabId(null);
       const prevTabs = openTabs;
@@ -1154,7 +1167,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       tabNoteCacheRef.current.delete(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
       setFavoriteNotes((prev) => prev.filter((n) => n.id !== noteId));
-      setTrashTotal((prev) => prev + 1);
+      if (!isHardDelete) setTrashTotal((prev) => prev + 1);
       loadFolders();
       loadFavoriteNotes();
       setDashboardKey((k) => k + 1);
