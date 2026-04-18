@@ -40,7 +40,7 @@ describe("Phase 3 reference: local file + sync-apply robustness", () => {
   // suppressed.
   // ─────────────────────────────────────────────────────────────────────
 
-  it.fails(
+  it(
     "3.1 — external write during self-write suppression window is not silently dropped",
     async () => {
       dir = await TmpDir.create();

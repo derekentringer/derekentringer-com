@@ -24,6 +24,16 @@ type UnwatchFn = () => void;
 const watchers = new Map<string, UnwatchFn>();
 export const suppressedPaths = new Set<string>();
 
+/**
+ * Hash of the last content written to each path by the app itself (Phase 3.1).
+ * Watcher callbacks drop events whose current-file hash matches the recorded
+ * self-write hash — content-based dedup replaces the old time-window
+ * suppression, which had a TOCTOU race where an external editor's write
+ * during the ~100ms window could be silently eaten. Identical-content
+ * external writes still match and are dropped (correct no-op).
+ */
+const lastWrittenHashByPath = new Map<string, string>();
+
 export function suppressPath(path: string, durationMs = 500): void {
   suppressedPaths.add(path);
   setTimeout(() => suppressedPaths.delete(path), durationMs);
@@ -39,6 +49,11 @@ export async function readLocalFile(path: string): Promise<string> {
 }
 
 export async function writeLocalFile(path: string, content: string): Promise<string> {
+  const hash = await computeContentHash(content);
+  // Record the hash BEFORE writing so the watcher callback — which may
+  // fire before this function returns on some platforms — can identify
+  // the event as self-originated.
+  lastWrittenHashByPath.set(path, hash);
   suppressedPaths.add(path);
   try {
     await writeTextFile(path, content);
@@ -46,7 +61,7 @@ export async function writeLocalFile(path: string, content: string): Promise<str
   } finally {
     suppressedPaths.delete(path);
   }
-  return computeContentHash(content);
+  return hash;
 }
 
 export async function computeContentHash(content: string): Promise<string> {
@@ -230,8 +245,6 @@ export async function startWatching(
   const unwatch = await watch(
     path,
     async () => {
-      if (suppressedPaths.has(path)) return;
-
       const fileStillExists = await exists(path);
       if (!fileStillExists) {
         onFileDeleted(noteId);
@@ -240,6 +253,14 @@ export async function startWatching(
 
       const content = await readTextFile(path);
       const hash = await computeContentHash(content);
+
+      // Phase 3.1: hash-based self-write dedup. Drop events whose
+      // current-file hash matches what we last wrote ourselves — those
+      // are our own writes echoed back by the OS watcher. External
+      // writes with different content pass through even if they land
+      // inside the short `suppressedPaths` buffer window.
+      if (lastWrittenHashByPath.get(path) === hash) return;
+
       onExternalChange(noteId, content, hash);
     },
     { recursive: false },
