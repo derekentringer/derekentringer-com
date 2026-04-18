@@ -72,6 +72,7 @@ import {
   listManagedDirectories,
   addManagedDirectory,
   removeManagedDirectory,
+  unmanageManagedDirectory,
   getManagedDirectoryByPath,
   isPathConflicting,
   fetchTrackedFilesInDirectory,
@@ -1842,17 +1843,21 @@ export function NotesPage() {
       const dir = managedDirs.find((d) => d.rootFolderId === folderId);
       if (!dir) return;
 
-      // Stop watching
+      // Stop watching FIRST so the is_local_file writes below don't
+      // synthesize watcher events mid-flight (Phase 3.4 ordering).
       await stopDirectoryWatching(dir.path);
 
-      // Unlink all notes in this directory
+      // Unlink all notes in this directory. Files stay on disk; the
+      // notes just stop being treated as file-backed.
       const dirNotes = await fetchNotesInManagedDirectory(dir.path);
       for (const note of dirNotes) {
         await unlinkLocalFile(note.id);
       }
 
-      // Remove managed directory
-      await removeManagedDirectory(dir.id);
+      // Clear is_local_file on the root + all descendant folders, enqueue
+      // folder sync updates so other clients see the flag change, then
+      // remove the managed_directories row.
+      await unmanageManagedDirectory(dir.id, folderId);
       setManagedFolderIds((prev) => {
         const next = new Set(prev);
         next.delete(folderId);

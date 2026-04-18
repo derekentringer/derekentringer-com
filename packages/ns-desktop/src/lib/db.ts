@@ -2065,6 +2065,61 @@ export async function removeManagedDirectory(id: string): Promise<void> {
   await db.execute("DELETE FROM managed_directories WHERE id = $1", [id]);
 }
 
+/**
+ * Phase 3.4 — unmanage a directory.
+ *
+ * The symmetric operation to `addManagedDirectory`: clears
+ * `is_local_file` on the root folder and every descendant (so the
+ * server and other clients stop seeing this subtree as "managed on a
+ * desktop"), enqueues a folder sync update for each affected folder
+ * (so the flag change propagates), and removes the
+ * `managed_directories` row.
+ *
+ * What this deliberately does NOT do:
+ *   - Touch the on-disk files (they stay exactly where they are; the
+ *     user's explicit choice to unmanage means they want local files
+ *     preserved, just no longer cloud-mirrored).
+ *   - Unlink notes from their `local_path` — that's orthogonal and
+ *     handled by the caller's chosen behavior (see the NotesPage
+ *     handler, which unlinks notes but leaves files on disk).
+ *   - Stop the watcher — the caller does that first to avoid races
+ *     with the is_local_file writes triggering watcher events.
+ */
+export async function unmanageManagedDirectory(
+  managedDirId: string,
+  rootFolderId: string,
+): Promise<number> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+
+  // Collect the root folder + all descendants via a recursive CTE.
+  // Keep it one query so we know exactly which ids to flip.
+  const rows = await db.select<{ id: string }[]>(
+    `WITH RECURSIVE subtree AS (
+       SELECT id FROM folders WHERE id = $1
+       UNION ALL
+       SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+     )
+     SELECT id FROM subtree`,
+    [rootFolderId],
+  );
+  const affectedIds = rows.map((r) => r.id);
+
+  for (const id of affectedIds) {
+    await db.execute(
+      "UPDATE folders SET is_local_file = 0, updated_at = $1 WHERE id = $2",
+      [now, id],
+    );
+    // Fire-and-forget: if the sync queue write fails the flag is still
+    // cleared locally; next successful sync will reconcile.
+    enqueueSyncAction("update", id, "folder").catch(() => {});
+  }
+
+  await db.execute("DELETE FROM managed_directories WHERE id = $1", [managedDirId]);
+
+  return affectedIds.length;
+}
+
 export async function getManagedDirectoryByPath(
   path: string,
 ): Promise<ManagedDirectory | null> {

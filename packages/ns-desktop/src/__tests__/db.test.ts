@@ -46,6 +46,7 @@ const {
   moveFolderParent,
   reorderFolders,
   backfillManagedFolders,
+  unmanageManagedDirectory,
 } = await import("../lib/db.ts");
 
 const sampleRow = {
@@ -933,5 +934,70 @@ describe("backfillManagedFolders", () => {
       typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
     );
     expect(updateCalls).toHaveLength(0);
+  });
+});
+
+describe("unmanageManagedDirectory (Phase 3.4)", () => {
+  it("clears is_local_file across the whole subtree, enqueues folder syncs, then removes managed_directories row", async () => {
+    // Subtree: root + 2 descendants
+    mockSelect.mockResolvedValueOnce([
+      { id: "root-1" },
+      { id: "child-1" },
+      { id: "child-2" },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await unmanageManagedDirectory("md-1", "root-1");
+    await new Promise((r) => setTimeout(r, 0)); // flush fire-and-forget enqueueSyncAction
+
+    expect(count).toBe(3);
+
+    const updateCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file = 0"),
+    );
+    expect(updateCalls).toHaveLength(3);
+    // Every subtree id received the UPDATE
+    const updatedIds = updateCalls.map((c) => (c[1] as unknown[])[1]);
+    expect(new Set(updatedIds)).toEqual(new Set(["root-1", "child-1", "child-2"]));
+
+    // Sync queue entries enqueued per affected folder
+    const syncEnqueueCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INSERT INTO sync_queue"),
+    );
+    expect(syncEnqueueCalls).toHaveLength(3);
+    const queuedIds = syncEnqueueCalls.map((c) => (c[1] as unknown[])[1]);
+    expect(new Set(queuedIds)).toEqual(new Set(["root-1", "child-1", "child-2"]));
+    for (const call of syncEnqueueCalls) {
+      expect((call[1] as unknown[])[0]).toBe("folder:update");
+    }
+
+    // managed_directories row deleted by id
+    const removeCall = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("DELETE FROM managed_directories"),
+    );
+    expect(removeCall).toBeDefined();
+    expect((removeCall![1] as unknown[])[0]).toBe("md-1");
+  });
+
+  it("no-op subtree returns 0 and still removes the managed_directories row", async () => {
+    mockSelect.mockResolvedValueOnce([]); // empty subtree (e.g. folder already deleted)
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await unmanageManagedDirectory("md-2", "root-missing");
+
+    expect(count).toBe(0);
+    const removeCall = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("DELETE FROM managed_directories"),
+    );
+    expect(removeCall).toBeDefined();
+    expect((removeCall![1] as unknown[])[0]).toBe("md-2");
   });
 });
