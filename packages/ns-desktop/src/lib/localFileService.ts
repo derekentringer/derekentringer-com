@@ -527,7 +527,7 @@ let dirReconcileTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Start a periodic reconciliation timer for managed directories.
- * Runs every DIR_RECONCILE_INTERVAL_MS (5s) as a safety net to catch
+ * Runs every DIR_RECONCILE_INTERVAL_MS (10s) as a safety net to catch
  * any filesystem changes the watcher missed — new folders, removed files,
  * or changes that occurred during brief watcher gaps.
  */
