@@ -2988,11 +2988,9 @@ export function NotesPage() {
   async function handleLocalFileDelete(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (!note) return;
-    if (note.isLocalFile) {
-      setLocalFileDeleteDialog({ noteId, noteTitle: note.title || "Untitled" });
-    } else {
-      handleDeleteNote(noteId);
-    }
+    // For managed files: skip dialog, go straight to OS trash + hard-delete
+    // handleDeleteNote already handles this for isLocalFile notes
+    handleDeleteNote(noteId);
   }
 
   async function handleDeleteFromNoteSync(noteId: string) {
