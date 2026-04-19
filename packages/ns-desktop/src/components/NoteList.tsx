@@ -108,7 +108,6 @@ function SortableNoteItem({
     transform,
     transition,
     isDragging,
-    isOver,
   } = useSortable({ id: note.id });
 
   const searchNote = note as NoteSearchResult;
@@ -139,18 +138,13 @@ function SortableNoteItem({
     return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }, [note.updatedAt]);
 
-  // `isOver && !isDragging` means another item is being dragged onto
-  // this one — show the same primary-color ring folders use for drop-
-  // target feedback.
-  const dropRing = isOver && !isDragging ? "ring-2 ring-primary rounded" : "";
-
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className={`flex items-start relative mb-px ${dropRing}`}
+      className="flex items-start relative mb-px"
     >
       <button
         onClick={() => onSelect(note)}
