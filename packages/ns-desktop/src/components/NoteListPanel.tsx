@@ -21,6 +21,7 @@ interface NoteListPanelProps {
   onCreate: () => void;
   searchResults?: NoteSearchResult[] | null;
   localFileStatuses?: Map<string, LocalFileStatus>;
+  locallyHostedNoteIds?: Set<string>;
   onUnlinkLocalFile?: (noteId: string) => void;
   onSaveAsLocalFile?: (noteId: string) => void;
   onSaveToFile?: (noteId: string) => void;
@@ -45,6 +46,7 @@ export function NoteListPanel({
   onCreate,
   searchResults,
   localFileStatuses,
+  locallyHostedNoteIds,
   onUnlinkLocalFile,
   onSaveAsLocalFile,
   onSaveToFile,
@@ -146,6 +148,7 @@ export function NoteListPanel({
             onToggleFavorite={onToggleFavorite}
             sortByManual={sortBy === "sortOrder"}
             localFileStatuses={localFileStatuses}
+            locallyHostedNoteIds={locallyHostedNoteIds}
             onUnlinkLocalFile={onUnlinkLocalFile}
             onSaveAsLocalFile={onSaveAsLocalFile}
             onSaveToFile={onSaveToFile}

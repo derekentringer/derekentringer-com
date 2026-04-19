@@ -73,10 +73,10 @@ describe("ImportChoiceDialog", () => {
     );
 
     expect(screen.getByText("Import to NoteSync")).toBeInTheDocument();
-    expect(screen.getByText(/Copy file contents into NoteSync. The original file will not be edited or tracked./)).toBeInTheDocument();
+    expect(screen.getByText(/Copy file contents into NoteSync. The original files will not be tracked./)).toBeInTheDocument();
   });
 
-  it("renders Keep Local button with description", () => {
+  it("renders Start Managing Locally button with description", () => {
     render(
       <ImportChoiceDialog
         fileNames={["note.md"]}
@@ -86,8 +86,8 @@ describe("ImportChoiceDialog", () => {
       />,
     );
 
-    expect(screen.getByText("Keep Local")).toBeInTheDocument();
-    expect(screen.getByText(/Open the file in NoteSync/)).toBeInTheDocument();
+    expect(screen.getByText("Start Managing Locally")).toBeInTheDocument();
+    expect(screen.getByText(/Track and sync files from their current location/)).toBeInTheDocument();
   });
 
   it("renders Cancel button", () => {
@@ -119,7 +119,7 @@ describe("ImportChoiceDialog", () => {
     expect(onImportToNoteSync).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onKeepLocal when Keep Local is clicked", async () => {
+  it("calls onKeepLocal when Start Managing Locally is clicked", async () => {
     const onKeepLocal = vi.fn();
 
     render(
@@ -131,7 +131,7 @@ describe("ImportChoiceDialog", () => {
       />,
     );
 
-    await userEvent.click(screen.getByText("Keep Local"));
+    await userEvent.click(screen.getByText("Start Managing Locally"));
     expect(onKeepLocal).toHaveBeenCalledTimes(1);
   });
 
@@ -162,7 +162,7 @@ describe("ImportChoiceDialog", () => {
     );
 
     const importBtn = screen.getByText("Import to NoteSync").closest("button")!;
-    const keepLocalBtn = screen.getByText("Keep Local").closest("button")!;
+    const keepLocalBtn = screen.getByText("Start Managing Locally").closest("button")!;
     const cancelBtn = screen.getByText("Cancel").closest("button")!;
 
     expect(importBtn.className).toContain("cursor-pointer");

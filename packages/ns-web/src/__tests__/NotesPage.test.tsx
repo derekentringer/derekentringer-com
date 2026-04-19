@@ -718,8 +718,9 @@ describe("NotesPage", () => {
       expect(screen.queryByText("javascript")).not.toBeInTheDocument();
     });
 
-    it("shows tag input when a note is selected", async () => {
-      mockFetchNotes.mockResolvedValue({ notes: [mockNote], total: 1 });
+    it("shows tag input when a note with tags is selected", async () => {
+      const noteWithTags = { ...mockNote, tags: ["work", "test"] };
+      mockFetchNotes.mockResolvedValue({ notes: [noteWithTags], total: 1 });
 
       renderNotesPage();
 

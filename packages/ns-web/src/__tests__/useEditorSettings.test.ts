@@ -13,6 +13,7 @@ describe("useEditorSettings", () => {
     expect(result.current.settings).toEqual({
       defaultViewMode: "editor",
       showLineNumbers: true,
+      propertiesMode: "panel",
       wordWrap: true,
       autoSaveDelay: 1500,
       tabSize: 2,
@@ -32,6 +33,7 @@ describe("useEditorSettings", () => {
       JSON.stringify({
         defaultViewMode: "split",
         showLineNumbers: false,
+        propertiesMode: "source",
         wordWrap: false,
         autoSaveDelay: 2000,
         tabSize: 4,
@@ -50,6 +52,7 @@ describe("useEditorSettings", () => {
     expect(result.current.settings).toEqual({
       defaultViewMode: "split",
       showLineNumbers: false,
+      propertiesMode: "source",
       wordWrap: false,
       autoSaveDelay: 2000,
       tabSize: 4,
@@ -100,6 +103,7 @@ describe("useEditorSettings", () => {
     expect(result.current.settings).toEqual({
       defaultViewMode: "split",
       showLineNumbers: false,
+      propertiesMode: "panel",
       wordWrap: true,
       autoSaveDelay: 2000,
       tabSize: 4,
@@ -121,6 +125,7 @@ describe("useEditorSettings", () => {
     expect(result.current.settings).toEqual({
       defaultViewMode: "editor",
       showLineNumbers: true,
+      propertiesMode: "panel",
       wordWrap: true,
       autoSaveDelay: 1500,
       tabSize: 2,
@@ -145,6 +150,7 @@ describe("useEditorSettings", () => {
     expect(result.current.settings).toEqual({
       defaultViewMode: "editor",
       showLineNumbers: true,
+      propertiesMode: "panel",
       wordWrap: true,
       autoSaveDelay: 1500,
       tabSize: 2,

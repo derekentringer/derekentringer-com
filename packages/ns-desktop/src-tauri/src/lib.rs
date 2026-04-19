@@ -102,6 +102,24 @@ fn get_migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/014.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 15,
+            description: "add managed_directories table",
+            sql: include_str!("../migrations/015.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 16,
+            description: "add is_local_file to folders",
+            sql: include_str!("../migrations/016.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 17,
+            description: "pending_refs table for deferred sync payloads",
+            sql: include_str!("../migrations/017.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 
@@ -143,6 +161,11 @@ fn remove_secure_item(key: String) -> Result<(), String> {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
     }
+}
+
+#[tauri::command]
+fn move_to_trash(path: String) -> Result<(), String> {
+    trash::delete(&path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -367,7 +390,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
-        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled])
+        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, move_to_trash, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:notesync.db", get_migrations())

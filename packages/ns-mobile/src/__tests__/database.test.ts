@@ -133,7 +133,7 @@ describe("database", () => {
       );
     });
 
-    it("skips migration when schema_version is already 2", async () => {
+    it("runs v3 migration when schema_version is 2", async () => {
       mockGetFirstAsync.mockResolvedValue({ value: "2" });
 
       jest.doMock("expo-sqlite", () => ({
@@ -142,7 +142,24 @@ describe("database", () => {
       const { initDatabase } = require("../lib/database");
       await initDatabase();
 
-      // Should have only 1 execAsync call (base tables), no FTS migration
+      // Base tables + v3 ALTER TABLE for folders.is_local_file
+      expect(mockExecAsync).toHaveBeenCalledTimes(2);
+      expect(mockRunAsync).toHaveBeenCalledWith(
+        "INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('schema_version', ?)",
+        ["3"],
+      );
+    });
+
+    it("skips migration when schema_version is already 3", async () => {
+      mockGetFirstAsync.mockResolvedValue({ value: "3" });
+
+      jest.doMock("expo-sqlite", () => ({
+        openDatabaseAsync: mockOpenDatabaseAsync,
+      }));
+      const { initDatabase } = require("../lib/database");
+      await initDatabase();
+
+      // Only base tables; no migrations run when already at current version
       expect(mockExecAsync).toHaveBeenCalledTimes(1);
     });
   });

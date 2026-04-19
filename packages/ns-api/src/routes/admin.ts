@@ -4,6 +4,7 @@ import { adminGuard } from "../middleware/adminGuard.js";
 import { listUsers, getUserById, updateUser, deleteUser } from "../store/userStore.js";
 import { revokeAllRefreshTokens } from "../store/refreshTokenStore.js";
 import { getSetting, setSetting } from "../store/settingStore.js";
+import { cleanupStaleCursors, sweepTombstones } from "../store/syncStore.js";
 import { toUserResponse } from "../lib/mappers.js";
 
 export default async function adminRoutes(fastify: FastifyInstance) {
@@ -172,6 +173,22 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       const { aiEnabled } = request.body;
       await setSetting("aiEnabled", String(aiEnabled));
       return reply.send({ aiEnabled });
+    },
+  );
+
+  // POST /admin/maintenance/sweep-tombstones — Phase 4.5
+  //
+  // Runs cleanupStaleCursors first (so abandoned cursors don't pin
+  // tombstones indefinitely), then sweeps tombstones that every
+  // remaining active cursor has advanced past.
+  fastify.post(
+    "/maintenance/sweep-tombstones",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const cursorsRemoved = await cleanupStaleCursors(90);
+      const tombstonesRemoved = await sweepTombstones({
+        logger: request.log,
+      });
+      return reply.send({ cursorsRemoved, tombstonesRemoved });
     },
   );
 }

@@ -134,7 +134,7 @@ describe("syncStore", () => {
           userId: TEST_USER_ID,
           updatedAt: { gt: since },
         },
-        orderBy: { updatedAt: "asc" },
+        orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
         take: 100,
       });
     });
@@ -152,7 +152,7 @@ describe("syncStore", () => {
           userId: TEST_USER_ID,
           updatedAt: { gt: since },
         },
-        orderBy: { updatedAt: "asc" },
+        orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
         take: 100,
       });
     });
@@ -192,7 +192,7 @@ describe("syncStore", () => {
           userId: TEST_USER_ID,
           updatedAt: { gt: since },
         },
-        orderBy: { updatedAt: "asc" },
+        orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
         take: 100,
       });
     });
@@ -210,7 +210,7 @@ describe("syncStore", () => {
           userId: TEST_USER_ID,
           updatedAt: { gt: since },
         },
-        orderBy: { updatedAt: "asc" },
+        orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
         take: 100,
       });
     });

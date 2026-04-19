@@ -17,6 +17,8 @@ import {
   getNotesChangedSince,
   getFoldersChangedSince,
   getImagesChangedSince,
+  getTombstonesChangedSince,
+  writeTombstone,
 } from "../store/syncStore.js";
 import { getPrisma } from "../lib/prisma.js";
 import { toNote } from "../lib/mappers.js";
@@ -26,7 +28,7 @@ import type {
   Image as PrismaImage,
 } from "../generated/prisma/client.js";
 
-type PrismaLike = Pick<ReturnType<typeof getPrisma>, "note" | "folder" | "image">;
+type PrismaLike = Pick<ReturnType<typeof getPrisma>, "note" | "folder" | "image" | "entityTombstone">;
 
 const BATCH_LIMIT = 100;
 
@@ -37,6 +39,7 @@ function toFolderSyncData(f: PrismaFolder): FolderSyncData {
     parentId: f.parentId,
     sortOrder: f.sortOrder,
     favorite: f.favorite,
+    isLocalFile: f.isLocalFile,
     createdAt: f.createdAt.toISOString(),
     updatedAt: f.updatedAt.toISOString(),
     deletedAt: f.deletedAt ? f.deletedAt.toISOString() : null,
@@ -81,68 +84,49 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     let skipped = 0;
     const rejections: SyncRejection[] = [];
 
-    await prisma.$transaction(async (tx) => {
-      for (const change of changes) {
-        try {
+    // Per-change transactions. A single outer tx would enter
+    // `in_failed_sql_transaction` state on the first Postgres constraint
+    // violation (FK, unique), poisoning every subsequent statement in the
+    // batch. Running each change in its own tx isolates failures so a
+    // single bad change can't silently drop its 99 neighbors.
+    for (const change of changes) {
+      try {
+        const result = await prisma.$transaction(async (tx) => {
           if (change.type === "note") {
-            const result = await applyNoteChange(tx, userId, change);
-            if (result === "applied") {
-              applied++;
-            } else if (result === "timestamp_conflict") {
-              skipped++;
-              rejections.push({
-                changeId: change.id,
-                changeType: "note",
-                changeAction: change.action,
-                reason: "timestamp_conflict",
-                message: "Server has a newer version of this note",
-              });
-            } else {
-              skipped++;
-            }
-          } else if (change.type === "folder") {
-            const result = await applyFolderChange(tx, userId, change);
-            if (result === "applied") {
-              applied++;
-            } else if (result === "timestamp_conflict") {
-              skipped++;
-              rejections.push({
-                changeId: change.id,
-                changeType: "folder",
-                changeAction: change.action,
-                reason: "timestamp_conflict",
-                message: "Server has a newer version of this folder",
-              });
-            } else {
-              skipped++;
-            }
-          } else if (change.type === "image") {
-            const result = await applyImageChange(tx, userId, change);
-            if (result === "applied") {
-              applied++;
-            } else if (result === "timestamp_conflict") {
-              skipped++;
-              rejections.push({
-                changeId: change.id,
-                changeType: "image",
-                changeAction: change.action,
-                reason: "timestamp_conflict",
-                message: "Server has a newer version of this image",
-              });
-            } else {
-              skipped++;
-            }
-          } else {
-            rejected++;
+            return await applyNoteChange(tx, userId, change);
           }
-        } catch (err) {
+          if (change.type === "folder") {
+            return await applyFolderChange(tx, userId, change);
+          }
+          if (change.type === "image") {
+            return await applyImageChange(tx, userId, change);
+          }
+          return "unknown" as const;
+        });
+
+        if (result === "applied") {
+          applied++;
+        } else if (result === "timestamp_conflict") {
+          skipped++;
+          rejections.push({
+            changeId: change.id,
+            changeType: change.type,
+            changeAction: change.action,
+            reason: "timestamp_conflict",
+            message: `Server has a newer version of this ${change.type}`,
+          });
+        } else if (result === "unknown") {
           rejected++;
-          const rejection = classifyPrismaError(err, change);
-          rejections.push(rejection);
-          request.log.warn({ err, changeId: change.id }, "Sync change rejected");
+        } else {
+          skipped++;
         }
+      } catch (err) {
+        rejected++;
+        const rejection = classifyPrismaError(err, change);
+        rejections.push(rejection);
+        request.log.warn({ err, changeId: change.id }, "Sync change rejected");
       }
-    });
+    }
 
     const now = new Date();
     await upsertSyncCursor(userId, deviceId, now);
@@ -192,7 +176,7 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
   // POST /sync/pull
   app.post<{ Body: SyncPullRequest }>("/pull", async (request, reply) => {
     const userId = request.user.sub;
-    const { deviceId, since } = request.body;
+    const { deviceId, since, lastIds } = request.body;
 
     if (!deviceId || !since) {
       return reply.status(400).send({ error: "Invalid request" });
@@ -200,10 +184,11 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
 
     const sinceDate = new Date(since);
 
-    const [notes, folders, images] = await Promise.all([
-      getNotesChangedSince(userId, sinceDate),
-      getFoldersChangedSince(userId, sinceDate),
-      getImagesChangedSince(userId, sinceDate),
+    const [notes, folders, images, tombstones] = await Promise.all([
+      getNotesChangedSince(userId, sinceDate, lastIds?.notes),
+      getFoldersChangedSince(userId, sinceDate, lastIds?.folders),
+      getImagesChangedSince(userId, sinceDate, lastIds?.images),
+      getTombstonesChangedSince(userId, sinceDate, lastIds?.tombstones),
     ]);
 
     const noteChanges: SyncChange[] = notes.map((n) => ({
@@ -252,20 +237,42 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     // Global cursor = min(safe advance across all types). This guarantees the
     // next pull cannot skip items of any capped type, because we never
     // advance past that type's last-seen boundary.
-    const safeAdvance = (items: { updatedAt: Date }[]): number =>
-      items.length >= BATCH_LIMIT
-        ? items[items.length - 1].updatedAt.getTime()
-        : Number.POSITIVE_INFINITY;
+    const safeAdvance = (
+      items: Array<{ updatedAt?: Date; deletedAt?: Date | null }>,
+    ): number => {
+      if (items.length < BATCH_LIMIT) return Number.POSITIVE_INFINITY;
+      const last = items[items.length - 1];
+      // Regular entities carry updatedAt; tombstones carry deletedAt.
+      const ts = last.updatedAt ?? last.deletedAt;
+      return ts ? ts.getTime() : Number.POSITIVE_INFINITY;
+    };
 
-    const minSafe = Math.min(safeAdvance(notes), safeAdvance(folders), safeAdvance(images));
+    const minSafe = Math.min(
+      safeAdvance(notes),
+      safeAdvance(folders),
+      safeAdvance(images),
+      safeAdvance(tombstones),
+    );
+
+    const tombstoneData = tombstones.map((t) => ({
+      id: t.entityId,
+      type: t.entityType as "folder" | "note",
+      deletedAt: t.deletedAt.toISOString(),
+    }));
 
     let cursorDate: Date;
     if (Number.isFinite(minSafe)) {
       // At least one type is capped — advance cursor only as far as safe.
       cursorDate = new Date(minSafe);
-    } else if (allChanges.length > 0) {
+    } else if (allChanges.length > 0 || tombstoneData.length > 0) {
       // All types fully drained — advance to the last returned item.
-      cursorDate = new Date(allChanges[allChanges.length - 1].timestamp);
+      const lastChangeTs = allChanges.length > 0
+        ? new Date(allChanges[allChanges.length - 1].timestamp).getTime()
+        : 0;
+      const lastTombstoneTs = tombstones.length > 0
+        ? tombstones[tombstones.length - 1].deletedAt.getTime()
+        : 0;
+      cursorDate = new Date(Math.max(lastChangeTs, lastTombstoneTs));
     } else {
       // Nothing returned — hold cursor at wall-clock so the client doesn't
       // re-pull the same empty range forever.
@@ -273,17 +280,42 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
     }
     await upsertSyncCursor(userId, deviceId, cursorDate);
 
+    // Keyset tie-breakers for capped types. A type that hit BATCH_LIMIT may
+    // have additional rows sharing the same updatedAt as its last returned
+    // item — the next pull uses these ids to resume past them.
+    const responseLastIds: Record<string, string> = {};
+    if (notes.length >= BATCH_LIMIT) {
+      responseLastIds.notes = notes[notes.length - 1].id;
+    }
+    if (folders.length >= BATCH_LIMIT) {
+      responseLastIds.folders = folders[folders.length - 1].id;
+    }
+    if (images.length >= BATCH_LIMIT) {
+      responseLastIds.images = images[images.length - 1].id;
+    }
+    if (tombstones.length >= BATCH_LIMIT) {
+      responseLastIds.tombstones = tombstones[tombstones.length - 1].entityId;
+    }
+
     // hasMore is true if ANY per-type query hit its BATCH_LIMIT cap, meaning
     // more items of that type exist beyond what we fetched.
     const hasMore =
       notes.length >= BATCH_LIMIT ||
       folders.length >= BATCH_LIMIT ||
-      images.length >= BATCH_LIMIT;
+      images.length >= BATCH_LIMIT ||
+      tombstones.length >= BATCH_LIMIT;
 
     const response: SyncPullResponse = {
       changes: allChanges,
-      cursor: { deviceId, lastSyncedAt: cursorDate.toISOString() },
+      cursor: {
+        deviceId,
+        lastSyncedAt: cursorDate.toISOString(),
+        ...(Object.keys(responseLastIds).length > 0
+          ? { lastIds: responseLastIds }
+          : {}),
+      },
       hasMore,
+      ...(tombstoneData.length > 0 ? { tombstones: tombstoneData } : {}),
     };
 
     return reply.send(response);
@@ -318,13 +350,20 @@ async function applyNoteChange(
   const noteData = change.data as Note | null;
 
   if (change.action === "delete") {
-    // Soft-delete the note
     const existing = await prisma.note.findUnique({ where: { id: change.id } });
     if (existing && existing.userId === userId) {
-      await prisma.note.update({
-        where: { id: change.id },
-        data: { deletedAt: new Date(change.timestamp), favorite: false },
-      });
+      if (existing.isLocalFile) {
+        // Hard-delete locally managed files to prevent stale entries + write
+        // a tombstone so other clients learn about the deletion via pull.
+        await prisma.note.delete({ where: { id: change.id } });
+        await writeTombstone(prisma, userId, "note", change.id);
+      } else {
+        // Soft-delete regular notes (NoteSync trash)
+        await prisma.note.update({
+          where: { id: change.id },
+          data: { deletedAt: new Date(change.timestamp), favorite: false },
+        });
+      }
       return "applied";
     }
     return "skipped";
@@ -338,8 +377,12 @@ async function applyNoteChange(
   if (existing) {
     if (existing.userId !== userId) return "skipped";
 
-    const clientTime = new Date(change.timestamp);
-    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
+    // Server-authoritative LWW (Phase 2.3): do not gate on the client's
+    // wall-clock `change.timestamp`. A device with a slow clock would
+    // otherwise have its causally-later writes silently rejected as
+    // timestamp_conflict. The server's `@updatedAt` stamp + arrival
+    // order define LWW. The `force` flag is retained because it also
+    // enables FK-retry behavior below.
 
     const noteUpdateData: Record<string, unknown> = {
       title: noteData.title,
@@ -432,10 +475,20 @@ async function applyFolderChange(
   if (change.action === "delete") {
     const existing = await prisma.folder.findUnique({ where: { id: change.id } });
     if (existing && existing.userId === userId) {
-      await prisma.folder.update({
-        where: { id: change.id },
-        data: { deletedAt: new Date(change.timestamp) },
+      // Unfile any notes still in this folder
+      await prisma.note.updateMany({
+        where: { folderId: change.id },
+        data: { folderId: existing.parentId },
       });
+      // Move child folders to parent
+      await prisma.folder.updateMany({
+        where: { parentId: change.id },
+        data: { parentId: existing.parentId },
+      });
+      // Hard-delete the folder + write a tombstone so other clients see the
+      // deletion on their next pull.
+      await prisma.folder.delete({ where: { id: change.id } });
+      await writeTombstone(prisma, userId, "folder", change.id);
       return "applied";
     }
     return "skipped";
@@ -448,14 +501,14 @@ async function applyFolderChange(
   if (existing) {
     if (existing.userId !== userId) return "skipped";
 
-    const clientTime = new Date(change.timestamp);
-    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
+    // Server-authoritative LWW (Phase 2.3) — see applyNoteChange.
 
     const folderUpdateData: Record<string, unknown> = {
       name: folderData.name,
       parentId: folderData.parentId,
       sortOrder: folderData.sortOrder,
       favorite: folderData.favorite,
+      isLocalFile: folderData.isLocalFile ?? false,
       deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
     };
 
@@ -486,6 +539,7 @@ async function applyFolderChange(
           parentId: folderData.parentId,
           sortOrder: folderData.sortOrder ?? 0,
           favorite: folderData.favorite ?? false,
+          isLocalFile: folderData.isLocalFile ?? false,
           deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
         },
       });
@@ -499,6 +553,7 @@ async function applyFolderChange(
             parentId: null,
             sortOrder: folderData.sortOrder ?? 0,
             favorite: folderData.favorite ?? false,
+            isLocalFile: folderData.isLocalFile ?? false,
             deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
           },
         });
@@ -545,8 +600,7 @@ async function applyImageChange(
   if (existing) {
     if (existing.userId !== userId) return "skipped";
 
-    const clientTime = new Date(change.timestamp);
-    if (!change.force && clientTime < existing.updatedAt) return "timestamp_conflict";
+    // Server-authoritative LWW (Phase 2.3) — see applyNoteChange.
 
     await prisma.image.update({
       where: { id: change.id },

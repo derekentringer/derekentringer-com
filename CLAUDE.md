@@ -59,6 +59,11 @@ packages/
   fin-mobile/   — React Native app (Finance for Android/iOS)
 ```
 
+### NoteSync (shared sync architecture)
+
+- **Sync architecture reference**: `docs/ns/sync-arch/README.md` — hardening plan + current state
+- **Post-hardening invariants**: `docs/ns/sync-arch/invariants.md` — load-bearing LWW, isLocalFile, tombstone, pending_refs, and cursor rules. Read this before touching `/sync/push`, `/sync/pull`, or any `upsert*FromRemote` path.
+
 ### NoteSync Desktop (`packages/ns-desktop/`)
 
 - Tauri v2 desktop app wrapping the NoteSync web frontend

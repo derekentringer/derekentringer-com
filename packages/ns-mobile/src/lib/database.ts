@@ -41,6 +41,7 @@ export async function initDatabase(): Promise<void> {
       parent_id TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       favorite INTEGER NOT NULL DEFAULT 0,
+      is_local_file INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT
@@ -75,6 +76,9 @@ export async function initDatabase(): Promise<void> {
   if (version < 2) {
     await migrateToV2(database);
   }
+  if (version < 3) {
+    await migrateToV3(database);
+  }
 }
 
 async function getSchemaVersion(database: SQLite.SQLiteDatabase): Promise<number> {
@@ -108,6 +112,18 @@ async function migrateToV2(database: SQLite.SQLiteDatabase): Promise<void> {
   `);
 
   await setSchemaVersion(database, 2);
+}
+
+async function migrateToV3(database: SQLite.SQLiteDatabase): Promise<void> {
+  // Phase 1 (sync-arch hardening): add is_local_file to folders so the
+  // server's isLocalFile flag round-trips through mobile's local cache.
+  // Mobile never stamps the flag locally (managed-locally is a
+  // desktop-only concept), but it must not strip it from pulled data.
+  await database.execAsync(`
+    ALTER TABLE folders ADD COLUMN is_local_file INTEGER NOT NULL DEFAULT 0;
+  `);
+
+  await setSchemaVersion(database, 3);
 }
 
 export async function resetDatabase(): Promise<void> {

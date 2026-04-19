@@ -101,7 +101,7 @@ describe("noteStore", () => {
         data: {
           userId: TEST_USER_ID,
           title: "Test Note",
-          content: "Some content",
+          content: "---\ntitle: Test Note\ntags:\n  - tag1\n---\nSome content",
           folder: "work",
           folderId: null,
           tags: ["tag1"],
@@ -122,7 +122,7 @@ describe("noteStore", () => {
         data: {
           userId: TEST_USER_ID,
           title: "Minimal",
-          content: "",
+          content: "---\ntitle: Minimal\n---\n",
           folder: null,
           folderId: null,
           tags: [],
@@ -311,14 +311,16 @@ describe("noteStore", () => {
   describe("updateNote", () => {
     it("updates and returns the note", async () => {
       const row = makeMockNoteRow({ title: "Updated" });
+      mockPrisma.note.findUnique.mockResolvedValue({ content: "Some content" });
       mockPrisma.note.update.mockResolvedValue(row);
 
       const result = await updateNote(TEST_USER_ID, "note-1", { title: "Updated" });
 
       expect(result).toEqual(row);
+      // Title change updates frontmatter in content
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
-        data: { title: "Updated" },
+        data: { title: "Updated", content: "---\ntitle: Updated\n---\nSome content" },
       });
     });
 
@@ -328,6 +330,7 @@ describe("noteStore", () => {
 
       await updateNote(TEST_USER_ID, "note-1", { content: "new content" });
 
+      // Content-only change doesn't trigger metadata-to-frontmatter sync
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
         data: { content: "new content" },
@@ -351,25 +354,29 @@ describe("noteStore", () => {
 
     it("includes summary field when provided", async () => {
       const row = makeMockNoteRow({ summary: "A summary" });
+      mockPrisma.note.findUnique.mockResolvedValue({ content: "Some content" });
       mockPrisma.note.update.mockResolvedValue(row);
 
       await updateNote(TEST_USER_ID, "note-1", { summary: "A summary" });
 
+      // Summary change updates frontmatter description in content
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
-        data: { summary: "A summary" },
+        data: { summary: "A summary", content: "---\ndescription: A summary\n---\nSome content" },
       });
     });
 
     it("allows setting summary to null", async () => {
       const row = makeMockNoteRow({ summary: null });
+      mockPrisma.note.findUnique.mockResolvedValue({ content: "Some content" });
       mockPrisma.note.update.mockResolvedValue(row);
 
       await updateNote(TEST_USER_ID, "note-1", { summary: null });
 
+      // Clearing summary removes description from frontmatter
       expect(mockPrisma.note.update).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
-        data: { summary: null },
+        data: { summary: null, content: "---\n---\nSome content" },
       });
     });
   });
@@ -508,13 +515,25 @@ describe("noteStore", () => {
       const result = await createFolder(TEST_USER_ID, "work");
 
       expect(result.name).toBe("work");
+      // Root folder → no parent lookup, isLocalFile defaults to false.
       expect(mockPrisma.folder.create).toHaveBeenCalledWith({
-        data: { userId: TEST_USER_ID, name: "work", parentId: null, sortOrder: 3 },
+        data: {
+          userId: TEST_USER_ID,
+          name: "work",
+          parentId: null,
+          sortOrder: 3,
+          isLocalFile: false,
+        },
       });
     });
 
-    it("creates a nested folder with parentId", async () => {
+    it("creates a nested folder with parentId (non-managed parent)", async () => {
       mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      // Parent lookup: non-managed, so child inherits isLocalFile = false.
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        isLocalFile: false,
+        userId: TEST_USER_ID,
+      });
       mockPrisma.folder.create.mockResolvedValue({
         id: "folder-2",
         userId: TEST_USER_ID,
@@ -528,7 +547,72 @@ describe("noteStore", () => {
 
       expect(result.parentId).toBe("folder-1");
       expect(mockPrisma.folder.create).toHaveBeenCalledWith({
-        data: { userId: TEST_USER_ID, name: "projects", parentId: "folder-1", sortOrder: 1 },
+        data: {
+          userId: TEST_USER_ID,
+          name: "projects",
+          parentId: "folder-1",
+          sortOrder: 1,
+          isLocalFile: false,
+        },
+      });
+    });
+
+    it("inherits isLocalFile=true from a managed-locally parent", async () => {
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        isLocalFile: true,
+        userId: TEST_USER_ID,
+      });
+      mockPrisma.folder.create.mockResolvedValue({
+        id: "folder-3",
+        userId: TEST_USER_ID,
+        name: "new-subdir",
+        parentId: "managed-root",
+        sortOrder: 1,
+        isLocalFile: true,
+        createdAt: new Date(),
+      });
+
+      await createFolder(TEST_USER_ID, "new-subdir", "managed-root");
+
+      expect(mockPrisma.folder.create).toHaveBeenCalledWith({
+        data: {
+          userId: TEST_USER_ID,
+          name: "new-subdir",
+          parentId: "managed-root",
+          sortOrder: 1,
+          isLocalFile: true,
+        },
+      });
+    });
+
+    it("does NOT inherit from a parent belonging to a different user", async () => {
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      // Parent belongs to a different user — security check must prevent
+      // isLocalFile from leaking across user boundaries.
+      mockPrisma.folder.findUnique.mockResolvedValue({
+        isLocalFile: true,
+        userId: "other-user",
+      });
+      mockPrisma.folder.create.mockResolvedValue({
+        id: "folder-4",
+        userId: TEST_USER_ID,
+        name: "attempt",
+        parentId: "other-user-folder",
+        sortOrder: 1,
+        createdAt: new Date(),
+      });
+
+      await createFolder(TEST_USER_ID, "attempt", "other-user-folder");
+
+      expect(mockPrisma.folder.create).toHaveBeenCalledWith({
+        data: {
+          userId: TEST_USER_ID,
+          name: "attempt",
+          parentId: "other-user-folder",
+          sortOrder: 1,
+          isLocalFile: false,
+        },
       });
     });
   });
@@ -640,50 +724,73 @@ describe("noteStore", () => {
   });
 
   describe("deleteFolderById", () => {
-    it("move-up mode: promotes children and notes to parent", async () => {
+    it("move-up mode: re-files children to parent and hard-deletes the folder with a tombstone", async () => {
       mockPrisma.folder.findUnique.mockResolvedValue({
         id: "f1",
         userId: TEST_USER_ID,
         name: "work",
-        parentId: null,
+        parentId: "parent-id",
         sortOrder: 0,
+        isLocalFile: false,
         createdAt: new Date(),
         deletedAt: null,
       });
       mockPrisma.folder.updateMany.mockResolvedValue({ count: 2 });
       mockPrisma.note.updateMany.mockResolvedValue({ count: 3 });
-      mockPrisma.folder.update.mockResolvedValue({});
+      mockPrisma.folder.delete.mockResolvedValue({});
 
       const result = await deleteFolderById(TEST_USER_ID, "f1", "move-up");
 
       expect(result).toBe(3);
+      // Children re-parented
       expect(mockPrisma.folder.updateMany).toHaveBeenCalledWith({
         where: { parentId: "f1", deletedAt: null },
-        data: { parentId: null },
+        data: { parentId: "parent-id" },
       });
+      // Notes re-filed
+      expect(mockPrisma.note.updateMany).toHaveBeenCalledWith({
+        where: { userId: TEST_USER_ID, folderId: "f1", deletedAt: null },
+        data: { folderId: "parent-id", folder: null },
+      });
+      // Folder hard-deleted (not soft)
+      expect(mockPrisma.folder.delete).toHaveBeenCalledWith({ where: { id: "f1" } });
+      // Single tombstone for the folder
+      expect(mockPrisma.entityTombstone.upsert).toHaveBeenCalledTimes(1);
     });
 
-    it("recursive mode: deletes descendants and unfiles notes", async () => {
+    it("recursive mode: hard-deletes descendants + notes and emits tombstones", async () => {
       mockPrisma.folder.findUnique.mockResolvedValue({
         id: "f1",
         userId: TEST_USER_ID,
         name: "work",
         parentId: null,
         sortOrder: 0,
+        isLocalFile: false,
         createdAt: new Date(),
       });
       mockPrisma.$queryRawUnsafe.mockResolvedValue([{ id: "f2" }, { id: "f3" }]);
-      mockPrisma.note.updateMany.mockResolvedValue({ count: 5 });
+      // Notes in the subtree that will be captured for tombstones
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1" },
+        { id: "n2" },
+        { id: "n3" },
+        { id: "n4" },
+        { id: "n5" },
+      ]);
+      mockPrisma.note.deleteMany.mockResolvedValue({ count: 5 });
       mockPrisma.folder.deleteMany.mockResolvedValue({ count: 2 });
       mockPrisma.folder.delete.mockResolvedValue({});
 
       const result = await deleteFolderById(TEST_USER_ID, "f1", "recursive");
 
       expect(result).toBe(5);
-      expect(mockPrisma.note.updateMany).toHaveBeenCalledWith({
-        where: { userId: TEST_USER_ID, folderId: { in: ["f1", "f2", "f3"] }, deletedAt: null },
-        data: { folderId: null, folder: null },
+      // Notes are hard-deleted, not unfiled
+      expect(mockPrisma.note.deleteMany).toHaveBeenCalledWith({
+        where: { userId: TEST_USER_ID, folderId: { in: ["f1", "f2", "f3"] } },
       });
+      // Tombstones upserted for every folder + every note in the subtree
+      // (8 total: 3 folders + 5 notes)
+      expect(mockPrisma.entityTombstone.upsert).toHaveBeenCalledTimes(8);
     });
 
     it("returns 0 when folder not found", async () => {

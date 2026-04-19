@@ -32,6 +32,7 @@ interface FolderRow {
   parent_id: string | null;
   sort_order: number;
   favorite: number;
+  is_local_file: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -188,14 +189,15 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
 
   await db.runAsync(
     `INSERT OR REPLACE INTO folders (
-      id, name, parent_id, sort_order, favorite, created_at, updated_at, deleted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, name, parent_id, sort_order, favorite, is_local_file, created_at, updated_at, deleted_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       folder.id,
       folder.name,
       folder.parentId ?? null,
       folder.sortOrder,
       folder.favorite ? 1 : 0,
+      folder.isLocalFile ? 1 : 0,
       folder.createdAt,
       folder.updatedAt,
       folder.deletedAt ?? null,
@@ -218,6 +220,29 @@ export async function softDeleteFolderFromRemote(folderId: string, timestamp: st
     "UPDATE folders SET deleted_at = ? WHERE id = ?",
     [timestamp, folderId],
   );
+}
+
+/**
+ * Hard-delete a note from a remote tombstone (Phase 1.5). Mobile has no
+ * on-disk file mirroring, so this is just a local SQLite + FTS cleanup.
+ */
+export async function hardDeleteNoteFromRemote(noteId: string): Promise<void> {
+  const db = await getDatabase();
+  await ftsDelete(noteId);
+  await db.runAsync("DELETE FROM notes WHERE id = ?", [noteId]);
+}
+
+/**
+ * Hard-delete a folder from a remote tombstone (Phase 1.5). Unfiles any
+ * notes defensively then removes the row.
+ */
+export async function hardDeleteFolderFromRemote(folderId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    "UPDATE notes SET folder_id = NULL WHERE folder_id = ?",
+    [folderId],
+  );
+  await db.runAsync("DELETE FROM folders WHERE id = ?", [folderId]);
 }
 
 // ─── Local CRUD functions (mutations — DO enqueue) ─────────
@@ -516,6 +541,7 @@ export async function getFolders(): Promise<FolderInfo[]> {
     parentId: row.parent_id,
     sortOrder: row.sort_order,
     favorite: row.favorite === 1,
+    isLocalFile: (row.is_local_file ?? 0) === 1,
     count: countMap.get(row.id) ?? 0,
     totalCount: countMap.get(row.id) ?? 0,
     createdAt: row.created_at,
@@ -717,6 +743,7 @@ export async function readFolderForSync(id: string): Promise<FolderSyncData | nu
     parentId: row.parent_id,
     sortOrder: row.sort_order,
     favorite: row.favorite === 1,
+    isLocalFile: (row.is_local_file ?? 0) === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,

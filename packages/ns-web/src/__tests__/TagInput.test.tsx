@@ -22,7 +22,7 @@ describe("TagInput", () => {
       <TagInput tags={[]} allTags={[]} onChange={vi.fn()} />,
     );
 
-    expect(screen.getByPlaceholderText("Add tags...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g. work, meeting, project")).toBeInTheDocument();
   });
 
   it("adds a tag on Enter", async () => {

@@ -57,6 +57,14 @@ export interface FolderInfo {
   count: number;
   totalCount: number;
   createdAt: string;
+  /**
+   * True when this folder is backed by an on-disk directory managed by a
+   * desktop instance. Reading clients (e.g. web) use this to decide
+   * whether deleting the folder should hard-delete and warn the user
+   * about on-disk consequences. Optional because older wire payloads
+   * may omit it.
+   */
+  isLocalFile?: boolean;
   children: FolderInfo[];
 }
 
@@ -105,6 +113,13 @@ export interface FolderSyncData {
   parentId: string | null;
   sortOrder: number;
   favorite: boolean;
+  /**
+   * True when this folder is backed by an on-disk directory managed by a
+   * desktop instance. Optional on the wire for backward compatibility —
+   * clients written before Phase 1 may omit it; the server treats the
+   * absence as `false`.
+   */
+  isLocalFile?: boolean;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -146,6 +161,21 @@ export interface SyncRejection {
 export interface SyncCursor {
   deviceId: string;
   lastSyncedAt: string;
+  /**
+   * Per-entity-type keyset pagination cursor (Phase 2.2). When a pull
+   * batch hits BATCH_LIMIT for a given type, the server returns the
+   * last returned item's id here so the next pull can resume with
+   * `(updatedAt > lastSyncedAt) OR (updatedAt = lastSyncedAt AND id > lastId)`.
+   * Without this, rows sharing a single updatedAt value can straddle
+   * the BATCH_LIMIT boundary and be silently skipped. Optional for
+   * backward compatibility with pre-Phase-2 clients.
+   */
+  lastIds?: {
+    notes?: string;
+    folders?: string;
+    images?: string;
+    tombstones?: string;
+  };
 }
 
 export interface SyncPushRequest {
@@ -156,10 +186,38 @@ export interface SyncPushRequest {
 export interface SyncPullRequest {
   deviceId: string;
   since: string;
+  /** Per-type keyset tie-breaker ids; see SyncCursor.lastIds. */
+  lastIds?: {
+    notes?: string;
+    folders?: string;
+    images?: string;
+    tombstones?: string;
+  };
+}
+
+/**
+ * Tombstone for a hard-deleted entity. Delivered via `/sync/pull` so
+ * clients that still have the entity in their local cache can remove it.
+ *
+ * Scope: folders (all deletes) and notes with isLocalFile=true (the
+ * sync-push path hard-deletes these). Regular notes use deletedAt-style
+ * soft-deletes delivered as a normal SyncChange with action="delete".
+ */
+export interface SyncTombstone {
+  id: string;
+  type: "folder" | "note";
+  deletedAt: string;
 }
 
 export interface SyncPullResponse {
   changes: SyncChange[];
+  /**
+   * Tombstones for hard-deleted entities. Optional for backward
+   * compatibility — clients that predate Phase 1.5 simply ignore the
+   * field (and their local rows go stale, which is the pre-existing
+   * behavior they already tolerate).
+   */
+  tombstones?: SyncTombstone[];
   cursor: SyncCursor;
   hasMore: boolean;
 }
