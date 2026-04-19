@@ -674,8 +674,15 @@ describe("noteStore", () => {
   });
 
   describe("moveFolder", () => {
-    it("moves folder to new parent", async () => {
-      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+    it("moves folder to new parent (same boundary — no flag flip)", async () => {
+      // 1. getSelfAndDescendantIds (circular check) — no descendants
+      // 2. folder.findUnique for current flag — unmanaged
+      // 3. resolveRootIsLocalFile for target — unmanaged
+      // 4. folder.aggregate for sortOrder
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([])                       // descendants empty
+        .mockResolvedValueOnce([{ isLocalFile: false }]); // target root
+      mockPrisma.folder.findUnique.mockResolvedValue({ isLocalFile: false });
       mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
       mockPrisma.folder.update.mockResolvedValue({
         id: "f2",
@@ -699,6 +706,79 @@ describe("noteStore", () => {
       await expect(moveFolder(TEST_USER_ID, "f1", "f3")).rejects.toThrow(
         "Cannot move folder into its own descendant",
       );
+    });
+
+    it("throws CrossBoundaryMoveError when managed/unmanaged boundary is crossed without confirmation", async () => {
+      // Three $queryRawUnsafe calls in order:
+      //   1. getDescendantIds (circular check)
+      //   2. resolveRootIsLocalFile (target root walk)
+      //   3. getDescendantIds (affected ids)
+      // getSelfAndDescendantIds prepends folderId, so 1 descendant row →
+      // 2 total affected folders.
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([])                        // no circular
+        .mockResolvedValueOnce([{ isLocalFile: true }])   // target managed
+        .mockResolvedValueOnce([{ id: "folder-1a" }]);    // descendant
+      mockPrisma.folder.findUnique.mockResolvedValue({ isLocalFile: false });
+      mockPrisma.note.count.mockResolvedValue(5);
+
+      let caught: unknown;
+      try {
+        await moveFolder(TEST_USER_ID, "folder-1", "managed-root");
+      } catch (e) {
+        caught = e;
+      }
+      const err = caught as {
+        code?: string;
+        direction?: string;
+        affectedFolderCount?: number;
+        affectedNoteCount?: number;
+      };
+      expect(err.code).toBe("cross_boundary_move");
+      expect(err.direction).toBe("toManaged");
+      expect(err.affectedFolderCount).toBe(2);
+      expect(err.affectedNoteCount).toBe(5);
+    });
+
+    it("confirmCrossBoundary=true flips the subtree's isLocalFile alongside the parent change", async () => {
+      // Four $queryRawUnsafe calls in order:
+      //   1. getDescendantIds (circular check)
+      //   2. resolveRootIsLocalFile (target root walk)
+      //   3. getDescendantIds (affected ids for the tx)
+      mockPrisma.$queryRawUnsafe
+        .mockResolvedValueOnce([])                        // no circular
+        .mockResolvedValueOnce([{ isLocalFile: true }])   // target managed
+        .mockResolvedValueOnce([{ id: "folder-1a" }]);    // descendant
+      mockPrisma.folder.findUnique.mockResolvedValue({ isLocalFile: false });
+      mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      // Scope the $transaction override to this single test to avoid
+      // bleeding into sibling tests.
+      mockPrisma.$transaction.mockImplementationOnce(
+        async (fn: (tx: unknown) => unknown) => fn(mockPrisma),
+      );
+      mockPrisma.folder.update.mockResolvedValue({
+        id: "folder-1",
+        userId: TEST_USER_ID,
+        name: "x",
+        parentId: "managed-root",
+        sortOrder: 1,
+        isLocalFile: false,
+        createdAt: new Date(),
+      });
+      mockPrisma.folder.updateMany.mockResolvedValue({ count: 2 });
+
+      const result = await moveFolder(
+        TEST_USER_ID,
+        "folder-1",
+        "managed-root",
+        undefined,
+        true,
+      );
+
+      expect(result.isLocalFile).toBe(true);
+      const updateManyCall = mockPrisma.folder.updateMany.mock.calls[0][0];
+      expect(updateManyCall.data.isLocalFile).toBe(true);
+      expect(updateManyCall.where.id.in).toEqual(["folder-1", "folder-1a"]);
     });
   });
 

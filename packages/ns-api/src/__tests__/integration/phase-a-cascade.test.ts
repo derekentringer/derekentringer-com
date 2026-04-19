@@ -169,3 +169,181 @@ describe("Phase A.1 — server coerces folder.isLocalFile to root ancestor's fla
     expect(created!.isLocalFile).toBe(false);
   });
 });
+
+describe("Phase A.2 — moveFolder cross-boundary detection", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    getIntegrationPrisma();
+    const { buildApp } = await import("../../app.js");
+    app = buildApp({ disableRateLimit: true });
+  });
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await disconnectIntegrationPrisma();
+  });
+
+  async function seedBoundaryTrees(userId: string) {
+    const prisma = getIntegrationPrisma();
+    const managed = await prisma.folder.create({
+      data: { userId, name: "Managed", isLocalFile: true },
+    });
+    const unmanaged = await prisma.folder.create({
+      data: { userId, name: "Unmanaged", isLocalFile: false },
+    });
+    const child = await prisma.folder.create({
+      data: {
+        userId,
+        name: "child",
+        parentId: unmanaged.id,
+        isLocalFile: false,
+      },
+    });
+    const note = await prisma.note.create({
+      data: {
+        userId,
+        title: "note-in-child",
+        content: "",
+        folderId: child.id,
+      },
+    });
+    return { managed, unmanaged, child, note };
+  }
+
+  it("same-boundary move succeeds without confirmation", async () => {
+    const client = await createSyncClient(app);
+    const prisma = getIntegrationPrisma();
+    const a = await prisma.folder.create({
+      data: { userId: client.user.id, name: "A", isLocalFile: false },
+    });
+    const b = await prisma.folder.create({
+      data: { userId: client.user.id, name: "B", isLocalFile: false },
+    });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/notes/folders/${a.id}/move`,
+      headers: { ...client.authHeader, "content-type": "application/json" },
+      payload: { parentId: b.id },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const after = await prisma.folder.findUnique({ where: { id: a.id } });
+    expect(after!.parentId).toBe(b.id);
+    expect(after!.isLocalFile).toBe(false);
+  });
+
+  it("cross-boundary move to managed rejects with 409 and structured body", async () => {
+    const client = await createSyncClient(app);
+    const { managed, child } = await seedBoundaryTrees(client.user.id);
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/notes/folders/${child.id}/move`,
+      headers: { ...client.authHeader, "content-type": "application/json" },
+      payload: { parentId: managed.id },
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = res.json();
+    expect(body.code).toBe("cross_boundary_move");
+    expect(body.direction).toBe("toManaged");
+    expect(body.affectedFolderCount).toBe(1);
+    expect(body.affectedNoteCount).toBe(1);
+  });
+
+  it("cross-boundary move to unmanaged rejects with 409 and the opposite direction", async () => {
+    const client = await createSyncClient(app);
+    const prisma = getIntegrationPrisma();
+    const managed = await prisma.folder.create({
+      data: { userId: client.user.id, name: "Managed", isLocalFile: true },
+    });
+    const unmanaged = await prisma.folder.create({
+      data: { userId: client.user.id, name: "Unmanaged", isLocalFile: false },
+    });
+    const child = await prisma.folder.create({
+      data: {
+        userId: client.user.id,
+        name: "child",
+        parentId: managed.id,
+        isLocalFile: true,
+      },
+    });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/notes/folders/${child.id}/move`,
+      headers: { ...client.authHeader, "content-type": "application/json" },
+      payload: { parentId: unmanaged.id },
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = res.json();
+    expect(body.direction).toBe("toUnmanaged");
+    expect(body.affectedFolderCount).toBe(1);
+  });
+
+  it("confirmCrossBoundary=1 applies the move AND flips isLocalFile on the whole subtree", async () => {
+    const client = await createSyncClient(app);
+    const prisma = getIntegrationPrisma();
+    const { managed, child } = await seedBoundaryTrees(client.user.id);
+
+    // Add a nested grandchild so we can assert cascade depth
+    const grandchild = await prisma.folder.create({
+      data: {
+        userId: client.user.id,
+        name: "grand",
+        parentId: child.id,
+        isLocalFile: false,
+      },
+    });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/notes/folders/${child.id}/move?confirmCrossBoundary=1`,
+      headers: { ...client.authHeader, "content-type": "application/json" },
+      payload: { parentId: managed.id },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const movedChild = await prisma.folder.findUnique({ where: { id: child.id } });
+    expect(movedChild!.parentId).toBe(managed.id);
+    expect(movedChild!.isLocalFile).toBe(true);
+
+    const movedGrandchild = await prisma.folder.findUnique({ where: { id: grandchild.id } });
+    expect(movedGrandchild!.isLocalFile).toBe(true);
+  });
+
+  it("move to root preserves the flag and is not a cross-boundary move", async () => {
+    const client = await createSyncClient(app);
+    const prisma = getIntegrationPrisma();
+    const parent = await prisma.folder.create({
+      data: { userId: client.user.id, name: "Parent", isLocalFile: false },
+    });
+    const child = await prisma.folder.create({
+      data: {
+        userId: client.user.id,
+        name: "child",
+        parentId: parent.id,
+        isLocalFile: false,
+      },
+    });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/notes/folders/${child.id}/move`,
+      headers: { ...client.authHeader, "content-type": "application/json" },
+      payload: { parentId: null },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const after = await prisma.folder.findUnique({ where: { id: child.id } });
+    expect(after!.parentId).toBeNull();
+    expect(after!.isLocalFile).toBe(false);
+  });
+});

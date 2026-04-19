@@ -893,11 +893,37 @@ export async function renameFolderById(
   });
 }
 
+/**
+ * Phase A.2 — thrown when `moveFolder` is called with a new parent that
+ * crosses the managed/unmanaged boundary and the caller hasn't
+ * explicitly confirmed the conversion. The route handler translates
+ * this into a 409 with a structured body so the client can show the
+ * appropriate dialog and re-submit with `confirmCrossBoundary=true`.
+ */
+export class CrossBoundaryMoveError extends Error {
+  readonly code = "cross_boundary_move";
+  readonly direction: "toManaged" | "toUnmanaged";
+  readonly affectedFolderCount: number;
+  readonly affectedNoteCount: number;
+
+  constructor(params: {
+    direction: "toManaged" | "toUnmanaged";
+    affectedFolderCount: number;
+    affectedNoteCount: number;
+  }) {
+    super(`Cannot move folder across managed/unmanaged boundary without confirmation (direction=${params.direction})`);
+    this.direction = params.direction;
+    this.affectedFolderCount = params.affectedFolderCount;
+    this.affectedNoteCount = params.affectedNoteCount;
+  }
+}
+
 export async function moveFolder(
   userId: string,
   folderId: string,
   newParentId: string | null,
   sortOrder?: number,
+  confirmCrossBoundary = false,
 ): Promise<PrismaFolder> {
   const prisma = getPrisma();
 
@@ -907,6 +933,38 @@ export async function moveFolder(
     if (descendants.includes(newParentId)) {
       throw new Error("Cannot move folder into its own descendant");
     }
+  }
+
+  // Phase A.2: detect a move that crosses the managed/unmanaged boundary.
+  // Current-root flag vs. target-root flag. A mismatch means the folder's
+  // subtree should be re-flagged en masse, which is a user-consequential
+  // action — require explicit opt-in via confirmCrossBoundary.
+  const current = await prisma.folder.findUnique({
+    where: { id: folderId, userId },
+    select: { isLocalFile: true },
+  });
+  if (!current) {
+    throw new Error("Cannot move folder: not found");
+  }
+  const targetFlag = await resolveRootIsLocalFile(
+    prisma,
+    userId,
+    newParentId,
+    current.isLocalFile, // moving to root preserves the flag
+  );
+
+  const crossBoundary = current.isLocalFile !== targetFlag;
+
+  if (crossBoundary && !confirmCrossBoundary) {
+    const affectedIds = await getSelfAndDescendantIds(folderId);
+    const noteCount = await prisma.note.count({
+      where: { userId, folderId: { in: affectedIds }, deletedAt: null },
+    });
+    throw new CrossBoundaryMoveError({
+      direction: targetFlag ? "toManaged" : "toUnmanaged",
+      affectedFolderCount: affectedIds.length,
+      affectedNoteCount: noteCount,
+    });
   }
 
   const data: Record<string, unknown> = { parentId: newParentId };
@@ -919,6 +977,25 @@ export async function moveFolder(
       where: { userId, parentId: newParentId },
     });
     data.sortOrder = (maxResult._max.sortOrder ?? -1) + 1;
+  }
+
+  // Confirmed cross-boundary move: flip the folder + every descendant's
+  // flag in a single transaction alongside the parentId update. Once this
+  // commits the invariant holds again — the moved subtree's new root is
+  // the target's root, and every descendant matches.
+  if (crossBoundary) {
+    const affectedIds = await getSelfAndDescendantIds(folderId);
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.folder.update({
+        where: { id: folderId, userId },
+        data,
+      });
+      await tx.folder.updateMany({
+        where: { userId, id: { in: affectedIds } },
+        data: { isLocalFile: targetFlag },
+      });
+      return { ...updated, isLocalFile: targetFlag };
+    });
   }
 
   return prisma.folder.update({

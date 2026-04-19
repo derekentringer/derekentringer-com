@@ -31,6 +31,7 @@ import {
   renameFolderById,
   deleteFolderById,
   moveFolder,
+  CrossBoundaryMoveError,
   reorderFolders,
   getFolderPath,
   listTags,
@@ -841,9 +842,16 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // PATCH /notes/folders/:id/move — move folder to new parent
+  // PATCH /notes/folders/:id/move — move folder to new parent.
+  //
+  // Phase A.2: if the move crosses the managed/unmanaged boundary, the
+  // store throws CrossBoundaryMoveError and we return 409 with a
+  // structured body. Client shows a confirmation dialog and re-submits
+  // with ?confirmCrossBoundary=1 to flip the subtree's isLocalFile in
+  // one tx alongside the parent change.
   fastify.patch<{
     Params: { id: string };
+    Querystring: { confirmCrossBoundary?: string };
     Body: { parentId: string | null; sortOrder?: number };
   }>(
     "/folders/:id/move",
@@ -851,14 +859,23 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     async (
       request: FastifyRequest<{
         Params: { id: string };
+        Querystring: { confirmCrossBoundary?: string };
         Body: { parentId: string | null; sortOrder?: number };
       }>,
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
       const { id } = request.params;
+      const confirm = request.query.confirmCrossBoundary === "1"
+        || request.query.confirmCrossBoundary === "true";
       try {
-        const folder = await moveFolder(userId, id, request.body.parentId, request.body.sortOrder);
+        const folder = await moveFolder(
+          userId,
+          id,
+          request.body.parentId,
+          request.body.sortOrder,
+          confirm,
+        );
         fastify.sseHub.notify(userId);
         return reply.send({
           id: folder.id,
@@ -867,6 +884,17 @@ export default async function noteRoutes(fastify: FastifyInstance) {
           sortOrder: folder.sortOrder,
         });
       } catch (error) {
+        if (error instanceof CrossBoundaryMoveError) {
+          return reply.status(409).send({
+            statusCode: 409,
+            error: "Conflict",
+            code: error.code,
+            direction: error.direction,
+            affectedFolderCount: error.affectedFolderCount,
+            affectedNoteCount: error.affectedNoteCount,
+            message: error.message,
+          });
+        }
         if (error instanceof Error && error.message.includes("Cannot move folder")) {
           return reply.status(400).send({
             statusCode: 400,
