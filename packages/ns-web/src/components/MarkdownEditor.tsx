@@ -669,10 +669,15 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         ),
       ],
     });
-    // When showing frontmatter (source mode), scroll to top so YAML is visible
+    // When showing frontmatter (source mode), scroll to top so YAML is visible.
+    // Guard against the view being destroyed between now and the next frame
+    // (unmount during the ~16ms window throws "Cannot set properties of
+    // undefined" in jsdom).
     if (!hideFm) {
       requestAnimationFrame(() => {
-        view.scrollDOM.scrollTop = 0;
+        if (view.scrollDOM) {
+          view.scrollDOM.scrollTop = 0;
+        }
       });
     }
   }, [hideFm, showLineNumbers]);
