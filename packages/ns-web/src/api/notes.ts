@@ -20,6 +20,7 @@ import { apiFetch } from "./client.ts";
 export async function fetchNotes(params?: {
   folder?: string;
   folderId?: string;
+  unfiled?: boolean;
   search?: string;
   searchMode?: "keyword" | "semantic" | "hybrid";
   tags?: string[];
@@ -29,7 +30,8 @@ export async function fetchNotes(params?: {
   sortOrder?: SortOrder;
 }): Promise<NoteListResponse> {
   const qs = new URLSearchParams();
-  if (params?.folderId) qs.set("folderId", params.folderId);
+  if (params?.unfiled) qs.set("unfiled", "true");
+  else if (params?.folderId) qs.set("folderId", params.folderId);
   else if (params?.folder) qs.set("folder", params.folder);
   if (params?.search) qs.set("search", params.search);
   if (params?.searchMode) qs.set("searchMode", params.searchMode);

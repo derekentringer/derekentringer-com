@@ -31,6 +31,7 @@ export function isTempId(id: string): boolean {
 export async function fetchNotes(params?: {
   folder?: string;
   folderId?: string;
+  unfiled?: boolean;
   search?: string;
   searchMode?: "keyword" | "semantic" | "hybrid";
   tags?: string[];

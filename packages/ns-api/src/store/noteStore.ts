@@ -96,6 +96,10 @@ export interface ListNotesFilter {
   folder?: string;
   folderId?: string;
   folderIds?: string[];
+  // `true` → only notes with folderId IS NULL (the "Unfiled" view).
+  // Keeps pagination correct: filtering after the fact on the client
+  // missed unfiled notes beyond the first page.
+  unfiledOnly?: boolean;
   search?: string;
   searchMode?: SearchMode;
   tags?: string[];
@@ -149,7 +153,9 @@ export async function listNotes(
   // Standard Prisma query (no search)
   const where: Record<string, unknown> = { userId, deletedAt: null };
 
-  if (filter?.folderIds && filter.folderIds.length > 0) {
+  if (filter?.unfiledOnly) {
+    where.folderId = null;
+  } else if (filter?.folderIds && filter.folderIds.length > 0) {
     where.folderId = { in: filter.folderIds };
   } else if (filter?.folder) {
     where.folder = filter.folder;
@@ -166,7 +172,9 @@ export async function listNotes(
     let paramIdx = 2;
     let whereClause = `"userId" = $1 AND "deletedAt" IS NULL`;
 
-    if (filter?.folderIds && filter.folderIds.length > 0) {
+    if (filter?.unfiledOnly) {
+      whereClause += ` AND "folderId" IS NULL`;
+    } else if (filter?.folderIds && filter.folderIds.length > 0) {
       whereClause += ` AND "folderId" = ANY($${paramIdx})`;
       params.push(filter.folderIds);
       paramIdx++;

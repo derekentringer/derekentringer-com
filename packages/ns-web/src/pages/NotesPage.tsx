@@ -536,24 +536,20 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     async () => {
       const requestId = ++loadNotesCounterRef.current;
       try {
+        const isUnfiled = activeFolder === "__unfiled__";
         const folderIdParam =
-          activeFolder && activeFolder !== "__unfiled__"
-            ? activeFolder
-            : undefined;
+          activeFolder && !isUnfiled ? activeFolder : undefined;
         const result = await fetchNotes({
           folderId: folderIdParam,
+          unfiled: isUnfiled,
           tags: activeTags.length > 0 ? activeTags : undefined,
           sortBy,
           sortOrder,
         });
         if (requestId !== loadNotesCounterRef.current) return;
-        let filtered = result.notes;
-        if (activeFolder === "__unfiled__") {
-          filtered = filtered.filter((n) => !n.folderId);
-        }
-        setNotes(filtered);
+        setNotes(result.notes);
         // Cache all loaded notes for tab persistence across folder switches
-        for (const note of filtered) {
+        for (const note of result.notes) {
           tabNoteCacheRef.current.set(note.id, note);
         }
       } catch {

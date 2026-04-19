@@ -489,6 +489,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         Querystring: {
           folder?: string;
           folderId?: string;
+          unfiled?: string;
           search?: string;
           searchMode?: string;
           tags?: string;
@@ -501,7 +502,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
-      const { folder, folderId, search, searchMode, tags, page, pageSize, sortBy, sortOrder } =
+      const { folder, folderId, unfiled, search, searchMode, tags, page, pageSize, sortBy, sortOrder } =
         request.query;
 
       if (sortBy && !VALID_SORT_FIELDS.includes(sortBy as NoteSortField)) {
@@ -536,6 +537,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       const result = await listNotes(userId, {
         folder,
         folderId,
+        unfiledOnly: unfiled === "true",
         search,
         searchMode: searchMode as "keyword" | "semantic" | "hybrid" | undefined,
         tags: parsedTags,
