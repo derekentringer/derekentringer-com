@@ -32,6 +32,7 @@ import {
   renameFolderApi,
   deleteFolderApi,
   moveFolderApi,
+  CrossBoundaryMoveError,
   renameTagApi,
   deleteTagApi,
   fetchNoteTitles,
@@ -53,6 +54,7 @@ import {
   type ViewMode,
 } from "../components/EditorToolbar.tsx";
 import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
+import { CrossBoundaryMoveDialog } from "../components/CrossBoundaryMoveDialog.tsx";
 import { NoteList } from "../components/NoteList.tsx";
 import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
@@ -119,6 +121,16 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncError, setSyncError] = useState<string | null>(null);
+
+  // Phase A.3: pending cross-boundary folder move awaiting user confirmation.
+  const [pendingCrossBoundaryMove, setPendingCrossBoundaryMove] = useState<{
+    folderId: string;
+    folderName: string;
+    parentId: string | null;
+    direction: "toManaged" | "toUnmanaged";
+    affectedFolderCount: number;
+    affectedNoteCount: number;
+  } | null>(null);
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
   const [searchResults, setSearchResults] = useState<NoteSearchResult[] | null>(null);
@@ -1279,12 +1291,10 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
             : targetId;
         // Don't move to self
         if (folderId === newParentId) return;
-        try {
-          await moveFolderApi(folderId, newParentId);
-          loadFolders();
-        } catch {
-          showError("Failed to move folder");
-        }
+        // Route through handleMoveFolder so the cross-boundary 409
+        // surfaces the same dialog UX as the context-menu "Move to
+        // Root" flow (Phase A.3).
+        await handleMoveFolder(folderId, newParentId);
       }
       return;
     }
@@ -1340,12 +1350,38 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }
 
-  async function handleMoveFolder(folderId: string, parentId: string | null) {
+  async function handleMoveFolder(
+    folderId: string,
+    parentId: string | null,
+    opts?: { confirmCrossBoundary?: boolean },
+  ) {
     if (!isOnline) { showError("Folder operations require a connection"); return; }
     try {
-      await moveFolderApi(folderId, parentId);
+      await moveFolderApi(folderId, parentId, undefined, opts);
       loadFolders();
-    } catch {
+    } catch (err) {
+      if (err instanceof CrossBoundaryMoveError) {
+        // Find the folder's display name in the current tree for the
+        // dialog copy. Fall back to a generic label if we somehow don't
+        // have it locally.
+        function findName(nodes: typeof folders): string | null {
+          for (const f of nodes) {
+            if (f.id === folderId) return f.name;
+            const deeper = findName(f.children);
+            if (deeper) return deeper;
+          }
+          return null;
+        }
+        setPendingCrossBoundaryMove({
+          folderId,
+          folderName: findName(folders) ?? "this folder",
+          parentId,
+          direction: err.direction,
+          affectedFolderCount: err.affectedFolderCount,
+          affectedNoteCount: err.affectedNoteCount,
+        });
+        return;
+      }
       showError("Failed to move folder");
     }
   }
@@ -3209,6 +3245,24 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         if (note) openNoteAsTab(note);
       }}
     />
+
+    {/* Phase A.3: cross-boundary folder move confirmation */}
+    {pendingCrossBoundaryMove && (
+      <CrossBoundaryMoveDialog
+        direction={pendingCrossBoundaryMove.direction}
+        folderName={pendingCrossBoundaryMove.folderName}
+        affectedFolderCount={pendingCrossBoundaryMove.affectedFolderCount}
+        affectedNoteCount={pendingCrossBoundaryMove.affectedNoteCount}
+        onCancel={() => setPendingCrossBoundaryMove(null)}
+        onConfirm={() => {
+          const pending = pendingCrossBoundaryMove;
+          setPendingCrossBoundaryMove(null);
+          handleMoveFolder(pending.folderId, pending.parentId, {
+            confirmCrossBoundary: true,
+          });
+        }}
+      />
+    )}
     </div>
   );
 }
