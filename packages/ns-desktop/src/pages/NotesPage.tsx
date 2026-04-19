@@ -3898,25 +3898,28 @@ export function NotesPage() {
           drifts when the item sits inside a nested scrollable
           container (e.g. the combined-sidebar NoteListPanel), leaving
           the card offset from the cursor. */}
-      {/* `snapCenterToCursor` pins the overlay wrapper's center to
-          the pointer; we size the card to fill the wrapper with
-          `w-full h-full` + `min-w-0` on the label span so the card's
-          center matches the wrapper's center — otherwise the card
-          hugs the wrapper's top-left and appears offset from the
-          cursor by half the wrapper's width (visible as "only the
-          icon shows" in the combined-sidebar layout). */}
-      <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
+      {/* By default, DragOverlay's wrapper is sized to the dragged
+          item's bounding rect — which is narrow in the combined
+          sidebar layout, clipping the card to just the icon. Override
+          `width`/`height` to `auto` so the wrapper shrinks to the
+          card's natural content, then `snapCenterToCursor` centers
+          that content exactly on the pointer. */}
+      <DragOverlay
+        dropAnimation={null}
+        modifiers={[snapCenterToCursor]}
+        style={{ width: "auto", height: "auto" }}
+      >
         {activeDragId && (() => {
           // Folder drag → render folder-name card with folder icon
           if (activeDragId.startsWith("drag-folder:")) {
             const folderId = activeDragId.slice("drag-folder:".length);
             const folder = flatFolders.find((f) => f.id === folderId);
             return (
-              <div className="w-full h-full px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground flex items-center gap-1.5 opacity-90">
+              <div className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground opacity-90">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted-foreground">
                   <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
                 </svg>
-                <span className="truncate min-w-0">{folder?.name || "Folder"}</span>
+                <span>{folder?.name || "Folder"}</span>
               </div>
             );
           }
@@ -3924,7 +3927,7 @@ export function NotesPage() {
           const note = notes.find((n) => n.id === activeDragId);
           if (note) {
             return (
-              <div className="w-full h-full px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground flex items-center gap-1.5 opacity-90">
+              <div className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground opacity-90">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted-foreground">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
@@ -3932,7 +3935,7 @@ export function NotesPage() {
                   <line x1="16" y1="17" x2="8" y2="17" />
                   <polyline points="10 9 9 9 8 9" />
                 </svg>
-                <span className="truncate min-w-0">{note.title || "Untitled"}</span>
+                <span>{note.title || "Untitled"}</span>
               </div>
             );
           }
