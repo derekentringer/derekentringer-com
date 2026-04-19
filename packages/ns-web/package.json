@@ -1,6 +1,6 @@
 {
   "name": "@derekentringer/ns-web",
-  "version": "2.27.0",
+  "version": "2.35.0",
   "private": true,
   "type": "module",
   "scripts": {
