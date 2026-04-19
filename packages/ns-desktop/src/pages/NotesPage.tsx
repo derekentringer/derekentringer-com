@@ -659,6 +659,7 @@ export function NotesPage() {
     if (!el) return;
     const update = () => setSidebarHeight(el.clientHeight);
     update();
+    if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();

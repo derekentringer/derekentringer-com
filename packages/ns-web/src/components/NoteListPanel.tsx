@@ -74,6 +74,13 @@ export function NoteListPanel({
               >
                 {sortOrder === "asc" ? "\u2191" : "\u2193"}
               </button>
+              <button
+                onClick={onCreate}
+                className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                title="New note"
+              >
+                +
+              </button>
             </div>
           )}
         </div>

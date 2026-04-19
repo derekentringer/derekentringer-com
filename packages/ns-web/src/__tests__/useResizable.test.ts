@@ -106,6 +106,31 @@ describe("useResizable", () => {
     });
   });
 
+  it("re-clamps current size when maxSize shrinks below it", () => {
+    localStorage.setItem("test-size", "400");
+    const { result, rerender } = renderHook(
+      ({ maxSize }: { maxSize: number }) => useResizable({ ...defaults, maxSize }),
+      { initialProps: { maxSize: 500 } },
+    );
+    expect(result.current.size).toBe(400);
+
+    rerender({ maxSize: 300 });
+    expect(result.current.size).toBe(300);
+    expect(localStorage.getItem("test-size")).toBe("300");
+  });
+
+  it("re-clamps current size when minSize rises above it", () => {
+    localStorage.setItem("test-size", "150");
+    const { result, rerender } = renderHook(
+      ({ minSize }: { minSize: number }) => useResizable({ ...defaults, minSize }),
+      { initialProps: { minSize: 100 } },
+    );
+    expect(result.current.size).toBe(150);
+
+    rerender({ minSize: 200 });
+    expect(result.current.size).toBe(200);
+  });
+
   it("uses clientY for horizontal direction", () => {
     const { result } = renderHook(() =>
       useResizable({ ...defaults, direction: "horizontal", initialSize: 160 }),
