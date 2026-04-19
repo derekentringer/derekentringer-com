@@ -558,6 +558,7 @@ export function FolderTree({
             </button>
           )}
           {onSaveLocally &&
+            contextMenu.folder.parentId === null &&
             !managedRootIds?.has(contextMenu.folder.id) &&
             contextMenu.folder.isLocalFile !== true && (
             <button
