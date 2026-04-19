@@ -175,6 +175,38 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
   }
 }
 
+/**
+ * Phase A.7 — walk the local folder tree up to the root and return
+ * that root's `is_local_file`. Used by `upsertFolderFromRemote` to
+ * coerce any incoming drifted flag to match the invariant locally,
+ * even in the transient window before the next pull delivers the
+ * server's corrected value.
+ *
+ * `parentId === null` → the folder is its own root; returns the
+ * proposed value verbatim. Returns `null` if the parent chain leads
+ * to a missing ancestor (the upsert will succeed with `proposed` and
+ * the next pull will normalize).
+ */
+async function resolveLocalRootIsLocalFile(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  parentId: string | null,
+  proposedFlag: boolean,
+): Promise<boolean> {
+  if (parentId === null) return proposedFlag;
+  const rows = await db.getAllAsync<{ is_local_file: number }>(
+    `WITH RECURSIVE ancestors(id, is_local_file, parent_id) AS (
+       SELECT id, is_local_file, parent_id FROM folders WHERE id = ?
+       UNION ALL
+       SELECT f.id, f.is_local_file, f.parent_id
+       FROM folders f JOIN ancestors a ON f.id = a.parent_id
+     )
+     SELECT is_local_file FROM ancestors WHERE parent_id IS NULL LIMIT 1`,
+    [parentId],
+  );
+  if (rows.length === 0) return proposedFlag;
+  return rows[0].is_local_file === 1;
+}
+
 export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<void> {
   const db = await getDatabase();
 
@@ -187,6 +219,19 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
     return;
   }
 
+  // Phase A.7: coerce the incoming isLocalFile to match the local
+  // tree's root ancestor. The server enforces the same invariant
+  // (A.1), but a drifted push from another client on the same user's
+  // account could transiently flip a value the server will correct on
+  // the next pull — we'd rather not persist the bad value in the
+  // interim.
+  const proposed = folder.isLocalFile ?? false;
+  const normalized = await resolveLocalRootIsLocalFile(
+    db,
+    folder.parentId ?? null,
+    proposed,
+  );
+
   await db.runAsync(
     `INSERT OR REPLACE INTO folders (
       id, name, parent_id, sort_order, favorite, is_local_file, created_at, updated_at, deleted_at
@@ -197,7 +242,7 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
       folder.parentId ?? null,
       folder.sortOrder,
       folder.favorite ? 1 : 0,
-      folder.isLocalFile ? 1 : 0,
+      normalized ? 1 : 0,
       folder.createdAt,
       folder.updatedAt,
       folder.deletedAt ?? null,
