@@ -15,7 +15,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
-import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import { restrictToHorizontalAxis, snapCenterToCursor } from "@dnd-kit/modifiers";
 import type {
   Note,
   NoteSearchResult,
@@ -3892,7 +3892,13 @@ export function NotesPage() {
         </>
       )}
 
-      <DragOverlay dropAnimation={null}>
+      {/* `snapCenterToCursor` pins the overlay's center to the pointer.
+          Without it, dnd-kit positions the overlay relative to the
+          dragged item's initial bounding rect + pointer delta — which
+          drifts when the item sits inside a nested scrollable
+          container (e.g. the combined-sidebar NoteListPanel), leaving
+          the card offset from the cursor. */}
+      <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
         {activeDragId && (() => {
           // Folder drag → render folder-name card with folder icon
           if (activeDragId.startsWith("drag-folder:")) {
