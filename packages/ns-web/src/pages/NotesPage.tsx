@@ -2591,7 +2591,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               </div>
             );
           }
-          // Note drag: mirror the NoteList row layout (title row + date)
+          // Note drag: mirror the NoteList row layout exactly —
+          // title row + snippet + metadata row (date + tag chips).
           const note = notes.find((n) => n.id === activeDragId);
           if (note) {
             const date = new Date(note.updatedAt);
@@ -2607,17 +2608,49 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                     : diffMin < 60 * 24 * 7
                       ? `${Math.floor(diffMin / (60 * 24))}d ago`
                       : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+            const snippet = note.content ? stripMarkdown(note.content, 80) : null;
             return (
               <div className="bg-card border border-border rounded-md shadow-lg opacity-90">
                 <div className="w-[260px] px-2 py-1.5 rounded-md">
+                  {/* Title row */}
                   <span className="flex items-center gap-1 overflow-hidden">
                     {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+                    {note.isLocalFile && (
+                      <span className="shrink-0 mr-1 text-muted-foreground/50">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                      </span>
+                    )}
                     <span className="text-sm font-medium truncate text-foreground">
                       {note.title || "Untitled"}
                     </span>
                   </span>
+                  {/* Content preview */}
+                  {snippet && (
+                    <p className="text-xs text-foreground/45 truncate mt-0.5">{snippet}</p>
+                  )}
+                  {/* Metadata row */}
                   <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
                     <span className="text-[10px] text-muted-foreground shrink-0">{relativeDate}</span>
+                    {note.tags && note.tags.length > 0 && (
+                      <>
+                        <span className="text-[10px] text-muted-foreground">·</span>
+                        {note.tags.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag}
+                            className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {note.tags.length > 2 && (
+                          <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
