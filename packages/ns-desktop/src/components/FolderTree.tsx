@@ -16,7 +16,14 @@ interface FolderTreeProps {
   onToggleFavorite?: (folderId: string, favorite: boolean) => void;
   onSaveLocally?: (folderId: string) => void;
   onStopManagingLocally?: (folderId: string) => void;
-  managedFolderIds?: Set<string>;
+  /**
+   * Phase A.6 — set of folder IDs that are registered as managed-directory
+   * ROOTS on this desktop (from `managed_directories.root_folder_id`). Used
+   * to gate the "Start/Stop Managing Locally" context menu actions, which
+   * only make sense on a root. Descendants of a managed root are not in
+   * this set — they inherit via `folder.isLocalFile` for UX decisions.
+   */
+  managedRootIds?: Set<string>;
 }
 
 interface FolderTreeNodeProps {
@@ -31,7 +38,14 @@ interface FolderTreeNodeProps {
   setRenamingFolder: (id: string | null) => void;
   setRenameValue: (value: string) => void;
   onRenameSubmit: (folderId: string) => void;
-  managedFolderIds?: Set<string>;
+  /**
+   * Phase A.6 — set of folder IDs that are registered as managed-directory
+   * ROOTS on this desktop (from `managed_directories.root_folder_id`). Used
+   * to gate the "Start/Stop Managing Locally" context menu actions, which
+   * only make sense on a root. Descendants of a managed root are not in
+   * this set — they inherit via `folder.isLocalFile` for UX decisions.
+   */
+  managedRootIds?: Set<string>;
   onContextMenu: (e: React.MouseEvent, folder: FolderInfo) => void;
   creatingIn: string | null;
   newFolderName: string;
@@ -110,7 +124,7 @@ function FolderTreeNode({
   setCreatingIn,
   setNewFolderName,
   onCreateSubmit,
-  managedFolderIds,
+  managedRootIds,
 }: FolderTreeNodeProps) {
   const isExpanded = expandedMap.get(folder.id) ?? false;
   const hasChildren = folder.children.length > 0;
@@ -223,7 +237,7 @@ function FolderTreeNode({
             setCreatingIn={setCreatingIn}
             setNewFolderName={setNewFolderName}
             onCreateSubmit={onCreateSubmit}
-            managedFolderIds={managedFolderIds}
+            managedRootIds={managedRootIds}
           />
         ))}
     </div>
@@ -263,7 +277,7 @@ export function FolderTree({
   onToggleFavorite,
   onSaveLocally,
   onStopManagingLocally,
-  managedFolderIds,
+  managedRootIds,
 }: FolderTreeProps) {
   const [expandedMap, setExpandedMap] = useState<Map<string, boolean>>(() => {
     const stored = loadExpandedState();
@@ -476,7 +490,7 @@ export function FolderTree({
               setCreatingIn={setCreatingIn}
               setNewFolderName={setNewFolderName}
               onCreateSubmit={handleCreateInSubmit}
-              managedFolderIds={managedFolderIds}
+              managedRootIds={managedRootIds}
             />
           ))}
 
@@ -543,7 +557,9 @@ export function FolderTree({
               Export as .zip
             </button>
           )}
-          {onSaveLocally && !managedFolderIds?.has(contextMenu.folder.id) && (
+          {onSaveLocally &&
+            !managedRootIds?.has(contextMenu.folder.id) &&
+            contextMenu.folder.isLocalFile !== true && (
             <button
               onClick={() => {
                 onSaveLocally(contextMenu.folder.id);
@@ -554,7 +570,7 @@ export function FolderTree({
               Start Managing Locally
             </button>
           )}
-          {onStopManagingLocally && managedFolderIds?.has(contextMenu.folder.id) && (
+          {onStopManagingLocally && managedRootIds?.has(contextMenu.folder.id) && (
             <button
               onClick={() => {
                 onStopManagingLocally(contextMenu.folder.id);

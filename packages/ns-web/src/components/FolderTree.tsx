@@ -14,7 +14,6 @@ interface FolderTreeProps {
   onMoveFolder: (folderId: string, parentId: string | null) => void;
   onExportFolder?: (folderId: string) => void;
   onToggleFavorite?: (folderId: string, favorite: boolean) => void;
-  managedFolderIds?: Set<string>;
 }
 
 interface FolderTreeNodeProps {
@@ -35,7 +34,6 @@ interface FolderTreeNodeProps {
   setCreatingIn: (id: string | null) => void;
   setNewFolderName: (name: string) => void;
   onCreateSubmit: (parentId: string) => void;
-  managedFolderIds?: Set<string>;
 }
 
 function DraggableFolderItem({
@@ -90,7 +88,6 @@ function FolderTreeNode({
   setCreatingIn,
   setNewFolderName,
   onCreateSubmit,
-  managedFolderIds,
 }: FolderTreeNodeProps) {
   const isExpanded = expandedMap.get(folder.id) ?? false;
   const hasChildren = folder.children.length > 0;
@@ -199,7 +196,6 @@ function FolderTreeNode({
             setCreatingIn={setCreatingIn}
             setNewFolderName={setNewFolderName}
             onCreateSubmit={onCreateSubmit}
-            managedFolderIds={managedFolderIds}
           />
         ))}
     </div>
@@ -237,7 +233,6 @@ export function FolderTree({
   onMoveFolder,
   onExportFolder,
   onToggleFavorite,
-  managedFolderIds,
 }: FolderTreeProps) {
   const [expandedMap, setExpandedMap] = useState<Map<string, boolean>>(() => {
     const stored = loadExpandedState();
@@ -452,8 +447,7 @@ export function FolderTree({
               setCreatingIn={setCreatingIn}
               setNewFolderName={setNewFolderName}
               onCreateSubmit={handleCreateInSubmit}
-              managedFolderIds={managedFolderIds}
-            />
+              />
           ))}
 
           {/* Root drop zone */}

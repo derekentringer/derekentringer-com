@@ -277,7 +277,7 @@ export function NotesPage() {
   // Folders
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
-  const [managedFolderIds, setManagedFolderIds] = useState<Set<string>>(new Set());
+  const [managedRootIds, setManagedRootIds] = useState<Set<string>>(new Set());
   const [locallyHostedNoteIds, setLocallyHostedNoteIds] = useState<Set<string>>(new Set());
 
   // Favorites
@@ -1813,7 +1813,7 @@ export function NotesPage() {
 
       // Register as managed directory
       await addManagedDirectory(dirPath, folderId);
-      setManagedFolderIds((prev) => new Set([...prev, folderId]));
+      setManagedRootIds((prev) => new Set([...prev, folderId]));
 
       // Export notes in this folder as .md files to the local directory
       const folderNotes = notes.filter((n) => n.folderId === folderId);
@@ -1879,7 +1879,7 @@ export function NotesPage() {
       // folder sync updates so other clients see the flag change, then
       // remove the managed_directories row.
       await unmanageManagedDirectory(dir.id, folderId);
-      setManagedFolderIds((prev) => {
+      setManagedRootIds((prev) => {
         const next = new Set(prev);
         next.delete(folderId);
         return next;
@@ -1981,7 +1981,7 @@ export function NotesPage() {
           if (localInfo.managedDir.rootFolderId === folderId) {
             await stopDirectoryWatching(localInfo.dirPath);
             await removeManagedDirectory(localInfo.managedDir.id);
-            setManagedFolderIds((prev) => {
+            setManagedRootIds((prev) => {
               const next = new Set(prev);
               next.delete(folderId);
               return next;
@@ -2429,7 +2429,7 @@ export function NotesPage() {
           if (!existing) {
             await addManagedDirectory(dirPath, targetFolderId);
             if (targetFolderId) {
-              setManagedFolderIds((prev) => new Set([...prev, targetFolderId]));
+              setManagedRootIds((prev) => new Set([...prev, targetFolderId]));
             }
             // Start watching the directory
             await startDirectoryWatching(dirPath, {
@@ -2636,38 +2636,16 @@ export function NotesPage() {
 
       // --- Managed directory reconciliation and watchers ---
       const managedDirs = await listManagedDirectories();
-      // Update managed folder IDs for context menu display
-      // Collect managed root IDs AND all their descendant folder IDs
-      const mfIds = new Set<string>();
-      // Always add the root folder IDs first
+      // Phase A.6: the FolderTree context menu needs to know which folders
+      // are *managed roots* (to gate Start/Stop Managing Locally). The
+      // icon/"is this part of a managed tree" question is now answered
+      // by `folder.isLocalFile` directly on each FolderInfo — no more
+      // tree-walk needed.
+      const rootIds = new Set<string>();
       for (const dir of managedDirs) {
-        if (dir.rootFolderId) mfIds.add(dir.rootFolderId);
+        if (dir.rootFolderId) rootIds.add(dir.rootFolderId);
       }
-      // Then add all descendant folder IDs
-      const allFoldersNow = await fetchFolders();
-      function collectDescendantIds(items: FolderInfo[], ids: Set<string>) {
-        for (const f of items) {
-          ids.add(f.id);
-          collectDescendantIds(f.children, ids);
-        }
-      }
-      for (const dir of managedDirs) {
-        if (dir.rootFolderId) {
-          // Find the root in the tree and collect its children
-          function findAndCollect(items: FolderInfo[]) {
-            for (const f of items) {
-              if (f.id === dir.rootFolderId) {
-                collectDescendantIds(f.children, mfIds);
-                return true;
-              }
-              if (findAndCollect(f.children)) return true;
-            }
-            return false;
-          }
-          findAndCollect(allFoldersNow);
-        }
-      }
-      setManagedFolderIds(mfIds);
+      setManagedRootIds(rootIds);
 
       if (managedDirs.length > 0) {
         // Reconcile: detect new/missing/changed files
@@ -3572,7 +3550,7 @@ export function NotesPage() {
                     onToggleFavorite={handleToggleFolderFavorite}
                     onSaveLocally={handleSaveFolderLocally}
                     onStopManagingLocally={handleStopManagingFolderLocally}
-                    managedFolderIds={managedFolderIds}
+                    managedRootIds={managedRootIds}
                   />
                 </div>
               )}

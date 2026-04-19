@@ -1770,18 +1770,10 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
   const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
-  // Derive managed folder IDs from notes that are locally managed
-  // Accumulate all folder IDs that contain locally managed notes across
-  // all note loads (not just the current filtered view)
-  const managedFolderIdsRef = useRef(new Set<string>());
-  const managedFolderIds = useMemo(() => {
-    for (const note of notes) {
-      if (note.isLocalFile && note.folderId) {
-        managedFolderIdsRef.current.add(note.folderId);
-      }
-    }
-    return new Set(managedFolderIdsRef.current);
-  }, [notes]);
+  // Phase A.6: managed-locally UX is driven by `folder.isLocalFile` on
+  // each FolderInfo directly. The server cascades the flag from the
+  // root (Phases A.0 + A.1) so the tree is authoritative — no more
+  // deriving a Set by walking notes or managed_directories.
 
   // Resolve "system" theme to actual "dark" or "light" for CodeMirror
   const resolvedTheme = useMemo((): "dark" | "light" => {
@@ -2246,7 +2238,6 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                     onMoveFolder={handleMoveFolder}
                     onExportFolder={handleExportFolder}
                     onToggleFavorite={handleToggleFolderFavorite}
-                    managedFolderIds={managedFolderIds}
                   />
                 </div>
               )}
