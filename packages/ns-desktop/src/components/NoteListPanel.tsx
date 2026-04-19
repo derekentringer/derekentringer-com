@@ -84,14 +84,18 @@ export function NoteListPanel({
                 <option value="createdAt">Created</option>
                 <option value="title">Title</option>
               </select>
-              <button
-                onClick={() => onSortOrderChange(sortOrder === "asc" ? "desc" : "asc")}
-                className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                title={sortOrder === "asc" ? "Ascending" : "Descending"}
-                aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
-              >
-                {sortOrder === "asc" ? "\u2191" : "\u2193"}
-              </button>
+              {/* Manual sort has no meaningful direction (position 0 is
+                  always the top of the list), so hide the toggle. */}
+              {sortBy !== "sortOrder" && (
+                <button
+                  onClick={() => onSortOrderChange(sortOrder === "asc" ? "desc" : "asc")}
+                  className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  title={sortOrder === "asc" ? "Ascending" : "Descending"}
+                  aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
+                >
+                  {sortOrder === "asc" ? "\u2191" : "\u2193"}
+                </button>
+              )}
               <button
                 onClick={onCreate}
                 className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"

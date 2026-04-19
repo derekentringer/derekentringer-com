@@ -210,7 +210,11 @@ export async function fetchNotes(options?: FetchNotesOptions): Promise<Note[]> {
   }
 
   const sortField = options?.sortBy ?? "updatedAt";
-  const sortOrder = options?.sortOrder ?? "desc";
+  // Manual (sort_order) is always ASC — position 0 is the top of the
+  // list. Honoring a DESC preference would invert the drag-to-top
+  // mental model.
+  const sortOrder =
+    sortField === "sortOrder" ? "asc" : (options?.sortOrder ?? "desc");
 
   const columnMap: Record<NoteSortField, string> = {
     title: "title",
@@ -941,11 +945,13 @@ export async function reorderNotes(
   order: { id: string; sortOrder: number }[],
 ): Promise<void> {
   const db = await getDb();
-  const now = new Date().toISOString();
+  // Reorder is a display-position change — do NOT bump `updated_at`.
+  // Bumping it would make every touched note render as "just now" and
+  // push a spurious LWW-defeating timestamp to the server.
   for (const item of order) {
     await db.execute(
-      "UPDATE notes SET sort_order = $1, updated_at = $2 WHERE id = $3",
-      [item.sortOrder, now, item.id],
+      "UPDATE notes SET sort_order = $1 WHERE id = $2",
+      [item.sortOrder, item.id],
     );
     enqueueSyncAction("update", item.id, "note").catch(() => {});
   }

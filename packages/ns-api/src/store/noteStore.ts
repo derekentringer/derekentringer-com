@@ -121,7 +121,10 @@ export async function listNotes(
   const pageSize = filter?.pageSize ?? 50;
   const skip = (page - 1) * pageSize;
   const sortBy = filter?.sortBy ?? "updatedAt";
-  const sortOrder = filter?.sortOrder ?? "desc";
+  // Manual (sortOrder column) always sorts ASC — position 0 = top of
+  // list. Respecting a user-picked DESC direction would flip the list
+  // upside down and make dragging-to-top stick to the bottom.
+  const sortOrder = sortBy === "sortOrder" ? "asc" : (filter?.sortOrder ?? "desc");
 
   // Resolve folder + all descendant folders so clicking a parent shows nested notes
   if (filter?.folderId && !filter.folderIds) {
@@ -855,13 +858,15 @@ export async function reorderNotes(
   userId: string,
   order: { id: string; sortOrder: number }[],
 ): Promise<void> {
+  if (order.length === 0) return;
   const prisma = getPrisma();
+  // Raw SQL bypasses Prisma's `@updatedAt` auto-bump — reorder is a
+  // pure display-position change and should not make every touched
+  // note appear freshly edited.
   await prisma.$transaction(
-    order.map((item) =>
-      prisma.note.update({
-        where: { id: item.id, userId },
-        data: { sortOrder: item.sortOrder },
-      }),
+    order.map(
+      (item) =>
+        prisma.$executeRaw`UPDATE "notes" SET "sortOrder" = ${item.sortOrder} WHERE "id" = ${item.id} AND "userId" = ${userId}`,
     ),
   );
 }
