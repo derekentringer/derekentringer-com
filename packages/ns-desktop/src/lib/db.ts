@@ -1776,6 +1776,47 @@ export async function linkNoteToLocalFile(
 }
 
 /**
+ * Phase A.4 — fetch the notes directly in a folder that the reconciler
+ * needs to process on an isLocalFile flip. Returns id/title/content
+ * plus the current `local_path` so the caller knows whether the note
+ * is already on-disk (skip the write) or needs materializing.
+ *
+ * Excludes soft-deleted notes (those shouldn't touch disk anyway).
+ */
+export async function getFolderNotesForReconcile(
+  folderId: string,
+): Promise<
+  { id: string; title: string; content: string; localPath: string | null }[]
+> {
+  const db = await getDb();
+  return db.select<
+    { id: string; title: string; content: string; localPath: string | null }[]
+  >(
+    `SELECT id, title, content, local_path AS "localPath"
+     FROM notes
+     WHERE folder_id = $1 AND is_deleted = 0`,
+    [folderId],
+  );
+}
+
+/**
+ * Phase A.4 — get the previous isLocalFile flag of a folder so the sync
+ * engine can detect a flip before overwriting it. Returns null if the
+ * folder doesn't exist locally (first pull).
+ */
+export async function getLocalFolderIsLocalFile(
+  folderId: string,
+): Promise<boolean | null> {
+  const db = await getDb();
+  const rows = await db.select<{ is_local_file: number }[]>(
+    "SELECT is_local_file FROM folders WHERE id = $1",
+    [folderId],
+  );
+  if (rows.length === 0) return null;
+  return rows[0].is_local_file === 1;
+}
+
+/**
  * Unlink a note from its local file (convert to cloud-only).
  */
 export async function unlinkLocalFile(noteId: string): Promise<void> {

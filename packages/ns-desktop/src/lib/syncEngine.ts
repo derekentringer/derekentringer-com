@@ -19,14 +19,21 @@ import {
   getNoteLocalFileInfo,
   findManagedDirForFolder,
   getFolderManagedDiskPath,
+  getFolderNotesForReconcile,
+  getLocalFolderIsLocalFile,
+  linkNoteToLocalFile,
+  unlinkLocalFile,
   removeManagedDirectory,
 } from "./db.ts";
 import {
   computeContentHash,
+  ensureDirectory,
   fileExists,
+  filenameForNoteTitle,
   moveToTrash,
   stopDirectoryWatching,
   stopWatching,
+  writeLocalFile,
 } from "./localFileService.ts";
 import type {
   SyncChange,
@@ -743,7 +750,109 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
 
   const folderData = change.data as FolderSyncData | null;
   if (!folderData) return;
+
+  // Phase A.4: detect an isLocalFile flip so we can reconcile on-disk
+  // state after the upsert lands. Read the CURRENT value before
+  // overwriting it. `null` means the folder is new locally — no flip
+  // to reconcile, the normal materialization path handles it.
+  const previousFlag = await getLocalFolderIsLocalFile(folderData.id);
+  const newFlag = folderData.isLocalFile ?? false;
+  const flipped = previousFlag !== null && previousFlag !== newFlag;
+
   await upsertFolderFromRemote(folderData);
+
+  if (flipped) {
+    try {
+      if (newFlag) {
+        await reconcileFolderFlipToManaged(folderData.id);
+      } else {
+        await reconcileFolderFlipToUnmanaged(folderData.id);
+      }
+    } catch (err) {
+      console.warn(
+        `[Phase A.4] Folder flip reconciliation failed for ${folderData.id}:`,
+        err,
+      );
+    }
+  }
+}
+
+/**
+ * Phase A.4: the folder flipped from unmanaged → managed. Materialize
+ * its direct notes to disk if they aren't already, and create the
+ * containing directory if needed.
+ *
+ * Scope: notes *directly* in this folder. The folder's descendants
+ * have their own folder-update changes in the same pull and each
+ * handles its own notes independently. Across a cross-boundary move
+ * the server flips every folder atomically, so all descendants arrive
+ * flagged in the same batch.
+ */
+async function reconcileFolderFlipToManaged(folderId: string): Promise<void> {
+  const managedDir = await findManagedDirForFolder(folderId);
+  if (!managedDir) {
+    // Ancestor isn't a managed root locally yet (this desktop has no
+    // managed_directories row for the target root). Skip gracefully —
+    // can't write files without knowing where on disk they go. A
+    // future managed-dir registration + re-reconciliation can recover.
+    return;
+  }
+
+  let folderDiskPath: string;
+  if (managedDir.rootFolderId === folderId) {
+    folderDiskPath = managedDir.path;
+  } else {
+    const info = await getFolderManagedDiskPath(folderId);
+    if (!info) return;
+    folderDiskPath = info.diskPath;
+  }
+
+  try {
+    await ensureDirectory(folderDiskPath);
+  } catch (err) {
+    console.warn(`[Phase A.4] Failed to mkdir ${folderDiskPath}:`, err);
+    return;
+  }
+
+  const notes = await getFolderNotesForReconcile(folderId);
+  for (const note of notes) {
+    if (note.localPath) continue; // already on disk
+    try {
+      const filename = filenameForNoteTitle(note.title);
+      const filePath = `${folderDiskPath}/${filename}`;
+      const hash = await writeLocalFile(filePath, note.content);
+      await linkNoteToLocalFile(note.id, filePath, hash);
+    } catch (err) {
+      console.warn(
+        `[Phase A.4] Failed to materialize note ${note.id} to disk:`,
+        err,
+      );
+    }
+  }
+}
+
+/**
+ * Phase A.4: the folder flipped from managed → unmanaged. Trash any
+ * on-disk files that previously backed this folder's direct notes and
+ * drop their `local_path`.
+ */
+async function reconcileFolderFlipToUnmanaged(folderId: string): Promise<void> {
+  const notes = await getFolderNotesForReconcile(folderId);
+  for (const note of notes) {
+    if (!note.localPath) continue;
+    try {
+      await stopWatching(note.id);
+      if (await fileExists(note.localPath)) {
+        await moveToTrash(note.localPath);
+      }
+      await unlinkLocalFile(note.id);
+    } catch (err) {
+      console.warn(
+        `[Phase A.4] Failed to trash local file for note ${note.id} (${note.localPath}):`,
+        err,
+      );
+    }
+  }
 }
 
 /**
