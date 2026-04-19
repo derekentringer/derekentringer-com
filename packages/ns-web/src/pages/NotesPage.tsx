@@ -1308,6 +1308,14 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
           ? null
           : folderTarget;
 
+      // Look up the destination name up-front so we can show a
+      // toast — without it the note can appear to "disappear" when
+      // the move succeeds but the current folder view filters it
+      // out (e.g. drop lands on a collapsed subfolder).
+      const destinationName = folderId === null
+        ? "Unfiled"
+        : findFolderById(folders, folderId)?.name ?? "folder";
+
       try {
         const updated = await updateNote(noteId, { folderId });
         setNotes((prev) =>
@@ -1315,6 +1323,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         );
         loadNotes();
         loadFolders();
+        setSuccessToast(`Moved to ${destinationName}`);
+        setTimeout(() => setSuccessToast(null), 3000);
       } catch {
         showError("Failed to move note");
       }

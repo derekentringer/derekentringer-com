@@ -2077,10 +2077,19 @@ export function NotesPage() {
           ? null
           : folderTarget;
 
+      // Look up the destination name up-front so we can show a
+      // toast — without it the note can appear to "disappear" when
+      // the move succeeds but the current folder view filters it
+      // out (e.g. drop lands on a collapsed subfolder).
+      const destinationName = folderId === null
+        ? "Unfiled"
+        : findFolderById(folders, folderId)?.name ?? "folder";
+
       try {
         await updateNote(noteId, { folderId });
         await refreshSidebarData();
         notifyLocalChange();
+        setSuccessToast(`Moved to ${destinationName}`);
       } catch (err) {
         console.error("Failed to move note:", err);
         showError("Failed to move note");
