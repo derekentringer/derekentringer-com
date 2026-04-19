@@ -429,7 +429,9 @@ describe("NoteList", () => {
       </DndWrapper>,
     );
 
-    const indicator = screen.getByTitle("Managed locally");
+    // Title is "Managed locally on this device" or "Managed locally on another device"
+    // depending on localFileStatuses — just assert the prefix matches.
+    const indicator = screen.getByTitle(/^Managed locally on/);
     expect(indicator).toBeInTheDocument();
   });
 
