@@ -538,7 +538,8 @@ export function FolderTree({
           >
             Rename
           </button>
-          {contextMenu.folder.parentId && (
+          {contextMenu.folder.parentId &&
+            contextMenu.folder.isLocalFile !== true && (
             <button
               onClick={() => handleMoveToRoot(contextMenu.folder)}
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
