@@ -347,3 +347,196 @@ describe("Phase A.2 — moveFolder cross-boundary detection", () => {
     expect(after!.isLocalFile).toBe(false);
   });
 });
+
+describe("Phase A — end-to-end cross-boundary round trip (A.8)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    getIntegrationPrisma();
+    const { buildApp } = await import("../../app.js");
+    app = buildApp({ disableRateLimit: true });
+  });
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    await disconnectIntegrationPrisma();
+  });
+
+  it("unmanaged subtree → managed → /sync/pull surfaces the flag flip for every descendant + notes unchanged", async () => {
+    const client = await createSyncClient(app);
+    const prisma = getIntegrationPrisma();
+
+    // Seed: managed notebook + unmanaged notebook with a 3-folder subtree
+    // (top + one level of children) containing 3 notes total.
+    const managed = await prisma.folder.create({
+      data: { userId: client.user.id, name: "Managed", isLocalFile: true },
+    });
+    const unmanaged = await prisma.folder.create({
+      data: { userId: client.user.id, name: "Unmanaged", isLocalFile: false },
+    });
+    const movingTop = await prisma.folder.create({
+      data: {
+        userId: client.user.id,
+        name: "moving",
+        parentId: unmanaged.id,
+        isLocalFile: false,
+      },
+    });
+    const childA = await prisma.folder.create({
+      data: {
+        userId: client.user.id,
+        name: "a",
+        parentId: movingTop.id,
+        isLocalFile: false,
+      },
+    });
+    const childB = await prisma.folder.create({
+      data: {
+        userId: client.user.id,
+        name: "b",
+        parentId: movingTop.id,
+        isLocalFile: false,
+      },
+    });
+    const n1 = await prisma.note.create({
+      data: {
+        userId: client.user.id,
+        title: "n1",
+        content: "one",
+        folderId: movingTop.id,
+      },
+    });
+    const n2 = await prisma.note.create({
+      data: {
+        userId: client.user.id,
+        title: "n2",
+        content: "two",
+        folderId: childA.id,
+      },
+    });
+    const n3 = await prisma.note.create({
+      data: {
+        userId: client.user.id,
+        title: "n3",
+        content: "three",
+        folderId: childB.id,
+      },
+    });
+
+    // Initial pull so the deviceId cursor is set at the pre-move snapshot.
+    const initialPull = await client.pull(new Date(0));
+    expect(initialPull.changes.length).toBeGreaterThanOrEqual(3); // at minimum the 3 notes
+
+    const cursorBeforeMove = initialPull.cursor.lastSyncedAt;
+
+    // Attempt the move WITHOUT confirmation — expect 409.
+    let res = await app.inject({
+      method: "PATCH",
+      url: `/notes/folders/${movingTop.id}/move`,
+      headers: { ...client.authHeader, "content-type": "application/json" },
+      payload: { parentId: managed.id },
+    });
+    expect(res.statusCode).toBe(409);
+    const body409 = res.json();
+    expect(body409.direction).toBe("toManaged");
+    expect(body409.affectedFolderCount).toBe(3); // moving + childA + childB
+    expect(body409.affectedNoteCount).toBe(3);
+
+    // Confirm and re-submit.
+    res = await app.inject({
+      method: "PATCH",
+      url: `/notes/folders/${movingTop.id}/move?confirmCrossBoundary=1`,
+      headers: { ...client.authHeader, "content-type": "application/json" },
+      payload: { parentId: managed.id },
+    });
+    expect(res.statusCode).toBe(200);
+
+    // Server state: every folder in the moved subtree is now
+    // isLocalFile=true; notes are unchanged.
+    const [movedTop, movedA, movedB] = await Promise.all([
+      prisma.folder.findUnique({ where: { id: movingTop.id } }),
+      prisma.folder.findUnique({ where: { id: childA.id } }),
+      prisma.folder.findUnique({ where: { id: childB.id } }),
+    ]);
+    expect(movedTop!.parentId).toBe(managed.id);
+    expect(movedTop!.isLocalFile).toBe(true);
+    expect(movedA!.isLocalFile).toBe(true);
+    expect(movedB!.isLocalFile).toBe(true);
+
+    // Notes unchanged at this point — Phase A.4 on the desktop handles
+    // the disk-side work; the server doesn't mutate note rows during a
+    // cross-boundary move.
+    const [note1, note2, note3] = await Promise.all([
+      prisma.note.findUnique({ where: { id: n1.id } }),
+      prisma.note.findUnique({ where: { id: n2.id } }),
+      prisma.note.findUnique({ where: { id: n3.id } }),
+    ]);
+    expect(note1!.folderId).toBe(movingTop.id);
+    expect(note2!.folderId).toBe(childA.id);
+    expect(note3!.folderId).toBe(childB.id);
+
+    // /sync/pull after the move carries the flag flip for every
+    // descendant — this is what the desktop's A.4 reconciler
+    // observes to decide which notes need disk materialization.
+    const pullAfterMove = await client.pull(cursorBeforeMove);
+    const folderChanges = pullAfterMove.changes.filter((c) => c.type === "folder");
+    const flippedIds = new Set(
+      folderChanges
+        .filter((c) => {
+          const d = c.data as { isLocalFile?: boolean } | null;
+          return d?.isLocalFile === true;
+        })
+        .map((c) => c.id),
+    );
+    expect(flippedIds.has(movingTop.id)).toBe(true);
+    expect(flippedIds.has(childA.id)).toBe(true);
+    expect(flippedIds.has(childB.id)).toBe(true);
+  });
+
+  it("reverse: managed subtree → unmanaged flips every descendant back", async () => {
+    const client = await createSyncClient(app);
+    const prisma = getIntegrationPrisma();
+
+    const managed = await prisma.folder.create({
+      data: { userId: client.user.id, name: "Managed", isLocalFile: true },
+    });
+    const unmanaged = await prisma.folder.create({
+      data: { userId: client.user.id, name: "Unmanaged", isLocalFile: false },
+    });
+    const movingTop = await prisma.folder.create({
+      data: {
+        userId: client.user.id,
+        name: "moving",
+        parentId: managed.id,
+        isLocalFile: true,
+      },
+    });
+    const child = await prisma.folder.create({
+      data: {
+        userId: client.user.id,
+        name: "child",
+        parentId: movingTop.id,
+        isLocalFile: true,
+      },
+    });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/notes/folders/${movingTop.id}/move?confirmCrossBoundary=1`,
+      headers: { ...client.authHeader, "content-type": "application/json" },
+      payload: { parentId: unmanaged.id },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const [movedTop, movedChild] = await Promise.all([
+      prisma.folder.findUnique({ where: { id: movingTop.id } }),
+      prisma.folder.findUnique({ where: { id: child.id } }),
+    ]);
+    expect(movedTop!.isLocalFile).toBe(false);
+    expect(movedChild!.isLocalFile).toBe(false);
+  });
+});
