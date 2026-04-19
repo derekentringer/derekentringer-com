@@ -3898,44 +3898,96 @@ export function NotesPage() {
           drifts when the item sits inside a nested scrollable
           container (e.g. the combined-sidebar NoteListPanel), leaving
           the card offset from the cursor. */}
-      {/* By default, DragOverlay's wrapper is sized to the dragged
-          item's bounding rect — which is narrow in the combined
-          sidebar layout, clipping the card to just the icon. Override
-          `width`/`height` to `auto` so the wrapper shrinks to the
-          card's natural content, then `snapCenterToCursor` centers
-          that content exactly on the pointer. */}
+      {/* Drag preview renders a shrunken copy of the actual sidebar
+          item: notes get their title + metadata row, folders get the
+          chevron + name + count. Same paddings and inline elements as
+          the real item so the height matches. Width is fixed at a
+          reasonable value rather than matching the source rect —
+          making the card consistent across layout modes. */}
       <DragOverlay
         dropAnimation={null}
         modifiers={[snapCenterToCursor]}
         style={{ width: "auto", height: "auto" }}
       >
         {activeDragId && (() => {
-          // Folder drag → render folder-name card with folder icon
+          // Folder drag: mirror the FolderTree row layout
           if (activeDragId.startsWith("drag-folder:")) {
             const folderId = activeDragId.slice("drag-folder:".length);
-            const folder = flatFolders.find((f) => f.id === folderId);
+            function findFolder(nodes: typeof folders): typeof folders[number] | null {
+              for (const f of nodes) {
+                if (f.id === folderId) return f;
+                const deeper = findFolder(f.children);
+                if (deeper) return deeper;
+              }
+              return null;
+            }
+            const folder = findFolder(folders);
             return (
-              <div className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground opacity-90">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted-foreground">
-                  <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-                </svg>
-                <span>{folder?.name || "Folder"}</span>
+              <div className="bg-card border border-border rounded-md shadow-lg opacity-90 px-2">
+                <div className="w-[220px] pr-2 py-1 rounded text-sm text-foreground flex items-center">
+                  <span className="inline-flex items-center justify-center w-4 h-4 mr-0.5 text-[10px] shrink-0 select-none">
+                    ▶
+                  </span>
+                  <span className="truncate">{folder?.name || "Folder"}</span>
+                  {folder?.isLocalFile && (
+                    <span className="shrink-0 ml-1 text-primary">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
+                    </span>
+                  )}
+                  {folder?.favorite && (
+                    <span className="text-[10px] text-primary shrink-0 ml-0.5">★</span>
+                  )}
+                  {typeof folder?.totalCount === "number" && (
+                    <span className="ml-1 text-xs opacity-60 shrink-0">
+                      {folder.totalCount}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           }
-          // Note drag → render note-title card with note icon
+          // Note drag: mirror the NoteList row layout (title row + date)
           const note = notes.find((n) => n.id === activeDragId);
           if (note) {
+            const date = new Date(note.updatedAt);
+            const diffMs = Date.now() - date.getTime();
+            const diffMin = Math.floor(diffMs / 60000);
+            const relativeDate =
+              diffMin < 1
+                ? "just now"
+                : diffMin < 60
+                  ? `${diffMin}m ago`
+                  : diffMin < 60 * 24
+                    ? `${Math.floor(diffMin / 60)}h ago`
+                    : diffMin < 60 * 24 * 7
+                      ? `${Math.floor(diffMin / (60 * 24))}d ago`
+                      : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
             return (
-              <div className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground opacity-90">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted-foreground">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
-                  <polyline points="10 9 9 9 8 9" />
-                </svg>
-                <span>{note.title || "Untitled"}</span>
+              <div className="bg-card border border-border rounded-md shadow-lg opacity-90">
+                <div className="w-[260px] px-2 py-1.5 rounded-md">
+                  <span className="flex items-center gap-1 overflow-hidden">
+                    {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+                    {note.isLocalFile && (
+                      <span className="shrink-0 mr-1 text-muted-foreground">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                      </span>
+                    )}
+                    <span className="text-sm font-medium truncate text-foreground">
+                      {note.title || "Untitled"}
+                    </span>
+                  </span>
+                  <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                    <span className="text-[10px] text-muted-foreground shrink-0">{relativeDate}</span>
+                  </div>
+                </div>
               </div>
             );
           }
