@@ -21,6 +21,8 @@ interface EditorToolbarProps {
   onTable: () => void;
   showLineNumbers: boolean;
   onToggleLineNumbers: () => void;
+  showFrontmatter: boolean;
+  onToggleFrontmatter: () => void;
 }
 
 const modes: { value: ViewMode; label: string }[] = [
@@ -49,6 +51,8 @@ export function EditorToolbar({
   onTable,
   showLineNumbers,
   onToggleLineNumbers,
+  showFrontmatter,
+  onToggleFrontmatter,
 }: EditorToolbarProps) {
   return (
     <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border shrink-0">
@@ -72,6 +76,18 @@ export function EditorToolbar({
               #
             </button>
           )}
+          {/* Frontmatter toggle */}
+          <button
+            onClick={onToggleFrontmatter}
+            className={`px-2 py-0.5 text-xs rounded transition-colors cursor-pointer ${
+              showFrontmatter
+                ? "bg-foreground/10 text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+            }`}
+            title={showFrontmatter ? "Hide frontmatter" : "Show frontmatter"}
+          >
+            {"</>"}
+          </button>
 
           <div className="w-px h-4 bg-border mx-1" />
           <button

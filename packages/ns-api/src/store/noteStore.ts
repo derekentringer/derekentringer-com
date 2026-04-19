@@ -11,6 +11,13 @@ import type { Note as PrismaNote, Folder as PrismaFolder } from "../generated/pr
 import { generateQueryEmbedding } from "../services/embeddingService.js";
 import { syncNoteLinks } from "./linkStore.js";
 import { captureVersion } from "./versionStore.js";
+import { writeTombstone } from "./syncStore.js";
+import {
+  parseFrontmatter,
+  serializeFrontmatter,
+  updateFrontmatterField,
+  injectFrontmatter,
+} from "@derekentringer/shared/ns";
 
 function isNotFoundError(error: unknown): boolean {
   return (
@@ -43,11 +50,18 @@ export async function createNote(
     }
   }
 
+  // Inject frontmatter into content — frontmatter is the source of truth for
+  // metadata fields. If content already has frontmatter, merge without overwriting.
+  const contentWithFrontmatter = injectFrontmatter(data.content ?? "", {
+    title: data.title,
+    tags: data.tags,
+  });
+
   const created = await prisma.note.create({
     data: {
       userId,
       title: data.title,
-      content: data.content ?? "",
+      content: contentWithFrontmatter,
       folder: data.folder ?? null,
       folderId: data.folderId ?? null,
       tags: data.tags ?? [],
@@ -425,6 +439,69 @@ export async function updateNote(
       }
     }
 
+    // Sync frontmatter ↔ database cache.
+    // When content changes: derive cache columns from frontmatter in content.
+    // When metadata fields change without content: update frontmatter in content.
+    if (data.content !== undefined) {
+      // Content changed — parse frontmatter and derive cache columns
+      const { metadata } = parseFrontmatter(data.content);
+      if (metadata.title !== undefined && data.title === undefined) {
+        updateData.title = metadata.title;
+      }
+      if (metadata.tags !== undefined && data.tags === undefined) {
+        updateData.tags = metadata.tags;
+      }
+      if (metadata.description !== undefined && data.summary === undefined) {
+        updateData.summary = metadata.description;
+      }
+      if (metadata.favorite !== undefined && data.favorite === undefined) {
+        updateData.favorite = metadata.favorite;
+      }
+    } else {
+      // Metadata changed without content — update frontmatter in content.
+      // Need to fetch current content to update frontmatter in it.
+      const metadataChanged =
+        data.title !== undefined ||
+        data.tags !== undefined ||
+        data.summary !== undefined ||
+        data.favorite !== undefined;
+
+      if (metadataChanged) {
+        const existing = await prisma.note.findUnique({
+          where: { id, userId, deletedAt: null },
+          select: { content: true },
+        });
+        if (existing?.content !== undefined) {
+          let content = existing.content;
+          if (data.title !== undefined) {
+            content = updateFrontmatterField(content, "title", data.title);
+          }
+          if (data.tags !== undefined) {
+            content = updateFrontmatterField(
+              content,
+              "tags",
+              data.tags.length > 0 ? data.tags : undefined,
+            );
+          }
+          if (data.summary !== undefined) {
+            content = updateFrontmatterField(
+              content,
+              "description",
+              data.summary || undefined,
+            );
+          }
+          if (data.favorite !== undefined) {
+            content = updateFrontmatterField(
+              content,
+              "favorite",
+              data.favorite || undefined,
+            );
+          }
+          updateData.content = content;
+        }
+      }
+    }
+
     const updated = await prisma.note.update({
       where: { id, userId, deletedAt: null },
       data: updateData,
@@ -452,10 +529,26 @@ export async function updateNote(
 export async function softDeleteNote(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
-    await prisma.note.update({
-      where: { id, userId, deletedAt: null },
-      data: { deletedAt: new Date(), favorite: false },
-    });
+    // Check if this is a locally managed file — hard-delete instead of soft-delete
+    // to prevent stale soft-deleted entries from causing duplication on re-add.
+    const note = await prisma.note.findUnique({ where: { id, userId } });
+    if (!note || note.deletedAt) return false;
+
+    if (note.isLocalFile) {
+      // Hard-delete + tombstone atomically so desktop clients learn
+      // about the deletion on their next `/sync/pull` and trash the
+      // on-disk file. Without the tombstone the row is silently gone
+      // from server but remains in every client's SQLite + disk.
+      await prisma.$transaction(async (tx) => {
+        await tx.note.delete({ where: { id, userId } });
+        await writeTombstone(tx, userId, "note", id);
+      });
+    } else {
+      await prisma.note.update({
+        where: { id, userId, deletedAt: null },
+        data: { deletedAt: new Date(), favorite: false },
+      });
+    }
     return true;
   } catch (error) {
     if (isNotFoundError(error)) return false;
@@ -527,12 +620,30 @@ export async function createFolder(
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
+  // Inherit `isLocalFile` from the parent. A folder created under a
+  // managed-locally parent is itself part of the managed tree — every
+  // client (web, desktop, mobile) should see it as such so the delete
+  // UX + tombstone semantics stay consistent. Desktop would have
+  // stamped this for itself via resolveFolderForPath, but a folder
+  // created on web via REST needs the server to cascade the flag.
+  let inheritIsLocalFile = false;
+  if (parentId) {
+    const parent = await prisma.folder.findUnique({
+      where: { id: parentId },
+      select: { isLocalFile: true, userId: true },
+    });
+    if (parent && parent.userId === userId && parent.isLocalFile) {
+      inheritIsLocalFile = true;
+    }
+  }
+
   return prisma.folder.create({
     data: {
       userId,
       name,
       parentId: parentId ?? null,
       sortOrder: nextSortOrder,
+      isLocalFile: inheritIsLocalFile,
     },
   });
 }
@@ -590,6 +701,11 @@ function buildFolderTree(
       parentId: f.parentId,
       sortOrder: f.sortOrder,
       favorite: f.favorite,
+      // Include isLocalFile so web can render the managed-locally
+      // delete variant and warnings. Server is authoritative; desktop
+      // stamps the flag on managed-dir folders and backfills
+      // descendants on startup.
+      isLocalFile: f.isLocalFile,
       count: f.count,
       totalCount: f.count,
       createdAt: f.createdAt.toISOString(),
@@ -789,6 +905,22 @@ export async function reorderFolders(
 
 export type FolderDeleteMode = "move-up" | "recursive";
 
+/**
+ * Hard-delete a folder from the REST path and emit tombstones so every
+ * client learns about the deletion via `/sync/pull`.
+ *
+ * This is a structural delete — folders have no user-facing trash/restore
+ * UI, so soft-deleting was only ever a zombie-row generator (see Phase 1.5
+ * design notes in docs/ns/sync-arch/02-phase-1-managed-locally-deletes.md).
+ *
+ * - recursive mode: hard-delete all notes in folder+descendants AND all
+ *   descendant folders AND the folder itself. Tombstones written for
+ *   every folder + every note that had isLocalFile=true (managed notes).
+ *   Non-managed notes are still hard-deleted from this path and also
+ *   tombstoned so clients learn about the deletion.
+ * - move-up mode: re-file child folders and notes to the parent, then
+ *   hard-delete the folder and emit one folder tombstone.
+ */
 export async function deleteFolderById(
   userId: string,
   folderId: string,
@@ -797,55 +929,77 @@ export async function deleteFolderById(
   const prisma = getPrisma();
 
   const folder = await prisma.folder.findUnique({ where: { id: folderId } });
-  if (!folder || folder.userId !== userId || folder.deletedAt) return 0;
-
-  const now = new Date();
+  if (!folder || folder.userId !== userId) return 0;
 
   if (mode === "recursive") {
-    // Get all descendant folder IDs
     const descendantIds = await getDescendantIds(folderId);
-    const allIds = [folderId, ...descendantIds];
+    const allFolderIds = [folderId, ...descendantIds];
 
-    // Unfile all notes in this folder and descendants
-    const result = await prisma.note.updateMany({
-      where: { userId, folderId: { in: allIds }, deletedAt: null },
-      data: { folderId: null, folder: null },
+    // Capture note IDs before we delete them so we can tombstone each one.
+    const notesInSubtree = await prisma.note.findMany({
+      where: { userId, folderId: { in: allFolderIds } },
+      select: { id: true },
     });
 
-    // Soft-delete all descendant folders then this folder
+    const result = await prisma.note.deleteMany({
+      where: { userId, folderId: { in: allFolderIds } },
+    });
+
     if (descendantIds.length > 0) {
-      await prisma.folder.updateMany({
-        where: { id: { in: descendantIds } },
-        data: { deletedAt: now },
+      await prisma.folder.deleteMany({ where: { id: { in: descendantIds } } });
+    }
+    await prisma.folder.delete({ where: { id: folderId } });
+
+    // Emit tombstones for every deleted entity so all clients can clean
+    // up their local caches + any on-disk directories/files.
+    const now = new Date();
+    const tombstoneRows = [
+      ...allFolderIds.map((id) => ({
+        userId,
+        entityType: "folder",
+        entityId: id,
+        deletedAt: now,
+      })),
+      ...notesInSubtree.map((n) => ({
+        userId,
+        entityType: "note",
+        entityId: n.id,
+        deletedAt: now,
+      })),
+    ];
+    for (const row of tombstoneRows) {
+      await prisma.entityTombstone.upsert({
+        where: { userId_entityId: { userId, entityId: row.entityId } },
+        create: row,
+        update: { deletedAt: now, entityType: row.entityType },
       });
     }
-    await prisma.folder.update({
-      where: { id: folderId },
-      data: { deletedAt: now },
-    });
 
     return result.count;
   }
 
-  // "move-up" mode: children and notes move to parent folder
+  // "move-up" mode: re-file children to the parent, then hard-delete
   const parentId = folder.parentId;
-
-  // Move children to parent
   await prisma.folder.updateMany({
     where: { parentId: folderId, deletedAt: null },
     data: { parentId },
   });
-
-  // Move notes to parent folder
   const result = await prisma.note.updateMany({
     where: { userId, folderId, deletedAt: null },
     data: { folderId: parentId, folder: null },
   });
+  await prisma.folder.delete({ where: { id: folderId } });
 
-  // Soft-delete the folder
-  await prisma.folder.update({
-    where: { id: folderId },
-    data: { deletedAt: now },
+  const now = new Date();
+  await prisma.entityTombstone.upsert({
+    where: { userId_entityId: { userId, entityId: folderId } },
+    create: {
+      userId,
+      entityType: "folder",
+      entityId: folderId,
+      deletedAt: now,
+    },
+    update: { deletedAt: now, entityType: "folder" },
   });
 
   return result.count;

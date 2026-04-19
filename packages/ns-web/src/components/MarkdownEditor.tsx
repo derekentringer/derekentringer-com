@@ -8,6 +8,8 @@ import {
 import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { imageUploadExtension } from "../editor/imageUpload.ts";
+import { hideFrontmatter as hideFrontmatterExt } from "../editor/frontmatterFold.ts";
+import { highlightFrontmatter as highlightFrontmatterExt } from "../editor/frontmatterHighlight.ts";
 import { livePreview } from "../editor/livePreview.ts";
 import { tableAutoFormat } from "../editor/tableAutoFormat.ts";
 import { formatTableChanges } from "../lib/tableMarkdown.ts";
@@ -68,6 +70,7 @@ interface MarkdownEditorProps {
   cursorBlink?: boolean;
   enableLivePreview?: boolean;
   viewMode?: string;
+  hideFrontmatter?: boolean;
 }
 
 function cycleHeadingLevel(view: EditorView) {
@@ -397,6 +400,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     cursorBlink = true,
     enableLivePreview = false,
     viewMode,
+    hideFrontmatter: hideFm = false,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -405,6 +409,8 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
   const onSaveRef = useRef(onSave);
   const onImageUploadRef = useRef(onImageUpload);
   const lineNumberCompartment = useRef(new Compartment());
+  const frontmatterCompartment = useRef(new Compartment());
+  const frontmatterHighlightCompartment = useRef(new Compartment());
   const wordWrapCompartment = useRef(new Compartment());
   const tabSizeCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
@@ -494,7 +500,13 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             syntaxHighlighting(isDark ? createDarkHighlightStyle(accent) : createLightHighlightStyle(accent)),
           ]),
           lineNumberCompartment.current.of(
-            showLineNumbers ? lineNumbers() : [],
+            showLineNumbers && !hideFm ? lineNumbers() : [],
+          ),
+          frontmatterCompartment.current.of(
+            hideFm ? hideFrontmatterExt() : [],
+          ),
+          frontmatterHighlightCompartment.current.of(
+            hideFm ? [] : highlightFrontmatterExt(),
           ),
           wordWrapCompartment.current.of(
             wordWrap ? EditorView.lineWrapping : [],
@@ -635,10 +647,40 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     if (!view) return;
     view.dispatch({
       effects: lineNumberCompartment.current.reconfigure(
-        showLineNumbers ? lineNumbers() : [],
+        showLineNumbers && !hideFm ? lineNumbers() : [],
       ),
     });
-  }, [showLineNumbers]);
+  }, [showLineNumbers, hideFm]);
+
+  // Toggle frontmatter visibility
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: [
+        frontmatterCompartment.current.reconfigure(
+          hideFm ? hideFrontmatterExt() : [],
+        ),
+        frontmatterHighlightCompartment.current.reconfigure(
+          hideFm ? [] : highlightFrontmatterExt(),
+        ),
+        lineNumberCompartment.current.reconfigure(
+          showLineNumbers && !hideFm ? lineNumbers() : [],
+        ),
+      ],
+    });
+    // When showing frontmatter (source mode), scroll to top so YAML is visible.
+    // Guard against the view being destroyed between now and the next frame
+    // (unmount during the ~16ms window throws "Cannot set properties of
+    // undefined" in jsdom).
+    if (!hideFm) {
+      requestAnimationFrame(() => {
+        if (view.scrollDOM) {
+          view.scrollDOM.scrollTop = 0;
+        }
+      });
+    }
+  }, [hideFm, showLineNumbers]);
 
   // Toggle word wrap
   useEffect(() => {

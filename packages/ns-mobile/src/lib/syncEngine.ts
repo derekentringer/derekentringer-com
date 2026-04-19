@@ -13,6 +13,8 @@ import {
   upsertFolderFromRemote,
   softDeleteNoteFromRemote,
   softDeleteFolderFromRemote,
+  hardDeleteNoteFromRemote,
+  hardDeleteFolderFromRemote,
 } from "./noteStore";
 import type {
   SyncChange,
@@ -47,6 +49,7 @@ const MAX_BACKOFF_MS = 60_000;
 const BATCH_LIMIT = 100;
 const DEVICE_ID_KEY = "deviceId";
 const LAST_PULL_KEY = "lastPullAt";
+const LAST_PULL_IDS_KEY = "lastPullIds";
 
 // ─── Module state ──────────────────────────────────────────
 
@@ -541,7 +544,25 @@ async function pullChanges(id: string): Promise<void> {
   const lastPull = await getSyncMeta(LAST_PULL_KEY);
   const since = lastPull ?? new Date(0).toISOString();
 
-  const payload: SyncPullRequest = { deviceId: id, since };
+  // Phase 2.2: per-type keyset tie-breakers from the previous pull.
+  const lastIdsRaw = await getSyncMeta(LAST_PULL_IDS_KEY);
+  let lastIds: SyncPullRequest["lastIds"] | undefined;
+  if (lastIdsRaw) {
+    try {
+      const parsed = JSON.parse(lastIdsRaw);
+      if (parsed && typeof parsed === "object") {
+        lastIds = parsed;
+      }
+    } catch {
+      lastIds = undefined;
+    }
+  }
+
+  const payload: SyncPullRequest = {
+    deviceId: id,
+    since,
+    ...(lastIds ? { lastIds } : {}),
+  };
 
   const response = await apiFetch("/sync/pull", {
     method: "POST",
@@ -565,8 +586,29 @@ async function pullChanges(id: string): Promise<void> {
     }
   }
 
+  // Phase 1.5: process tombstones for hard-deleted entities. Mobile has
+  // no on-disk file mirroring, so this is just local SQLite + FTS
+  // cleanup — simpler than desktop's cleanup path.
+  for (const t of result.tombstones ?? []) {
+    try {
+      if (t.type === "note") {
+        await hardDeleteNoteFromRemote(t.id);
+      } else if (t.type === "folder") {
+        await hardDeleteFolderFromRemote(t.id);
+      }
+      hadChanges = true;
+    } catch (err) {
+      console.warn(`Failed to apply ${t.type} tombstone ${t.id}:`, err);
+    }
+  }
+
   // Update cursor
   await setSyncMeta(LAST_PULL_KEY, result.cursor.lastSyncedAt);
+  if (result.cursor.lastIds && Object.keys(result.cursor.lastIds).length > 0) {
+    await setSyncMeta(LAST_PULL_IDS_KEY, JSON.stringify(result.cursor.lastIds));
+  } else {
+    await setSyncMeta(LAST_PULL_IDS_KEY, "");
+  }
 
   // Notify UI
   if (hadChanges) {

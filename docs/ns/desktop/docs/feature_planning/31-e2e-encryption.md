@@ -1,4 +1,4 @@
-# 26 — End-to-End Encryption
+# 31 — End-to-End Encryption
 
 **Status:** Planned
 **Priority:** High
@@ -75,11 +75,24 @@ Same three tiers as web — user selects in Settings → Security:
 - Audio recording and transcription
 - Offline mode (SQLite has all encrypted data + decrypted FTS index)
 
-### Disabled
+### Disabled (Web Only)
 
-- Semantic search / pgvector (server can't generate embeddings from ciphertext)
-- Meeting context / related notes (relies on pgvector)
-- Image AI descriptions (server can't analyze encrypted images)
+- Semantic search / pgvector on web (server can't generate embeddings from ciphertext; web has no local database for embeddings)
+- Image AI descriptions on web (server can't analyze encrypted images)
+
+### Disabled (All Platforms)
+
+- Image AI descriptions via server (server can't analyze encrypted images)
+
+### Desktop-Only: Semantic Search Under E2E
+
+Desktop retains semantic search even with E2E encryption enabled, because the desktop has decrypted content locally and can generate embeddings client-side:
+
+- **BYOK Direct mode**: Desktop calls the embedding API directly with the user's own API key, generates vectors from decrypted content, stores them in the local `note_embeddings` SQLite table. Cosine similarity search runs entirely locally. The server's pgvector index is empty for encrypted users, but the desktop's local index covers it.
+- **Server Relay mode**: Desktop sends decrypted content to ns-api for embedding generation (content is transiently in memory, same as other Relay AI features). Embeddings returned and stored locally.
+- **No AI mode**: Semantic search disabled (no embedding generation without AI). Keyword search via FTS5 still works.
+
+Meeting context / related notes also work on desktop under BYOK Direct and Server Relay modes since they rely on the same embedding infrastructure.
 
 ### Tier-Dependent
 

@@ -22,6 +22,8 @@ describe("EditorToolbar", () => {
     onTable: vi.fn(),
     showLineNumbers: true,
     onToggleLineNumbers: vi.fn(),
+    showFrontmatter: false,
+    onToggleFrontmatter: vi.fn(),
   };
 
   beforeEach(() => {

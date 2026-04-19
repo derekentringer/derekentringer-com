@@ -58,6 +58,7 @@ import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { TagBrowser, type TagLayout, type TagSort } from "../components/TagBrowser.tsx";
 import { TagInput } from "../components/TagInput.tsx";
+import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { ResizeDivider } from "../components/ResizeDivider.tsx";
 import { useResizable } from "../hooks/useResizable.ts";
 import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
@@ -114,7 +115,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const navigate = useNavigate();
   const { noteId: routeNoteId } = useParams<{ noteId?: string }>();
   const { settings, updateSetting: updateAiSetting } = useAiSettings();
-  const { settings: editorSettings } = useEditorSettings();
+  const { settings: editorSettings, updateSetting: updateEditorSetting } = useEditorSettings();
   const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -206,6 +207,28 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [trashTotal, setTrashTotal] = useState(0);
   const [confirmPermanentDelete, setConfirmPermanentDelete] = useState(false);
   const [confirmDeleteSummary, setConfirmDeleteSummary] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState("");
+  const [showManualSummary, setShowManualSummary] = useState(false);
+  const [showManualTags, setShowManualTags] = useState(false);
+  const [summaryOverflows, setSummaryOverflows] = useState(false);
+  const summaryTextRef = useRef<HTMLParagraphElement>(null);
+
+  // Detect if summary text is truncated
+  useEffect(() => {
+    const el = summaryTextRef.current;
+    if (!el) { setSummaryOverflows(false); return; }
+    function check() {
+      if (summaryTextRef.current) {
+        setSummaryOverflows(summaryTextRef.current.scrollWidth > summaryTextRef.current.clientWidth);
+      }
+    }
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [selectedId, notes]);
   const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<"all" | "selected" | null>(null);
 
@@ -1086,6 +1109,13 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
 
     try {
+      // isLocalFile notes are hard-deleted server-side (+tombstone) and
+      // never touch the trash UI. Soft-deleted notes land in trash and
+      // increment the badge. Check the flag before the optimistic bump.
+      const target = notes.find((n) => n.id === selectedId)
+        ?? tabNoteCacheRef.current.get(selectedId);
+      const isHardDelete = target?.isLocalFile === true;
+
       await deleteNote(selectedId);
       if (selectedId === previewTabId) setPreviewTabId(null);
       setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
@@ -1096,7 +1126,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       setContent("");
       setIsDirty(false);
       setConfirmDelete(false);
-      setTrashTotal((prev) => prev + 1);
+      if (!isHardDelete) setTrashTotal((prev) => prev + 1);
       loadFolders();
       loadNoteTitles();
       navigate("/", { replace: true });
@@ -1107,6 +1137,12 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
   async function handleDeleteNoteById(noteId: string) {
     try {
+      // Capture isLocalFile before we strip the note from state so the
+      // trash badge doesn't flash incorrectly for hard-deletes.
+      const target = notes.find((n) => n.id === noteId)
+        ?? tabNoteCacheRef.current.get(noteId);
+      const isHardDelete = target?.isLocalFile === true;
+
       await deleteNote(noteId);
       if (noteId === previewTabId) setPreviewTabId(null);
       const prevTabs = openTabs;
@@ -1131,7 +1167,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       tabNoteCacheRef.current.delete(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
       setFavoriteNotes((prev) => prev.filter((n) => n.id !== noteId));
-      setTrashTotal((prev) => prev + 1);
+      if (!isHardDelete) setTrashTotal((prev) => prev + 1);
       loadFolders();
       loadFavoriteNotes();
       setDashboardKey((k) => k + 1);
@@ -1698,6 +1734,19 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
   const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
+  // Derive managed folder IDs from notes that are locally managed
+  // Accumulate all folder IDs that contain locally managed notes across
+  // all note loads (not just the current filtered view)
+  const managedFolderIdsRef = useRef(new Set<string>());
+  const managedFolderIds = useMemo(() => {
+    for (const note of notes) {
+      if (note.isLocalFile && note.folderId) {
+        managedFolderIdsRef.current.add(note.folderId);
+      }
+    }
+    return new Set(managedFolderIdsRef.current);
+  }, [notes]);
+
   // Resolve "system" theme to actual "dark" or "light" for CodeMirror
   const resolvedTheme = useMemo((): "dark" | "light" => {
     if (editorSettings.theme === "system") {
@@ -1905,7 +1954,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   }
 
   async function handleSuggestTags() {
-    if (!selectedId || isSuggestingTags) return;
+    if (!selectedId || !selectedNote || isSuggestingTags) return;
     setIsSuggestingTags(true);
     try {
       // Save first so the API has fresh content
@@ -1913,38 +1962,18 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         await updateNote(selectedId, { title, content });
         setIsDirty(false);
       }
-      const tags = await suggestTagsApi(selectedId);
-      setSuggestedTags(tags);
+      const suggested = await suggestTagsApi(selectedId);
+      // Add suggested tags directly to the note, deduplicating
+      const currentTags = selectedNote.tags ?? [];
+      const newTags = [...new Set([...currentTags, ...suggested])];
+      if (newTags.length > currentTags.length) {
+        await handleTagsChange(newTags);
+      }
     } catch {
       showError("Failed to suggest tags");
     } finally {
       setIsSuggestingTags(false);
     }
-  }
-
-  async function handleAcceptTag(tag: string) {
-    if (!selectedId || !selectedNote) return;
-    const currentTags = selectedNote.tags ?? [];
-    if (currentTags.includes(tag)) {
-      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
-      return;
-    }
-    try {
-      const newTags = [...currentTags, tag];
-      const updated = await updateNote(selectedId, { tags: newTags });
-      setNotes((prev) =>
-        prev.map((n) => (n.id === updated.id ? updated : n)),
-      );
-      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
-      loadFolders();
-      setDashboardKey((k) => k + 1);
-    } catch {
-      showError("Failed to add tag");
-    }
-  }
-
-  function handleDismissTag(tag: string) {
-    setSuggestedTags((prev) => prev.filter((t) => t !== tag));
   }
 
   async function handleAudioNoteCreated(note: Note, capturedTranscript?: string) {
@@ -1992,9 +2021,13 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     lastRelevantNotesRef.current = [];
   }
 
-  // Clear suggested tags when switching notes
+  // Clear UI state when switching notes
   useEffect(() => {
     setSuggestedTags([]);
+    setSummaryExpanded(false);
+    setEditingSummary(false);
+    setShowManualSummary(false);
+    setShowManualTags(false);
   }, [selectedId]);
 
   // Close Q&A panel when setting is disabled
@@ -2177,6 +2210,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                     onMoveFolder={handleMoveFolder}
                     onExportFolder={handleExportFolder}
                     onToggleFavorite={handleToggleFolderFavorite}
+                    managedFolderIds={managedFolderIds}
                   />
                 </div>
               )}
@@ -2531,28 +2565,38 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                 Modified {new Date(selectedNote.updatedAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
               </span>
               <div className="flex-1" />
-              {settings.masterAiEnabled && settings.summarize && (
-                <button
-                  onClick={handleSummarize}
-                  disabled={isSummarizing}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title={isSummarizing ? "Summarizing..." : "Summarize"}
-                  aria-label="Summarize"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
-                </button>
-              )}
-              {settings.masterAiEnabled && settings.tagSuggestions && (
-                <button
-                  onClick={handleSuggestTags}
-                  disabled={isSuggestingTags}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title={isSuggestingTags ? "Suggesting..." : "Suggest tags"}
-                  aria-label="Suggest tags"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  if (settings.masterAiEnabled && settings.summarize) {
+                    handleSummarize();
+                  } else {
+                    setShowManualSummary(true);
+                    setSummaryDraft("");
+                    setEditingSummary(true);
+                  }
+                }}
+                disabled={isSummarizing}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={isSummarizing ? "Summarizing..." : settings.masterAiEnabled && settings.summarize ? "Summarize" : "Add summary"}
+                aria-label="Summarize"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
+              </button>
+              <button
+                onClick={() => {
+                  if (settings.masterAiEnabled && settings.tagSuggestions) {
+                    handleSuggestTags();
+                  } else {
+                    setShowManualTags(true);
+                  }
+                }}
+                disabled={isSuggestingTags}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={isSuggestingTags ? "Suggesting..." : settings.masterAiEnabled && settings.tagSuggestions ? "Suggest tags" : "Add tags"}
+                aria-label="Tags"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+              </button>
               {selectedNote?.transcript && (
                 <button
                   onClick={() => setShowTranscript((v) => !v)}
@@ -2608,7 +2652,16 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-2 bottom-1.5">
+              <div className={`absolute bottom-1.5 flex items-center ${selectedNote?.isLocalFile ? "left-4" : "left-2"}`}>
+                {selectedNote?.isLocalFile && (
+                  <span className="shrink-0 text-muted-foreground/50 mr-0.5" title="Managed locally on desktop">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  </span>
+                )}
                 <FolderPicker
                   selectedId={selectedNote?.folderId ?? null}
                   folders={flatFolders}
@@ -2658,7 +2711,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                 placeholder="Note title"
                 className="w-full px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
               />
-              <p className="pl-9 pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate">
+              <p className={`pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate ${selectedNote?.isLocalFile ? "pl-[60px]" : "pl-9"}`}>
                 {selectedNote?.folderId
                   ? getFolderBreadcrumb(folders, selectedNote.folderId).map((f) => f.name).join(" / ")
                   : "Unfiled"}
@@ -2666,16 +2719,72 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
             </div>
 
             {/* Summary */}
-            {selectedNote?.summary && (
-              <div className="relative px-4 py-2 text-sm text-muted-foreground border-b border-border italic pr-8">
-                {selectedNote.summary}
-                <button
-                  onClick={() => setConfirmDeleteSummary(true)}
-                  className="absolute top-1.5 right-2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  title="Remove summary"
-                >
-                  &times;
-                </button>
+            {(selectedNote?.summary || showManualSummary || isSummarizing) && (
+              <div className="px-4 py-1.5 border-b border-border">
+                <div className="flex items-start gap-1">
+                  {selectedNote?.summary && !editingSummary && (summaryOverflows || summaryExpanded) && (
+                    <button
+                      onClick={() => setSummaryExpanded((prev) => !prev)}
+                      className="shrink-0 mt-[5px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      title={summaryExpanded ? "Collapse summary" : "Expand summary"}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform duration-300 ease-in-out ${summaryExpanded ? "" : "-rotate-90"}`}><polyline points="6 9 12 15 18 9" /></svg>
+                    </button>
+                  )}
+                  {isSummarizing ? (
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground italic">
+                      <span className="inline-flex gap-0.5 mr-1.5"><span className="bounce-dot" /><span className="bounce-dot" /><span className="bounce-dot" /></span>Generating summary
+                    </span>
+                  ) : editingSummary ? (
+                    <textarea
+                      autoFocus
+                      value={summaryDraft}
+                      onChange={(e) => setSummaryDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          const trimmed = summaryDraft.trim();
+                          if (trimmed && selectedId) {
+                            updateNote(selectedId, { summary: trimmed }).then(() => {
+                              loadNotes();
+                            }).catch(() => showError("Failed to update summary"));
+                          }
+                          setEditingSummary(false);
+                          setShowManualSummary(false);
+                        } else if (e.key === "Escape") {
+                          setEditingSummary(false);
+                          setShowManualSummary(false);
+                        }
+                      }}
+                      onBlur={() => { setEditingSummary(false); setShowManualSummary(false); }}
+                      placeholder="Add a summary..."
+                      className="flex-1 min-w-0 text-sm text-muted-foreground italic bg-transparent border border-border rounded px-1 py-0 focus:outline-none focus:border-primary resize-none"
+                      rows={2}
+                    />
+                  ) : (
+                    <p
+                      ref={summaryTextRef}
+                      className={`flex-1 min-w-0 text-sm text-muted-foreground italic cursor-default ${summaryExpanded ? "" : "truncate"}`}
+                      onDoubleClick={() => {
+                        setSummaryDraft(selectedNote?.summary ?? "");
+                        setSummaryExpanded(true);
+                        setEditingSummary(true);
+                      }}
+                      title="Double-click to edit"
+                    >
+                      {selectedNote?.summary}
+                    </p>
+                  )}
+                  {selectedNote?.summary && !editingSummary && (
+                    <button
+                      onClick={() => setConfirmDeleteSummary(true)}
+                      className="shrink-0 mt-[3px] w-4 h-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      title="Remove summary"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
               </div>
             )}
             {confirmDeleteSummary && (
@@ -2690,39 +2799,27 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               />
             )}
 
-            {/* Tags */}
-            <TagInput
-              tags={selectedNote?.tags ?? []}
-              allTags={tags.map((t) => t.name)}
-              onChange={handleTagsChange}
-            />
-
-            {/* Suggested tags */}
-            {suggestedTags.length > 0 && (
-              <div className="px-4 py-2 border-b border-border flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground">Suggested:</span>
-                {suggestedTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center rounded-full bg-accent text-xs text-foreground border border-border overflow-hidden"
-                  >
-                    <button
-                      onClick={() => handleAcceptTag(tag)}
-                      className="px-2 py-0.5 hover:bg-primary/20 transition-colors cursor-pointer"
-                      title="Add tag"
-                    >
-                      {tag}
-                    </button>
-                    <button
-                      onClick={() => handleDismissTag(tag)}
-                      className="px-1 py-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border-l border-border"
-                      title="Dismiss"
-                    >
-                      ✕
-                    </button>
+            {/* Tags — shown when tags exist, manually opened, or generating */}
+            {((selectedNote?.tags ?? []).length > 0 || showManualTags || isSuggestingTags) && (
+              isSuggestingTags && (selectedNote?.tags ?? []).length === 0 ? (
+                <div className="flex items-center gap-1 px-4 py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">
+                    <span className="inline-flex gap-0.5 mr-1.5"><span className="bounce-dot" /><span className="bounce-dot" /><span className="bounce-dot" /></span>Generating tags
                   </span>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <TagInput
+                  tags={selectedNote?.tags ?? []}
+                  allTags={tags.map((t) => t.name)}
+                  onChange={(newTags) => {
+                    handleTagsChange(newTags);
+                    if (newTags.length === 0) setShowManualTags(false);
+                  }}
+                  autoFocus={showManualTags && (selectedNote?.tags ?? []).length === 0}
+                  onBlurEmpty={() => setShowManualTags(false)}
+                  loading={isSuggestingTags}
+                />
+              )
             )}
 
             {showTranscript && selectedNote?.transcript ? (
@@ -2762,6 +2859,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               onTable={() => editorRef.current?.insertTable()}
               showLineNumbers={showLineNumbers}
               onToggleLineNumbers={() => setShowLineNumbers((v) => !v)}
+              showFrontmatter={editorSettings.propertiesMode === "source"}
+              onToggleFrontmatter={() => updateEditorSetting("propertiesMode", editorSettings.propertiesMode === "source" ? "panel" : "source")}
             />
 
             {/* Local file indicator */}
@@ -2814,6 +2913,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   cursorBlink={editorSettings.cursorBlink}
                   enableLivePreview={viewMode === "live"}
                   viewMode={viewMode}
+                  hideFrontmatter={editorSettings.propertiesMode === "panel"}
                   extensions={[wikiLinkExt, ...aiExtensions]}
                   className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                   style={viewMode === "split" ? { width: splitResize.size } : undefined}
@@ -2828,7 +2928,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               )}
               {(viewMode === "split" || viewMode === "preview") && (
                 <MarkdownPreview
-                  content={content}
+                  content={stripFrontmatter(content)}
                   className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1 overflow-auto"}
                   wikiLinkTitleMap={wikiLinkTitleMap}
                   onWikiLinkClick={handleWikiLinkClick}
@@ -2904,7 +3004,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
             {/* Read-only preview */}
             <div className="flex-1 overflow-auto">
               <MarkdownPreview
-                content={selectedNote.content}
+                content={stripFrontmatter(selectedNote.content)}
                 className="flex-1"
               />
             </div>

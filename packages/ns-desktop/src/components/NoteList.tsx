@@ -23,6 +23,7 @@ interface NoteListProps {
   searchResults?: NoteSearchResult[] | null;
   sortByManual: boolean;
   localFileStatuses?: Map<string, LocalFileStatus>;
+  locallyHostedNoteIds?: Set<string>;
   onUnlinkLocalFile?: (noteId: string) => void;
   onSaveAsLocalFile?: (noteId: string) => void;
   onSaveToFile?: (noteId: string) => void;
@@ -51,6 +52,7 @@ interface SortableNoteItemProps {
   onDeleteClick: (noteId: string) => void;
   contextMenuRef: React.RefObject<HTMLDivElement | null>;
   localFileStatus?: LocalFileStatus;
+  hostedLocally?: boolean;
   onUnlinkLocalFile?: (noteId: string) => void;
   onSaveAsLocalFile?: (noteId: string) => void;
   onSaveToFile?: (noteId: string) => void;
@@ -58,26 +60,18 @@ interface SortableNoteItemProps {
   onViewDiff?: (noteId: string) => void;
 }
 
-function LocalFileIndicator({ status }: { status: LocalFileStatus }) {
-  const colorClass =
-    status === "synced"
-      ? "bg-green-500"
-      : status === "missing"
-        ? "bg-red-500"
-        : "bg-amber-500";
-  const title =
-    status === "synced"
-      ? "Local file in sync"
-      : status === "missing"
-        ? "Local file missing"
-        : status === "cloud_newer"
-          ? "Cloud version is newer"
-          : "File changed externally";
+function LocalFileIndicator({ hostedLocally }: { hostedLocally?: boolean }) {
   return (
     <span
-      className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ml-1 ${colorClass}`}
-      title={title}
-    />
+      className={`shrink-0 mr-1 ${hostedLocally ? "text-primary" : "text-muted-foreground"}`}
+      title={hostedLocally ? "Managed locally on this device" : "Managed locally on another device"}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+    </span>
   );
 }
 
@@ -96,6 +90,7 @@ function SortableNoteItem({
   onDeleteClick,
   contextMenuRef,
   localFileStatus,
+  hostedLocally,
   onUnlinkLocalFile,
   onSaveAsLocalFile,
   onSaveToFile,
@@ -168,8 +163,8 @@ function SortableNoteItem({
         {/* Title row */}
         <span className="flex items-center gap-1 overflow-hidden">
           {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+          {note.isLocalFile && <LocalFileIndicator hostedLocally={hostedLocally} />}
           <span className={`text-sm font-medium truncate ${isSelected ? "text-foreground" : "text-foreground/70"}`}>{note.title || "Untitled"}</span>
-          {localFileStatus && <LocalFileIndicator status={localFileStatus} />}
         </span>
         {/* Content preview */}
         {searchNote.headline ? (
@@ -249,7 +244,7 @@ function SortableNoteItem({
               }}
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
-              Save As Local File
+              Start Managing Locally
             </button>
           )}
           {note.isLocalFile && onUnlinkLocalFile && (
@@ -260,40 +255,7 @@ function SortableNoteItem({
               }}
               className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
             >
-              Unlink Local File
-            </button>
-          )}
-          {note.isLocalFile && localFileStatus === "cloud_newer" && onSaveToFile && (
-            <button
-              onClick={() => {
-                onSaveToFile(note.id);
-                onContextMenuClose();
-              }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              Save to File
-            </button>
-          )}
-          {note.isLocalFile && localFileStatus === "external_change" && onUseLocalVersion && (
-            <button
-              onClick={() => {
-                onUseLocalVersion(note.id);
-                onContextMenuClose();
-              }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              Use Local Version
-            </button>
-          )}
-          {note.isLocalFile && (localFileStatus === "cloud_newer" || localFileStatus === "external_change") && onViewDiff && (
-            <button
-              onClick={() => {
-                onViewDiff(note.id);
-                onContextMenuClose();
-              }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              View Diff
+              Stop Managing Locally
             </button>
           )}
           {onDeleteNote && (
@@ -321,6 +283,7 @@ export function NoteList({
   searchResults,
   sortByManual,
   localFileStatuses,
+  locallyHostedNoteIds,
   onUnlinkLocalFile,
   onSaveAsLocalFile,
   onSaveToFile,
@@ -374,6 +337,7 @@ export function NoteList({
             onDeleteClick={handleDeleteClick}
             contextMenuRef={contextMenuRef}
             localFileStatus={localFileStatuses?.get(note.id)}
+            hostedLocally={locallyHostedNoteIds?.has(note.id)}
             onUnlinkLocalFile={onUnlinkLocalFile}
             onSaveAsLocalFile={onSaveAsLocalFile}
             onSaveToFile={onSaveToFile}

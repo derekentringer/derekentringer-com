@@ -44,9 +44,12 @@ export function resolveAccentColor(preset: AccentColorPreset, theme: "dark" | "l
   return ACCENT_PRESETS[preset][theme];
 }
 
+export type PropertiesMode = "panel" | "source";
+
 export interface EditorSettings {
   defaultViewMode: ViewModeDefault;
   showLineNumbers: boolean;
+  propertiesMode: PropertiesMode;
   wordWrap: boolean;
   autoSaveDelay: number;
   tabSize: TabSizeOption;
@@ -69,6 +72,7 @@ const VALID_CURSOR_STYLES: CursorStyle[] = ["line", "block", "underline"];
 const DEFAULT_SETTINGS: EditorSettings = {
   defaultViewMode: "editor",
   showLineNumbers: true,
+  propertiesMode: "panel" as PropertiesMode,
   wordWrap: true,
   autoSaveDelay: 1500,
   tabSize: 2,
@@ -95,6 +99,7 @@ function loadSettings(): EditorSettings {
         ? parsed.defaultViewMode
         : "editor",
       showLineNumbers: typeof parsed.showLineNumbers === "boolean" ? parsed.showLineNumbers : true,
+      propertiesMode: parsed.propertiesMode === "source" ? "source" : "panel",
       wordWrap: typeof parsed.wordWrap === "boolean" ? parsed.wordWrap : true,
       autoSaveDelay: typeof parsed.autoSaveDelay === "number"
         ? clamp(parsed.autoSaveDelay, 500, 5000)

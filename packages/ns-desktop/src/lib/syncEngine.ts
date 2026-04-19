@@ -12,10 +12,22 @@ import {
   softDeleteNoteFromRemote,
   softDeleteFolderFromRemote,
   softDeleteImageFromRemote,
+  hardDeleteFolderFromRemote,
+  hardDeleteNoteFromRemote,
   getNoteLocalPath,
   getNoteLocalFileHash,
+  getNoteLocalFileInfo,
+  findManagedDirForFolder,
+  getFolderManagedDiskPath,
+  removeManagedDirectory,
 } from "./db.ts";
-import { computeContentHash, fileExists } from "./localFileService.ts";
+import {
+  computeContentHash,
+  fileExists,
+  moveToTrash,
+  stopDirectoryWatching,
+  stopWatching,
+} from "./localFileService.ts";
 import type {
   SyncChange,
   SyncRejection,
@@ -23,6 +35,7 @@ import type {
   SyncPullRequest,
   SyncPullResponse,
   SyncPushResponse,
+  SyncTombstone,
   Note,
   FolderSyncData,
   ImageSyncData,
@@ -44,6 +57,7 @@ const MAX_BACKOFF_MS = 60_000;
 const BATCH_LIMIT = 100;
 const DEVICE_ID_KEY = "deviceId";
 const LAST_PULL_KEY = "lastPullAt";
+const LAST_PULL_IDS_KEY = "lastPullIds";
 
 let syncStatus: SyncStatus = "idle";
 let syncError: string | null = null;
@@ -84,6 +98,7 @@ export interface SyncEngineCallbacks {
   onDataChanged: () => void;
   onLocalFileCloudUpdate?: (noteId: string) => void;
   onNoteRemoteDeleted?: (noteId: string) => void;
+  onFolderRemoteDeleted?: (folderId: string, folderName: string, parentId: string | null) => void;
   onSyncRejections?: (
     rejections: SyncRejection[],
     forcePush: (changeIds: string[]) => Promise<void>,
@@ -93,6 +108,7 @@ export interface SyncEngineCallbacks {
 }
 
 let noteRemoteDeletedCallback: ((noteId: string) => void) | null = null;
+let folderRemoteDeletedCallback: ((folderId: string, folderName: string, parentId: string | null) => void) | null = null;
 let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
 let chatChangedCallback: (() => void) | null = null;
 
@@ -101,6 +117,7 @@ export async function initSyncEngine(callbacks: SyncEngineCallbacks): Promise<vo
   dataChangedCallback = callbacks.onDataChanged;
   localFileCloudUpdateCallback = callbacks.onLocalFileCloudUpdate ?? null;
   noteRemoteDeletedCallback = callbacks.onNoteRemoteDeleted ?? null;
+  folderRemoteDeletedCallback = callbacks.onFolderRemoteDeleted ?? null;
   syncRejectionsCallback = callbacks.onSyncRejections ?? null;
   chatChangedCallback = callbacks.onChatChanged ?? null;
 
@@ -148,6 +165,7 @@ export function destroySyncEngine(): void {
   dataChangedCallback = null;
   localFileCloudUpdateCallback = null;
   noteRemoteDeletedCallback = null;
+  folderRemoteDeletedCallback = null;
   syncRejectionsCallback = null;
   syncInProgress = false;
   deviceId = null;
@@ -563,7 +581,26 @@ async function pullChanges(id: string): Promise<void> {
   const lastPull = await getSyncMeta(LAST_PULL_KEY);
   const since = lastPull ?? new Date(0).toISOString();
 
-  const payload: SyncPullRequest = { deviceId: id, since };
+  // Load per-type keyset tie-breakers from the previous pull, if any
+  // (Phase 2.2). A missing or unparseable value behaves like a fresh cursor.
+  const lastIdsRaw = await getSyncMeta(LAST_PULL_IDS_KEY);
+  let lastIds: SyncPullRequest["lastIds"] | undefined;
+  if (lastIdsRaw) {
+    try {
+      const parsed = JSON.parse(lastIdsRaw);
+      if (parsed && typeof parsed === "object") {
+        lastIds = parsed;
+      }
+    } catch {
+      lastIds = undefined;
+    }
+  }
+
+  const payload: SyncPullRequest = {
+    deviceId: id,
+    since,
+    ...(lastIds ? { lastIds } : {}),
+  };
 
   const response = await apiFetch("/sync/pull", {
     method: "POST",
@@ -602,8 +639,39 @@ async function pullChanges(id: string): Promise<void> {
     }
   }
 
+  // Process tombstones for hard-deleted entities (Phase 1.5). Notes
+  // before folders so managed notes are reported individually before
+  // their parent managed dir goes away in one shot.
+  const tombstones = result.tombstones ?? [];
+  const noteTombstones = tombstones.filter((t) => t.type === "note");
+  const folderTombstones = tombstones.filter((t) => t.type === "folder");
+
+  for (const t of noteTombstones) {
+    try {
+      await applyNoteTombstone(t);
+      hadChanges = true;
+    } catch (err) {
+      console.warn(`Failed to apply note tombstone ${t.id}:`, err);
+    }
+  }
+  for (const t of folderTombstones) {
+    try {
+      await applyFolderTombstone(t);
+      hadChanges = true;
+    } catch (err) {
+      console.warn(`Failed to apply folder tombstone ${t.id}:`, err);
+    }
+  }
+
   // Update cursor
   await setSyncMeta(LAST_PULL_KEY, result.cursor.lastSyncedAt);
+  // Persist keyset tie-breakers for the next pull (Phase 2.2). Clear the
+  // slot when the server no longer reports any capped types.
+  if (result.cursor.lastIds && Object.keys(result.cursor.lastIds).length > 0) {
+    await setSyncMeta(LAST_PULL_IDS_KEY, JSON.stringify(result.cursor.lastIds));
+  } else {
+    await setSyncMeta(LAST_PULL_IDS_KEY, "");
+  }
 
   // Notify UI if data changed
   if (hadChanges) {
@@ -665,6 +733,10 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
     const folderData = change.data as FolderSyncData | null;
     if (folderData) await upsertFolderFromRemote(folderData);
+    // Fire callback BEFORE soft-delete so the handler can still look up the folder
+    if (folderData) {
+      folderRemoteDeletedCallback?.(change.id, folderData.name, folderData.parentId ?? null);
+    }
     await softDeleteFolderFromRemote(change.id);
     return;
   }
@@ -672,6 +744,89 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
   const folderData = change.data as FolderSyncData | null;
   if (!folderData) return;
   await upsertFolderFromRemote(folderData);
+}
+
+/**
+ * Apply a folder tombstone (Phase 1.5). If this desktop manages the
+ * folder's on-disk directory (self or ancestor), stop the watcher,
+ * remove the managed_directories row, move the path to OS trash, then
+ * hard-delete the local folder row. Otherwise just hard-delete the row.
+ *
+ * Ordering is critical: watcher + managed_directories must go before
+ * moveToTrash so the trash move doesn't synthesize phantom watcher
+ * events.
+ */
+async function applyFolderTombstone(tombstone: SyncTombstone): Promise<void> {
+  const managedDir = await findManagedDirForFolder(tombstone.id);
+
+  if (managedDir && managedDir.rootFolderId === tombstone.id) {
+    // The tombstoned folder IS the managed root — tear the whole thing
+    // down (watcher + managed_directories row + on-disk directory).
+    await stopDirectoryWatching(managedDir.path);
+    await removeManagedDirectory(managedDir.id);
+    try {
+      await moveToTrash(managedDir.path);
+    } catch (err) {
+      console.warn(`moveToTrash failed for ${managedDir.path}:`, err);
+    }
+  } else if (managedDir) {
+    // Descendant of a managed root. Note tombstones already trashed
+    // the individual files inside, but the on-disk DIRECTORY itself
+    // remains. If we don't trash it here, the periodic reconciliation's
+    // `syncLevel` will see the empty directory, conclude it's a new
+    // folder under the managed root, re-create a folder row with the
+    // same name, enqueue a sync push — and the folder resurrects on
+    // every device.
+    //
+    // Compute the disk path from the folder tree BEFORE the hard-delete
+    // below wipes the ancestor chain. Then moveToTrash. The ancestor's
+    // directory watcher will fire an onDirectoryDeleted event, which is
+    // a no-op today (reconciliation handles it).
+    const pathInfo = await getFolderManagedDiskPath(tombstone.id);
+    if (pathInfo) {
+      try {
+        await moveToTrash(pathInfo.diskPath);
+      } catch (err) {
+        // Non-fatal: the dir may already be gone if an ancestor
+        // tombstone processed earlier in the same pull.
+        console.warn(`moveToTrash failed for ${pathInfo.diskPath}:`, err);
+      }
+    }
+  }
+  // Unmanaged folder: just the SQLite hard-delete below — no on-disk
+  // work required.
+
+  await hardDeleteFolderFromRemote(tombstone.id);
+
+  // Fire the existing folder-remote-deleted callback so UI state (tabs,
+  // active folder selection, etc.) can react.
+  folderRemoteDeletedCallback?.(tombstone.id, "", null);
+}
+
+/**
+ * Apply a note tombstone (Phase 1.5). If the note has a local_path on
+ * disk, move the file to OS trash before hard-deleting the local row.
+ * The per-note watcher is stopped first to avoid a phantom watcher
+ * event during the trash move.
+ */
+async function applyNoteTombstone(tombstone: SyncTombstone): Promise<void> {
+  const localInfo = await getNoteLocalFileInfo(tombstone.id);
+
+  if (localInfo) {
+    await stopWatching(tombstone.id);
+    try {
+      await moveToTrash(localInfo.localPath);
+    } catch (err) {
+      // File may already be gone (e.g. ancestor managed dir was just
+      // trashed in this same pull, or the user deleted it externally).
+      // Non-fatal.
+      console.warn(`moveToTrash failed for ${localInfo.localPath}:`, err);
+    }
+  }
+
+  await hardDeleteNoteFromRemote(tombstone.id);
+
+  noteRemoteDeletedCallback?.(tombstone.id);
 }
 
 async function applyImageChange(change: SyncChange): Promise<void> {
@@ -698,6 +853,7 @@ async function readLocalFolder(folderId: string): Promise<FolderSyncData | null>
     parent_id: string | null;
     sort_order: number;
     favorite: number;
+    is_local_file: number;
     created_at: string;
     updated_at: string;
     deleted_at: string | null;
@@ -713,6 +869,7 @@ async function readLocalFolder(folderId: string): Promise<FolderSyncData | null>
     parentId: r.parent_id,
     sortOrder: r.sort_order,
     favorite: r.favorite === 1,
+    isLocalFile: (r.is_local_file ?? 0) === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     deletedAt: r.deleted_at,

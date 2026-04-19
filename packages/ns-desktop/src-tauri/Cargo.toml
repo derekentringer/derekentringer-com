@@ -33,6 +33,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # `hound` is used by the cross-platform audio_capture_shared module, so it must
 # be available on every target that includes meeting-mode capture (macOS + Windows).
 hound = "3.5"
+trash = "5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

@@ -15,6 +15,12 @@ import type {
   NoteVersionListResponse,
   AudioMode,
 } from "@derekentringer/ns-shared";
+import {
+  parseFrontmatter,
+  updateFrontmatterField,
+  injectFrontmatter,
+  hasFrontmatter,
+} from "@derekentringer/ns-shared";
 import { DB_URI } from "./dbName.ts";
 
 let dbInstance: Database | null = null;
@@ -244,11 +250,18 @@ export async function createNote(data: CreateNoteInput): Promise<Note> {
   const id = uuidv4();
   const now = new Date().toISOString();
   const title = data.title ?? "";
-  const content = data.content ?? "";
   const folderId = data.folderId ?? null;
 
   const isLocalFile = data.isLocalFile ? 1 : 0;
-  const tagsJson = JSON.stringify(data.tags ?? []);
+  const tags = data.tags ?? [];
+  const tagsJson = JSON.stringify(tags);
+
+  // Inject frontmatter into content — frontmatter is the source of truth for
+  // metadata fields. If content already has frontmatter, merge without overwriting.
+  const content = injectFrontmatter(data.content ?? "", {
+    title: title || undefined,
+    tags: tags.length > 0 ? tags : undefined,
+  });
 
   await db.execute(
     `INSERT INTO notes (id, title, content, folder_id, tags, is_local_file, is_deleted, created_at, updated_at)
@@ -350,6 +363,78 @@ export async function updateNote(
     setClauses.push(`is_local_file = $${paramIdx}`);
     params.push(data.isLocalFile ? 1 : 0);
     paramIdx++;
+  }
+
+  // Sync frontmatter ↔ database cache.
+  // When content changes: derive cache columns from frontmatter in content.
+  // When metadata fields change without content: update frontmatter in content.
+  if (data.content !== undefined) {
+    // Content changed — parse frontmatter and derive cache columns
+    const { metadata } = parseFrontmatter(data.content);
+    if (metadata.title !== undefined && data.title === undefined) {
+      setClauses.push(`title = $${paramIdx}`);
+      params.push(metadata.title);
+      paramIdx++;
+    }
+    if (metadata.tags !== undefined && data.tags === undefined) {
+      setClauses.push(`tags = $${paramIdx}`);
+      params.push(JSON.stringify(metadata.tags));
+      paramIdx++;
+    }
+    if (metadata.description !== undefined && data.summary === undefined) {
+      setClauses.push(`summary = $${paramIdx}`);
+      params.push(metadata.description);
+      paramIdx++;
+    }
+    if (metadata.favorite !== undefined && data.favorite === undefined) {
+      setClauses.push(`favorite = $${paramIdx}`);
+      params.push(metadata.favorite ? 1 : 0);
+      paramIdx++;
+    }
+  } else {
+    // Metadata changed without content — update frontmatter in content.
+    const metadataChanged =
+      data.title !== undefined ||
+      data.tags !== undefined ||
+      data.summary !== undefined ||
+      data.favorite !== undefined;
+
+    if (metadataChanged) {
+      const rows = await db.select<{ content: string }[]>(
+        "SELECT content FROM notes WHERE id = $1",
+        [id],
+      );
+      if (rows.length > 0 && rows[0].content !== undefined) {
+        let content = rows[0].content;
+        if (data.title !== undefined) {
+          content = updateFrontmatterField(content, "title", data.title);
+        }
+        if (data.tags !== undefined) {
+          content = updateFrontmatterField(
+            content,
+            "tags",
+            data.tags.length > 0 ? data.tags : undefined,
+          );
+        }
+        if (data.summary !== undefined) {
+          content = updateFrontmatterField(
+            content,
+            "description",
+            data.summary || undefined,
+          );
+        }
+        if (data.favorite !== undefined) {
+          content = updateFrontmatterField(
+            content,
+            "favorite",
+            data.favorite || undefined,
+          );
+        }
+        setClauses.push(`content = $${paramIdx}`);
+        params.push(content);
+        paramIdx++;
+      }
+    }
   }
 
   params.push(id);
@@ -534,6 +619,7 @@ interface FolderRow {
   parent_id: string | null;
   sort_order: number;
   favorite: number;
+  is_local_file: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -552,6 +638,7 @@ function buildFolderTree(
       parentId: row.parent_id ?? null,
       sortOrder: row.sort_order,
       favorite: row.favorite === 1,
+      isLocalFile: (row.is_local_file ?? 0) === 1,
       count: noteCounts.get(row.id) ?? 0,
       totalCount: 0,
       createdAt: row.created_at,
@@ -643,17 +730,99 @@ export async function fetchFolders(): Promise<FolderInfo[]> {
   return buildFolderTree(folderRows, noteCounts);
 }
 
+export interface CreateFolderOptions {
+  /**
+   * When true, the new folder is flagged as backed by an on-disk directory
+   * managed by this desktop instance. Set by the managed-directory flows
+   * (handleKeepLocal + resolveFolderForPath). Default false for normal
+   * user-created folders.
+   */
+  isLocalFile?: boolean;
+}
+
 export async function createFolder(
   name: string,
   parentId?: string,
+  options: CreateFolderOptions = {},
 ): Promise<FolderInfo> {
   const db = await getDb();
-  const id = uuidv4();
   const now = new Date().toISOString();
+  const isLocalFile = options.isLocalFile ? 1 : 0;
+
+  // Check for an existing active folder with the same name and parent — return
+  // it to avoid creating a duplicate. This handles the case where the server
+  // synced a folder that the reconciliation is also trying to create.
+  const existing = await db.select<{ id: string; name: string; sort_order: number; favorite: number; is_local_file: number; created_at: string }[]>(
+    parentId
+      ? "SELECT id, name, sort_order, favorite, is_local_file, created_at FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NULL LIMIT 1"
+      : "SELECT id, name, sort_order, favorite, is_local_file, created_at FROM folders WHERE name = $1 AND parent_id IS NULL AND deleted_at IS NULL LIMIT 1",
+    parentId ? [name, parentId] : [name],
+  );
+
+  if (existing.length > 0) {
+    const existingId = existing[0].id;
+    const existingIsLocalFile = (existing[0].is_local_file ?? 0) === 1;
+
+    // Adopt an existing folder into managed status when the caller is the
+    // managed-directory flow (resolveFolderForPath). Matches the case where
+    // a folder predates the managed-directory registration.
+    if (options.isLocalFile && !existingIsLocalFile) {
+      await db.execute(
+        "UPDATE folders SET is_local_file = 1, updated_at = $1 WHERE id = $2",
+        [now, existingId],
+      );
+      enqueueSyncAction("update", existingId, "folder").catch(() => {});
+    }
+
+    return {
+      id: existingId,
+      name: existing[0].name,
+      parentId: parentId ?? null,
+      sortOrder: existing[0].sort_order,
+      favorite: existing[0].favorite === 1,
+      isLocalFile: options.isLocalFile === true || existingIsLocalFile,
+      count: 0,
+      totalCount: 0,
+      createdAt: existing[0].created_at,
+      children: [],
+    };
+  }
+
+  // Check for a soft-deleted folder with the same name and parent — restore it
+  // instead of creating a new one to avoid sync conflicts.
+  const softDeleted = await db.select<{ id: string }[]>(
+    parentId
+      ? "SELECT id FROM folders WHERE name = $1 AND parent_id = $2 AND deleted_at IS NOT NULL LIMIT 1"
+      : "SELECT id FROM folders WHERE name = $1 AND parent_id IS NULL AND deleted_at IS NOT NULL LIMIT 1",
+    parentId ? [name, parentId] : [name],
+  );
+
+  if (softDeleted.length > 0) {
+    const restoredId = softDeleted[0].id;
+    await db.execute(
+      "UPDATE folders SET deleted_at = NULL, is_local_file = $1, updated_at = $2 WHERE id = $3",
+      [isLocalFile, now, restoredId],
+    );
+    enqueueSyncAction("update", restoredId, "folder").catch(() => {});
+    return {
+      id: restoredId,
+      name,
+      parentId: parentId ?? null,
+      sortOrder: 0,
+      favorite: false,
+      isLocalFile: options.isLocalFile === true,
+      count: 0,
+      totalCount: 0,
+      createdAt: now,
+      children: [],
+    };
+  }
+
+  const id = uuidv4();
 
   await db.execute(
-    "INSERT INTO folders (id, name, parent_id, sort_order, favorite, created_at, updated_at) VALUES ($1, $2, $3, 0, 0, $4, $4)",
-    [id, name, parentId ?? null, now],
+    "INSERT INTO folders (id, name, parent_id, sort_order, favorite, is_local_file, created_at, updated_at) VALUES ($1, $2, $3, 0, 0, $4, $5, $5)",
+    [id, name, parentId ?? null, isLocalFile, now],
   );
 
   enqueueSyncAction("create", id, "folder").catch(() => {});
@@ -664,6 +833,7 @@ export async function createFolder(
     parentId: parentId ?? null,
     sortOrder: 0,
     favorite: false,
+    isLocalFile: options.isLocalFile === true,
     count: 0,
     totalCount: 0,
     createdAt: now,
@@ -736,6 +906,17 @@ export async function deleteFolder(
       enqueueSyncAction("delete", folderId, "folder").catch(() => {});
     }
   }
+}
+
+/**
+ * Hard-delete a folder from SQLite. Used for locally managed folders
+ * where soft-delete causes duplication issues with sync round-trips.
+ */
+export async function hardDeleteFolder(id: string): Promise<void> {
+  const db = await getDb();
+  // Enqueue sync delete before removing from DB
+  enqueueSyncAction("delete", id, "folder").catch(() => {});
+  await db.execute("DELETE FROM folders WHERE id = $1", [id]);
 }
 
 async function collectDescendantFolderIds(parentId: string): Promise<string[]> {
@@ -1240,6 +1421,28 @@ export async function getSyncQueueCount(): Promise<number> {
  */
 export async function upsertNoteFromRemote(note: Note): Promise<void> {
   const db = await getDb();
+
+  // Phase 3.2 referential deferral: if the note points at a folder we
+  // haven't yet materialized locally, park the payload in pending_refs
+  // and skip the upsert. Replayed when the folder lands via
+  // drainPendingRefsForFolder.
+  if (note.folderId) {
+    const folderRows = await db.select<{ id: string }[]>(
+      "SELECT id FROM folders WHERE id = $1",
+      [note.folderId],
+    );
+    if (folderRows.length === 0) {
+      await enqueuePendingRef(
+        "note",
+        note.id,
+        "folder",
+        note.folderId,
+        JSON.stringify(note),
+      );
+      return;
+    }
+  }
+
   const existing = await db.select<{ id: string; updated_at: string }[]>(
     "SELECT id, updated_at FROM notes WHERE id = $1",
     [note.id],
@@ -1307,6 +1510,10 @@ export async function upsertNoteFromRemote(note: Note): Promise<void> {
   } else {
     await ftsDelete(note.id);
   }
+
+  // Any image payloads that were deferred waiting on this note can now
+  // be applied.
+  await drainPendingRefsForNote(note.id);
 }
 
 /**
@@ -1319,16 +1526,19 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
     [folder.id],
   );
 
+  const isLocalFile = folder.isLocalFile ? 1 : 0;
+
   if (existing.length > 0) {
     await db.execute(
       `UPDATE folders SET name = $1, parent_id = $2, sort_order = $3, favorite = $4,
-       updated_at = $5, deleted_at = $6
-       WHERE id = $7`,
+       is_local_file = $5, updated_at = $6, deleted_at = $7
+       WHERE id = $8`,
       [
         folder.name,
         folder.parentId,
         folder.sortOrder,
         folder.favorite ? 1 : 0,
+        isLocalFile,
         folder.updatedAt,
         folder.deletedAt,
         folder.id,
@@ -1336,20 +1546,25 @@ export async function upsertFolderFromRemote(folder: FolderSyncData): Promise<vo
     );
   } else {
     await db.execute(
-      `INSERT INTO folders (id, name, parent_id, sort_order, favorite, created_at, updated_at, deleted_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO folders (id, name, parent_id, sort_order, favorite, is_local_file, created_at, updated_at, deleted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         folder.id,
         folder.name,
         folder.parentId,
         folder.sortOrder,
         folder.favorite ? 1 : 0,
+        isLocalFile,
         folder.createdAt,
         folder.updatedAt,
         folder.deletedAt,
       ],
     );
   }
+
+  // Phase 3.2: drain any note payloads that were deferred waiting on
+  // this folder.
+  await drainPendingRefsForFolder(folder.id);
 }
 
 /**
@@ -1385,6 +1600,158 @@ export async function softDeleteFolderFromRemote(folderId: string): Promise<void
     "UPDATE folders SET deleted_at = $1, updated_at = $1 WHERE id = $2",
     [now, folderId],
   );
+}
+
+/**
+ * Hard-delete a folder from a remote tombstone (Phase 1.5).
+ *
+ * Unfiles notes still referencing it (defensive — server should have
+ * already re-parented or tombstoned them) and removes the row
+ * completely. Caller is responsible for on-disk cleanup when the folder
+ * was managed-locally (see syncEngine.applyFolderTombstone).
+ */
+export async function hardDeleteFolderFromRemote(folderId: string): Promise<void> {
+  const db = await getDb();
+  // Defensive: clear any lingering folder_id pointers so we don't leave
+  // notes pointing at a deleted parent.
+  await db.execute(
+    "UPDATE notes SET folder_id = NULL WHERE folder_id = $1",
+    [folderId],
+  );
+  await db.execute("DELETE FROM folders WHERE id = $1", [folderId]);
+}
+
+/**
+ * Hard-delete a note from a remote tombstone (Phase 1.5).
+ *
+ * Removes the note row, its FTS entry, and any note_embeddings or
+ * note_versions (cascade via FK). Caller is responsible for on-disk
+ * cleanup when the note had a local_path.
+ */
+export async function hardDeleteNoteFromRemote(noteId: string): Promise<void> {
+  const db = await getDb();
+  await ftsDelete(noteId);
+  await db.execute("DELETE FROM notes WHERE id = $1", [noteId]);
+}
+
+/**
+ * Look up the on-disk path + managed-dir info for a note, if any.
+ * Returns null if the note isn't a local-file note.
+ */
+export async function getNoteLocalFileInfo(
+  noteId: string,
+): Promise<{ localPath: string } | null> {
+  const db = await getDb();
+  const rows = await db.select<{ local_path: string | null; is_local_file: number }[]>(
+    "SELECT local_path, is_local_file FROM notes WHERE id = $1",
+    [noteId],
+  );
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  if (!r.local_path || r.is_local_file !== 1) return null;
+  return { localPath: r.local_path };
+}
+
+/**
+ * Find the managed_directories row whose root_folder_id matches the given
+ * folder ID, or whose root is an ancestor of the folder. Returns null if
+ * the folder isn't under any managed directory on this desktop.
+ *
+ * Uses a recursive CTE to walk the folder tree upward from folderId.
+ */
+export async function findManagedDirForFolder(
+  folderId: string,
+): Promise<ManagedDirectory | null> {
+  const db = await getDb();
+  const rows = await db.select<ManagedDirectoryRow[]>(
+    `WITH RECURSIVE ancestors(id) AS (
+       SELECT $1
+       UNION ALL
+       SELECT f.parent_id FROM folders f
+         JOIN ancestors a ON f.id = a.id
+         WHERE f.parent_id IS NOT NULL
+     )
+     SELECT md.id, md.path, md.root_folder_id, md.created_at
+     FROM managed_directories md
+     WHERE md.root_folder_id IN (SELECT id FROM ancestors)
+     LIMIT 1`,
+    [folderId],
+  );
+  return rows.length > 0 ? rowToManagedDir(rows[0]) : null;
+}
+
+/**
+ * Phase 3.3 follow-up: compute the on-disk path for a folder that
+ * lives under a managed directory. Walks from the folder UP to its
+ * managed root, collects each ancestor's name, then returns
+ * `managed_root.path + "/" + ancestorNames.join("/")`.
+ *
+ * Returns null if the folder is not under any managed root, or if the
+ * folder IS the managed root itself (caller should handle that case
+ * with `managed_directories.path` directly since the root's row is
+ * about to be removed anyway).
+ */
+export async function getFolderManagedDiskPath(
+  folderId: string,
+): Promise<{ managedDirId: string; managedRootPath: string; diskPath: string } | null> {
+  const db = await getDb();
+
+  // Walk up from the folder collecting (id, name, parent_id). The
+  // recursive CTE seeds with the folder itself so we can reconstruct
+  // the name chain.
+  const chain = await db.select<
+    { id: string; name: string; parent_id: string | null; depth: number }[]
+  >(
+    `WITH RECURSIVE chain(id, name, parent_id, depth) AS (
+       SELECT id, name, parent_id, 0 AS depth FROM folders WHERE id = $1
+       UNION ALL
+       SELECT f.id, f.name, f.parent_id, c.depth + 1
+       FROM folders f JOIN chain c ON f.id = c.parent_id
+       WHERE f.parent_id IS NOT NULL OR f.id = c.parent_id
+     )
+     SELECT id, name, parent_id, depth FROM chain ORDER BY depth DESC`,
+    [folderId],
+  );
+
+  if (chain.length === 0) return null;
+
+  // The topmost ancestor (highest depth) should match some managed root.
+  // Find the first row in the chain that IS a managed root.
+  const ids = chain.map((r) => r.id);
+  const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
+  const mdRows = await db.select<ManagedDirectoryRow[]>(
+    `SELECT id, path, root_folder_id, created_at
+     FROM managed_directories
+     WHERE root_folder_id IN (${placeholders})`,
+    ids,
+  );
+  if (mdRows.length === 0) return null;
+  const managed = rowToManagedDir(mdRows[0]);
+
+  // If the folder IS the managed root, return null — caller has the
+  // path already via the managed_directories row and tears the whole
+  // thing down as one operation.
+  if (managed.rootFolderId === folderId) return null;
+
+  // Build the relative path from the managed root DOWN to the target
+  // folder. `ORDER BY depth DESC` puts the oldest ancestor (highest
+  // depth) first and the target (depth 0) last. Segments start at the
+  // row AFTER the managed root and continue to the end.
+  const rootIdx = chain.findIndex((r) => r.id === managed.rootFolderId);
+  if (rootIdx < 0) return null;
+  const segments: string[] = [];
+  for (let i = rootIdx + 1; i < chain.length; i++) {
+    segments.push(chain[i].name);
+  }
+
+  const rootPath = managed.path.replace(/\/+$/, "");
+  const diskPath = segments.length > 0 ? `${rootPath}/${segments.join("/")}` : rootPath;
+
+  return {
+    managedDirId: managed.id,
+    managedRootPath: rootPath,
+    diskPath,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1463,6 +1830,29 @@ export async function findNoteByLocalPath(path: string): Promise<Note | null> {
 }
 
 /**
+ * Find a soft-deleted note by local path and restore it.
+ * Used by the auto-indexer to reuse UUIDs when files are re-added
+ * to a managed directory. Returns the restored note or null.
+ */
+export async function restoreNoteByLocalPath(path: string): Promise<Note | null> {
+  const db = await getDb();
+  const deleted = await db.select<NoteRow[]>(
+    "SELECT * FROM notes WHERE local_path = $1 AND is_deleted = 1 ORDER BY updated_at DESC LIMIT 1",
+    [path],
+  );
+  if (deleted.length === 0) return null;
+
+  const note = deleted[0];
+  const now = new Date().toISOString();
+  await db.execute(
+    "UPDATE notes SET is_deleted = 0, deleted_at = NULL, updated_at = $1 WHERE id = $2",
+    [now, note.id],
+  );
+  enqueueSyncAction("update", note.id, "note").catch(() => {});
+  return rowToNote({ ...note, is_deleted: 0, deleted_at: null, updated_at: now });
+}
+
+/**
  * Get the local_path for a note (desktop-only column).
  */
 export async function getNoteLocalPath(noteId: string): Promise<string | null> {
@@ -1508,6 +1898,28 @@ export async function fetchAudioNotes(limit = 10): Promise<Note[]> {
 
 export async function upsertImageFromRemote(image: ImageSyncData): Promise<void> {
   const db = await getDb();
+
+  // Phase 3.2 referential deferral: an image pull can arrive before its
+  // note when a single logical create (note + N images) gets split
+  // across BATCH_LIMIT boundaries. Park the payload and wait for the
+  // note.
+  if (image.noteId) {
+    const noteRows = await db.select<{ id: string }[]>(
+      "SELECT id FROM notes WHERE id = $1",
+      [image.noteId],
+    );
+    if (noteRows.length === 0) {
+      await enqueuePendingRef(
+        "image",
+        image.id,
+        "note",
+        image.noteId,
+        JSON.stringify(image),
+      );
+      return;
+    }
+  }
+
   const existing = await db.select<{ id: string; updated_at: string }[]>(
     "SELECT id, updated_at FROM images WHERE id = $1",
     [image.id],
@@ -1640,4 +2052,558 @@ export async function fetchImageById(imageId: string): Promise<ImageSyncData | n
     updatedAt: r.updated_at,
     deletedAt: r.deleted_at,
   };
+}
+
+// --- Managed directories ---
+
+export interface ManagedDirectory {
+  id: string;
+  path: string;
+  rootFolderId: string | null;
+  createdAt: string;
+}
+
+interface ManagedDirectoryRow {
+  id: string;
+  path: string;
+  root_folder_id: string | null;
+  created_at: string;
+}
+
+function rowToManagedDir(r: ManagedDirectoryRow): ManagedDirectory {
+  return {
+    id: r.id,
+    path: r.path,
+    rootFolderId: r.root_folder_id,
+    createdAt: r.created_at,
+  };
+}
+
+export async function listManagedDirectories(): Promise<ManagedDirectory[]> {
+  const db = await getDb();
+  const rows = await db.select<ManagedDirectoryRow[]>(
+    "SELECT id, path, root_folder_id, created_at FROM managed_directories ORDER BY created_at ASC",
+  );
+  return rows.map(rowToManagedDir);
+}
+
+export async function addManagedDirectory(
+  path: string,
+  rootFolderId?: string | null,
+): Promise<ManagedDirectory> {
+  const db = await getDb();
+  const { v4: uuidv4 } = await import("uuid");
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  await db.execute(
+    "INSERT INTO managed_directories (id, path, root_folder_id, created_at) VALUES ($1, $2, $3, $4)",
+    [id, path, rootFolderId ?? null, now],
+  );
+
+  // Flag the root folder as managed-locally so the server, web, and
+  // other desktops all see that it's backed by an on-disk directory.
+  // No-op if the folder row doesn't exist locally (e.g. registration
+  // races a sync pull) — Phase 1.3's backfill picks up stragglers.
+  if (rootFolderId) {
+    await setFolderIsLocalFile(rootFolderId, true);
+  }
+
+  return { id, path, rootFolderId: rootFolderId ?? null, createdAt: now };
+}
+
+/**
+ * Flip the is_local_file flag on a folder and enqueue a sync update so
+ * the server + other clients learn about the change. Idempotent:
+ * matches no rows if the folder doesn't exist locally (e.g. a folder
+ * arrived via a later sync batch than its addManagedDirectory call).
+ */
+export async function setFolderIsLocalFile(
+  folderId: string,
+  isLocalFile: boolean,
+): Promise<void> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const result = await db.execute(
+    "UPDATE folders SET is_local_file = $1, updated_at = $2 WHERE id = $3 AND is_local_file != $1",
+    [isLocalFile ? 1 : 0, now, folderId],
+  );
+  // rowsAffected is typed as number | undefined by @tauri-apps/plugin-sql
+  const changed = (result.rowsAffected ?? 0) > 0;
+  if (changed) {
+    enqueueSyncAction("update", folderId, "folder").catch(() => {});
+  }
+}
+
+export async function removeManagedDirectory(id: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM managed_directories WHERE id = $1", [id]);
+}
+
+/**
+ * Phase 3.4 — unmanage a directory.
+ *
+ * The symmetric operation to `addManagedDirectory`: clears
+ * `is_local_file` on the root folder and every descendant (so the
+ * server and other clients stop seeing this subtree as "managed on a
+ * desktop"), enqueues a folder sync update for each affected folder
+ * (so the flag change propagates), and removes the
+ * `managed_directories` row.
+ *
+ * What this deliberately does NOT do:
+ *   - Touch the on-disk files (they stay exactly where they are; the
+ *     user's explicit choice to unmanage means they want local files
+ *     preserved, just no longer cloud-mirrored).
+ *   - Unlink notes from their `local_path` — that's orthogonal and
+ *     handled by the caller's chosen behavior (see the NotesPage
+ *     handler, which unlinks notes but leaves files on disk).
+ *   - Stop the watcher — the caller does that first to avoid races
+ *     with the is_local_file writes triggering watcher events.
+ */
+export async function unmanageManagedDirectory(
+  managedDirId: string,
+  rootFolderId: string,
+): Promise<number> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+
+  // Collect the root folder + all descendants via a recursive CTE.
+  // Keep it one query so we know exactly which ids to flip.
+  const rows = await db.select<{ id: string }[]>(
+    `WITH RECURSIVE subtree AS (
+       SELECT id FROM folders WHERE id = $1
+       UNION ALL
+       SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+     )
+     SELECT id FROM subtree`,
+    [rootFolderId],
+  );
+  const affectedIds = rows.map((r) => r.id);
+
+  for (const id of affectedIds) {
+    await db.execute(
+      "UPDATE folders SET is_local_file = 0, updated_at = $1 WHERE id = $2",
+      [now, id],
+    );
+    // Fire-and-forget: if the sync queue write fails the flag is still
+    // cleared locally; next successful sync will reconcile.
+    enqueueSyncAction("update", id, "folder").catch(() => {});
+  }
+
+  await db.execute("DELETE FROM managed_directories WHERE id = $1", [managedDirId]);
+
+  return affectedIds.length;
+}
+
+export async function getManagedDirectoryByPath(
+  path: string,
+): Promise<ManagedDirectory | null> {
+  const db = await getDb();
+  const rows = await db.select<ManagedDirectoryRow[]>(
+    "SELECT id, path, root_folder_id, created_at FROM managed_directories WHERE path = $1",
+    [path],
+  );
+  return rows.length > 0 ? rowToManagedDir(rows[0]) : null;
+}
+
+/**
+ * Check if a path is inside any managed directory or contains a managed directory.
+ * Used to prevent nested managed directories.
+ */
+export async function isPathConflicting(
+  candidatePath: string,
+): Promise<{ conflicts: boolean; reason?: string }> {
+  const dirs = await listManagedDirectories();
+  const normalized = candidatePath.endsWith("/") ? candidatePath : candidatePath + "/";
+  for (const dir of dirs) {
+    const dirNormalized = dir.path.endsWith("/") ? dir.path : dir.path + "/";
+    if (normalized.startsWith(dirNormalized)) {
+      return { conflicts: true, reason: `Already inside managed directory: ${dir.path}` };
+    }
+    if (dirNormalized.startsWith(normalized)) {
+      return { conflicts: true, reason: `Contains existing managed directory: ${dir.path}` };
+    }
+  }
+  return { conflicts: false };
+}
+
+/**
+ * Get all notes that are local files inside a managed directory.
+ */
+export async function fetchNotesInManagedDirectory(
+  dirPath: string,
+): Promise<Note[]> {
+  const db = await getDb();
+  const prefix = dirPath.endsWith("/") ? dirPath : dirPath + "/";
+  const rows = await db.select<NoteRow[]>(
+    "SELECT * FROM notes WHERE is_local_file = 1 AND local_path LIKE $1 AND is_deleted = 0",
+    [prefix + "%"],
+  );
+  return rows.map(rowToNote);
+}
+
+/**
+ * Get tracked local file notes with their local_path and hash for reconciliation.
+ */
+export async function fetchTrackedFilesInDirectory(
+  dirPath: string,
+): Promise<{ id: string; localPath: string; localFileHash: string | null }[]> {
+  const db = await getDb();
+  const prefix = dirPath.endsWith("/") ? dirPath : dirPath + "/";
+  const rows = await db.select<{ id: string; local_path: string; local_file_hash: string | null }[]>(
+    "SELECT id, local_path, local_file_hash FROM notes WHERE is_local_file = 1 AND local_path LIKE $1 AND is_deleted = 0",
+    [prefix + "%"],
+  );
+  return rows.map((r) => ({ id: r.id, localPath: r.local_path, localFileHash: r.local_file_hash }));
+}
+
+/**
+ * Resolve the NoteSync folder ID for a file path relative to a managed directory.
+ * Creates intermediate folders as needed to match the directory structure.
+ *
+ * For example, given:
+ *   managedDirPath = "/Users/me/notes"
+ *   rootFolderId = "folder-abc"
+ *   filePath = "/Users/me/notes/work/q2/meeting.md"
+ *
+ * This creates folders "work" (child of rootFolderId) and "q2" (child of "work"),
+ * then returns the ID of "q2".
+ *
+ * If the file is directly in the managed directory root, returns rootFolderId.
+ */
+export async function resolveFolderForPath(
+  managedDirPath: string,
+  rootFolderId: string | null,
+  filePath: string,
+): Promise<string | null> {
+  const dirRoot = managedDirPath.endsWith("/") ? managedDirPath : managedDirPath + "/";
+  const relativePath = filePath.startsWith(dirRoot) ? filePath.slice(dirRoot.length) : filePath;
+
+  // Get the directory parts (exclude the filename)
+  const parts = relativePath.replace(/\\/g, "/").split("/");
+  parts.pop(); // Remove filename
+
+  if (parts.length === 0) return rootFolderId; // File is in the root
+
+  let parentId = rootFolderId;
+
+  for (const dirName of parts) {
+    if (!dirName) continue;
+
+    // Delegate to createFolder with isLocalFile: true — it handles
+    // dedup (existing active folder or soft-deleted), adoption (flips
+    // is_local_file on an existing un-flagged folder), and sync
+    // enqueue.
+    const folder = await createFolder(dirName, parentId ?? undefined, {
+      isLocalFile: true,
+    });
+    parentId = folder.id;
+  }
+
+  return parentId;
+}
+
+// --- Data migrations ---
+
+const MANAGED_FOLDER_BACKFILL_KEY = "managed_folders_backfill_done";
+
+/**
+ * One-time desktop startup pass: walk every row in managed_directories and
+ * flip folders.is_local_file = 1 on the root folder and every descendant,
+ * enqueueing a sync update for each flip so the server + other clients see
+ * the change.
+ *
+ * Idempotent: the sync_meta flag short-circuits subsequent invocations.
+ * Callable on every startup; the no-work fast path is a single row read.
+ *
+ * Intended for installs that registered managed_directories before Phase 1
+ * introduced folders.is_local_file. After this runs once, the
+ * Phase 1.2 set-points keep future installs consistent.
+ */
+export async function backfillManagedFolders(): Promise<number> {
+  const done = await getSyncMeta(MANAGED_FOLDER_BACKFILL_KEY);
+  if (done === "1") return 0;
+
+  const db = await getDb();
+  const dirs = await listManagedDirectories();
+  let flipped = 0;
+
+  for (const dir of dirs) {
+    if (!dir.rootFolderId) continue;
+
+    // Walk the folder subtree rooted at rootFolderId via a CTE. SQLite
+    // WITH RECURSIVE handles arbitrary depth without a round-trip loop.
+    const rows = await db.select<{ id: string }[]>(
+      `WITH RECURSIVE descendants(id) AS (
+         SELECT id FROM folders WHERE id = $1 AND deleted_at IS NULL
+         UNION ALL
+         SELECT f.id FROM folders f
+           JOIN descendants d ON f.parent_id = d.id
+           WHERE f.deleted_at IS NULL
+       )
+       SELECT d.id FROM descendants d
+         JOIN folders f ON f.id = d.id
+         WHERE f.is_local_file = 0`,
+      [dir.rootFolderId],
+    );
+
+    for (const row of rows) {
+      await setFolderIsLocalFile(row.id, true);
+      flipped++;
+    }
+  }
+
+  await setSyncMeta(MANAGED_FOLDER_BACKFILL_KEY, "1");
+  if (flipped > 0) {
+    console.log(
+      `[managed-folder backfill] Flagged ${flipped} folder(s) as is_local_file across ${dirs.length} managed directory(ies)`,
+    );
+  }
+  return flipped;
+}
+
+const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";
+
+/**
+ * One-time data migration: inject YAML frontmatter into existing notes that
+ * don't have it yet. Checks a flag in sync_meta so it only runs once.
+ * Safe to call on every app startup — returns immediately if already done.
+ */
+export async function migrateFrontmatter(): Promise<boolean> {
+  const done = await getSyncMeta(FRONTMATTER_MIGRATION_KEY);
+  if (done === "1") return false;
+
+  const db = await getDb();
+
+  // Fetch all notes (including soft-deleted)
+  const rows = await db.select<
+    {
+      id: string;
+      title: string;
+      content: string;
+      tags: string;
+      summary: string | null;
+      favorite: number;
+      created_at: string;
+      updated_at: string;
+    }[]
+  >("SELECT id, title, content, tags, summary, favorite, created_at, updated_at FROM notes");
+
+  let updated = 0;
+  for (const row of rows) {
+    let tags: string[] = [];
+    try {
+      tags = JSON.parse(row.tags);
+    } catch {
+      /* ignore */
+    }
+
+    const newContent = injectFrontmatter(row.content, {
+      title: row.title || undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      tags: tags.length > 0 ? tags : undefined,
+      summary: row.summary || undefined,
+      favorite: row.favorite === 1 || undefined,
+    });
+
+    // Skip if content didn't change (already has complete frontmatter)
+    if (newContent === row.content) continue;
+
+    await db.execute("UPDATE notes SET content = $1 WHERE id = $2", [
+      newContent,
+      row.id,
+    ]);
+
+    // Update FTS index
+    await ftsUpdate(
+      row.id,
+      row.title,
+      newContent,
+      row.tags,
+    );
+
+    updated++;
+  }
+
+  await setSyncMeta(FRONTMATTER_MIGRATION_KEY, "1");
+  if (updated > 0) {
+    console.log(`[frontmatter migration] Updated ${updated} of ${rows.length} notes`);
+  }
+  return updated > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Pending refs (Phase 3.2) — buffered sync payloads waiting on a parent
+// ---------------------------------------------------------------------------
+
+export interface PendingRefRow {
+  id: number;
+  entityType: "note" | "image";
+  entityId: string;
+  refType: "folder" | "note";
+  refId: string;
+  payload: string;
+  enqueuedAt: string;
+}
+
+/**
+ * Park a sync payload whose referenced parent is not yet in local SQLite.
+ * `(entity_type, entity_id)` is NOT unique — retries of the same payload
+ * while the parent is still missing overwrite via delete-then-insert so
+ * the most recent payload is what gets replayed.
+ */
+export async function enqueuePendingRef(
+  entityType: "note" | "image",
+  entityId: string,
+  refType: "folder" | "note",
+  refId: string,
+  payload: string,
+): Promise<void> {
+  const db = await getDb();
+  // Replace any prior deferral for this same entity so we don't
+  // accumulate duplicates if the same upsert is retried while the
+  // parent is still missing.
+  await db.execute(
+    "DELETE FROM pending_refs WHERE entity_type = $1 AND entity_id = $2",
+    [entityType, entityId],
+  );
+  await db.execute(
+    `INSERT INTO pending_refs (entity_type, entity_id, ref_type, ref_id, payload)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [entityType, entityId, refType, refId, payload],
+  );
+}
+
+async function fetchPendingRefs(
+  refType: "folder" | "note",
+  refId: string,
+): Promise<PendingRefRow[]> {
+  const db = await getDb();
+  const rows = await db.select<
+    {
+      id: number;
+      entity_type: "note" | "image";
+      entity_id: string;
+      ref_type: "folder" | "note";
+      ref_id: string;
+      payload: string;
+      enqueued_at: string;
+    }[]
+  >(
+    "SELECT id, entity_type, entity_id, ref_type, ref_id, payload, enqueued_at FROM pending_refs WHERE ref_type = $1 AND ref_id = $2 ORDER BY id ASC",
+    [refType, refId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    entityType: r.entity_type,
+    entityId: r.entity_id,
+    refType: r.ref_type,
+    refId: r.ref_id,
+    payload: r.payload,
+    enqueuedAt: r.enqueued_at,
+  }));
+}
+
+async function deletePendingRef(id: number): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM pending_refs WHERE id = $1", [id]);
+}
+
+/**
+ * Replay pending note-payloads whose referenced folder just arrived.
+ * Called by `upsertFolderFromRemote`. Replay recurses into
+ * `upsertNoteFromRemote`, which may itself drain additional pending
+ * image-refs once the note materializes.
+ */
+export async function drainPendingRefsForFolder(folderId: string): Promise<void> {
+  const rows = await fetchPendingRefs("folder", folderId);
+  for (const row of rows) {
+    if (row.entityType !== "note") continue;
+    try {
+      const note = JSON.parse(row.payload) as Note;
+      await deletePendingRef(row.id);
+      await upsertNoteFromRemote(note);
+    } catch (err) {
+      console.warn(`[pending_refs] Failed to drain note ${row.entityId}:`, err);
+    }
+  }
+}
+
+/**
+ * Replay pending image-payloads whose referenced note just arrived.
+ * Called by `upsertNoteFromRemote`.
+ */
+export async function drainPendingRefsForNote(noteId: string): Promise<void> {
+  const rows = await fetchPendingRefs("note", noteId);
+  for (const row of rows) {
+    if (row.entityType !== "image") continue;
+    try {
+      const image = JSON.parse(row.payload) as ImageSyncData;
+      await deletePendingRef(row.id);
+      await upsertImageFromRemote(image);
+    } catch (err) {
+      console.warn(`[pending_refs] Failed to drain image ${row.entityId}:`, err);
+    }
+  }
+}
+
+/**
+ * Maintenance: drop pending refs older than `maxAgeDays` (default 7).
+ * A ref that's been parked that long means the parent was probably
+ * deleted server-side before the child ever reached a live client —
+ * the child is a permanent orphan and will never apply. Returns the
+ * count removed.
+ */
+export async function sweepStalePendingRefs(maxAgeDays = 7): Promise<number> {
+  const db = await getDb();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - maxAgeDays);
+  const cutoffSql = cutoff.toISOString().replace("T", " ").replace("Z", "");
+  // Use datetime() so the comparison works against the `datetime('now')`
+  // default value format stored in enqueued_at.
+  const before = await db.select<{ c: number }[]>(
+    "SELECT COUNT(*) AS c FROM pending_refs WHERE datetime(enqueued_at) < datetime($1)",
+    [cutoffSql],
+  );
+  await db.execute(
+    "DELETE FROM pending_refs WHERE datetime(enqueued_at) < datetime($1)",
+    [cutoffSql],
+  );
+  return before[0]?.c ?? 0;
+}
+
+export async function countPendingRefs(): Promise<number> {
+  const db = await getDb();
+  const rows = await db.select<{ c: number }[]>(
+    "SELECT COUNT(*) AS c FROM pending_refs",
+  );
+  return rows[0]?.c ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Watcher-gap counter (Phase 3.5)
+// ---------------------------------------------------------------------------
+
+const WATCHER_GAP_COUNT_KEY = "watcher_gap_count";
+
+/**
+ * Bump the counter tracking how often the 30s poll detected a change
+ * the filesystem watcher missed. Used as a diagnostic signal — a
+ * non-trivial rate means our watcher strategy is dropping events
+ * (platform watchers can overflow under bursty writes or during
+ * suspend/resume).
+ */
+export async function incrementWatcherGapCount(): Promise<number> {
+  const prev = await getSyncMeta(WATCHER_GAP_COUNT_KEY);
+  const prevN = prev ? parseInt(prev, 10) : 0;
+  const next = Number.isFinite(prevN) ? prevN + 1 : 1;
+  await setSyncMeta(WATCHER_GAP_COUNT_KEY, String(next));
+  return next;
+}
+
+export async function getWatcherGapCount(): Promise<number> {
+  const v = await getSyncMeta(WATCHER_GAP_COUNT_KEY);
+  if (!v) return 0;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : 0;
 }

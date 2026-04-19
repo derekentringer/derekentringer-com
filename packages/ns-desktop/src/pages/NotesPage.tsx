@@ -34,6 +34,7 @@ import {
   updateNote,
   softDeleteNote,
   hardDeleteNote,
+  hardDeleteFolder,
   searchNotes,
   fetchFolders,
   createFolder,
@@ -66,6 +67,19 @@ import {
   findNoteByLocalPath,
   getNoteLocalPath,
   enqueueSyncAction,
+  migrateFrontmatter,
+  backfillManagedFolders,
+  listManagedDirectories,
+  addManagedDirectory,
+  removeManagedDirectory,
+  unmanageManagedDirectory,
+  incrementWatcherGapCount,
+  getManagedDirectoryByPath,
+  isPathConflicting,
+  fetchTrackedFilesInDirectory,
+  fetchNotesInManagedDirectory,
+  resolveFolderForPath,
+  restoreNoteByLocalPath,
   type SearchMode,
 } from "../lib/db.ts";
 import { AboutDialog } from "../components/AboutDialog.tsx";
@@ -86,6 +100,7 @@ import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
 import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
 import { TagBrowser, type TagLayout, type TagSort } from "../components/TagBrowser.tsx";
+import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { TagInput } from "../components/TagInput.tsx";
 import { VersionHistoryPanel } from "../components/VersionHistoryPanel.tsx";
 import { DiffView } from "../components/DiffView.tsx";
@@ -144,6 +159,17 @@ import {
   reestablishWatchers,
   startPollTimer,
   stopPollTimer,
+  startDirectoryWatching,
+  stopDirectoryWatching,
+  stopAllDirectoryWatchers,
+  suppressPath,
+  moveToTrash,
+  startDirectoryReconcileTimer,
+  stopDirectoryReconcileTimer,
+  scanDirectory,
+  reconcileAllDirectories,
+  autoIndexFile,
+  pickDirectory,
   type LocalFileStatus,
 } from "../lib/localFileService.ts";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -236,6 +262,8 @@ export function NotesPage() {
   // Folders
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [managedFolderIds, setManagedFolderIds] = useState<Set<string>>(new Set());
+  const [locallyHostedNoteIds, setLocallyHostedNoteIds] = useState<Set<string>>(new Set());
 
   // Favorites
   const [favoriteNotes, setFavoriteNotes] = useState<Note[]>([]);
@@ -372,6 +400,28 @@ export function NotesPage() {
   const [isSuggestingTags, setIsSuggestingTags] = useState(false);
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [confirmDeleteSummary, setConfirmDeleteSummary] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState("");
+  const [showManualSummary, setShowManualSummary] = useState(false);
+  const [showManualTags, setShowManualTags] = useState(false);
+  const [summaryOverflows, setSummaryOverflows] = useState(false);
+  const summaryTextRef = useRef<HTMLParagraphElement>(null);
+
+  // Detect if summary text is truncated (overflows its container)
+  useEffect(() => {
+    const el = summaryTextRef.current;
+    if (!el) { setSummaryOverflows(false); return; }
+    function check() {
+      if (summaryTextRef.current) {
+        setSummaryOverflows(summaryTextRef.current.scrollWidth > summaryTextRef.current.clientWidth);
+      }
+    }
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [selectedId, notes]);
   const titleRef = useRef(title);
   titleRef.current = title;
   const contentRef = useRef(content);
@@ -428,7 +478,25 @@ export function NotesPage() {
     };
   }, []);
   const [selectedVersion, setSelectedVersion] = useState<NoteVersion | null>(null);
-  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [toastStack, setToastStack] = useState<{ id: number; message: string; undoData?: { noteId: string; filePath: string } }[]>([]);
+  const toastIdRef = useRef(0);
+
+  function showToast(message: string, durationMs = 5000, undoData?: { noteId: string; filePath: string }) {
+    const id = ++toastIdRef.current;
+    setToastStack((prev) => [...prev, { id, message, undoData }]);
+    setTimeout(() => {
+      setToastStack((prev) => prev.filter((t) => t.id !== id));
+    }, durationMs);
+  }
+
+  function dismissToast(id: number) {
+    setToastStack((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  // Keep backward compat: setSuccessToast calls still work
+  function setSuccessToast(msg: string | null) {
+    if (msg) showToast(msg);
+  }
   const [versionRefreshKey, setVersionRefreshKey] = useState(0);
   const [dashboardKey, setDashboardKey] = useState(0);
 
@@ -449,7 +517,8 @@ export function NotesPage() {
   // Local file support
   const [localFileStatuses, setLocalFileStatuses] = useState<Map<string, LocalFileStatus>>(new Map());
   const lastProcessedHashRef = useRef<Map<string, string>>(new Map());
-  const [importChoiceDialog, setImportChoiceDialog] = useState<{ files: FileList | File[]; paths?: string[]; fileNames: string[]; autoSelect: boolean; folderName?: string } | null>(null);
+  // pendingUndoRef removed — undo data is stored per-toast in toastStack
+  const [importChoiceDialog, setImportChoiceDialog] = useState<{ files: FileList | File[]; paths?: string[]; fileNames: string[]; autoSelect: boolean; folderName?: string; dirPath?: string } | null>(null);
   const [localFileDeleteDialog, setLocalFileDeleteDialog] = useState<{ noteId: string; noteTitle: string } | null>(null);
   const [externalChangeDialog, setExternalChangeDialog] = useState<{ noteId: string; noteTitle: string; content: string; hash: string } | null>(null);
   const [localFileDiffView, setLocalFileDiffView] = useState<{ noteId: string; noteTitle: string; cloudContent: string; localContent: string } | null>(null);
@@ -607,8 +676,55 @@ export function NotesPage() {
           return next;
         });
       },
-      onNoteRemoteDeleted: (noteId) => {
+      onNoteRemoteDeleted: async (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
+        // Move local file to OS trash if managed locally
+        try {
+          const localPath = await getNoteLocalPath(noteId);
+          if (localPath && await fileExists(localPath)) {
+            suppressPath(localPath, 2000);
+            await moveToTrash(localPath);
+          }
+          // Hard-delete the note so it doesn't get re-indexed
+          await hardDeleteNote(noteId).catch(() => {});
+        } catch { /* ignore */ }
+      },
+      onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
+        // Move local directory to OS trash and hard-delete the folder
+        try {
+          const dirs = await listManagedDirectories();
+          for (const dir of dirs) {
+            if (!dir.rootFolderId) continue;
+            // Direct child of managed root
+            if (dir.rootFolderId === parentId) {
+              const dirPath = `${dir.path}/${folderName}`;
+              if (await fileExists(dirPath)) {
+                // Check if this directory was just re-created (stale delete)
+                // by looking for active child folders with this name
+                const allFolders = await fetchFolders();
+                const flat = flattenFolderTree(allFolders);
+                const activeMatch = flat.find((f) => f.name === folderName);
+                if (activeMatch && activeMatch.id !== folderId) {
+                  // Stale delete — a newer folder owns this directory
+                  return;
+                }
+                suppressPath(dirPath, 2000);
+                await moveToTrash(dirPath);
+              }
+              await hardDeleteFolder(folderId);
+              return;
+            }
+            // This IS the managed root being deleted
+            if (dir.rootFolderId === folderId) {
+              if (await fileExists(dir.path)) {
+                suppressPath(dir.path, 2000);
+                await moveToTrash(dir.path);
+              }
+              await hardDeleteFolder(folderId);
+              return;
+            }
+          }
+        } catch { /* ignore */ }
       },
       onSyncRejections: async (rejections, forcePush, discard) => {
         // Resolve entity names from local DB
@@ -637,6 +753,8 @@ export function NotesPage() {
     return () => {
       destroySyncEngine();
       stopAllWatchers();
+      stopAllDirectoryWatchers();
+      stopDirectoryReconcileTimer();
       stopPollTimer();
     };
   }, []);
@@ -666,6 +784,16 @@ export function NotesPage() {
   async function loadData() {
     try {
       await initFts();
+      // One-time migration: inject frontmatter into existing notes
+      const migrated = await migrateFrontmatter();
+      if (migrated) {
+        // Clear tab cache so open tabs reload content with frontmatter
+        tabNoteCacheRef.current.clear();
+      }
+      // One-time Phase 1.3 backfill: any managed_directories row registered
+      // before folders.is_local_file existed gets its root + descendants
+      // flagged so the server + web see they're managed-locally.
+      await backfillManagedFolders();
       const [notesResult, foldersResult, tagsResult] = await Promise.all([
         fetchNotes({ sortBy, sortOrder }),
         fetchFolders(),
@@ -894,6 +1022,10 @@ export function NotesPage() {
     setSelectedVersion(null);
     setSuggestedTags([]);
     setConfirmDeleteSummary(false);
+    setSummaryExpanded(false);
+    setEditingSummary(false);
+    setShowManualSummary(false);
+    setShowManualTags(false);
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -937,7 +1069,20 @@ export function NotesPage() {
           try {
             const exists = await fileExists(localPath);
             if (exists) {
-              const hash = await writeLocalFile(localPath, content);
+              // Check if title changed — rename the file on disk
+              const { titleFromFilename, renameLocalFile } = await import("../lib/localFileService.ts");
+              const currentFileTitle = titleFromFilename(localPath);
+              let activePath = localPath;
+              if (title && title !== currentFileTitle && title !== "Untitled") {
+                try {
+                  activePath = await renameLocalFile(localPath, title);
+                  await linkNoteToLocalFile(selectedId, activePath, "");
+                } catch {
+                  // Rename failed — continue with old path
+                  activePath = localPath;
+                }
+              }
+              const hash = await writeLocalFile(activePath, content);
               lastProcessedHashRef.current.set(selectedId, hash);
               await updateLocalFileHash(selectedId, hash);
               setLocalFileStatuses((prev) => {
@@ -1351,7 +1496,21 @@ export function NotesPage() {
     }
 
     try {
-      await softDeleteNote(selectedId);
+      // For locally managed files: move to OS trash + hard-delete
+      const selectedNote = notes.find((n) => n.id === selectedId);
+      if (selectedNote?.isLocalFile) {
+        const localPath = await getNoteLocalPath(selectedId);
+        if (localPath && await fileExists(localPath)) {
+          suppressPath(localPath, 2000);
+          await moveToTrash(localPath);
+        }
+        enqueueSyncAction("delete", selectedId, "note").catch(() => {});
+        await hardDeleteNote(selectedId);
+      } else {
+        await softDeleteNote(selectedId);
+        setTrashCount((c) => c + 1);
+      }
+
       if (selectedId === previewTabId) setPreviewTabId(null);
       setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
       tabNoteCacheRef.current.delete(selectedId);
@@ -1361,7 +1520,6 @@ export function NotesPage() {
       setTitle("");
       setContent("");
       setConfirmDelete(false);
-      setTrashCount((c) => c + 1);
       await refreshSidebarData();
       loadNoteTitles();
       notifyLocalChange();
@@ -1373,7 +1531,20 @@ export function NotesPage() {
 
   async function handleDeleteNote(noteId: string) {
     try {
-      await softDeleteNote(noteId);
+      // For locally managed files: move to OS trash + hard-delete
+      const note = notes.find((n) => n.id === noteId);
+      if (note?.isLocalFile) {
+        const localPath = await getNoteLocalPath(noteId);
+        if (localPath && await fileExists(localPath)) {
+          suppressPath(localPath, 2000);
+          await moveToTrash(localPath);
+        }
+        enqueueSyncAction("delete", noteId, "note").catch(() => {});
+        await hardDeleteNote(noteId);
+      } else {
+        await softDeleteNote(noteId);
+        setTrashCount((c) => c + 1);
+      }
       if (noteId === previewTabId) setPreviewTabId(null);
       const prevTabs = openTabs;
       const idx = prevTabs.indexOf(noteId);
@@ -1397,7 +1568,6 @@ export function NotesPage() {
       tabEditorStateRef.current.delete(noteId);
       setNotes((prev) => prev.filter((n) => n.id !== noteId));
       setFavoriteNotes((prev) => prev.filter((n) => n.id !== noteId));
-      setTrashCount((c) => c + 1);
       await refreshSidebarData();
       loadNoteTitles();
       loadFavoriteNotes();
@@ -1470,8 +1640,109 @@ export function NotesPage() {
     }
   }
 
+  /**
+   * Find the local disk path for a NoteSync folder by looking at notes
+   * inside it that have a local_path, then deriving the parent directory.
+   */
+  async function findLocalDirForFolder(folderId: string): Promise<{ dirPath: string; managedDir: { id: string; path: string; rootFolderId: string | null } } | null> {
+    const managedDirs = await listManagedDirectories();
+
+    // Check if this IS a root managed folder
+    const rootDir = managedDirs.find((d) => d.rootFolderId === folderId);
+    if (rootDir) return { dirPath: rootDir.path, managedDir: rootDir };
+
+    // Check if any notes in this folder have a local_path — derive directory from it
+    const folderNotes = notes.filter((n) => n.folderId === folderId && n.isLocalFile);
+    if (folderNotes.length > 0) {
+      const noteWithPath = folderNotes[0];
+      const localPath = await getNoteLocalPath(noteWithPath.id);
+      if (localPath) {
+        const dirPath = localPath.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+        const parentDir = managedDirs.find((d) => dirPath.startsWith(d.path));
+        if (parentDir) return { dirPath, managedDir: parentDir };
+      }
+    }
+
+    // Walk up the folder tree to find a managed root, then build the disk path
+    // Build a parent map from the FolderInfo tree
+    const parentMap = new Map<string, { name: string; parentId: string | null }>();
+    function buildParentMap(items: FolderInfo[], parentId: string | null) {
+      for (const f of items) {
+        parentMap.set(f.id, { name: f.name, parentId });
+        buildParentMap(f.children, f.id);
+      }
+    }
+    buildParentMap(folders, null);
+
+    const pathSegments: string[] = [];
+    let currentId: string | null = folderId;
+    while (currentId) {
+      const entry = parentMap.get(currentId);
+      if (!entry) break;
+      // Check if this ancestor is a managed root
+      const ancestorDir = managedDirs.find((d) => d.rootFolderId === currentId);
+      if (ancestorDir) {
+        const childPath = pathSegments.reverse().join("/");
+        const dirPath = childPath ? `${ancestorDir.path}/${childPath}` : ancestorDir.path;
+        return { dirPath, managedDir: ancestorDir };
+      }
+      pathSegments.push(entry.name);
+      currentId = entry.parentId;
+    }
+
+    return null;
+  }
+
   async function handleRenameFolder(folderId: string, newName: string) {
     try {
+      // If this folder maps to a local directory, rename it on disk
+      const localInfo = await findLocalDirForFolder(folderId);
+      if (localInfo) {
+        try {
+          const { rename: fsRename } = await import("@tauri-apps/plugin-fs");
+          const parts = localInfo.dirPath.replace(/\\/g, "/").split("/");
+          parts[parts.length - 1] = newName.replace(/[/\\:*?"<>|]/g, "_");
+          const newPath = parts.join("/");
+
+          // Suppress watcher events for both old and new paths
+          suppressPath(localInfo.dirPath, 1000);
+          suppressPath(newPath, 1000);
+
+          console.log(`[folder-rename] Renaming ${localInfo.dirPath} → ${newPath}`);
+          await fsRename(localInfo.dirPath, newPath);
+
+          // If this is a root managed folder, update the managed directory path
+          if (localInfo.managedDir.rootFolderId === folderId) {
+            await stopDirectoryWatching(localInfo.dirPath);
+            await removeManagedDirectory(localInfo.managedDir.id);
+            await addManagedDirectory(newPath, folderId);
+            // Restart watcher on new path
+            await startDirectoryWatching(newPath, {
+              onFileCreated: (path) => handleDirectoryFileEvent(path, newPath),
+              onFileModified: (path) => handleDirectoryFileEvent(path, newPath),
+              onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+              onFileRenamed: (oldP, newP) => handleDirectoryFileRenamed(oldP, newP),
+              onDirectoryCreated: () => handleDirectoryCreated(),
+              onDirectoryDeleted: () => handleDirectoryDeleted(),
+              onDirectoryRenamed: () => handleDirectoryRenamed(),
+            });
+          }
+
+          // Update local_path for all notes inside this folder
+          const folderNotes = notes.filter((n) => n.folderId === folderId && n.isLocalFile);
+          for (const note of folderNotes) {
+            const oldNotePath = await getNoteLocalPath(note.id);
+            if (oldNotePath && oldNotePath.startsWith(localInfo.dirPath)) {
+              const newNotePath = newPath + oldNotePath.slice(localInfo.dirPath.length);
+              const hash = await computeContentHash(note.content);
+              await linkNoteToLocalFile(note.id, newNotePath, hash);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to rename directory on disk:", err);
+        }
+      }
+
       await renameFolder(folderId, newName);
       await refreshFolders();
       notifyLocalChange();
@@ -1504,6 +1775,102 @@ export function NotesPage() {
       notifyLocalChange();
     } catch {
       showError("Failed to update favorite");
+    }
+  }
+
+  async function handleSaveFolderLocally(folderId: string) {
+    try {
+      // Pick a local directory
+      const dirPath = await pickDirectory();
+      if (!dirPath) return;
+
+      // Check for conflicts
+      const { conflicts, reason } = await isPathConflicting(dirPath);
+      if (conflicts) {
+        showError(reason || "Directory conflicts with an existing managed directory");
+        return;
+      }
+
+      // Register as managed directory
+      await addManagedDirectory(dirPath, folderId);
+      setManagedFolderIds((prev) => new Set([...prev, folderId]));
+
+      // Export notes in this folder as .md files to the local directory
+      const folderNotes = notes.filter((n) => n.folderId === folderId);
+      let exported = 0;
+      for (const note of folderNotes) {
+        try {
+          const fileName = `${(note.title || "Untitled").replace(/[/\\:*?"<>|]/g, "_")}.md`;
+          const filePath = `${dirPath}/${fileName}`;
+          const hash = await writeLocalFile(filePath, note.content);
+          await linkNoteToLocalFile(note.id, filePath, hash);
+          await updateNote(note.id, { isLocalFile: true });
+          setLocalFileStatuses((prev) => {
+            const next = new Map(prev);
+            next.set(note.id, "synced");
+            return next;
+          });
+          exported++;
+        } catch (err) {
+          console.error(`Failed to export note ${note.title}:`, err);
+        }
+      }
+
+      // Start directory watcher
+      await startDirectoryWatching(dirPath, {
+        onFileCreated: (path) => handleDirectoryFileEvent(path, dirPath),
+        onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
+        onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+        onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
+        onDirectoryCreated: () => handleDirectoryCreated(),
+        onDirectoryDeleted: () => handleDirectoryDeleted(),
+        onDirectoryRenamed: () => handleDirectoryRenamed(),
+      });
+
+      await refreshSidebarData();
+      notifyLocalChange();
+      if (exported > 0) {
+        setSuccessToast(`Exported ${exported} note${exported === 1 ? "" : "s"} to ${dirPath}`);
+      }
+    } catch (err) {
+      console.error("Failed to save folder locally:", err);
+      showError("Failed to save folder locally");
+    }
+  }
+
+  async function handleStopManagingFolderLocally(folderId: string) {
+    try {
+      const managedDirs = await listManagedDirectories();
+      const dir = managedDirs.find((d) => d.rootFolderId === folderId);
+      if (!dir) return;
+
+      // Stop watching FIRST so the is_local_file writes below don't
+      // synthesize watcher events mid-flight (Phase 3.4 ordering).
+      await stopDirectoryWatching(dir.path);
+
+      // Unlink all notes in this directory. Files stay on disk; the
+      // notes just stop being treated as file-backed.
+      const dirNotes = await fetchNotesInManagedDirectory(dir.path);
+      for (const note of dirNotes) {
+        await unlinkLocalFile(note.id);
+      }
+
+      // Clear is_local_file on the root + all descendant folders, enqueue
+      // folder sync updates so other clients see the flag change, then
+      // remove the managed_directories row.
+      await unmanageManagedDirectory(dir.id, folderId);
+      setManagedFolderIds((prev) => {
+        const next = new Set(prev);
+        next.delete(folderId);
+        return next;
+      });
+
+      await refreshSidebarData();
+      notifyLocalChange();
+      setSuccessToast("Stopped managing folder locally");
+    } catch (err) {
+      console.error("Failed to stop managing folder locally:", err);
+      showError("Failed to stop managing folder locally");
     }
   }
 
@@ -1577,7 +1944,37 @@ export function NotesPage() {
 
   async function handleDeleteFolder(folderId: string, mode: "move-up" | "recursive") {
     try {
-      await deleteFolder(folderId, mode);
+      // If this folder maps to a local directory, delete it on disk
+      const localInfo = await findLocalDirForFolder(folderId);
+      // Managed-locally folders must always delete recursively: the disk
+      // directory + every file inside is about to be trashed, so
+      // reparenting notes to the parent would leave them pointing at
+      // files that no longer exist. Belt-and-suspenders check — the
+      // dialog already only offers recursive for managed folders, but
+      // force it here too in case a future code path calls this
+      // handler with a different mode.
+      const effectiveMode: "move-up" | "recursive" = localInfo ? "recursive" : mode;
+
+      if (localInfo) {
+        try {
+          // If this is the root managed folder, stop watching and unregister
+          if (localInfo.managedDir.rootFolderId === folderId) {
+            await stopDirectoryWatching(localInfo.dirPath);
+            await removeManagedDirectory(localInfo.managedDir.id);
+            setManagedFolderIds((prev) => {
+              const next = new Set(prev);
+              next.delete(folderId);
+              return next;
+            });
+          }
+          const { remove: fsRemove } = await import("@tauri-apps/plugin-fs");
+          await moveToTrash(localInfo.dirPath);
+        } catch (err) {
+          console.error("Failed to delete directory on disk:", err);
+        }
+      }
+
+      await deleteFolder(folderId, effectiveMode);
       if (activeFolder === folderId) {
         setActiveFolder(null);
       }
@@ -1907,7 +2304,7 @@ export function NotesPage() {
       showError("Could not read any of the dropped files");
       return;
     }
-    setImportChoiceDialog({ files, paths: filePaths, fileNames, autoSelect, folderName });
+    setImportChoiceDialog({ files, paths: filePaths, fileNames, autoSelect, folderName, dirPath: folderName ? paths[0] : undefined });
   }
 
   async function handleImportToNoteSync() {
@@ -1947,20 +2344,56 @@ export function NotesPage() {
       showError(`Imported ${result.successCount}, failed ${result.failedCount}`);
     } else {
       setSuccessToast(`Imported ${result.successCount} note${result.successCount === 1 ? "" : "s"}`);
-      setTimeout(() => setSuccessToast(null), 3000);
     }
   }
 
   async function handleKeepLocal() {
     if (!importChoiceDialog) return;
-    const { files, paths, autoSelect, folderName } = importChoiceDialog;
+    const { files, paths, autoSelect, folderName, dirPath } = importChoiceDialog;
     setImportChoiceDialog(null);
     let targetFolderId = activeFolder && activeFolder !== "__unfiled__" ? activeFolder : null;
 
-    // If a folder was dropped, create it and place notes inside
+    // If a folder was dropped, create it and place notes inside.
+    // When dirPath is set this import is registering the folder as a
+    // managed directory (see addManagedDirectory call below) — flag the
+    // container folder as managed-locally so the server + web see it.
     if (folderName) {
-      const folder = await createFolder(folderName, targetFolderId ?? undefined);
+      const folder = await createFolder(
+        folderName,
+        targetFolderId ?? undefined,
+        { isLocalFile: Boolean(dirPath) },
+      );
       targetFolderId = folder.id;
+    }
+
+    // Register as a managed directory if a folder was dropped
+    if (dirPath) {
+      try {
+        const { conflicts, reason } = await isPathConflicting(dirPath);
+        if (conflicts) {
+          showError(reason || "Directory conflicts with an existing managed directory");
+        } else {
+          const existing = await getManagedDirectoryByPath(dirPath);
+          if (!existing) {
+            await addManagedDirectory(dirPath, targetFolderId);
+            if (targetFolderId) {
+              setManagedFolderIds((prev) => new Set([...prev, targetFolderId]));
+            }
+            // Start watching the directory
+            await startDirectoryWatching(dirPath, {
+              onFileCreated: (path) => handleDirectoryFileEvent(path, dirPath),
+              onFileModified: (path) => handleDirectoryFileEvent(path, dirPath),
+              onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+              onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
+              onDirectoryCreated: () => handleDirectoryCreated(),
+              onDirectoryDeleted: () => handleDirectoryDeleted(),
+              onDirectoryRenamed: () => handleDirectoryRenamed(),
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to register managed directory:", err);
+      }
     }
 
     let successCount = 0;
@@ -2045,7 +2478,6 @@ export function NotesPage() {
       showError(`Linked ${successCount}, failed ${failedCount}`);
     } else if (successCount > 0) {
       setSuccessToast(`Linked ${successCount} file${successCount === 1 ? "" : "s"}`);
-      setTimeout(() => setSuccessToast(null), 3000);
     }
   }
 
@@ -2108,8 +2540,11 @@ export function NotesPage() {
   async function initLocalFileWatchers() {
     try {
       const localNotes = await fetchLocalFileNotes();
-      if (localNotes.length === 0) return;
+      // Track which notes are hosted on THIS device
+      setLocallyHostedNoteIds(new Set(localNotes.map((n) => n.id)));
+      // Don't return early — managed directory logic must run even with 0 local notes
 
+      if (localNotes.length > 0) {
       const results = await reestablishWatchers(
         localNotes.map((n) => ({ id: n.id, localPath: n.localPath, localFileHash: n.localFileHash })),
         handleExternalChange,
@@ -2138,7 +2573,203 @@ export function NotesPage() {
         },
         handleExternalChange,
         handleFileDeleted,
+        // Phase 3.5 watcher-gap counter — bump sync_meta so Settings can
+        // expose a diagnostic. Fire-and-forget; failure to record isn't
+        // worth escalating over a monitoring metric.
+        (_noteId, _path, _oldHash, _newHash) => {
+          incrementWatcherGapCount().catch(() => {});
+        },
       );
+      } // end if (localNotes.length > 0)
+
+      // --- Managed directory reconciliation and watchers ---
+      const managedDirs = await listManagedDirectories();
+      // Update managed folder IDs for context menu display
+      // Collect managed root IDs AND all their descendant folder IDs
+      const mfIds = new Set<string>();
+      // Always add the root folder IDs first
+      for (const dir of managedDirs) {
+        if (dir.rootFolderId) mfIds.add(dir.rootFolderId);
+      }
+      // Then add all descendant folder IDs
+      const allFoldersNow = await fetchFolders();
+      function collectDescendantIds(items: FolderInfo[], ids: Set<string>) {
+        for (const f of items) {
+          ids.add(f.id);
+          collectDescendantIds(f.children, ids);
+        }
+      }
+      for (const dir of managedDirs) {
+        if (dir.rootFolderId) {
+          // Find the root in the tree and collect its children
+          function findAndCollect(items: FolderInfo[]) {
+            for (const f of items) {
+              if (f.id === dir.rootFolderId) {
+                collectDescendantIds(f.children, mfIds);
+                return true;
+              }
+              if (findAndCollect(f.children)) return true;
+            }
+            return false;
+          }
+          findAndCollect(allFoldersNow);
+        }
+      }
+      setManagedFolderIds(mfIds);
+
+      if (managedDirs.length > 0) {
+        // Reconcile: detect new/missing/changed files
+        const missingNoteIds: string[] = [];
+        const reconcileResults = await reconcileAllDirectories(
+          managedDirs,
+          (dirPath) => fetchTrackedFilesInDirectory(dirPath),
+          createNote,
+          linkNoteToLocalFile,
+          findNoteByLocalPath,
+          handleExternalChange,
+          (noteId) => {
+            // Soft-delete notes whose files are missing from managed directories
+            softDeleteNote(noteId).catch(() => {});
+            enqueueSyncAction("delete", noteId, "note").catch(() => {});
+            closeDeletedNoteTabRef.current(noteId);
+            missingNoteIds.push(noteId);
+          },
+        );
+
+        const totalNew = reconcileResults.reduce((sum, r) => sum + r.newFiles, 0);
+        const totalMissing = reconcileResults.reduce((sum, r) => sum + r.missingFiles, 0);
+        if (totalNew > 0 || totalMissing > 0) {
+          await refreshSidebarData();
+          notifyLocalChange();
+        }
+        if (totalMissing > 0) {
+          setSuccessToast(`${totalMissing} note${totalMissing === 1 ? "" : "s"} removed — file${totalMissing === 1 ? "" : "s"} no longer on disk`);
+        }
+
+        // Start directory watchers
+        for (const dir of managedDirs) {
+          await startDirectoryWatching(dir.path, {
+            onFileCreated: (path) => handleDirectoryFileEvent(path, dir.path),
+            onFileModified: (path) => handleDirectoryFileEvent(path, dir.path),
+            onFileDeleted: (path) => handleDirectoryFileDeleted(path),
+            onFileRenamed: (oldPath, newPath) => handleDirectoryFileRenamed(oldPath, newPath),
+            onDirectoryCreated: () => handleDirectoryCreated(),
+            onDirectoryDeleted: () => handleDirectoryDeleted(),
+            onDirectoryRenamed: () => handleDirectoryRenamed(),
+          });
+        }
+
+        // Start periodic reconciliation (30s) as a safety net.
+        // Indexes new files into correct folders and cleans up stale
+        // NoteSync folders that no longer exist on disk.
+        startDirectoryReconcileTimer(async () => {
+          let changed = false;
+          const currentDirs = await listManagedDirectories();
+          for (const dir of currentDirs) {
+            // Clean up notes whose local files no longer exist on disk
+            const trackedNotes = await fetchTrackedFilesInDirectory(dir.path);
+            for (const tracked of trackedNotes) {
+              const stillExists = await fileExists(tracked.localPath);
+              if (!stillExists) {
+                const noteForToast = await fetchNoteById(tracked.id);
+                await processDeletedNote(tracked.id, noteForToast?.title || "Untitled", tracked.localPath);
+                changed = true;
+              }
+            }
+
+            // Index new files (creates folders as needed via resolveFolderForPath)
+            const filesOnDisk = await scanDirectory(dir.path);
+            for (const filePath of filesOnDisk) {
+              const existing = await findNoteByLocalPath(filePath);
+              if (!existing) {
+                const folderId = dir.rootFolderId
+                  ? (await resolveFolderForPath(dir.path, dir.rootFolderId, filePath)) ?? undefined
+                  : undefined;
+                const result = await autoIndexFile(filePath, createNote, linkNoteToLocalFile, findNoteByLocalPath, folderId, restoreNoteByLocalPath);
+                if (result?.isNew) changed = true;
+              }
+            }
+
+            // Recursively sync NoteSync folders with disk directories.
+            if (dir.rootFolderId) {
+              try {
+                const { readDir: fsReadDir } = await import("@tauri-apps/plugin-fs");
+                const allFolders = await fetchFolders();
+
+                // Find a folder node by ID in the tree
+                function findNode(items: FolderInfo[], id: string): FolderInfo | null {
+                  for (const f of items) {
+                    if (f.id === id) return f;
+                    const found = findNode(f.children, id);
+                    if (found) return found;
+                  }
+                  return null;
+                }
+
+                // Recursively sync a disk directory with a NoteSync folder
+                async function syncLevel(diskPath: string, noteSyncParentId: string) {
+                  const diskEntries = await fsReadDir(diskPath);
+                  const diskDirNames = new Set(
+                    diskEntries
+                      .filter((e) => e.isDirectory && !e.name.startsWith("."))
+                      .map((e) => e.name),
+                  );
+
+                  const parentNode = findNode(allFolders, noteSyncParentId);
+                  const childFolders = parentNode?.children ?? [];
+
+                  // Remove NoteSync folders whose disk mirror is gone, but
+                  // ONLY if they're actually disk-backed (isLocalFile=true).
+                  //
+                  // A regular (non-managed) folder can sit under a managed
+                  // root — e.g. the user created it on web before we
+                  // started cascading isLocalFile, or a client synced a
+                  // folder without the flag set. Those folders have no
+                  // disk mirror by design. The pre-guard version of this
+                  // loop aggressively hard-deleted them on every
+                  // reconciliation tick, which caused "Move to Root" from
+                  // web to synthesize a silent delete: the move took the
+                  // folder OUT of the managed subtree as far as the
+                  // server was concerned, but desktop reconciliation —
+                  // running between the pull and the next state refresh —
+                  // saw the same folder still under the managed root in
+                  // its stale view, noticed no disk match, and enqueued
+                  // a hard-delete that the server then tombstoned.
+                  for (const child of childFolders) {
+                    if (child.isLocalFile !== true) continue;
+                    if (!diskDirNames.has(child.name)) {
+                      await hardDeleteFolder(child.id);
+                      changed = true;
+                    }
+                  }
+
+                  // Create/recurse into matching folders. Folders mirrored
+                  // from disk under a managed root inherit isLocalFile=true.
+                  const childMap = new Map(childFolders.map((f) => [f.name, f]));
+                  for (const dirName of diskDirNames) {
+                    const childDiskPath = `${diskPath}/${dirName}`;
+                    let nsFolder = childMap.get(dirName);
+                    if (!nsFolder) {
+                      const created = await createFolder(dirName, noteSyncParentId, {
+                        isLocalFile: true,
+                      });
+                      changed = true;
+                      await syncLevel(childDiskPath, created.id);
+                    } else {
+                      await syncLevel(childDiskPath, nsFolder.id);
+                    }
+                  }
+                }
+
+                await syncLevel(dir.path, dir.rootFolderId);
+              } catch {
+                // Ignore errors during reconciliation scan
+              }
+            }
+          }
+          if (changed) await refreshSidebarData();
+        });
+      }
     } catch (err) {
       console.error("Failed to init local file watchers:", err);
     }
@@ -2188,7 +2819,6 @@ export function NotesPage() {
         return next;
       });
       setSuccessToast("File updated externally");
-      setTimeout(() => setSuccessToast(null), 3000);
     }
   }
 
@@ -2200,6 +2830,97 @@ export function NotesPage() {
     });
     stopWatching(noteId);
   }
+
+  // --- Directory watcher event handlers ---
+
+  async function handleDirectoryFileEvent(filePath: string, _dirPath: string) {
+    // Watcher only handles modifications to existing tracked files.
+    // New file indexing and deletions are handled by the reconciliation timer.
+    const existing = await findNoteByLocalPath(filePath);
+    if (existing) {
+      const content = await readLocalFile(filePath);
+      const hash = await computeContentHash(content);
+      handleExternalChange(existing.id, content, hash);
+    }
+  }
+
+  async function handleDirectoryFileDeleted(_filePath: string) {
+    // No-op: file deletion handled by reconciliation timer
+  }
+
+  // Used by reconciliation to show toast when a note is deleted
+  async function processDeletedNote(noteId: string, noteTitle: string, filePath: string) {
+    try {
+      // Hard-delete locally only — do NOT enqueue sync delete.
+      // The reconciliation detects missing files and cleans up locally.
+      // Sync deletes are only triggered by explicit user actions (web/desktop UI).
+      // This prevents stale sync deletes from round-tripping.
+      await hardDeleteNote(noteId).catch(() => {});
+
+      // Remove from notes list
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+
+      // Close tab if open
+      closeDeletedNoteTabRef.current(noteId);
+
+      // Clean up local file status
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.delete(noteId);
+        return next;
+      });
+
+      await refreshSidebarData();
+      notifyLocalChange();
+
+      // Toast with undo
+      showToast(`"${noteTitle}" removed — file deleted from disk`, 30000, {
+        noteId,
+        filePath,
+      });
+    } catch (err) {
+      console.error("[dir-watcher] Failed to soft-delete note:", err);
+    }
+  }
+
+  async function handleDirectoryFileRenamed(oldPath: string, newPath: string) {
+    const existing = await findNoteByLocalPath(oldPath);
+    if (!existing) return;
+
+    try {
+      // Update the local path
+      const content = await readLocalFile(newPath);
+      const hash = await computeContentHash(content);
+      await linkNoteToLocalFile(existing.id, newPath, hash);
+      lastProcessedHashRef.current.set(existing.id, hash);
+
+      setLocalFileStatuses((prev) => {
+        const next = new Map(prev);
+        next.set(existing.id, "synced");
+        return next;
+      });
+
+      // Derive new title from filename if it changed
+      const { titleFromFilename } = await import("../lib/localFileService.ts");
+      const newTitle = titleFromFilename(newPath);
+      const note = notes.find((n) => n.id === existing.id);
+      if (note && note.title !== newTitle) {
+        await updateNote(existing.id, { title: newTitle });
+        await refreshSidebarData();
+      }
+
+      notifyLocalChange();
+      console.log(`[dir-watcher] Rename detected: ${oldPath} → ${newPath}`);
+    } catch (err) {
+      console.error("[dir-watcher] Failed to handle rename:", err);
+    }
+  }
+
+  // Directory create/delete/rename are all handled by the reconciliation timer.
+  // Watcher callbacks are no-ops to avoid race conditions.
+  async function handleDirectoryCreated() { /* reconciliation handles */ }
+  async function handleDirectoryDeleted() { /* reconciliation handles */ }
+  async function handleDirectoryRenamed() { /* reconciliation handles */ }
 
   async function handleSaveAsLocalFile(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
@@ -2222,7 +2943,6 @@ export function NotesPage() {
       setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, isLocalFile: true } : n));
       notifyLocalChange();
       setSuccessToast("Linked to local file");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch (err) {
       console.error("Failed to save as local file:", err);
       showError("Failed to save as local file");
@@ -2242,7 +2962,6 @@ export function NotesPage() {
       setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, isLocalFile: false } : n));
       notifyLocalChange();
       setSuccessToast("Unlinked from local file");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch (err) {
       console.error("Failed to unlink local file:", err);
       showError("Failed to unlink local file");
@@ -2263,7 +2982,6 @@ export function NotesPage() {
         return next;
       });
       setSuccessToast("Saved to local file");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch (err) {
       console.error("Failed to save to file:", err);
       showError("Failed to save to file");
@@ -2320,11 +3038,9 @@ export function NotesPage() {
   async function handleLocalFileDelete(noteId: string) {
     const note = notes.find((n) => n.id === noteId);
     if (!note) return;
-    if (note.isLocalFile) {
-      setLocalFileDeleteDialog({ noteId, noteTitle: note.title || "Untitled" });
-    } else {
-      handleDeleteNote(noteId);
-    }
+    // For managed files: skip dialog, go straight to OS trash + hard-delete
+    // handleDeleteNote already handles this for isLocalFile notes
+    handleDeleteNote(noteId);
   }
 
   async function handleDeleteFromNoteSync(noteId: string) {
@@ -2619,45 +3335,24 @@ export function NotesPage() {
   }
 
   async function handleSuggestTags() {
-    if (!selectedId || isSuggestingTags) return;
+    if (!selectedId || !selectedNote || isSuggestingTags) return;
     setIsSuggestingTags(true);
     try {
       if (isDirty()) {
         await handleSave();
       }
-      const tags = await suggestTagsApi(selectedId);
-      setSuggestedTags(tags);
+      const suggested = await suggestTagsApi(selectedId);
+      // Add suggested tags directly to the note, deduplicating
+      const currentTags = selectedNote.tags ?? [];
+      const newTags = [...new Set([...currentTags, ...suggested])];
+      if (newTags.length > currentTags.length) {
+        await handleUpdateTags(selectedId, newTags);
+      }
     } catch {
       showError("Failed to suggest tags");
     } finally {
       setIsSuggestingTags(false);
     }
-  }
-
-  async function handleAcceptTag(tag: string) {
-    if (!selectedId || !selectedNote) return;
-    const currentTags = selectedNote.tags ?? [];
-    if (currentTags.includes(tag)) {
-      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
-      return;
-    }
-    try {
-      const newTags = [...currentTags, tag];
-      const updated = await updateNote(selectedId, { tags: newTags });
-      setNotes((prev) =>
-        prev.map((n) => (n.id === updated.id ? updated : n)),
-      );
-      setSuggestedTags((prev) => prev.filter((t) => t !== tag));
-      await refreshTags();
-      setDashboardKey((k) => k + 1);
-      notifyLocalChange();
-    } catch {
-      showError("Failed to add tag");
-    }
-  }
-
-  function handleDismissTag(tag: string) {
-    setSuggestedTags((prev) => prev.filter((t) => t !== tag));
   }
 
   async function handleVersionRestore(noteId: string, versionId: string) {
@@ -2670,7 +3365,6 @@ export function NotesPage() {
       setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
       setSelectedVersion(null);
       setSuccessToast("Version restored");
-      setTimeout(() => setSuccessToast(null), 3000);
     } catch {
       showError("Failed to restore version");
     }
@@ -2779,6 +3473,7 @@ export function NotesPage() {
         showTrash={sidebarView === "notes"}
         onImportFiles={(files) => handleImportFiles(files)}
         onImportDirectory={(files) => handleImportFiles(files)}
+        onImportDirectoryPath={(path) => handleImportPaths([path])}
         showImport={sidebarView === "notes"}
         onSettings={() => setShowSettings(true)}
         onSignOut={logout}
@@ -2823,6 +3518,9 @@ export function NotesPage() {
                     onMoveFolder={handleMoveFolder}
                     onExportFolder={handleExportFolder}
                     onToggleFavorite={handleToggleFolderFavorite}
+                    onSaveLocally={handleSaveFolderLocally}
+                    onStopManagingLocally={handleStopManagingFolderLocally}
+                    managedFolderIds={managedFolderIds}
                   />
                 </div>
               )}
@@ -3045,6 +3743,10 @@ export function NotesPage() {
                       onExportNote={handleExportNote}
                       onToggleFavorite={handleToggleNoteFavorite}
                       onCreate={handleCreate}
+                      localFileStatuses={localFileStatuses}
+                      locallyHostedNoteIds={locallyHostedNoteIds}
+                      onUnlinkLocalFile={handleUnlinkLocalFile}
+                      onSaveAsLocalFile={handleSaveAsLocalFile}
                     />
                 </div>
               </>
@@ -3120,6 +3822,7 @@ export function NotesPage() {
                 onToggleFavorite={handleToggleNoteFavorite}
                 onCreate={handleCreate}
                 localFileStatuses={localFileStatuses}
+                locallyHostedNoteIds={locallyHostedNoteIds}
                 onUnlinkLocalFile={handleUnlinkLocalFile}
                 onSaveAsLocalFile={handleSaveAsLocalFile}
                 onSaveToFile={handleSaveToFile}
@@ -3232,7 +3935,7 @@ export function NotesPage() {
             {/* Read-only preview */}
             <div className="flex-1 overflow-auto">
               <MarkdownPreview
-                content={selectedNote.content}
+                content={stripFrontmatter(selectedNote.content)}
                 className="flex-1"
               />
             </div>
@@ -3257,28 +3960,38 @@ export function NotesPage() {
                 Modified {new Date(selectedNote.updatedAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
               </span>
               <div className="flex-1" />
-              {aiSettings.masterAiEnabled && aiSettings.summarize && (
-                <button
-                  onClick={handleSummarize}
-                  disabled={isSummarizing}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title={isSummarizing ? "Summarizing..." : "Summarize"}
-                  aria-label="Summarize"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
-                </button>
-              )}
-              {aiSettings.masterAiEnabled && aiSettings.tagSuggestions && (
-                <button
-                  onClick={handleSuggestTags}
-                  disabled={isSuggestingTags}
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                  title={isSuggestingTags ? "Suggesting..." : "Suggest tags"}
-                  aria-label="Suggest tags"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  if (aiSettings.masterAiEnabled && aiSettings.summarize) {
+                    handleSummarize();
+                  } else {
+                    setShowManualSummary(true);
+                    setSummaryDraft("");
+                    setEditingSummary(true);
+                  }
+                }}
+                disabled={isSummarizing}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={isSummarizing ? "Summarizing..." : aiSettings.masterAiEnabled && aiSettings.summarize ? "Summarize" : "Add summary"}
+                aria-label="Summarize"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z"/></svg>
+              </button>
+              <button
+                onClick={() => {
+                  if (aiSettings.masterAiEnabled && aiSettings.tagSuggestions) {
+                    handleSuggestTags();
+                  } else {
+                    setShowManualTags(true);
+                  }
+                }}
+                disabled={isSuggestingTags}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title={isSuggestingTags ? "Suggesting..." : aiSettings.masterAiEnabled && aiSettings.tagSuggestions ? "Suggest tags" : "Add tags"}
+                aria-label="Tags"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+              </button>
               {selectedNote?.transcript && (
                 <button
                   onClick={() => setShowTranscript((v) => !v)}
@@ -3326,7 +4039,19 @@ export function NotesPage() {
 
             {/* Breadcrumb + Title */}
             <div className="relative border-b border-border">
-              <div className="absolute left-2 bottom-1.5">
+              <div className={`absolute bottom-1.5 flex items-center ${selectedNote?.isLocalFile ? "left-4" : "left-2"}`}>
+                {selectedNote?.isLocalFile && (
+                  <span
+                    className={`shrink-0 mr-0.5 ${selectedId && locallyHostedNoteIds.has(selectedId) ? "text-primary" : "text-muted-foreground"}`}
+                    title={selectedId && locallyHostedNoteIds.has(selectedId) ? "Managed locally on this device" : "Managed locally on another device"}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  </span>
+                )}
                 <FolderPicker
                   selectedId={selectedNote?.folderId ?? null}
                   folders={flatFolders}
@@ -3373,7 +4098,7 @@ export function NotesPage() {
                 placeholder="Note title"
                 className="w-full px-4 py-3 bg-transparent text-xl text-foreground placeholder:text-muted-foreground focus:outline-none"
               />
-              <p className="pl-9 pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate">
+              <p className={`pr-4 pb-1.5 -mt-1 text-[10px] text-muted-foreground truncate ${selectedNote?.isLocalFile ? "pl-[60px]" : "pl-9"}`}>
                 {selectedNote?.folderId
                   ? getFolderBreadcrumb(folders, selectedNote.folderId).map((f) => f.name).join(" / ")
                   : "Unfiled"}
@@ -3381,16 +4106,89 @@ export function NotesPage() {
             </div>
 
             {/* Summary */}
-            {selectedNote?.summary && (
-              <div className="relative px-4 py-2 text-sm text-muted-foreground border-b border-border italic pr-8 overflow-hidden">
-                {selectedNote.summary}
-                <button
-                  onClick={() => setConfirmDeleteSummary(true)}
-                  className="absolute top-1.5 right-2 w-5 h-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  title="Remove summary"
-                >
-                  &times;
-                </button>
+            {(selectedNote?.summary || showManualSummary || isSummarizing) && (
+              <div className="px-4 py-1.5 border-b border-border">
+                <div className="flex items-start gap-1">
+                  {selectedNote?.summary && !editingSummary && (summaryOverflows || summaryExpanded) && (
+                    <button
+                      onClick={() => setSummaryExpanded((prev) => !prev)}
+                      className="shrink-0 mt-[5px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      title={summaryExpanded ? "Collapse summary" : "Expand summary"}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className={`transition-transform duration-300 ease-in-out ${summaryExpanded ? "" : "-rotate-90"}`}
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                  )}
+                  {isSummarizing ? (
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground italic">
+                      <span className="inline-flex gap-0.5 mr-1.5"><span className="bounce-dot" /><span className="bounce-dot" /><span className="bounce-dot" /></span>Generating summary
+                    </span>
+                  ) : editingSummary ? (
+                    <textarea
+                      autoFocus
+                      value={summaryDraft}
+                      onChange={(e) => setSummaryDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          const trimmed = summaryDraft.trim();
+                          if (trimmed && selectedId) {
+                            updateNote(selectedId, { summary: trimmed }).then((updated) => {
+                              setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+                              notifyLocalChange();
+                            }).catch(() => showError("Failed to update summary"));
+                          }
+                          setEditingSummary(false);
+                          setShowManualSummary(false);
+                        } else if (e.key === "Escape") {
+                          setEditingSummary(false);
+                          setShowManualSummary(false);
+                        }
+                      }}
+                      onBlur={() => {
+                        setEditingSummary(false);
+                        setShowManualSummary(false);
+                      }}
+                      placeholder="Add a summary..."
+                      className="flex-1 min-w-0 text-sm text-muted-foreground italic bg-transparent border border-border rounded px-1 py-0 focus:outline-none focus:border-primary resize-none"
+                      rows={2}
+                    />
+                  ) : (
+                    <p
+                      ref={summaryTextRef}
+                      className={`flex-1 min-w-0 text-sm text-muted-foreground italic cursor-default ${summaryExpanded ? "" : "truncate"}`}
+                      onDoubleClick={() => {
+                        setSummaryDraft(selectedNote?.summary ?? "");
+                        setSummaryExpanded(true);
+                        setEditingSummary(true);
+                      }}
+                      title="Double-click to edit"
+                    >
+                      {selectedNote?.summary}
+                    </p>
+                  )}
+                  {selectedNote?.summary && !editingSummary && (
+                    <button
+                      onClick={() => setConfirmDeleteSummary(true)}
+                      className="shrink-0 mt-[3px] w-4 h-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      title="Remove summary"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
               </div>
             )}
             {confirmDeleteSummary && (
@@ -3404,39 +4202,27 @@ export function NotesPage() {
                 onCancel={() => setConfirmDeleteSummary(false)}
               />
             )}
-            {/* Tag input */}
-            <TagInput
-              tags={selectedNote.tags}
-              allTags={tags.map((t) => t.name)}
-              onChange={(newTags) => handleUpdateTags(selectedId!, newTags)}
-            />
-
-            {/* Suggested tags */}
-            {suggestedTags.length > 0 && (
-              <div className="px-4 py-2 border-b border-border flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground">Suggested:</span>
-                {suggestedTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center rounded-full bg-accent text-xs text-foreground border border-border overflow-hidden"
-                  >
-                    <button
-                      onClick={() => handleAcceptTag(tag)}
-                      className="px-2 py-0.5 hover:bg-primary/20 transition-colors cursor-pointer"
-                      title="Add tag"
-                    >
-                      {tag}
-                    </button>
-                    <button
-                      onClick={() => handleDismissTag(tag)}
-                      className="px-1 py-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer border-l border-border"
-                      title="Dismiss"
-                    >
-                      ✕
-                    </button>
+            {/* Tag input — shown when tags exist, manually opened, or generating */}
+            {(selectedNote.tags.length > 0 || showManualTags || isSuggestingTags) && (
+              isSuggestingTags && selectedNote.tags.length === 0 ? (
+                <div className="flex items-center gap-1 px-4 py-1.5 border-b border-border">
+                  <span className="text-xs text-muted-foreground">
+                    <span className="inline-flex gap-0.5 mr-1.5"><span className="bounce-dot" /><span className="bounce-dot" /><span className="bounce-dot" /></span>Generating tags
                   </span>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <TagInput
+                  tags={selectedNote.tags}
+                  allTags={tags.map((t) => t.name)}
+                  onChange={(newTags) => {
+                    handleUpdateTags(selectedId!, newTags);
+                    if (newTags.length === 0) setShowManualTags(false);
+                  }}
+                  autoFocus={showManualTags && selectedNote.tags.length === 0}
+                  onBlurEmpty={() => setShowManualTags(false)}
+                  loading={isSuggestingTags}
+                />
+              )
             )}
 
             {localFileDiffView ? (
@@ -3491,6 +4277,8 @@ export function NotesPage() {
                   onTable={() => editorRef.current?.insertTable()}
                   showLineNumbers={showLineNumbers}
                   onToggleLineNumbers={() => setShowLineNumbers((prev) => !prev)}
+                  showFrontmatter={editorSettings.propertiesMode === "source"}
+                  onToggleFrontmatter={() => updateEditorSetting("propertiesMode", editorSettings.propertiesMode === "source" ? "panel" : "source")}
                 />
 
                 {/* Content */}
@@ -3554,6 +4342,7 @@ export function NotesPage() {
                       cursorBlink={editorSettings.cursorBlink}
                       enableLivePreview={viewMode === "live"}
                       viewMode={viewMode}
+                      hideFrontmatter={editorSettings.propertiesMode === "panel"}
                       extensions={[wikiLinkExt, ...aiExtensions]}
                       className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                       style={viewMode === "split" ? { width: splitResize.size } : undefined}
@@ -3568,7 +4357,7 @@ export function NotesPage() {
                   )}
                   {(viewMode === "split" || viewMode === "preview") && (
                     <MarkdownPreview
-                      content={content}
+                      content={stripFrontmatter(content)}
                       className={viewMode === "split" ? "flex-1 min-w-0 overflow-auto" : "flex-1 overflow-auto"}
                       wikiLinkTitleMap={wikiLinkTitleMap}
                       onWikiLinkClick={handleWikiLinkClick}
@@ -3721,15 +4510,48 @@ export function NotesPage() {
       )}
 
       {/* Success toast */}
-      {successToast && (
-        <div className="fixed bottom-4 right-4 bg-card border border-primary rounded-md px-4 py-3 shadow-lg flex items-center gap-3">
-          <span className="text-sm text-foreground">{successToast}</span>
-          <button
-            onClick={() => setSuccessToast(null)}
-            className="text-muted-foreground hover:text-foreground text-sm cursor-pointer"
-          >
-            Dismiss
-          </button>
+      {toastStack.length > 0 && (
+        <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
+          {toastStack.map((toast) => (
+            <div key={toast.id} className="bg-card border border-primary rounded-md px-4 py-3 shadow-lg flex items-center gap-3 animate-fade-in">
+              <span className="text-sm text-foreground">{toast.message}</span>
+              {toast.undoData && (
+                <button
+                  onClick={async () => {
+                    const undo = toast.undoData!;
+                    dismissToast(toast.id);
+                    try {
+                      await restoreNote(undo.noteId);
+                      const restored = await fetchNoteById(undo.noteId);
+                      if (restored) {
+                        const hash = await writeLocalFile(undo.filePath, restored.content);
+                        await linkNoteToLocalFile(undo.noteId, undo.filePath, hash);
+                        setLocalFileStatuses((prev) => {
+                          const next = new Map(prev);
+                          next.set(undo.noteId, "synced");
+                          return next;
+                        });
+                      }
+                      await refreshSidebarData();
+                      notifyLocalChange();
+                      showToast("Note restored", 3000);
+                    } catch {
+                      showError("Failed to undo deletion");
+                    }
+                  }}
+                  className="text-primary hover:text-primary/80 text-sm font-medium cursor-pointer"
+                >
+                  Undo
+                </button>
+              )}
+              <button
+                onClick={() => dismissToast(toast.id)}
+                className="text-muted-foreground hover:text-foreground text-sm cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          ))}
         </div>
       )}
 

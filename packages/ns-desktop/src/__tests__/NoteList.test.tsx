@@ -415,9 +415,8 @@ describe("NoteList", () => {
   // Local file indicator dot tests
   // ---------------------------------------------------------------------------
 
-  it("shows green indicator dot for synced local file", () => {
-    const notes = [makeNote({ id: "1", title: "Synced Note", isLocalFile: true })];
-    const statuses = new Map<string, LocalFileStatus>([["1", "synced"]]);
+  it("shows managed locally icon for local file notes", () => {
+    const notes = [makeNote({ id: "1", title: "Local Note", isLocalFile: true })];
 
     render(
       <DndWrapper>
@@ -426,77 +425,14 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           sortByManual={false}
-          localFileStatuses={statuses}
         />
       </DndWrapper>,
     );
 
-    const indicator = screen.getByTitle("Local file in sync");
+    // Title is "Managed locally on this device" or "Managed locally on another device"
+    // depending on localFileStatuses — just assert the prefix matches.
+    const indicator = screen.getByTitle(/^Managed locally on/);
     expect(indicator).toBeInTheDocument();
-    expect(indicator.className).toContain("bg-green-500");
-  });
-
-  it("shows amber indicator dot for cloud_newer status", () => {
-    const notes = [makeNote({ id: "1", title: "Cloud Newer Note", isLocalFile: true })];
-    const statuses = new Map<string, LocalFileStatus>([["1", "cloud_newer"]]);
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={notes}
-          selectedId={null}
-          onSelect={vi.fn()}
-          sortByManual={false}
-          localFileStatuses={statuses}
-        />
-      </DndWrapper>,
-    );
-
-    const indicator = screen.getByTitle("Cloud version is newer");
-    expect(indicator).toBeInTheDocument();
-    expect(indicator.className).toContain("bg-amber-500");
-  });
-
-  it("shows amber indicator dot for external_change status", () => {
-    const notes = [makeNote({ id: "1", title: "Changed Note", isLocalFile: true })];
-    const statuses = new Map<string, LocalFileStatus>([["1", "external_change"]]);
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={notes}
-          selectedId={null}
-          onSelect={vi.fn()}
-          sortByManual={false}
-          localFileStatuses={statuses}
-        />
-      </DndWrapper>,
-    );
-
-    const indicator = screen.getByTitle("File changed externally");
-    expect(indicator).toBeInTheDocument();
-    expect(indicator.className).toContain("bg-amber-500");
-  });
-
-  it("shows red indicator dot for missing local file", () => {
-    const notes = [makeNote({ id: "1", title: "Missing Note", isLocalFile: true })];
-    const statuses = new Map<string, LocalFileStatus>([["1", "missing"]]);
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={notes}
-          selectedId={null}
-          onSelect={vi.fn()}
-          sortByManual={false}
-          localFileStatuses={statuses}
-        />
-      </DndWrapper>,
-    );
-
-    const indicator = screen.getByTitle("Local file missing");
-    expect(indicator).toBeInTheDocument();
-    expect(indicator.className).toContain("bg-red-500");
   });
 
   it("does not show indicator dot when no localFileStatuses provided", () => {
@@ -523,7 +459,7 @@ describe("NoteList", () => {
   // Local file context menu items
   // ---------------------------------------------------------------------------
 
-  it("shows 'Save As Local File' in context menu for non-local notes", async () => {
+  it("shows 'Start Managing Locally' in context menu for non-local notes", async () => {
     const note = makeNote({ id: "1", title: "Cloud Note", isLocalFile: false });
     const onSaveAsLocalFile = vi.fn();
 
@@ -543,10 +479,10 @@ describe("NoteList", () => {
     const button = screen.getByText("Cloud Note");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
 
-    expect(screen.getByText("Save As Local File")).toBeInTheDocument();
+    expect(screen.getByText("Start Managing Locally")).toBeInTheDocument();
   });
 
-  it("calls onSaveAsLocalFile when Save As Local File is clicked", async () => {
+  it("calls onSaveAsLocalFile when Start Managing Locally is clicked", async () => {
     const note = makeNote({ id: "note-save", title: "Save Me", isLocalFile: false });
     const onSaveAsLocalFile = vi.fn();
 
@@ -565,12 +501,12 @@ describe("NoteList", () => {
 
     const button = screen.getByText("Save Me");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
-    await userEvent.click(screen.getByText("Save As Local File"));
+    await userEvent.click(screen.getByText("Start Managing Locally"));
 
     expect(onSaveAsLocalFile).toHaveBeenCalledWith("note-save");
   });
 
-  it("shows 'Unlink Local File' in context menu for local file notes", async () => {
+  it("shows 'Stop Managing Locally' in context menu for local file notes", async () => {
     const note = makeNote({ id: "1", title: "Local Note", isLocalFile: true });
     const onUnlinkLocalFile = vi.fn();
 
@@ -590,10 +526,10 @@ describe("NoteList", () => {
     const button = screen.getByText("Local Note");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
 
-    expect(screen.getByText("Unlink Local File")).toBeInTheDocument();
+    expect(screen.getByText("Stop Managing Locally")).toBeInTheDocument();
   });
 
-  it("calls onUnlinkLocalFile when Unlink Local File is clicked", async () => {
+  it("calls onUnlinkLocalFile when Stop Managing Locally is clicked", async () => {
     const note = makeNote({ id: "note-unlink", title: "Unlink Me", isLocalFile: true });
     const onUnlinkLocalFile = vi.fn();
 
@@ -612,112 +548,12 @@ describe("NoteList", () => {
 
     const button = screen.getByText("Unlink Me");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
-    await userEvent.click(screen.getByText("Unlink Local File"));
+    await userEvent.click(screen.getByText("Stop Managing Locally"));
 
     expect(onUnlinkLocalFile).toHaveBeenCalledWith("note-unlink");
   });
 
-  it("shows 'Save to File' in context menu for cloud_newer local file notes", async () => {
-    const note = makeNote({ id: "1", title: "Newer Cloud", isLocalFile: true });
-    const statuses = new Map<string, LocalFileStatus>([["1", "cloud_newer"]]);
-    const onSaveToFile = vi.fn();
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={[note]}
-          selectedId={null}
-          onSelect={vi.fn()}
-          onDeleteNote={vi.fn()}
-          onSaveToFile={onSaveToFile}
-          localFileStatuses={statuses}
-          sortByManual={false}
-        />
-      </DndWrapper>,
-    );
-
-    const button = screen.getByText("Newer Cloud");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.getByText("Save to File")).toBeInTheDocument();
-  });
-
-  it("shows 'Use Local Version' in context menu for external_change local file notes", async () => {
-    const note = makeNote({ id: "1", title: "Changed Externally", isLocalFile: true });
-    const statuses = new Map<string, LocalFileStatus>([["1", "external_change"]]);
-    const onUseLocalVersion = vi.fn();
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={[note]}
-          selectedId={null}
-          onSelect={vi.fn()}
-          onDeleteNote={vi.fn()}
-          onUseLocalVersion={onUseLocalVersion}
-          localFileStatuses={statuses}
-          sortByManual={false}
-        />
-      </DndWrapper>,
-    );
-
-    const button = screen.getByText("Changed Externally");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.getByText("Use Local Version")).toBeInTheDocument();
-  });
-
-  it("shows 'View Diff' in context menu for cloud_newer local file notes", async () => {
-    const note = makeNote({ id: "1", title: "Diff Cloud", isLocalFile: true });
-    const statuses = new Map<string, LocalFileStatus>([["1", "cloud_newer"]]);
-    const onViewDiff = vi.fn();
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={[note]}
-          selectedId={null}
-          onSelect={vi.fn()}
-          onDeleteNote={vi.fn()}
-          onViewDiff={onViewDiff}
-          localFileStatuses={statuses}
-          sortByManual={false}
-        />
-      </DndWrapper>,
-    );
-
-    const button = screen.getByText("Diff Cloud");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.getByText("View Diff")).toBeInTheDocument();
-  });
-
-  it("shows 'View Diff' in context menu for external_change local file notes", async () => {
-    const note = makeNote({ id: "1", title: "Diff External", isLocalFile: true });
-    const statuses = new Map<string, LocalFileStatus>([["1", "external_change"]]);
-    const onViewDiff = vi.fn();
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={[note]}
-          selectedId={null}
-          onSelect={vi.fn()}
-          onDeleteNote={vi.fn()}
-          onViewDiff={onViewDiff}
-          localFileStatuses={statuses}
-          sortByManual={false}
-        />
-      </DndWrapper>,
-    );
-
-    const button = screen.getByText("Diff External");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.getByText("View Diff")).toBeInTheDocument();
-  });
-
-  it("does not show 'Save As Local File' for local file notes", async () => {
+  it("does not show 'Start Managing Locally' for local file notes", async () => {
     const note = makeNote({ id: "1", title: "Already Local", isLocalFile: true });
     const onSaveAsLocalFile = vi.fn();
 
@@ -737,10 +573,10 @@ describe("NoteList", () => {
     const button = screen.getByText("Already Local");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
 
-    expect(screen.queryByText("Save As Local File")).not.toBeInTheDocument();
+    expect(screen.queryByText("Start Managing Locally")).not.toBeInTheDocument();
   });
 
-  it("does not show 'Unlink Local File' for non-local notes", async () => {
+  it("does not show 'Stop Managing Locally' for non-local notes", async () => {
     const note = makeNote({ id: "1", title: "Cloud Only", isLocalFile: false });
     const onUnlinkLocalFile = vi.fn();
 
@@ -760,6 +596,6 @@ describe("NoteList", () => {
     const button = screen.getByText("Cloud Only");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
 
-    expect(screen.queryByText("Unlink Local File")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stop Managing Locally")).not.toBeInTheDocument();
   });
 });

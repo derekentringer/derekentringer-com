@@ -45,6 +45,10 @@ const {
   reorderNotes,
   moveFolderParent,
   reorderFolders,
+  backfillManagedFolders,
+  unmanageManagedDirectory,
+  incrementWatcherGapCount,
+  getWatcherGapCount,
 } = await import("../lib/db.ts");
 
 const sampleRow = {
@@ -253,7 +257,7 @@ describe("createNote", () => {
     expect(note.id).toBe("test-uuid-1234");
   });
 
-  it("uses empty string defaults for title and content", async () => {
+  it("uses empty string defaults for title and content with frontmatter", async () => {
     mockExecute.mockResolvedValue({ lastInsertId: 1, rowsAffected: 1 });
     mockSelect.mockResolvedValue([{ ...sampleRow, id: "test-uuid-1234", title: "", content: "" }]);
 
@@ -261,7 +265,8 @@ describe("createNote", () => {
 
     const [, params] = mockExecute.mock.calls[0];
     expect(params[1]).toBe(""); // title
-    expect(params[2]).toBe(""); // content
+    // Content gets an empty frontmatter block injected
+    expect(params[2]).toBe("---\n---\n");
   });
 
   it("returns fallback note if re-read fails", async () => {
@@ -272,7 +277,8 @@ describe("createNote", () => {
 
     expect(note.id).toBe("test-uuid-1234");
     expect(note.title).toBe("Fallback");
-    expect(note.content).toBe("");
+    // Content has frontmatter injected with title
+    expect(note.content).toBe("---\ntitle: Fallback\n---\n");
     expect(note.tags).toEqual([]);
     expect(note.favorite).toBe(false);
   });
@@ -452,6 +458,7 @@ describe("createFolder", () => {
     expect(folder.name).toBe("My Folder");
     expect(folder.id).toBe("test-uuid-1234");
     expect(folder.parentId).toBeNull();
+    expect(folder.isLocalFile).toBe(false);
     expect(folder.children).toEqual([]);
   });
 
@@ -463,6 +470,60 @@ describe("createFolder", () => {
     expect(folder.parentId).toBe("parent-id");
     const [, params] = mockExecute.mock.calls[0];
     expect(params[2]).toBe("parent-id"); // parent_id parameter
+  });
+
+  it("inserts with is_local_file=1 when isLocalFile option is set", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const folder = await createFolder("Managed", undefined, { isLocalFile: true });
+
+    const [sql, params] = mockExecute.mock.calls[0];
+    expect(sql).toContain("INSERT INTO folders");
+    // params: (id, name, parent_id, is_local_file, now)
+    expect(params[3]).toBe(1);
+    expect(folder.isLocalFile).toBe(true);
+  });
+
+  it("defaults to is_local_file=0 without the option", async () => {
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await createFolder("Regular");
+
+    const [, params] = mockExecute.mock.calls[0];
+    expect(params[3]).toBe(0);
+  });
+
+  it("adopts an existing unflagged folder when caller requests isLocalFile=true", async () => {
+    // First SELECT (active folder by name+parent) returns an existing
+    // unflagged folder. The function should UPDATE it to is_local_file=1
+    // and enqueue a sync.
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "existing-folder-id",
+        name: "Adoptable",
+        sort_order: 0,
+        favorite: 0,
+        is_local_file: 0,
+        created_at: "2024-01-01",
+      },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const folder = await createFolder("Adoptable", undefined, { isLocalFile: true });
+
+    // First execute is the UPDATE that flips the flag
+    const [updateSql, updateParams] = mockExecute.mock.calls[0];
+    expect(updateSql).toContain("UPDATE folders SET is_local_file = 1");
+    expect(updateParams[1]).toBe("existing-folder-id");
+
+    // Returned folder reflects the flip
+    expect(folder.isLocalFile).toBe(true);
+
+    // enqueue sync of the updated folder
+    const enqueueCall = mockExecute.mock.calls.find(([sql]) =>
+      typeof sql === "string" && sql.includes("INSERT INTO sync_queue"),
+    );
+    expect(enqueueCall).toBeDefined();
   });
 });
 
@@ -795,5 +856,195 @@ describe("purgeOldTrash", () => {
     expect(count).toBe(0);
     expect(mockSelect).not.toHaveBeenCalled();
     expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("backfillManagedFolders", () => {
+  it("returns 0 and skips work when the backfill flag is already set", async () => {
+    // getSyncMeta SELECT returns the "1" flag
+    mockSelect.mockResolvedValueOnce([{ value: "1" }]);
+
+    const flipped = await backfillManagedFolders();
+
+    expect(flipped).toBe(0);
+    // Only one SELECT (the flag read); no UPDATEs
+    expect(mockSelect).toHaveBeenCalledTimes(1);
+    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("flags the root folder + descendants for each managed directory", async () => {
+    // getSyncMeta SELECT returns empty — backfill has not run
+    mockSelect.mockResolvedValueOnce([]);
+    // listManagedDirectories SELECT returns one managed dir
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "md-1",
+        path: "/Users/me/notes",
+        root_folder_id: "root-1",
+        created_at: "2024-01-01",
+      },
+    ]);
+    // The recursive CTE returns root + 2 unflagged descendants
+    mockSelect.mockResolvedValueOnce([
+      { id: "root-1" },
+      { id: "child-1" },
+      { id: "child-2" },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const flipped = await backfillManagedFolders();
+
+    expect(flipped).toBe(3);
+
+    // 3 UPDATEs to flip each folder's is_local_file
+    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(3);
+    expect(updateCalls.map((c) => (c[1] as unknown[])[2])).toEqual([
+      "root-1",
+      "child-1",
+      "child-2",
+    ]);
+
+    // Sets the sync_meta flag after
+    const flagSet = mockExecute.mock.calls.find((c: unknown[]) =>
+      typeof c[0] === "string" && c[0].includes("INTO sync_meta"),
+    );
+    expect(flagSet).toBeDefined();
+  });
+
+  it("skips managed directories without a rootFolderId", async () => {
+    mockSelect.mockResolvedValueOnce([]); // flag not set
+    mockSelect.mockResolvedValueOnce([
+      {
+        id: "md-1",
+        path: "/Users/me/notes",
+        root_folder_id: null, // no root — nothing to flag
+        created_at: "2024-01-01",
+      },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const flipped = await backfillManagedFolders();
+
+    expect(flipped).toBe(0);
+    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
+      typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(0);
+  });
+});
+
+describe("unmanageManagedDirectory (Phase 3.4)", () => {
+  it("clears is_local_file across the whole subtree, enqueues folder syncs, then removes managed_directories row", async () => {
+    // Subtree: root + 2 descendants
+    mockSelect.mockResolvedValueOnce([
+      { id: "root-1" },
+      { id: "child-1" },
+      { id: "child-2" },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await unmanageManagedDirectory("md-1", "root-1");
+    await new Promise((r) => setTimeout(r, 0)); // flush fire-and-forget enqueueSyncAction
+
+    expect(count).toBe(3);
+
+    const updateCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file = 0"),
+    );
+    expect(updateCalls).toHaveLength(3);
+    // Every subtree id received the UPDATE
+    const updatedIds = updateCalls.map((c) => (c[1] as unknown[])[1]);
+    expect(new Set(updatedIds)).toEqual(new Set(["root-1", "child-1", "child-2"]));
+
+    // Sync queue entries enqueued per affected folder
+    const syncEnqueueCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INSERT INTO sync_queue"),
+    );
+    expect(syncEnqueueCalls).toHaveLength(3);
+    const queuedIds = syncEnqueueCalls.map((c) => (c[1] as unknown[])[1]);
+    expect(new Set(queuedIds)).toEqual(new Set(["root-1", "child-1", "child-2"]));
+    for (const call of syncEnqueueCalls) {
+      expect((call[1] as unknown[])[0]).toBe("folder:update");
+    }
+
+    // managed_directories row deleted by id
+    const removeCall = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("DELETE FROM managed_directories"),
+    );
+    expect(removeCall).toBeDefined();
+    expect((removeCall![1] as unknown[])[0]).toBe("md-1");
+  });
+
+  it("no-op subtree returns 0 and still removes the managed_directories row", async () => {
+    mockSelect.mockResolvedValueOnce([]); // empty subtree (e.g. folder already deleted)
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await unmanageManagedDirectory("md-2", "root-missing");
+
+    expect(count).toBe(0);
+    const removeCall = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("DELETE FROM managed_directories"),
+    );
+    expect(removeCall).toBeDefined();
+    expect((removeCall![1] as unknown[])[0]).toBe("md-2");
+  });
+});
+
+describe("watcher gap counter (Phase 3.5)", () => {
+  it("returns 0 when no counter has been written", async () => {
+    mockSelect.mockResolvedValueOnce([]);
+    expect(await getWatcherGapCount()).toBe(0);
+  });
+
+  it("parses the stored counter", async () => {
+    mockSelect.mockResolvedValueOnce([{ value: "7" }]);
+    expect(await getWatcherGapCount()).toBe(7);
+  });
+
+  it("increments from zero on first call", async () => {
+    mockSelect.mockResolvedValueOnce([]); // first read → no row
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const next = await incrementWatcherGapCount();
+    expect(next).toBe(1);
+
+    const upsert = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INTO sync_meta") &&
+        (c[1] as unknown[])[0] === "watcher_gap_count",
+    );
+    expect(upsert).toBeDefined();
+    expect((upsert![1] as unknown[])[1]).toBe("1");
+  });
+
+  it("increments a non-zero counter", async () => {
+    mockSelect.mockResolvedValueOnce([{ value: "3" }]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const next = await incrementWatcherGapCount();
+    expect(next).toBe(4);
+  });
+
+  it("treats a garbage counter value as zero and recovers on increment", async () => {
+    mockSelect.mockResolvedValueOnce([{ value: "not-a-number" }]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const next = await incrementWatcherGapCount();
+    expect(next).toBe(1);
   });
 });

@@ -22,12 +22,12 @@ describe("TagInput", () => {
 
   it("shows placeholder when no tags exist", () => {
     render(<TagInput {...defaultProps} />);
-    expect(screen.getByPlaceholderText("Add tags...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g. work, meeting, project")).toBeInTheDocument();
   });
 
   it("hides placeholder when tags exist", () => {
     render(<TagInput {...defaultProps} tags={["work"]} />);
-    expect(screen.queryByPlaceholderText("Add tags...")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("e.g. work, meeting, project")).not.toBeInTheDocument();
   });
 
   it("adds a tag on Enter", async () => {

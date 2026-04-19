@@ -45,9 +45,11 @@ vi.mock("@codemirror/view", () => {
     placeholder: () => [],
     lineNumbers: () => [],
     drawSelection: () => [],
-    Decoration: MockDecoration,
+    Decoration: { ...MockDecoration, line: () => ({ range: () => ({}) }) },
     ViewPlugin: { fromClass: () => [] },
     WidgetType: class {},
+    GutterMarker: class {},
+    gutter: () => [],
   };
 });
 
@@ -69,6 +71,7 @@ vi.mock("@codemirror/state", () => {
       tabSize: { of: () => [] },
     },
     Compartment: MockCompartment,
+    StateField: { define: () => ({}) },
     RangeSet: { of: () => ({}) },
   };
 });
