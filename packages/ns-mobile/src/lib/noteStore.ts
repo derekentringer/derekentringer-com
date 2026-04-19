@@ -749,3 +749,45 @@ export async function readFolderForSync(id: string): Promise<FolderSyncData | nu
     deletedAt: row.deleted_at,
   };
 }
+
+const ISLOCALFILE_CASCADE_KEY = "is_local_file_cascade_done";
+
+/**
+ * Phase A.0 — normalize every folder's is_local_file to match its root
+ * ancestor's flag. Runs once per install (sync_meta-gated). Mobile has
+ * no disk-side work, so this is pure SQLite normalization.
+ */
+export async function normalizeFolderIsLocalFileCascade(): Promise<number> {
+  const done = await getSyncMeta(ISLOCALFILE_CASCADE_KEY);
+  if (done === "1") return 0;
+
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ id: string; root_flag: number }>(
+    `WITH RECURSIVE roots(id, root_flag, root_id) AS (
+       SELECT id, is_local_file, id FROM folders WHERE parent_id IS NULL
+       UNION ALL
+       SELECT f.id, r.root_flag, r.root_id
+       FROM folders f JOIN roots r ON f.parent_id = r.id
+     )
+     SELECT r.id, r.root_flag
+     FROM roots r
+     JOIN folders f ON f.id = r.id
+     WHERE f.is_local_file != r.root_flag`,
+  );
+
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    await db.runAsync(
+      "UPDATE folders SET is_local_file = ?, updated_at = ? WHERE id = ?",
+      [row.root_flag, now, row.id],
+    );
+  }
+
+  await setSyncMeta(ISLOCALFILE_CASCADE_KEY, "1");
+  if (rows.length > 0) {
+    console.log(
+      `[isLocalFile cascade] Normalized ${rows.length} folder(s) to match root ancestor flag`,
+    );
+  }
+  return rows.length;
+}

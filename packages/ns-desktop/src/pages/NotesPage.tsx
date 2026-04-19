@@ -69,6 +69,7 @@ import {
   enqueueSyncAction,
   migrateFrontmatter,
   backfillManagedFolders,
+  normalizeFolderIsLocalFileCascade,
   listManagedDirectories,
   addManagedDirectory,
   removeManagedDirectory,
@@ -794,6 +795,11 @@ export function NotesPage() {
       // before folders.is_local_file existed gets its root + descendants
       // flagged so the server + web see they're managed-locally.
       await backfillManagedFolders();
+      // Phase A.0: normalize any drifted folder flag to match its root
+      // ancestor. Runs once per install (sync_meta-gated) and covers the
+      // cases Phase 1.3 didn't — e.g. a folder flagged isLocalFile=true
+      // under an unmanaged root.
+      await normalizeFolderIsLocalFileCascade();
       const [notesResult, foldersResult, tagsResult] = await Promise.all([
         fetchNotes({ sortBy, sortOrder }),
         fetchFolders(),

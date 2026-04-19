@@ -46,6 +46,7 @@ const {
   moveFolderParent,
   reorderFolders,
   backfillManagedFolders,
+  normalizeFolderIsLocalFileCascade,
   unmanageManagedDirectory,
   incrementWatcherGapCount,
   getWatcherGapCount,
@@ -936,6 +937,92 @@ describe("backfillManagedFolders", () => {
       typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
     );
     expect(updateCalls).toHaveLength(0);
+  });
+});
+
+describe("normalizeFolderIsLocalFileCascade (Phase A.0)", () => {
+  it("returns 0 and skips work when the flag is already set", async () => {
+    mockSelect.mockResolvedValueOnce([{ value: "1" }]);
+
+    const count = await normalizeFolderIsLocalFileCascade();
+
+    expect(count).toBe(0);
+    const updateCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("flips mismatched folders to match their root ancestor's flag", async () => {
+    mockSelect.mockResolvedValueOnce([]); // flag not set
+    // Recursive CTE returns drifted folders + their root flag
+    mockSelect.mockResolvedValueOnce([
+      { id: "child-up", root_flag: 1 },    // was 0, root says 1
+      { id: "child-down", root_flag: 0 },  // was 1, root says 0
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await normalizeFolderIsLocalFileCascade();
+    await new Promise((r) => setTimeout(r, 0)); // flush enqueueSyncAction
+
+    expect(count).toBe(2);
+
+    const updateCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(2);
+    // First UPDATE flips child-up to 1
+    expect((updateCalls[0][1] as unknown[])[0]).toBe(1);
+    expect((updateCalls[0][1] as unknown[])[2]).toBe("child-up");
+    // Second flips child-down to 0
+    expect((updateCalls[1][1] as unknown[])[0]).toBe(0);
+    expect((updateCalls[1][1] as unknown[])[2]).toBe("child-down");
+
+    // sync_meta flag set
+    const flagSet = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INTO sync_meta") &&
+        (c[1] as unknown[])[0] === "is_local_file_cascade_done",
+    );
+    expect(flagSet).toBeDefined();
+
+    // sync_queue entry enqueued per flipped folder so the server picks up
+    // the correction.
+    const syncEnqueueCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INSERT INTO sync_queue"),
+    );
+    expect(syncEnqueueCalls).toHaveLength(2);
+  });
+
+  it("sets the flag and exits without UPDATEs when no drift exists", async () => {
+    mockSelect.mockResolvedValueOnce([]); // flag not set
+    mockSelect.mockResolvedValueOnce([]); // CTE returns empty — no drift
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await normalizeFolderIsLocalFileCascade();
+
+    expect(count).toBe(0);
+    const updateCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(0);
+
+    const flagSet = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INTO sync_meta") &&
+        (c[1] as unknown[])[0] === "is_local_file_cascade_done",
+    );
+    expect(flagSet).toBeDefined();
   });
 });
 

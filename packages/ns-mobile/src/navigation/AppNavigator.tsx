@@ -177,6 +177,12 @@ function AuthenticatedApp() {
     (async () => {
       // Initialize local database first — must complete before any queries fire
       await initDatabase();
+      // Phase A.0: normalize any drifted folder isLocalFile flag to match its
+      // root ancestor. Gated on sync_meta so this is a one-time sweep.
+      const { normalizeFolderIsLocalFileCascade } = await import("@/lib/noteStore");
+      await normalizeFolderIsLocalFileCascade().catch(() => {
+        // Non-fatal: the invariant is also enforced server-side + on sync apply.
+      });
       setIsReady(true);
 
       // Initialize sync engine

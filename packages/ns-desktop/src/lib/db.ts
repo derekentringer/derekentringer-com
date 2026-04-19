@@ -2361,6 +2361,61 @@ export async function backfillManagedFolders(): Promise<number> {
   return flipped;
 }
 
+const ISLOCALFILE_CASCADE_KEY = "is_local_file_cascade_done";
+
+/**
+ * Phase A.0 — normalize every folder's is_local_file to match its root
+ * ancestor's flag.
+ *
+ * Phase A's invariant: `folder.isLocalFile === rootAncestor(folder).isLocalFile`.
+ * This is stricter than Phase 1's backfill (which only flipped descendants
+ * of managed roots UP to 1) — it also flips mismatched children DOWN to 0
+ * when their root is unmanaged. Runs once per install, gated on a
+ * sync_meta flag.
+ *
+ * Idempotent: re-running is a no-op once convergent.
+ */
+export async function normalizeFolderIsLocalFileCascade(): Promise<number> {
+  const done = await getSyncMeta(ISLOCALFILE_CASCADE_KEY);
+  if (done === "1") return 0;
+
+  const db = await getDb();
+
+  // Walk the full tree, resolving each folder's root flag via a
+  // recursive CTE, then collect every row whose current flag disagrees
+  // with its computed root flag.
+  const rows = await db.select<{ id: string; root_flag: number }[]>(
+    `WITH RECURSIVE roots(id, root_flag, root_id) AS (
+       SELECT id, is_local_file, id FROM folders WHERE parent_id IS NULL
+       UNION ALL
+       SELECT f.id, r.root_flag, r.root_id
+       FROM folders f JOIN roots r ON f.parent_id = r.id
+     )
+     SELECT r.id, r.root_flag
+     FROM roots r
+     JOIN folders f ON f.id = r.id
+     WHERE f.is_local_file != r.root_flag`,
+  );
+
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    await db.execute(
+      "UPDATE folders SET is_local_file = $1, updated_at = $2 WHERE id = $3",
+      [row.root_flag, now, row.id],
+    );
+    // Enqueue a sync update so the server sees the correction.
+    enqueueSyncAction("update", row.id, "folder").catch(() => {});
+  }
+
+  await setSyncMeta(ISLOCALFILE_CASCADE_KEY, "1");
+  if (rows.length > 0) {
+    console.log(
+      `[isLocalFile cascade] Normalized ${rows.length} folder(s) to match root ancestor flag`,
+    );
+  }
+  return rows.length;
+}
+
 const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";
 
 /**
