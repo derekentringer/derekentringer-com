@@ -520,6 +520,11 @@ export function NotesPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  // Measured inner height of the sidebar. Drives the dynamic max for
+  // `folderResize` so the folders panel can never consume so much
+  // space that the stacked notes list falls below 100px.
+  const [sidebarHeight, setSidebarHeight] = useState(0);
 
   // Sync engine
   const [syncStatusState, setSyncStatusState] = useState<SyncStatus>("idle");
@@ -628,13 +633,36 @@ export function NotesPage() {
     storageKey: "ns-desktop-notelist-width",
   });
 
+  // Stacked sidebar layout: the folder panel sits above the notes
+  // list with a draggable horizontal divider. Enforce a 100px min on
+  // the folder panel itself AND a 100px floor for the notes panel
+  // below it (achieved by capping maxSize at sidebarHeight minus the
+  // sidebar chrome and the notes reservation).
+  //
+  // SIDEBAR_CHROME_PX covers the tab strip + divider; NOTES_MIN_PX
+  // is the bottom stop gap the user asked for.
+  const SIDEBAR_CHROME_PX = 40;
+  const NOTES_MIN_PX = 100;
+  const folderMaxHeight = sidebarHeight > 0
+    ? Math.max(NOTES_MIN_PX, sidebarHeight - SIDEBAR_CHROME_PX - NOTES_MIN_PX)
+    : 2000;
   const folderResize = useResizable({
     direction: "horizontal",
-    initialSize: 200,
-    minSize: 0,
-    maxSize: 2000,
+    initialSize: 220,
+    minSize: NOTES_MIN_PX,
+    maxSize: folderMaxHeight,
     storageKey: "ns-desktop-folder-height",
   });
+
+  useEffect(() => {
+    const el = sidebarRef.current;
+    if (!el) return;
+    const update = () => setSidebarHeight(el.clientHeight);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const splitResize = useResizable({
     direction: "vertical",
@@ -3505,6 +3533,7 @@ export function NotesPage() {
 
       {/* Sidebar */}
       <aside
+        ref={sidebarRef}
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode || collapseSidebar || sidebarHidden ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
       >
@@ -3518,8 +3547,15 @@ export function NotesPage() {
               showFavorites={favoriteFolders.length > 0 || favoriteNotes.length > 0}
             />
 
-            {/* Sidebar panel content — switches based on active tab */}
-            <div key={sidebarPanel} className={`${collapseNoteList ? "shrink-0 h-1/2" : "flex-1"} flex flex-col min-h-0 animate-fade-in`}>
+            {/* Sidebar panel content — switches based on active tab.
+                In the stacked (collapseNoteList) layout the folder
+                panel's height is driven by `folderResize`; otherwise
+                it fills the sidebar. */}
+            <div
+              key={sidebarPanel}
+              className={`${collapseNoteList ? "shrink-0" : "flex-1"} flex flex-col min-h-0 animate-fade-in`}
+              style={collapseNoteList ? { height: folderResize.size } : undefined}
+            >
               {sidebarPanel === "explorer" && (
                 <div className="flex-1 overflow-y-auto overflow-x-hidden">
                   <FolderTree
@@ -3739,8 +3775,8 @@ export function NotesPage() {
               <>
                 <ResizeDivider
                   direction="horizontal"
-                  isDragging={false}
-                  onPointerDown={() => {}}
+                  isDragging={folderResize.isDragging}
+                  onPointerDown={folderResize.onPointerDown}
                 />
                 <div className="flex-1 min-h-0 overflow-hidden">
                     <NoteListPanel

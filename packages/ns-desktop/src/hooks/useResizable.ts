@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 export interface UseResizableOptions {
   direction: "horizontal" | "vertical";
@@ -42,6 +42,25 @@ export function useResizable({
   const [isDragging, setIsDragging] = useState(false);
 
   const dragRef = useRef({ startPos: 0, startSize: 0 });
+
+  // When min/max bounds shift (e.g. the container is measured with a
+  // ResizeObserver and maxSize becomes a dynamic function of viewport
+  // height), re-clamp the stored size so the panel never exceeds the
+  // new limits. Without this the user could shrink the window and
+  // end up with a persisted size larger than the new maxSize.
+  useEffect(() => {
+    setSize((current) => {
+      const clamped = Math.min(maxSize, Math.max(minSize, current));
+      if (clamped !== current) {
+        try {
+          localStorage.setItem(storageKey, String(clamped));
+        } catch {
+          // localStorage unavailable
+        }
+      }
+      return clamped;
+    });
+  }, [minSize, maxSize, storageKey]);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
