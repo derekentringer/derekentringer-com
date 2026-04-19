@@ -49,7 +49,6 @@ import {
   emptyTrash,
   purgeOldTrash,
   initFts,
-  reorderNotes,
   moveFolderParent,
   detectCrossBoundaryLocalMove,
   moveFolderWithCascade,
@@ -202,7 +201,9 @@ type DrawerTab = "assistant" | "history" | "toc";
 
 const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
 
-const validSortFields: NoteSortField[] = ["sortOrder", "updatedAt", "createdAt", "title"];
+// `sortOrder` is kept on the shared type for favorites but is no longer
+// a valid note-list sort field — Manual sort has been removed.
+const validSortFields: NoteSortField[] = ["updatedAt", "createdAt", "title"];
 const validSortOrders: SortOrder[] = ["asc", "desc"];
 
 function validateSortField(value: string | null, fallback: NoteSortField): NoteSortField {
@@ -2058,42 +2059,9 @@ export function NotesPage() {
       return;
     }
 
-    // Note reorder. If the user is dropping one note onto another
-    // while sorted by anything other than manual, auto-switch to
-    // manual — otherwise the newly-assigned sortOrder wouldn't be
-    // reflected in the current view and the drag would feel like a
-    // no-op.
-    if (active.id !== over.id) {
-      if (sortBy !== "sortOrder") {
-        setSortBy("sortOrder");
-      }
-      await handleReorder(activeId, overId);
-    }
-  }
-
-  async function handleReorder(activeId: string, overId: string) {
-    const oldIndex = notes.findIndex((n) => n.id === activeId);
-    const newIndex = notes.findIndex((n) => n.id === overId);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const reordered = [...notes];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-
-    // Optimistic update
-    const updatedNotes = reordered.map((n, i) => ({ ...n, sortOrder: i }));
-    setNotes(updatedNotes);
-
-    try {
-      await reorderNotes(
-        updatedNotes.map((n) => ({ id: n.id, sortOrder: n.sortOrder })),
-      );
-      notifyLocalChange();
-    } catch (err) {
-      console.error("Failed to reorder notes:", err);
-      showError("Failed to reorder notes");
-      await reloadNotes();
-    }
+    // Note → Note is a no-op. Manual sort was removed; notes can still
+    // be dragged onto folders (handled above), but reordering within
+    // the list is no longer a feature.
   }
 
   async function handleMoveFolder(

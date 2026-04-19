@@ -9,7 +9,6 @@ import type {
   SortOrder,
   FolderListResponse,
   FolderInfo,
-  ReorderNotesRequest,
   ReorderFavoriteNotesRequest,
   ReorderFoldersRequest,
   TagListResponse,
@@ -188,19 +187,6 @@ export async function createFolderApi(
   }
 
   return response.json();
-}
-
-export async function reorderNotes(
-  data: ReorderNotesRequest,
-): Promise<void> {
-  const response = await apiFetch("/notes/reorder", {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to reorder notes: ${response.status}`);
-  }
 }
 
 export async function renameFolderApi(

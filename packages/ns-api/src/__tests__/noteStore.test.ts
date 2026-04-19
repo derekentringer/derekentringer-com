@@ -26,7 +26,6 @@ import {
   purgeOldTrash,
   createFolder,
   listFolders,
-  reorderNotes,
   renameFolder,
   deleteFolder,
   renameFolderById,
@@ -922,19 +921,6 @@ describe("noteStore", () => {
           where: { userId: TEST_USER_ID, deletedAt: null, folderId: { in: ["f1"] } },
         }),
       );
-    });
-  });
-
-  describe("reorderNotes", () => {
-    it("updates sortOrder for each note in a transaction", async () => {
-      mockPrisma.note.update.mockResolvedValue({});
-
-      await reorderNotes(TEST_USER_ID, [
-        { id: "note-1", sortOrder: 0 },
-        { id: "note-2", sortOrder: 1 },
-      ]);
-
-      expect(mockPrisma.$transaction).toHaveBeenCalled();
     });
   });
 

@@ -53,7 +53,7 @@ describe("NoteList", () => {
 
     render(
       <DndWrapper>
-        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} />
       </DndWrapper>,
     );
 
@@ -66,7 +66,7 @@ describe("NoteList", () => {
 
     render(
       <DndWrapper>
-        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} />
       </DndWrapper>,
     );
 
@@ -79,7 +79,7 @@ describe("NoteList", () => {
 
     render(
       <DndWrapper>
-        <NoteList notes={[note]} selectedId={null} onSelect={onSelect} sortByManual={false} />
+        <NoteList notes={[note]} selectedId={null} onSelect={onSelect} />
       </DndWrapper>,
     );
 
@@ -95,7 +95,7 @@ describe("NoteList", () => {
 
     render(
       <DndWrapper>
-        <NoteList notes={notes} selectedId="1" onSelect={vi.fn()} sortByManual={false} />
+        <NoteList notes={notes} selectedId="1" onSelect={vi.fn()} />
       </DndWrapper>,
     );
 
@@ -117,7 +117,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           onDeleteNote={onDeleteNote}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -139,7 +138,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           onDeleteNote={onDeleteNote}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -163,7 +161,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           onDeleteNote={onDeleteNote}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -194,7 +191,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           onDeleteNote={onDeleteNote}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -211,7 +207,7 @@ describe("NoteList", () => {
   it("renders empty list without errors", () => {
     const { container } = render(
       <DndWrapper>
-        <NoteList notes={[]} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+        <NoteList notes={[]} selectedId={null} onSelect={vi.fn()} />
       </DndWrapper>,
     );
     expect(container).toBeTruthy();
@@ -233,7 +229,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           searchResults={searchResults}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -258,7 +253,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           searchResults={searchResults}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -267,14 +261,13 @@ describe("NoteList", () => {
     expect(screen.queryByText("Regular Note")).not.toBeInTheDocument();
   });
 
-  // The ☰ grip handle was removed — notes are now always draggable
-  // from the entire item (unified with folder DnD). No more
-  // sortByManual-gated grip affordance.
-  it("does not render the old grip drag handle regardless of sortByManual", () => {
+  // The ☰ grip handle was removed — notes are draggable from the
+  // entire item (unified with folder DnD).
+  it("does not render the old grip drag handle", () => {
     const notes = [makeNote({ id: "1", title: "Any Note" })];
     render(
       <DndWrapper>
-        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={true} />
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} />
       </DndWrapper>,
     );
     expect(screen.queryByTitle("Drag to reorder")).not.toBeInTheDocument();
@@ -289,7 +282,7 @@ describe("NoteList", () => {
 
     render(
       <DndWrapper>
-        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
+        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} />
       </DndWrapper>,
     );
 
@@ -309,7 +302,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           onToggleFavorite={onToggleFavorite}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -331,7 +323,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           onToggleFavorite={onToggleFavorite}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -353,7 +344,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           onToggleFavorite={onToggleFavorite}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -377,7 +367,6 @@ describe("NoteList", () => {
           selectedId={null}
           onSelect={vi.fn()}
           onDoubleClick={onDoubleClick}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -395,7 +384,6 @@ describe("NoteList", () => {
           notes={[note]}
           selectedId={null}
           onSelect={vi.fn()}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -417,7 +405,6 @@ describe("NoteList", () => {
           notes={notes}
           selectedId={null}
           onSelect={vi.fn()}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -437,7 +424,6 @@ describe("NoteList", () => {
           notes={notes}
           selectedId={null}
           onSelect={vi.fn()}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -464,7 +450,6 @@ describe("NoteList", () => {
           onSelect={vi.fn()}
           onDeleteNote={vi.fn()}
           onSaveAsLocalFile={onSaveAsLocalFile}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -487,7 +472,6 @@ describe("NoteList", () => {
           onSelect={vi.fn()}
           onDeleteNote={vi.fn()}
           onSaveAsLocalFile={onSaveAsLocalFile}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -511,7 +495,6 @@ describe("NoteList", () => {
           onSelect={vi.fn()}
           onDeleteNote={vi.fn()}
           onUnlinkLocalFile={onUnlinkLocalFile}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -534,7 +517,6 @@ describe("NoteList", () => {
           onSelect={vi.fn()}
           onDeleteNote={vi.fn()}
           onUnlinkLocalFile={onUnlinkLocalFile}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -558,7 +540,6 @@ describe("NoteList", () => {
           onSelect={vi.fn()}
           onDeleteNote={vi.fn()}
           onSaveAsLocalFile={onSaveAsLocalFile}
-          sortByManual={false}
         />
       </DndWrapper>,
     );
@@ -581,7 +562,6 @@ describe("NoteList", () => {
           onSelect={vi.fn()}
           onDeleteNote={vi.fn()}
           onUnlinkLocalFile={onUnlinkLocalFile}
-          sortByManual={false}
         />
       </DndWrapper>,
     );

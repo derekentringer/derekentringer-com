@@ -86,10 +86,6 @@ export interface ReorderFoldersRequest {
   order: { id: string; sortOrder: number }[];
 }
 
-export interface ReorderNotesRequest {
-  order: { id: string; sortOrder: number }[];
-}
-
 export interface ReorderFavoriteNotesRequest {
   order: { id: string; favoriteSortOrder: number }[];
 }

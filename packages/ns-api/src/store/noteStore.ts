@@ -854,23 +854,6 @@ export async function toggleFolderFavorite(
   });
 }
 
-export async function reorderNotes(
-  userId: string,
-  order: { id: string; sortOrder: number }[],
-): Promise<void> {
-  if (order.length === 0) return;
-  const prisma = getPrisma();
-  // Raw SQL bypasses Prisma's `@updatedAt` auto-bump — reorder is a
-  // pure display-position change and should not make every touched
-  // note appear freshly edited.
-  await prisma.$transaction(
-    order.map(
-      (item) =>
-        prisma.$executeRaw`UPDATE "notes" SET "sortOrder" = ${item.sortOrder} WHERE "id" = ${item.id} AND "userId" = ${userId}`,
-    ),
-  );
-}
-
 export async function reorderFavoriteNotes(
   userId: string,
   order: { id: string; favoriteSortOrder: number }[],

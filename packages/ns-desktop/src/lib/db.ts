@@ -941,22 +941,6 @@ async function collectDescendantFolderIds(parentId: string): Promise<string[]> {
 // Reorder / Move
 // ---------------------------------------------------------------------------
 
-export async function reorderNotes(
-  order: { id: string; sortOrder: number }[],
-): Promise<void> {
-  const db = await getDb();
-  // Reorder is a display-position change — do NOT bump `updated_at`.
-  // Bumping it would make every touched note render as "just now" and
-  // push a spurious LWW-defeating timestamp to the server.
-  for (const item of order) {
-    await db.execute(
-      "UPDATE notes SET sort_order = $1 WHERE id = $2",
-      [item.sortOrder, item.id],
-    );
-    enqueueSyncAction("update", item.id, "note").catch(() => {});
-  }
-}
-
 export async function reorderFavoriteNotes(
   order: { id: string; favoriteSortOrder: number }[],
 ): Promise<void> {

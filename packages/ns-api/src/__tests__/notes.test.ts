@@ -375,51 +375,6 @@ describe("Note routes", () => {
     });
   });
 
-  // --- PUT /notes/reorder ---
-
-  describe("PUT /notes/reorder", () => {
-    it("reorders notes (204)", async () => {
-      const token = await getAccessToken();
-
-      const res = await app.inject({
-        method: "PUT",
-        url: "/notes/reorder",
-        headers: { authorization: `Bearer ${token}` },
-        payload: {
-          order: [
-            { id: VALID_UUID, sortOrder: 1 },
-            { id: VALID_UUID_2, sortOrder: 0 },
-          ],
-        },
-      });
-
-      expect(res.statusCode).toBe(204);
-    });
-
-    it("returns 400 with missing order", async () => {
-      const token = await getAccessToken();
-
-      const res = await app.inject({
-        method: "PUT",
-        url: "/notes/reorder",
-        headers: { authorization: `Bearer ${token}` },
-        payload: {},
-      });
-
-      expect(res.statusCode).toBe(400);
-    });
-
-    it("returns 401 without auth", async () => {
-      const res = await app.inject({
-        method: "PUT",
-        url: "/notes/reorder",
-        payload: { order: [] },
-      });
-
-      expect(res.statusCode).toBe(401);
-    });
-  });
-
   // --- PATCH /notes/folders/:id ---
 
   describe("PATCH /notes/folders/:id", () => {

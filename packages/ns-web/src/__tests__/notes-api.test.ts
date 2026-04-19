@@ -10,7 +10,6 @@ import {
   permanentDeleteNote,
   fetchFolders,
   createFolderApi,
-  reorderNotes,
   renameFolderApi,
   deleteFolderApi,
   moveFolderApi,
@@ -349,31 +348,6 @@ describe("createFolderApi", () => {
 
     await expect(createFolderApi("existing")).rejects.toThrow(
       "Failed to create folder: 409",
-    );
-  });
-});
-
-describe("reorderNotes", () => {
-  it("sends PUT with order body", async () => {
-    mockApiFetch.mockResolvedValue({ ok: true });
-
-    const order = [
-      { id: "note-1", sortOrder: 0 },
-      { id: "note-2", sortOrder: 1 },
-    ];
-    await reorderNotes({ order });
-
-    expect(mockApiFetch).toHaveBeenCalledWith("/notes/reorder", {
-      method: "PUT",
-      body: JSON.stringify({ order }),
-    });
-  });
-
-  it("throws on non-ok response", async () => {
-    mockApiFetch.mockResolvedValue({ ok: false, status: 500 });
-
-    await expect(reorderNotes({ order: [] })).rejects.toThrow(
-      "Failed to reorder notes: 500",
     );
   });
 });

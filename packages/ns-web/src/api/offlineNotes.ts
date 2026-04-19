@@ -221,7 +221,6 @@ export {
   moveFolderApi,
   CrossBoundaryMoveError,
   reorderFoldersApi,
-  reorderNotes,
   reorderFavoriteNotes,
   renameTagApi,
   deleteTagApi,

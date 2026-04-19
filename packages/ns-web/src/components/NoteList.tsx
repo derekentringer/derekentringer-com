@@ -19,7 +19,6 @@ interface NoteListProps {
   onDeleteNote?: (noteId: string) => void;
   onExportNote?: (noteId: string, format: ExportFormat) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
-  sortByManual: boolean;
 }
 
 interface ContextMenuState {
@@ -36,7 +35,6 @@ interface SortableNoteItemProps {
   onDeleteNote?: (noteId: string) => void;
   onExportNote?: (noteId: string, format: ExportFormat) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
-  sortByManual: boolean;
   contextMenu: ContextMenuState | null;
   onContextMenuOpen: (noteId: string, x: number, y: number) => void;
   onContextMenuClose: () => void;
@@ -52,17 +50,12 @@ function SortableNoteItem({
   onDeleteNote,
   onExportNote,
   onToggleFavorite,
-  sortByManual,
   contextMenu,
   onContextMenuOpen,
   onContextMenuClose,
   onDeleteClick,
   contextMenuRef,
 }: SortableNoteItemProps) {
-  // Always draggable — reorder within the list is still gated on
-  // `sortByManual` at the handler level, but dragging a note onto a
-  // folder (to move it) works regardless of sort mode. Unified UX
-  // with folders.
   const {
     attributes,
     listeners,
@@ -226,7 +219,6 @@ export function NoteList({
   onDeleteNote,
   onExportNote,
   onToggleFavorite,
-  sortByManual,
 }: NoteListProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -266,7 +258,6 @@ export function NoteList({
             onDeleteNote={onDeleteNote}
             onExportNote={onExportNote}
             onToggleFavorite={onToggleFavorite}
-            sortByManual={sortByManual}
             contextMenu={contextMenu}
             onContextMenuOpen={(noteId, x, y) => setContextMenu({ noteId, x, y })}
             onContextMenuClose={() => setContextMenu(null)}

@@ -6,7 +6,6 @@ import type {
   NoteSortField,
   SortOrder,
   FolderListResponse,
-  ReorderNotesRequest,
   ReorderFavoriteNotesRequest,
   ReorderFoldersRequest,
   TagListResponse,
@@ -24,7 +23,6 @@ import {
   permanentDeleteTrash,
   createFolder,
   listFolders,
-  reorderNotes,
   reorderFavoriteNotes,
   renameFolder,
   deleteFolder,
@@ -65,7 +63,9 @@ function isNotFoundError(error: unknown): boolean {
   );
 }
 
-const VALID_SORT_FIELDS: NoteSortField[] = ["title", "createdAt", "updatedAt", "sortOrder"];
+// `sortOrder` is retained on the shared type for favorites ordering
+// but is no longer a valid note-list sort field — Manual sort is gone.
+const VALID_SORT_FIELDS: NoteSortField[] = ["title", "createdAt", "updatedAt"];
 const VALID_SORT_ORDERS: SortOrder[] = ["asc", "desc"];
 
 const createNoteSchema = {
@@ -98,28 +98,6 @@ const updateNoteSchema = {
       favorite: { type: "boolean" },
       isLocalFile: { type: "boolean" },
       transcript: { type: ["string", "null"] },
-    },
-  },
-};
-
-const reorderSchema = {
-  body: {
-    type: "object" as const,
-    required: ["order"],
-    additionalProperties: false,
-    properties: {
-      order: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["id", "sortOrder"],
-          additionalProperties: false,
-          properties: {
-            id: { type: "string" },
-            sortOrder: { type: "integer" },
-          },
-        },
-      },
     },
   },
 };
@@ -340,21 +318,6 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         }
         throw error;
       }
-    },
-  );
-
-  // PUT /notes/reorder — MUST be before /:id
-  fastify.put<{ Body: ReorderNotesRequest }>(
-    "/reorder",
-    { schema: reorderSchema },
-    async (
-      request: FastifyRequest<{ Body: ReorderNotesRequest }>,
-      reply: FastifyReply,
-    ) => {
-      const userId = request.user.sub;
-      await reorderNotes(userId, request.body.order);
-      fastify.sseHub.notify(userId);
-      return reply.status(204).send();
     },
   );
 

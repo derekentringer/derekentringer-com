@@ -79,23 +79,18 @@ export function NoteListPanel({
                 style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
                 aria-label="Sort by"
               >
-                <option value="sortOrder">Manual</option>
                 <option value="updatedAt">Modified</option>
                 <option value="createdAt">Created</option>
                 <option value="title">Title</option>
               </select>
-              {/* Manual sort has no meaningful direction (position 0 is
-                  always the top of the list), so hide the toggle. */}
-              {sortBy !== "sortOrder" && (
-                <button
-                  onClick={() => onSortOrderChange(sortOrder === "asc" ? "desc" : "asc")}
-                  className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  title={sortOrder === "asc" ? "Ascending" : "Descending"}
-                  aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
-                >
-                  {sortOrder === "asc" ? "\u2191" : "\u2193"}
-                </button>
-              )}
+              <button
+                onClick={() => onSortOrderChange(sortOrder === "asc" ? "desc" : "asc")}
+                className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                title={sortOrder === "asc" ? "Ascending" : "Descending"}
+                aria-label={`Sort ${sortOrder === "asc" ? "ascending" : "descending"}`}
+              >
+                {sortOrder === "asc" ? "\u2191" : "\u2193"}
+              </button>
               <button
                 onClick={onCreate}
                 className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -150,7 +145,6 @@ export function NoteListPanel({
             onDeleteNote={onDeleteNote}
             onExportNote={onExportNote}
             onToggleFavorite={onToggleFavorite}
-            sortByManual={sortBy === "sortOrder"}
             localFileStatuses={localFileStatuses}
             locallyHostedNoteIds={locallyHostedNoteIds}
             onUnlinkLocalFile={onUnlinkLocalFile}

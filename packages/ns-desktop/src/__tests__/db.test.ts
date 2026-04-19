@@ -42,7 +42,6 @@ const {
   emptyTrash,
   purgeOldTrash,
   initFts,
-  reorderNotes,
   moveFolderParent,
   reorderFolders,
   backfillManagedFolders,
@@ -682,32 +681,6 @@ describe("restoreNote", () => {
       (call[0] as string).includes("INSERT INTO notes_fts"),
     );
     expect(ftsCalls.length).toBeGreaterThanOrEqual(1);
-  });
-});
-
-describe("reorderNotes", () => {
-  it("updates sort_order for each note", async () => {
-    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
-
-    await reorderNotes([
-      { id: "n1", sortOrder: 0 },
-      { id: "n2", sortOrder: 1 },
-      { id: "n3", sortOrder: 2 },
-    ]);
-    await new Promise((r) => setTimeout(r, 0)); // flush enqueue
-
-    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
-      (c[0] as string).includes("UPDATE notes SET sort_order"),
-    );
-    expect(updateCalls.length).toBe(3);
-    expect(updateCalls[0][1][0]).toBe(0);
-    expect(updateCalls[1][1][0]).toBe(1);
-    expect(updateCalls[2][1][0]).toBe(2);
-  });
-
-  it("handles empty order array", async () => {
-    await reorderNotes([]);
-    expect(mockExecute).not.toHaveBeenCalled();
   });
 });
 
