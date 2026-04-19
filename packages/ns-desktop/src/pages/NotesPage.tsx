@@ -2124,7 +2124,17 @@ export function NotesPage() {
         // Confirmed cross-boundary — flip subtree flags and move.
         const { direction } = await detectCrossBoundaryLocalMove(folderId, parentId);
         const targetFlag = direction === "toManaged";
-        await moveFolderWithCascade(folderId, parentId, targetFlag);
+        const { affectedFolderIds } = await moveFolderWithCascade(
+          folderId,
+          parentId,
+          targetFlag,
+        );
+        // Phase A.5 fix: pull-side `applyFolderChange` never fires for
+        // a self-initiated move, so we must run the A.4 disk reconciler
+        // inline. Otherwise periodic reconciliation (every 10s) would
+        // see a flagged-but-missing-on-disk subtree and hard-delete it.
+        const { reconcileSubtreeFlagFlip } = await import("../lib/syncEngine.ts");
+        await reconcileSubtreeFlagFlip(affectedFolderIds, targetFlag);
       } else {
         await moveFolderParent(folderId, parentId);
       }

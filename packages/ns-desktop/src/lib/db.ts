@@ -1062,7 +1062,7 @@ export async function moveFolderWithCascade(
   folderId: string,
   newParentId: string | null,
   targetFlag: boolean,
-): Promise<number> {
+): Promise<{ affectedFolderIds: string[] }> {
   const db = await getDb();
   const now = new Date().toISOString();
   const targetFlagInt = targetFlag ? 1 : 0;
@@ -1091,7 +1091,7 @@ export async function moveFolderWithCascade(
   );
   enqueueSyncAction("update", folderId, "folder").catch(() => {});
 
-  return subtree.length;
+  return { affectedFolderIds: subtree.map((r) => r.id) };
 }
 
 export async function reorderFolders(

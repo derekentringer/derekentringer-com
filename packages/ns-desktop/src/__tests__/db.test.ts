@@ -1092,10 +1092,10 @@ describe("moveFolderWithCascade (Phase A.5)", () => {
     ]);
     mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
 
-    const count = await moveFolderWithCascade("f-src", "new-parent", true);
+    const result = await moveFolderWithCascade("f-src", "new-parent", true);
     await new Promise((r) => setTimeout(r, 0)); // flush fire-and-forget
 
-    expect(count).toBe(3);
+    expect(result.affectedFolderIds).toEqual(["f-src", "f-a", "f-b"]);
 
     const updateFlagCalls = mockExecute.mock.calls.filter(
       (c: unknown[]) =>

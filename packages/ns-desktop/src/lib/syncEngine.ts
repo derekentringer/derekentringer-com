@@ -778,6 +778,34 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
 }
 
 /**
+ * Phase A.4 + A.5: run the same per-folder disk reconciliation that
+ * sync-pull fires, but on demand — used by desktop-initiated
+ * cross-boundary moves which don't go through `applyFolderChange`
+ * (the change is self-made, never arrives via pull). After
+ * `moveFolderWithCascade` flips the subtree's flags in SQLite, walk
+ * every affected folder and run the appropriate reconciler so the
+ * files land on disk (or get trashed) before the next periodic
+ * reconciliation could see a flagged-but-missing-on-disk folder and
+ * wrongly hard-delete it.
+ */
+export async function reconcileSubtreeFlagFlip(
+  folderIds: string[],
+  targetFlag: boolean,
+): Promise<void> {
+  for (const id of folderIds) {
+    try {
+      if (targetFlag) {
+        await reconcileFolderFlipToManaged(id);
+      } else {
+        await reconcileFolderFlipToUnmanaged(id);
+      }
+    } catch (err) {
+      console.warn(`[Phase A.5] Subtree reconcile failed for ${id}:`, err);
+    }
+  }
+}
+
+/**
  * Phase A.4: the folder flipped from unmanaged → managed. Materialize
  * its direct notes to disk if they aren't already, and create the
  * containing directory if needed.
