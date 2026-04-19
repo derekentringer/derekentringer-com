@@ -51,6 +51,8 @@ import {
   initFts,
   reorderNotes,
   moveFolderParent,
+  detectCrossBoundaryLocalMove,
+  moveFolderWithCascade,
   syncNoteLinks,
   listNoteTitles,
   fetchNoteById,
@@ -85,6 +87,7 @@ import {
 } from "../lib/db.ts";
 import { AboutDialog } from "../components/AboutDialog.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
+import { CrossBoundaryMoveDialog } from "../components/CrossBoundaryMoveDialog.tsx";
 import {
   MarkdownEditor,
   type MarkdownEditorHandle,
@@ -242,6 +245,17 @@ export function NotesPage() {
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Phase A.5: pending cross-boundary folder move awaiting user confirmation.
+  const [pendingCrossBoundaryMove, setPendingCrossBoundaryMove] = useState<{
+    folderId: string;
+    folderName: string;
+    parentId: string | null;
+    direction: "toManaged" | "toUnmanaged";
+    targetFlag: boolean;
+    affectedFolderCount: number;
+    affectedNoteCount: number;
+  } | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveGeneration, setSaveGeneration] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -2017,14 +2031,9 @@ export function NotesPage() {
             ? null
             : targetId;
         if (folderId === newParentId) return;
-        try {
-          await moveFolderParent(folderId, newParentId);
-          await refreshFolders();
-          notifyLocalChange();
-        } catch (err) {
-          console.error("Failed to move folder:", err);
-          showError("Failed to move folder");
-        }
+        // Route through handleMoveFolder so the cross-boundary
+        // detection + dialog triggers on drag too (Phase A.5).
+        await handleMoveFolder(folderId, newParentId);
       }
       return;
     }
@@ -2080,9 +2089,46 @@ export function NotesPage() {
     }
   }
 
-  async function handleMoveFolder(folderId: string, parentId: string | null) {
+  async function handleMoveFolder(
+    folderId: string,
+    parentId: string | null,
+    opts?: { confirmCrossBoundary?: boolean },
+  ) {
     try {
-      await moveFolderParent(folderId, parentId);
+      if (!opts?.confirmCrossBoundary) {
+        const cross = await detectCrossBoundaryLocalMove(folderId, parentId);
+        if (cross.direction) {
+          // Look up the folder's display name for the dialog copy.
+          function findName(nodes: typeof folders): string | null {
+            for (const f of nodes) {
+              if (f.id === folderId) return f.name;
+              const deeper = findName(f.children);
+              if (deeper) return deeper;
+            }
+            return null;
+          }
+          setPendingCrossBoundaryMove({
+            folderId,
+            folderName: findName(folders) ?? "this folder",
+            parentId,
+            direction: cross.direction,
+            targetFlag: cross.direction === "toManaged",
+            affectedFolderCount: cross.affectedFolderCount,
+            affectedNoteCount: cross.affectedNoteCount,
+          });
+          return;
+        }
+      }
+
+      if (opts?.confirmCrossBoundary) {
+        // Confirmed cross-boundary — flip subtree flags and move.
+        const { direction } = await detectCrossBoundaryLocalMove(folderId, parentId);
+        const targetFlag = direction === "toManaged";
+        await moveFolderWithCascade(folderId, parentId, targetFlag);
+      } else {
+        await moveFolderParent(folderId, parentId);
+      }
+
       await refreshFolders();
       notifyLocalChange();
     } catch (err) {
@@ -4706,6 +4752,24 @@ export function NotesPage() {
         if (note) openNoteAsTab(note);
       }}
     />
+
+    {/* Phase A.5: cross-boundary folder move confirmation */}
+    {pendingCrossBoundaryMove && (
+      <CrossBoundaryMoveDialog
+        direction={pendingCrossBoundaryMove.direction}
+        folderName={pendingCrossBoundaryMove.folderName}
+        affectedFolderCount={pendingCrossBoundaryMove.affectedFolderCount}
+        affectedNoteCount={pendingCrossBoundaryMove.affectedNoteCount}
+        onCancel={() => setPendingCrossBoundaryMove(null)}
+        onConfirm={() => {
+          const pending = pendingCrossBoundaryMove;
+          setPendingCrossBoundaryMove(null);
+          handleMoveFolder(pending.folderId, pending.parentId, {
+            confirmCrossBoundary: true,
+          });
+        }}
+      />
+    )}
     </div>
   );
 }

@@ -978,6 +978,122 @@ export async function moveFolderParent(
   enqueueSyncAction("update", folderId, "folder").catch(() => {});
 }
 
+/**
+ * Phase A.5 — detect whether moving `folderId` under `newParentId`
+ * would cross the managed/unmanaged boundary. Same shape as the
+ * server's CrossBoundaryMoveError, computed from local SQLite so the
+ * desktop drag handler can gate the confirmation dialog without a
+ * network round-trip.
+ *
+ * `direction === null` means no boundary crossing — safe to apply
+ * without cascade.
+ */
+export async function detectCrossBoundaryLocalMove(
+  folderId: string,
+  newParentId: string | null,
+): Promise<{
+  direction: "toManaged" | "toUnmanaged" | null;
+  affectedFolderCount: number;
+  affectedNoteCount: number;
+}> {
+  const db = await getDb();
+  const self = await db.select<{ is_local_file: number }[]>(
+    "SELECT is_local_file FROM folders WHERE id = $1",
+    [folderId],
+  );
+  if (self.length === 0) {
+    return { direction: null, affectedFolderCount: 0, affectedNoteCount: 0 };
+  }
+  const currentFlag = self[0].is_local_file === 1;
+
+  // Target root flag: if moving to root, folder becomes its own root
+  // and preserves its flag — not a boundary cross. Otherwise read the
+  // new parent's flag (post-A.0 this equals the root's).
+  let targetFlag = currentFlag;
+  if (newParentId !== null) {
+    const parent = await db.select<{ is_local_file: number }[]>(
+      "SELECT is_local_file FROM folders WHERE id = $1",
+      [newParentId],
+    );
+    if (parent.length === 0) {
+      return { direction: null, affectedFolderCount: 0, affectedNoteCount: 0 };
+    }
+    targetFlag = parent[0].is_local_file === 1;
+  }
+
+  if (currentFlag === targetFlag) {
+    return { direction: null, affectedFolderCount: 0, affectedNoteCount: 0 };
+  }
+
+  // Count affected folders + notes in the subtree for the dialog copy.
+  const subtree = await db.select<{ id: string }[]>(
+    `WITH RECURSIVE subtree(id) AS (
+       SELECT id FROM folders WHERE id = $1
+       UNION ALL
+       SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+     )
+     SELECT id FROM subtree`,
+    [folderId],
+  );
+  const noteCount = await db.select<{ c: number }[]>(
+    `SELECT COUNT(*) as c FROM notes
+     WHERE is_deleted = 0
+       AND folder_id IN (SELECT id FROM folders WHERE id IN (${subtree.map((_, i) => `$${i + 1}`).join(",")}))`,
+    subtree.map((r) => r.id),
+  );
+
+  return {
+    direction: targetFlag ? "toManaged" : "toUnmanaged",
+    affectedFolderCount: subtree.length,
+    affectedNoteCount: noteCount[0]?.c ?? 0,
+  };
+}
+
+/**
+ * Phase A.5 — apply a confirmed cross-boundary move: flip every
+ * descendant's isLocalFile to `targetFlag` and update the folder's
+ * parentId, all in one operation. Enqueues a sync update per affected
+ * folder so the server cascades too.
+ *
+ * Caller must have already confirmed with the user via
+ * `CrossBoundaryMoveDialog` — this helper doesn't re-detect.
+ */
+export async function moveFolderWithCascade(
+  folderId: string,
+  newParentId: string | null,
+  targetFlag: boolean,
+): Promise<number> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const targetFlagInt = targetFlag ? 1 : 0;
+
+  const subtree = await db.select<{ id: string }[]>(
+    `WITH RECURSIVE subtree(id) AS (
+       SELECT id FROM folders WHERE id = $1
+       UNION ALL
+       SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+     )
+     SELECT id FROM subtree`,
+    [folderId],
+  );
+
+  for (const row of subtree) {
+    await db.execute(
+      "UPDATE folders SET is_local_file = $1, updated_at = $2 WHERE id = $3",
+      [targetFlagInt, now, row.id],
+    );
+    enqueueSyncAction("update", row.id, "folder").catch(() => {});
+  }
+
+  await db.execute(
+    "UPDATE folders SET parent_id = $1, updated_at = $2 WHERE id = $3",
+    [newParentId, now, folderId],
+  );
+  enqueueSyncAction("update", folderId, "folder").catch(() => {});
+
+  return subtree.length;
+}
+
 export async function reorderFolders(
   order: { id: string; sortOrder: number }[],
 ): Promise<void> {
