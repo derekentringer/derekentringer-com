@@ -606,6 +606,51 @@ export async function purgeOldTrash(days = 30): Promise<number> {
   return result.count;
 }
 
+/**
+ * Phase A.1 — invariant helper.
+ *
+ * Walk a folder's ancestor chain to the root (`parentId = null`) and
+ * return that root's `isLocalFile`. The Phase A invariant is that
+ * every descendant's flag equals its root's, so this is the authoritative
+ * value any write should use.
+ *
+ * - `parentId === null`: the new folder IS a root — it may set its own
+ *   flag freely; the caller's `proposedFlag` is returned verbatim.
+ * - Parent not found or user mismatch: fall through to `false`. A
+ *   missing/mismatched parent is an error case the downstream Prisma
+ *   call will surface via FK or auth.
+ * - Normal case: return `roots[0].isLocalFile`.
+ *
+ * Single recursive CTE query so depth doesn't multiply round-trips.
+ */
+export async function resolveRootIsLocalFile(
+  prismaLike: Pick<ReturnType<typeof getPrisma>, "$queryRawUnsafe">,
+  userId: string,
+  parentId: string | null,
+  proposedFlag: boolean,
+): Promise<boolean> {
+  if (parentId === null) return proposedFlag;
+  const rows = await prismaLike.$queryRawUnsafe<
+    { "isLocalFile": boolean }[]
+  >(
+    `WITH RECURSIVE ancestors(id, "isLocalFile", "parentId", "userId") AS (
+       SELECT id, "isLocalFile", "parentId", "userId"
+       FROM "folders" WHERE id = $1
+       UNION ALL
+       SELECT f.id, f."isLocalFile", f."parentId", f."userId"
+       FROM "folders" f
+       JOIN ancestors a ON f.id = a."parentId"
+     )
+     SELECT "isLocalFile" FROM ancestors
+     WHERE "parentId" IS NULL AND "userId" = $2
+     LIMIT 1`,
+    parentId,
+    userId,
+  );
+  if (rows.length === 0) return false;
+  return rows[0].isLocalFile;
+}
+
 export async function createFolder(
   userId: string,
   name: string,
@@ -620,22 +665,16 @@ export async function createFolder(
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
-  // Inherit `isLocalFile` from the parent. A folder created under a
-  // managed-locally parent is itself part of the managed tree — every
-  // client (web, desktop, mobile) should see it as such so the delete
-  // UX + tombstone semantics stay consistent. Desktop would have
-  // stamped this for itself via resolveFolderForPath, but a folder
-  // created on web via REST needs the server to cascade the flag.
-  let inheritIsLocalFile = false;
-  if (parentId) {
-    const parent = await prisma.folder.findUnique({
-      where: { id: parentId },
-      select: { isLocalFile: true, userId: true },
-    });
-    if (parent && parent.userId === userId && parent.isLocalFile) {
-      inheritIsLocalFile = true;
-    }
-  }
+  // Phase A.1: cascade from the root ancestor, not just the immediate
+  // parent. A.0 normalized existing drift so these two values already
+  // match, but walking to the root keeps the rule self-documenting and
+  // defends against any future drift slipping past A.0.
+  const isLocalFile = await resolveRootIsLocalFile(
+    prisma,
+    userId,
+    parentId ?? null,
+    false,
+  );
 
   return prisma.folder.create({
     data: {
@@ -643,7 +682,7 @@ export async function createFolder(
       name,
       parentId: parentId ?? null,
       sortOrder: nextSortOrder,
-      isLocalFile: inheritIsLocalFile,
+      isLocalFile,
     },
   });
 }

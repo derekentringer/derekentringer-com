@@ -20,6 +20,7 @@ import {
   getTombstonesChangedSince,
   writeTombstone,
 } from "../store/syncStore.js";
+import { resolveRootIsLocalFile } from "../store/noteStore.js";
 import { getPrisma } from "../lib/prisma.js";
 import { toNote } from "../lib/mappers.js";
 import type {
@@ -28,7 +29,10 @@ import type {
   Image as PrismaImage,
 } from "../generated/prisma/client.js";
 
-type PrismaLike = Pick<ReturnType<typeof getPrisma>, "note" | "folder" | "image" | "entityTombstone">;
+type PrismaLike = Pick<
+  ReturnType<typeof getPrisma>,
+  "note" | "folder" | "image" | "entityTombstone" | "$queryRawUnsafe"
+>;
 
 const BATCH_LIMIT = 100;
 
@@ -498,6 +502,23 @@ async function applyFolderChange(
 
   const existing = await prisma.folder.findUnique({ where: { id: change.id } });
 
+  // Phase A.1 invariant: coerce the incoming isLocalFile to match the
+  // target root ancestor's flag. Clients shouldn't push drift, but if
+  // one does (legacy, bug, or race) we normalize rather than persist
+  // the mismatched value.
+  const proposedFlag = folderData.isLocalFile ?? false;
+  const normalizedFlag = await resolveRootIsLocalFile(
+    prisma,
+    userId,
+    folderData.parentId,
+    proposedFlag,
+  );
+  if (normalizedFlag !== proposedFlag) {
+    console.warn(
+      `[sync-push] Client drift: folder ${change.id} arrived with isLocalFile=${proposedFlag} but root ancestor says ${normalizedFlag}. Coerced.`,
+    );
+  }
+
   if (existing) {
     if (existing.userId !== userId) return "skipped";
 
@@ -508,7 +529,7 @@ async function applyFolderChange(
       parentId: folderData.parentId,
       sortOrder: folderData.sortOrder,
       favorite: folderData.favorite,
-      isLocalFile: folderData.isLocalFile ?? false,
+      isLocalFile: normalizedFlag,
       deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
     };
 
@@ -539,12 +560,14 @@ async function applyFolderChange(
           parentId: folderData.parentId,
           sortOrder: folderData.sortOrder ?? 0,
           favorite: folderData.favorite ?? false,
-          isLocalFile: folderData.isLocalFile ?? false,
+          isLocalFile: normalizedFlag,
           deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
         },
       });
     } catch (err: unknown) {
       if (change.force && isPrismaError(err, "P2003")) {
+        // Fallback: parent missing — promote to a root. The proposed
+        // flag becomes authoritative since the folder is its own root.
         await prisma.folder.create({
           data: {
             id: change.id,
@@ -553,7 +576,7 @@ async function applyFolderChange(
             parentId: null,
             sortOrder: folderData.sortOrder ?? 0,
             favorite: folderData.favorite ?? false,
-            isLocalFile: folderData.isLocalFile ?? false,
+            isLocalFile: proposedFlag,
             deletedAt: folderData.deletedAt ? new Date(folderData.deletedAt) : null,
           },
         });

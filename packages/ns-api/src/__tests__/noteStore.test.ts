@@ -529,11 +529,9 @@ describe("noteStore", () => {
 
     it("creates a nested folder with parentId (non-managed parent)", async () => {
       mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
-      // Parent lookup: non-managed, so child inherits isLocalFile = false.
-      mockPrisma.folder.findUnique.mockResolvedValue({
-        isLocalFile: false,
-        userId: TEST_USER_ID,
-      });
+      // Phase A.1: root-ancestor walk via recursive CTE. Mock returns
+      // the root's flag directly.
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([{ isLocalFile: false }]);
       mockPrisma.folder.create.mockResolvedValue({
         id: "folder-2",
         userId: TEST_USER_ID,
@@ -557,12 +555,9 @@ describe("noteStore", () => {
       });
     });
 
-    it("inherits isLocalFile=true from a managed-locally parent", async () => {
+    it("inherits isLocalFile=true from a managed-locally root ancestor", async () => {
       mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
-      mockPrisma.folder.findUnique.mockResolvedValue({
-        isLocalFile: true,
-        userId: TEST_USER_ID,
-      });
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([{ isLocalFile: true }]);
       mockPrisma.folder.create.mockResolvedValue({
         id: "folder-3",
         userId: TEST_USER_ID,
@@ -586,14 +581,11 @@ describe("noteStore", () => {
       });
     });
 
-    it("does NOT inherit from a parent belonging to a different user", async () => {
+    it("defaults to isLocalFile=false when the root ancestor isn't found (user mismatch or missing parent)", async () => {
       mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
-      // Parent belongs to a different user — security check must prevent
-      // isLocalFile from leaking across user boundaries.
-      mockPrisma.folder.findUnique.mockResolvedValue({
-        isLocalFile: true,
-        userId: "other-user",
-      });
+      // Recursive CTE returns nothing because the WHERE clause filters
+      // by userId — cross-user parent references can't leak the flag.
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
       mockPrisma.folder.create.mockResolvedValue({
         id: "folder-4",
         userId: TEST_USER_ID,

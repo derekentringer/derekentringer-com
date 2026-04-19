@@ -325,6 +325,8 @@ describe("Note routes", () => {
     it("creates a nested folder with parentId (201)", async () => {
       const token = await getAccessToken();
       mockPrisma.folder.aggregate.mockResolvedValue({ _max: { sortOrder: -1 } });
+      // Phase A.1: root-ancestor walk. Non-managed root → child inherits false.
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([{ isLocalFile: false }]);
       mockPrisma.folder.create.mockResolvedValue({
         id: "f2",
         name: "alpha",
