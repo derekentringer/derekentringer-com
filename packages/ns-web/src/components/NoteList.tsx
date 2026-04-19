@@ -59,6 +59,10 @@ function SortableNoteItem({
   onDeleteClick,
   contextMenuRef,
 }: SortableNoteItemProps) {
+  // Always draggable — reorder within the list is still gated on
+  // `sortByManual` at the handler level, but dragging a note onto a
+  // folder (to move it) works regardless of sort mode. Unified UX
+  // with folders.
   const {
     attributes,
     listeners,
@@ -66,7 +70,8 @@ function SortableNoteItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: note.id, disabled: !sortByManual });
+    isOver,
+  } = useSortable({ id: note.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -94,18 +99,18 @@ function SortableNoteItem({
     return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }, [note.updatedAt]);
 
+  // `isOver && !isDragging` → another item is being dragged onto this
+  // one; match folder drop-target feedback.
+  const dropRing = isOver && !isDragging ? "ring-2 ring-primary rounded" : "";
+
   return (
-    <div ref={setNodeRef} style={style} className="flex items-start relative mb-px">
-      {sortByManual && (
-        <span
-          {...attributes}
-          {...listeners}
-          className="cursor-grab px-1 pt-2.5 text-muted-foreground hover:text-foreground text-xs select-none shrink-0"
-          title="Drag to reorder"
-        >
-          &#x2630;
-        </span>
-      )}
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`flex items-start relative mb-px ${dropRing}`}
+    >
       <button
         onClick={() => onSelect(note)}
         onDoubleClick={(e) => { e.preventDefault(); onDoubleClick?.(note); }}

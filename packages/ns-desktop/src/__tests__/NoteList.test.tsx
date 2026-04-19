@@ -11,7 +11,13 @@ import type { Note, NoteSearchResult } from "@derekentringer/ns-shared";
 import type { LocalFileStatus } from "../lib/localFileService.ts";
 
 function DndWrapper({ children }: { children: React.ReactNode }) {
-  const sensors = useSensors(useSensor(PointerSensor));
+  // Match the production app's 5px activation distance — without it,
+  // every click on a draggable element starts a drag and onClick
+  // handlers never fire, which trips every test in this file after
+  // the notes-always-draggable refactor.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
   return <DndContext sensors={sensors}>{children}</DndContext>;
 }
 
@@ -261,29 +267,16 @@ describe("NoteList", () => {
     expect(screen.queryByText("Regular Note")).not.toBeInTheDocument();
   });
 
-  // Drag handle tests
-  it("shows drag handle when sortByManual is true", () => {
-    const notes = [makeNote({ id: "1", title: "Manual Sort Note" })];
-
+  // The ☰ grip handle was removed — notes are now always draggable
+  // from the entire item (unified with folder DnD). No more
+  // sortByManual-gated grip affordance.
+  it("does not render the old grip drag handle regardless of sortByManual", () => {
+    const notes = [makeNote({ id: "1", title: "Any Note" })];
     render(
       <DndWrapper>
         <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={true} />
       </DndWrapper>,
     );
-
-    const handle = screen.getByTitle("Drag to reorder");
-    expect(handle).toBeInTheDocument();
-  });
-
-  it("hides drag handle when sortByManual is false", () => {
-    const notes = [makeNote({ id: "1", title: "Auto Sort Note" })];
-
-    render(
-      <DndWrapper>
-        <NoteList notes={notes} selectedId={null} onSelect={vi.fn()} sortByManual={false} />
-      </DndWrapper>,
-    );
-
     expect(screen.queryByTitle("Drag to reorder")).not.toBeInTheDocument();
   });
 
