@@ -319,3 +319,56 @@ pub fn mix_to_wav(
 
     Ok(wav_path.to_string_lossy().into_owned())
 }
+
+/// Read a WAV (or any file) into memory then delete it. Used by the
+/// `stop_recording` end-of-session path so the mixed WAV never lingers
+/// in the temp dir after the TS side has consumed its bytes. Without
+/// this, every meeting recording leaks ~1 MB/second to
+/// `$TMPDIR/notesync_meeting_*.wav` and the files only go away when
+/// macOS eventually purges /var/folders (rare in practice).
+pub fn read_and_remove_file(path: &str) -> Result<Vec<u8>, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("Read final WAV: {e}"))?;
+    if let Err(e) = std::fs::remove_file(path) {
+        // Not fatal — we already have the bytes. Log so the leak
+        // doesn't silently return.
+        log::warn!("Failed to remove final WAV at {path}: {e}");
+    }
+    Ok(bytes)
+}
+
+/// Sweep `$TMPDIR` for stale `notesync_*` temp files (mixed WAVs and
+/// raw PCM fragments from earlier versions that leaked, or from
+/// recordings that crashed mid-stop). Called from app startup so
+/// already-leaked files heal on next launch.
+pub fn cleanup_stale_temp_files() -> (usize, u64) {
+    let temp_dir = std::env::temp_dir();
+    let read_dir = match std::fs::read_dir(&temp_dir) {
+        Ok(d) => d,
+        Err(_) => return (0, 0),
+    };
+    let mut removed = 0usize;
+    let mut bytes_removed: u64 = 0;
+    for entry in read_dir.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if !name_str.starts_with("notesync_") {
+            continue;
+        }
+        if !(name_str.ends_with(".wav") || name_str.ends_with(".pcm")) {
+            continue;
+        }
+        let path = entry.path();
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+            bytes_removed += size;
+        }
+    }
+    if removed > 0 {
+        log::info!(
+            "Cleaned up {removed} stale NoteSync temp file(s), freed {:.1} MB",
+            bytes_removed as f64 / (1024.0 * 1024.0)
+        );
+    }
+    (removed, bytes_removed)
+}
