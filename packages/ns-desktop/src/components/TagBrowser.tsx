@@ -17,6 +17,13 @@ interface TagBrowserProps {
   showLayoutToggle?: boolean;
   showSort?: boolean;
   showFilter?: boolean;
+  /**
+   * When provided, the filter string is controlled by the parent and
+   * TagBrowser does NOT render its own filter input. Used by the sidebar
+   * "Tags" tab to keep the filter field inside the sticky header, where
+   * it stays pinned while the tag list scrolls.
+   */
+  externalFilter?: string;
 }
 
 export function TagBrowser({
@@ -30,6 +37,7 @@ export function TagBrowser({
   showLayoutToggle = false,
   showSort = false,
   showFilter = false,
+  externalFilter,
 }: TagBrowserProps) {
   const [contextMenu, setContextMenu] = useState<{
     tag: string;
@@ -59,7 +67,10 @@ export function TagBrowser({
     } catch {}
     return "count";
   });
-  const [filter, setFilter] = useState("");
+  const [internalFilter, setInternalFilter] = useState("");
+  // External filter (from parent's sticky header) wins when provided.
+  const filter = externalFilter ?? internalFilter;
+  const setFilter = setInternalFilter;
 
   // Sync controlled props
   useEffect(() => {
@@ -190,8 +201,9 @@ export function TagBrowser({
     </div>
   );
 
-  // Filter input
-  const filterInput = showFilter && (
+  // Filter input — rendered inline here only when the parent isn't
+  // controlling the filter from its own (sticky) header.
+  const filterInput = showFilter && externalFilter === undefined && (
     <div className="relative mb-1">
       <input
         type="text"
