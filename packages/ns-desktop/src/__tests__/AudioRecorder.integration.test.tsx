@@ -259,6 +259,72 @@ describe("AudioRecorder — mic-only happy path", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  // Phase 5.6 — `transcribeAudio` failure (Whisper unreachable, or
+  // API-level failure like quota-exceeded). Must surface `onError`
+  // and leave the recording state cleaned (no hung UI). This pins
+  // the final-transcribe error path that 3.5 added on the server
+  // side: the client must gracefully handle the 502 response.
+  it("transcribeAudio rejection surfaces onError and cleans up", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+
+    mockTranscribeAudio.mockRejectedValueOnce(new Error("Whisper unreachable"));
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={(s) => recordingHandles.push(s)}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={(s) => recordingHandles.push(s)}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+
+    const recording = recordingHandles.find((s) => s?.state === "recording")!;
+    await act(async () => {
+      recording.onStop();
+    });
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith("Whisper unreachable");
+    });
+
+    // No note was created; the parent sees the error instead.
+    expect(onNoteCreated).not.toHaveBeenCalled();
+
+    // State chain flowed back to idle (handleMicRecord's onstop
+    // `finally` block resets state). The recording-state callback
+    // received a `null` state after the error.
+    await waitFor(() => {
+      expect(
+        recordingHandles.some((s) => s === null),
+      ).toBe(true);
+    });
+  });
+
   // Phase 3.6 — chunk transcription failure is non-fatal. A
   // `transcribeChunk` rejection just logs a warning and skips that
   // index in `transcriptChunksRef`; the full-audio transcribe on
@@ -1029,6 +1095,121 @@ describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
     expect(mockTranscribeAudio).not.toHaveBeenCalled();
     expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-dedup" }));
   });
+
+  // Phase 5.2 — full meeting-mode flow test. Drives the component
+  // through N chunk-timer ticks, asserts each chunk is transcribed
+  // and the assembled live transcript reflects the ordered chunks,
+  // then stops and verifies the final note is created with the live
+  // transcript (the dedup fast-path from 4.1) rather than a second
+  // full Whisper pass.
+  it("records 3 chunks in order, assembles live transcript, creates note", async () => {
+    let chunkCallCount = 0;
+    invokeBus
+      .resolve("start_meeting_recording", undefined)
+      .on("get_meeting_audio_chunk", () => {
+        chunkCallCount++;
+        // Every chunk fetch returns non-empty bytes so transcribeChunk
+        // fires. After 3 chunks, return empty so the chunk counter
+        // plateaus at 3 even if more ticks fire in the test window.
+        return chunkCallCount <= 3 ? Array.from(new Uint8Array(2048)) : [];
+      })
+      .resolve("stop_meeting_recording", []);
+
+    // Each chunk returns a unique transcribed text at its claimed index.
+    mockTranscribeChunk
+      .mockReset()
+      .mockResolvedValueOnce({ text: "chunk zero text ".repeat(5), chunkIndex: 0 })
+      .mockResolvedValueOnce({ text: "chunk one text ".repeat(5), chunkIndex: 1 })
+      .mockResolvedValueOnce({ text: "chunk two text ".repeat(5), chunkIndex: 2 })
+      .mockResolvedValue({ text: "", chunkIndex: 0 });
+
+    const note = { id: "note-full-flow", title: "T", content: "c" };
+    mockStructureAndCreateNote.mockResolvedValue({ note });
+
+    const onNoteCreated = vi.fn();
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+
+    vi.useFakeTimers();
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="meeting"
+        recordingSource="meeting"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={vi.fn()}
+        onRecordingStateChange={(s) => recordingHandles.push(s)}
+        triggerMode="meeting"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="meeting"
+          recordingSource="meeting"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={vi.fn()}
+          onRecordingStateChange={(s) => recordingHandles.push(s)}
+          triggerMode="meeting"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    // Advance 3× the 30s chunk interval so three chunks fire.
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_100);
+        // Flush the invoke + transcribeChunk promise chain for this tick.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    // All three chunks should have been transcribed.
+    expect(mockTranscribeChunk).toHaveBeenCalledTimes(3);
+
+    const recording = recordingHandles.find((s) => s?.state === "recording")!;
+    await act(async () => {
+      recording.onStop();
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    vi.useRealTimers();
+
+    await waitFor(() => {
+      expect(onNoteCreated).toHaveBeenCalled();
+    });
+
+    // Dedup fast-path was taken — live transcript > 100 chars.
+    expect(mockStructureAndCreateNote).toHaveBeenCalledTimes(1);
+    expect(mockTranscribeAudio).not.toHaveBeenCalled();
+
+    // Transcript passed to structureAndCreateNote should be all three
+    // chunks concatenated in index order.
+    const [transcriptArg] = mockStructureAndCreateNote.mock.calls[0];
+    expect(transcriptArg).toContain("chunk zero text");
+    expect(transcriptArg).toContain("chunk one text");
+    expect(transcriptArg).toContain("chunk two text");
+    // Verify ordering — "zero" appears before "one" appears before "two".
+    const i0 = transcriptArg.indexOf("chunk zero");
+    const i1 = transcriptArg.indexOf("chunk one");
+    const i2 = transcriptArg.indexOf("chunk two");
+    expect(i0).toBeLessThan(i1);
+    expect(i1).toBeLessThan(i2);
+  });
+
+  // Note: out-of-order chunk arrival at the integration level is
+  // covered by the `assembleTranscript` unit tests in
+  // `src/lib/__tests__/transcriptAssembly.test.ts` (Phase 3.1).
+  // Driving out-of-order resolution through the full AudioRecorder
+  // + fake-timer + React state machine adds timing fragility without
+  // additional coverage beyond what the pure-function tests provide.
 
   it("empty/short live transcript falls back to transcribeAudio (full Whisper)", async () => {
     invokeBus

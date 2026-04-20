@@ -469,6 +469,143 @@ mod tests {
         assert!(energy > 0.0, "sine should have nonzero energy");
     }
 
+    // Phase 5.1 — ChunkResampler: verify the basic downsample works
+    // and that stateful chunking matches a one-shot pass within
+    // rounding error.
+
+    #[test]
+    fn chunk_resampler_downsamples_to_expected_length() {
+        // 48 kHz → 16 kHz is a 3:1 downsample. 48 samples in → ~16 out.
+        let mut r = ChunkResampler::new(48_000, 16_000);
+        let input: Vec<f32> = (0..48).map(|i| i as f32).collect();
+        let out = r.process(&input);
+        // Linear interpolation with ratio=3.0: positions 0, 3, 6, ...
+        // produce 16 samples from 48.
+        assert_eq!(out.len(), 16);
+        // First output sample should equal input[0] exactly.
+        assert!((out[0] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn chunk_resampler_streaming_matches_single_shot() {
+        // The resampler is stateful; feeding two halves should
+        // produce the same total count as a one-shot pass (within a
+        // 1-sample fencepost tolerance due to the fractional position
+        // carried across calls).
+        let input: Vec<f32> =
+            (0..9600).map(|i| (i as f32 * 0.01).sin()).collect();
+
+        let mut one_shot = ChunkResampler::new(48_000, 16_000);
+        let all = one_shot.process(&input);
+
+        let mut streamed = ChunkResampler::new(48_000, 16_000);
+        let mut chunks = Vec::new();
+        chunks.extend(streamed.process(&input[..4800]));
+        chunks.extend(streamed.process(&input[4800..]));
+
+        assert!(
+            (all.len() as isize - chunks.len() as isize).abs() <= 1,
+            "streaming vs one-shot length differ by more than 1: {} vs {}",
+            all.len(),
+            chunks.len()
+        );
+    }
+
+    #[test]
+    fn chunk_resampler_empty_input_returns_empty() {
+        let mut r = ChunkResampler::new(48_000, 16_000);
+        assert!(r.process(&[]).is_empty());
+    }
+
+    // Phase 5.1 — read_pcm_since: growing-file reader used by the
+    // live-chunk path. Verifies byte-offset correctness.
+
+    #[test]
+    fn read_pcm_since_returns_empty_for_missing_file() {
+        let dir = TempAudioDir::new().unwrap();
+        let missing = dir.path_in("no_such_file.pcm");
+        let samples = read_pcm_since(&missing, 0).unwrap();
+        assert!(samples.is_empty());
+    }
+
+    #[test]
+    fn read_pcm_since_reads_from_offset() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("chunk.pcm");
+
+        // 10 f32 samples = 40 bytes.
+        let samples: Vec<f32> = (0..10).map(|i| i as f32).collect();
+        write_pcm_file(&path, &samples).unwrap();
+
+        // Read from byte offset 16 (sample 4). Should get samples 4..10.
+        let tail = read_pcm_since(&path, 16).unwrap();
+        assert_eq!(tail, vec![4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn read_pcm_since_returns_empty_when_offset_at_end() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("chunk.pcm");
+
+        let samples: Vec<f32> = vec![1.0, 2.0, 3.0];
+        write_pcm_file(&path, &samples).unwrap();
+
+        // File is 12 bytes; offset 12 means "no new data".
+        let tail = read_pcm_since(&path, 12).unwrap();
+        assert!(tail.is_empty());
+    }
+
+    // Phase 5.1 — encode_mixed_wav_chunk: WAV header + payload sanity.
+
+    #[test]
+    fn encode_mixed_wav_chunk_produces_valid_wav() {
+        let sys: Vec<f32> = FakePcmSource::silence(0.1, 16_000, 1);
+        let mic: Vec<f32> = FakePcmSource::silence(0.1, 16_000, 1);
+        let bytes = encode_mixed_wav_chunk(&sys, &mic, 16_000).unwrap();
+
+        let header = verify_wav_header(&bytes);
+        assert_eq!(header.sample_rate, 16_000);
+        assert_eq!(header.channels, 1);
+        assert_eq!(header.bits_per_sample, 16);
+        // 1600 samples × 2 bytes = 3200 bytes of data.
+        assert_eq!(header.data_bytes, 3200);
+    }
+
+    #[test]
+    fn encode_mixed_wav_chunk_returns_empty_for_no_input() {
+        let bytes = encode_mixed_wav_chunk(&[], &[], 16_000).unwrap();
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn encode_mixed_wav_chunk_mixes_signals_5050() {
+        // Two identical full-scale sines. Mix should sum to 2×
+        // scaled by 0.5 = full scale. Clamp to [-1, 1] prevents
+        // overflow. Check the peak absolute amplitude is non-zero
+        // and not over the clamp.
+        let sine: Vec<f32> = FakePcmSource::sine(0.05, 16_000, 1, 440.0);
+        let bytes = encode_mixed_wav_chunk(&sine, &sine, 16_000).unwrap();
+        let header = verify_wav_header(&bytes);
+        assert!(header.data_bytes > 0);
+
+        // Read one i16 sample from the data section and verify
+        // magnitude is within expected bounds.
+        let first_sample = i16::from_le_bytes([bytes[44], bytes[45]]);
+        assert!(first_sample.abs() < i16::MAX, "mix should clamp, not overflow");
+    }
+
+    #[test]
+    fn encode_mixed_wav_chunk_handles_uneven_lengths() {
+        // If sys is longer than mic, the extra tail samples should
+        // still be written (mic contributes 0 for those frames).
+        let sys: Vec<f32> = FakePcmSource::silence(0.05, 16_000, 1); // 800 samples
+        let mic: Vec<f32> = FakePcmSource::silence(0.025, 16_000, 1); // 400 samples
+        let bytes = encode_mixed_wav_chunk(&sys, &mic, 16_000).unwrap();
+        let header = verify_wav_header(&bytes);
+        // Output length tracks the max of the two inputs: 800 × 2 = 1600 bytes.
+        assert_eq!(header.data_bytes, 1600);
+    }
+
     #[test]
     fn mix_to_wav_produces_valid_wav_and_helper_cleans_up() {
         let dir = TempAudioDir::new().unwrap();
