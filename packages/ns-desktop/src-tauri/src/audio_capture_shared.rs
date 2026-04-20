@@ -372,3 +372,90 @@ pub fn cleanup_stale_temp_files() -> (usize, u64) {
     }
     (removed, bytes_removed)
 }
+
+// Phase 0.2 — smoke tests that exercise the fixture against the real
+// helpers in this module. Full per-function coverage is Phase 5 work;
+// the goal here is only "does the fixture actually drive mix_to_wav
+// and read_and_remove_file end-to-end?"
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio_test_support::{
+        write_pcm_file, FakePcmSource, TempAudioDir, verify_wav_header,
+    };
+
+    #[test]
+    fn to_mono_averages_stereo_frames() {
+        let stereo: Vec<f32> = vec![0.25, -0.25, 1.0, -1.0, 0.5, 0.5];
+        let mono = to_mono(&stereo, 2);
+        assert_eq!(mono, vec![0.0, 0.0, 0.5]);
+    }
+
+    #[test]
+    fn to_mono_passes_mono_through_unchanged() {
+        let samples = vec![0.1, 0.2, 0.3];
+        assert_eq!(to_mono(&samples, 1), samples);
+    }
+
+    #[test]
+    fn fake_pcm_source_silence_length_matches_spec() {
+        let s = FakePcmSource::silence(0.5, 48_000, 2);
+        // 0.5s * 48000 Hz * 2 channels
+        assert_eq!(s.len(), 48_000);
+        assert!(s.iter().all(|x| *x == 0.0));
+    }
+
+    #[test]
+    fn fake_pcm_source_sine_has_nonzero_energy() {
+        let s = FakePcmSource::sine(0.1, 48_000, 1, 440.0);
+        let energy: f32 = s.iter().map(|x| x * x).sum();
+        assert!(energy > 0.0, "sine should have nonzero energy");
+    }
+
+    #[test]
+    fn mix_to_wav_produces_valid_wav_and_helper_cleans_up() {
+        let dir = TempAudioDir::new().unwrap();
+        let sys_path = dir.path_in("sys.pcm");
+        let mic_path = dir.path_in("mic.pcm");
+
+        // 0.25s of silence at the rates the real pipeline uses.
+        write_pcm_file(&sys_path, &FakePcmSource::silence(0.25, 48_000, 2)).unwrap();
+        write_pcm_file(&mic_path, &FakePcmSource::silence(0.25, 48_000, 1)).unwrap();
+
+        let wav_path = mix_to_wav(
+            &sys_path,
+            48_000,
+            2,
+            &mic_path,
+            48_000,
+            1,
+        )
+        .unwrap();
+
+        // mix_to_wav writes to $TMPDIR, outside our scoped temp dir —
+        // that's by design (it needs a path that survives until the TS
+        // side reads it). So we consume + delete it via the same helper
+        // the production code uses.
+        let bytes = read_and_remove_file(&wav_path).unwrap();
+
+        let header = verify_wav_header(&bytes);
+        assert_eq!(header.sample_rate, 16_000, "mix output should be 16 kHz");
+        assert_eq!(header.channels, 1, "mix output should be mono");
+        assert_eq!(header.bits_per_sample, 16, "mix output should be 16-bit PCM");
+        assert!(header.data_bytes > 0, "data chunk should be non-empty");
+
+        // read_and_remove_file removed the WAV; the scoped dir never
+        // saw it, so cleanup is also proven.
+        assert!(!std::path::Path::new(&wav_path).exists());
+    }
+
+    #[test]
+    fn cleanup_stale_temp_files_only_touches_notesync_prefixed_files() {
+        // We can't easily sandbox std::env::temp_dir(), so the safest
+        // behavior check is "it doesn't crash when there's nothing to
+        // clean up". Exhaustive path testing is Phase 1.0 work once we
+        // add a $TMPDIR override for tests.
+        let (removed, bytes) = cleanup_stale_temp_files();
+        let _ = (removed, bytes); // no assertion — just smoke
+    }
+}

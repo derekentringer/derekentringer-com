@@ -47,3 +47,9 @@ block2 = "0.6"
 # cpal provides WASAPI capture (including loopback on the default output device)
 # for the Windows meeting-mode audio_capture_win module.
 cpal = "0.15"
+
+[dev-dependencies]
+# Scoped temp directories that unlink on drop — used by
+# `audio_test_support` to verify the audio pipeline cleans up after
+# itself without relying on the process-wide `std::env::temp_dir()`.
+tempfile = "3"
