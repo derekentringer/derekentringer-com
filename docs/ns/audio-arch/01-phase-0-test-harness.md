@@ -1,6 +1,6 @@
 # Phase 0 — Test Harness
 
-**Status**: pending
+**Status**: core shipped (0.1–0.4); 0.5 + 0.6 deferred (add just-in-time per phase)
 
 ## Goal
 
@@ -23,7 +23,9 @@ Phase 1–4 require:
 
 ## Items
 
-### 0.1 — Whisper mock with retry simulation
+### 0.1 — Whisper mock with retry simulation ✅
+
+**Status**: shipped — `packages/ns-api/src/__tests__/helpers/whisperMock.ts`; `whisperService.test.ts` rewritten on top of it + 5 new error-path tests (429, timeout, network error, malformed 200, mixed retry sequence).
 
 **Location**: `packages/ns-api/src/__tests__/helpers/whisperMock.ts` (new file)
 
@@ -43,9 +45,11 @@ Phase 1–4 require:
 
 **Estimated effort**: 2 hours
 
-### 0.2 — Audio I/O fixture for Rust integration tests
+### 0.2 — Audio I/O fixture for Rust integration tests ✅
 
-**Location**: `packages/ns-desktop/src-tauri/src/__tests__/audio_fixture.rs` (new file)
+**Status**: shipped — `packages/ns-desktop/src-tauri/src/audio_test_support.rs` with `FakePcmSource::{silence,sine}`, `TempAudioDir`, `write_pcm_file`, `verify_wav_header`. Six inline `#[cfg(test)]` tests in `audio_capture_shared.rs` prove the fixture drives `mix_to_wav` + `read_and_remove_file` round-trip. `tempfile = "3"` added as a dev-dep.
+
+**Location**: `packages/ns-desktop/src-tauri/src/audio_test_support.rs` (lives in src/, gated behind `#[cfg(test)]` in `lib.rs`)
 
 **Problem**: Can't test `audio_capture.rs` without real CoreAudio devices. Can't test `audio_capture_shared.rs` stream-mix without real PCM files. Can't test writer threads without file I/O.
 
@@ -62,7 +66,11 @@ Phase 1–4 require:
 
 **Estimated effort**: 3 hours
 
-### 0.3 — MediaRecorder + Tauri mock for desktop TS
+### 0.3 — MediaRecorder + Tauri mock for desktop TS ✅
+
+**Status**: shipped — two helper files plus an 11-test smoke suite.
+- `packages/ns-desktop/src/__tests__/helpers/mediaRecorderMock.ts` — `MockMediaRecorder`, `installMediaRecorderMock()`, `installMediaDevicesMock()` (with a spy-able track.stop for Phase 1.4).
+- `packages/ns-desktop/src/__tests__/helpers/tauriMock.ts` — `MockTauriInvoke` (chainable `.resolve/.reject/.on`, loud error on unregistered command) + `MockTauriEventBus` (`listen/emit/unlisten`, active-listener count for Phase 1.6 leak assertions).
 
 **Location**: `packages/ns-desktop/src/__tests__/helpers/mediaRecorderMock.ts` (new file)
 
@@ -83,7 +91,11 @@ Phase 1–4 require:
 
 **Estimated effort**: 2.5 hours
 
-### 0.4 — End-to-end pipeline test (happy path)
+### 0.4 — End-to-end pipeline test (happy path) ✅ (mic-only)
+
+**Status**: mic-only happy path shipped at `packages/ns-desktop/src/__tests__/AudioRecorder.integration.test.tsx`. Drives trigger → getUserMedia → MediaRecorder.start → emit dataavailable → onStop → transcribeAudio → onNoteCreated under full test control.
+
+**Deferred**: meeting-mode happy path — needs `start_meeting_recording` / `get_meeting_audio_chunk` / `stop_meeting_recording` dispatch and tick-event driving. Add alongside Phase 3 (transcript correctness) when refactoring the meeting chunk loop.
 
 **Location**: `packages/ns-desktop/src/__tests__/AudioRecorder.integration.test.tsx` (new file)
 
@@ -104,7 +116,9 @@ Phase 1–4 require:
 
 **Estimated effort**: 4 hours
 
-### 0.5 — Whisper retry + fallback tests
+### 0.5 — Whisper retry + fallback tests 🟡 (partial)
+
+**Status**: partial — the five error-path tests added with 0.1 (in `whisperService.test.ts`) cover the highest-priority failure surfaces (timeout, network error, malformed 200, 429-not-retried reference, mixed timeout+retry). The original plan's "integration harness" variant is deferred: add when Phase 3 changes the retry semantics (429 becomes retryable, or timeouts become retryable) so the test lands with the code change that justifies it.
 
 **Location**: `packages/ns-api/src/__tests__/integration/whisper-retry.test.ts` (new file) [*after* real integration harness from sync-arch Phase 0 is available]
 
@@ -123,7 +137,9 @@ Phase 1–4 require:
 
 **Estimated effort**: 3 hours
 
-### 0.6 — Reference tests for Phases 1–4 bugs
+### 0.6 — Reference tests for Phases 1–4 bugs 🟡 (partial)
+
+**Status**: partial — the Phase 3.3 "429 not retried" reference test was added in 0.1 under `whisperService.test.ts`. Remaining items (WAV-read-failure, writer panic, stop-during-start race, chunk order corruption, full-audio double-transcribe) are deferred: add each as the corresponding fix lands in Phases 1–4 so the test flips from `it.fails()` to `it()` in the same commit as the fix.
 
 **Location**: `packages/ns-desktop/src/__tests__/audio-hardening-reference.test.tsx` (new file)
 
