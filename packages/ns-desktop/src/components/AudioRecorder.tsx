@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { AudioMode, RecordingSource } from "../hooks/useAiSettings.ts";
 import type { Note } from "@derekentringer/ns-shared";
-import { transcribeAudio, transcribeChunk } from "../api/ai.ts";
+import { structureAndCreateNote, transcribeAudio, transcribeChunk } from "../api/ai.ts";
 import { apiFetch } from "../api/client.ts";
 import { assembleTranscript } from "../lib/transcriptAssembly.ts";
 import { invoke } from "@tauri-apps/api/core";
@@ -21,7 +21,14 @@ const SOURCE_LABELS: Record<RecordingSource, string> = {
 
 const MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 const MAX_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
-const CHUNK_INTERVAL_MS = 20_000; // Send a chunk every 20 seconds
+// Phase 4.4: 30s cadence. Whisper typically returns a transcribed
+// chunk in 5–10s, so a 20s interval meant the next chunk timer
+// fired while the previous upload was still in flight, stacking
+// requests and producing ~3 concurrent Whisper calls by mid-meeting.
+// 30s cuts API load by ~33% with a 10s latency trade-off on the
+// live transcript — acceptable because the live view is a
+// best-effort preview, not the canonical transcript.
+const CHUNK_INTERVAL_MS = 30_000;
 
 const PREFERRED_MIME_TYPES = [
   "audio/webm;codecs=opus",
@@ -217,7 +224,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       if (e.data.size > 0) chunkBufferRef.current.push(e.data);
     };
 
-    recorder.onstop = async () => {
+    recorder.onstop = () => {
       const buf = chunkBufferRef.current;
       chunkBufferRef.current = [];
       const blobType = recorder.mimeType || mimeType || "audio/webm";
@@ -232,15 +239,17 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
 
       const idx = chunkIndexRef.current++;
       const sid = sessionIdRef.current;
-      try {
-        const result = await transcribeChunk(blob, sid, idx);
-        if (result.text && result.text.trim()) {
-          transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
-          setLiveTranscript(getOrderedTranscript());
-        }
-      } catch (err) {
-        console.warn("Chunk transcription failed:", err);
-      }
+      // Fire-and-forget — see sendNativeChunk for the rationale.
+      transcribeChunk(blob, sid, idx)
+        .then((result) => {
+          if (result.text && result.text.trim()) {
+            transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
+            setLiveTranscript(getOrderedTranscript());
+          }
+        })
+        .catch((err) => {
+          console.warn("Chunk transcription failed:", err);
+        });
     };
 
     recorder.start();
@@ -249,25 +258,45 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   const useMeeting = meetingSupported && recordingSource === "meeting";
 
   async function sendNativeChunk() {
-    // Get mixed system+mic audio chunk from the Rust recording
+    // Get mixed system+mic audio chunk from the Rust recording. We
+    // still `await` the Rust IPC + blob construction because those
+    // are cheap and we need the `idx`/`sid` to claim this chunk's
+    // position in `transcriptChunksRef` before any other call. The
+    // Whisper upload itself is fired-and-forgotten so a slow
+    // transcription never delays the NEXT chunk timer tick.
+    let wavBytes: number[];
     try {
-      const wavBytes = await invoke<number[]>("get_meeting_audio_chunk");
-      if (!wavBytes || wavBytes.length === 0) return;
-
-      const blob = new Blob([new Uint8Array(wavBytes)], { type: "audio/wav" });
-      if (blob.size < 1024) return; // Skip tiny chunks
-
-      const idx = chunkIndexRef.current++;
-      const sid = sessionIdRef.current;
-
-      const result = await transcribeChunk(blob, sid, idx);
-      if (result.text && result.text.trim()) {
-        transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
-        setLiveTranscript(getOrderedTranscript());
-      }
+      wavBytes = await invoke<number[]>("get_meeting_audio_chunk");
     } catch (err) {
-      console.warn("Native chunk transcription failed:", err);
+      console.warn("Native chunk fetch failed:", err);
+      return;
     }
+    if (!wavBytes || wavBytes.length === 0) return;
+
+    const blob = new Blob([new Uint8Array(wavBytes)], { type: "audio/wav" });
+    if (blob.size < 1024) return; // Skip tiny chunks
+
+    const idx = chunkIndexRef.current++;
+    const sid = sessionIdRef.current;
+
+    // Fire-and-forget. Two invariants keep this safe:
+    //   1. `idx` was claimed synchronously before this promise ran,
+    //      so chunks never collide on the same index even when
+    //      multiple uploads are in flight concurrently.
+    //   2. Late-arriving responses write into `transcriptChunksRef`
+    //      directly; if the user has already stopped by then, the
+    //      assembled live transcript was captured at stop time and
+    //      this write just updates an abandoned map.
+    transcribeChunk(blob, sid, idx)
+      .then((result) => {
+        if (result.text && result.text.trim()) {
+          transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
+          setLiveTranscript(getOrderedTranscript());
+        }
+      })
+      .catch((err) => {
+        console.warn("Native chunk transcription failed:", err);
+      });
   }
 
   function startMeetingChunkCapture() {
@@ -360,14 +389,42 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       const blob = new Blob([new Uint8Array(wavBytes)], { type: "audio/wav" });
 
       try {
-        const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
+        // Phase 4.1 — dedup full-audio vs live-chunk transcription.
+        // If the live chunks already gathered a substantive transcript
+        // (>100 chars, threshold from the hardening plan's "Option A"),
+        // skip re-running Whisper on the full WAV and hand the live
+        // transcript directly to Claude structuring via
+        // `/ai/structure-transcript`. That saves one full-audio
+        // Whisper pass per meeting — in a 10-minute meeting, the live
+        // chunks have already seen the entire audio anyway, so the
+        // duplicate Whisper pass is pure waste.
+        //
+        // The live transcript can miss up to one chunk interval of
+        // trailing audio (the final ~30s window before stop that
+        // didn't trigger a chunk timer). That trade-off is documented
+        // in the plan; users who need perfect tail-end coverage can
+        // record past the content they care about, or we can add a
+        // "final-chunk flush" in a future phase.
+        //
+        // Short transcripts fall back to the full-Whisper path so
+        // brief memos still get transcribed accurately.
+        const useLiveTranscript =
+          !!capturedTranscript && capturedTranscript.trim().length > 100;
+
+        const result = useLiveTranscript
+          ? await structureAndCreateNote(
+              capturedTranscript,
+              modeRef.current,
+              folderIdRef.current,
+            )
+          : await transcribeAudio(blob, modeRef.current, folderIdRef.current);
 
         // Save transcript directly to the note via API. Failure is
-        // non-fatal — the note was already created by `transcribeAudio`,
-        // so we still hand it to the parent. We only mirror the
-        // transcript into `result.note` when the server actually
-        // persisted it (response.ok) so the UI doesn't show a
-        // transcript that isn't in the database.
+        // non-fatal — the note was already created, so we still hand
+        // it to the parent. We only mirror the transcript into
+        // `result.note` when the server actually persisted it
+        // (response.ok) so the UI doesn't show a transcript that
+        // isn't in the database.
         if (capturedTranscript && capturedTranscript.trim().length > 0) {
           try {
             const patchRes = await apiFetch(`/notes/${result.note.id}`, {

@@ -1,6 +1,6 @@
 # Phase 4 — Performance: API Dedup, Parallelization, Chunking Tuning
 
-**Status**: pending
+**Status**: ✅ shipped (4.1–4.5)
 
 ## Goal
 
@@ -18,9 +18,11 @@ Reduce wasted API calls, parallelize sequential awaits, and optimize live chunki
 
 ## Items
 
-### 4.1 — Deduplicate full-audio vs live-chunk transcription
+### 4.1 — Deduplicate full-audio vs live-chunk transcription ✅
 
-**Location**: `packages/ns-api/src/routes/ai.ts:590-703` (full-audio handler) + client-side orchestration
+**Status**: shipped — Option A implemented in `handleMeetingStop`. If `capturedTranscript.trim().length > 100`, skip `transcribeAudio` (full-WAV Whisper) and route through `structureAndCreateNote` (Claude-only via `/ai/structure-transcript`). Short or empty transcripts fall back to the full-Whisper path so brief memos still get accurate transcription. The `stop_meeting_recording` invoke still runs unconditionally (it cleans up audio units + temp files); the returned WAV bytes are just discarded on the live-transcript path. New tests: `"substantive live transcript routes to structureAndCreateNote"` (uses fake timers to advance the chunk interval so a real long chunk arrives) + `"empty/short live transcript falls back to transcribeAudio"` (no chunks → fallback verified). Known limitation: the live transcript can miss up to `CHUNK_INTERVAL_MS` (30s) of trailing audio that didn't trigger a chunk timer before stop; a final-chunk flush is a future-phase concern.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:391-425` (meeting-mode stop branching)
 
 **Problem**: Server receives full audio transcription request after already having transcribed live chunks. Whisper is called twice on (nearly) the same audio.
 
@@ -51,9 +53,11 @@ if (liveTranscriptRecent) {
 
 **Estimated effort**: 2 hours
 
-### 4.2 — Parallelize chunk transcription uploads
+### 4.2 — Parallelize chunk transcription uploads ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:216-236` (sendNativeChunk)
+**Status**: shipped — both `sendNativeChunk` (meeting mode) and `startMicChunkRecorder.onstop` (mic mode) refactored from `async`/`await` bodies to explicit `.then/.catch` chains so the upload is fire-and-forget. The Rust IPC `invoke("get_meeting_audio_chunk")` + blob construction are still awaited (they're fast and we need the index/session ID before any concurrent work), but the `transcribeChunk` Whisper call runs detached. New integration test `"slow chunk upload does not block the next chunk's upload"` stalls the first chunk's response with a manually-controlled promise and confirms a second chunk's `transcribeChunk` call fires before the first resolves.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:227-250` (mic chunk onstop) + `258-294` (sendNativeChunk)
 
 **Problem**: Each chunk upload awaits completion before returning. If upload takes 5s and chunk interval is 20s, the next chunk isn't sent until the current one completes.
 
@@ -91,9 +95,11 @@ function sendNativeChunk() {
 
 **Estimated effort**: 1 hour
 
-### 4.3 — Batch meeting-context polling
+### 4.3 — Batch meeting-context polling ✅
 
-**Location**: `packages/ns-desktop/src/hooks/useMeetingContext.ts`
+**Status**: shipped — verification + test coverage. Code review confirmed the dedup already works: `doSearch` short-circuits at line 32 when `transcript === lastTranscriptRef.current`, and `MIN_TRANSCRIPT_LENGTH` (50 chars) filters noise. New test file `src/hooks/__tests__/useMeetingContext.test.tsx` with 4 tests using fake timers: dedup on stable transcript, length-gate skip, API fires on transcript change, polling stops on `isRecording: false`. Poll interval kept at 45s (changing to 60s was recommended in the plan but not empirically motivated for a single-user app).
+
+**Location**: `packages/ns-desktop/src/hooks/useMeetingContext.ts:30-62`
 
 **Problem**: `useMeetingContext` polls every 45s even if transcript hasn't changed (checked via string comparison at line 32). If comparison fails due to timing, multiple requests can fire.
 
@@ -108,9 +114,11 @@ function sendNativeChunk() {
 
 **Estimated effort**: 0.5 hours
 
-### 4.4 — Optimize chunk interval for live transcription
+### 4.4 — Optimize chunk interval for live transcription ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:23`
+**Status**: shipped — `CHUNK_INTERVAL_MS` bumped from 20s to 30s. Whisper typically returns a transcribed chunk in 5–10s, so a 20s interval meant concurrent uploads stacked up (~3 in flight by mid-meeting). 30s reduces API load by ~33% with a 10s latency trade-off on the live transcript, which is acceptable since the live view is a best-effort preview (the canonical transcript is what's PATCHed onto the note after stop). Combined with 4.2's fire-and-forget uploads, no chunk ever blocks the next.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:23-31`
 
 **Problem**: `CHUNK_INTERVAL_MS = 20_000` (20s). Whisper API takes ~5-10s per chunk, so uploads overlap. Smaller interval → more chunks, more API calls. Larger interval → longer live transcript latency.
 
@@ -132,9 +140,11 @@ const CHUNK_INTERVAL_MS = 30_000;  // 30 seconds
 
 **Estimated effort**: 1 hour (measurement + tuning)
 
-### 4.5 — Avoid re-transcribing live chunks in final note
+### 4.5 — Avoid re-transcribing live chunks in final note ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:325-348` (meeting) + `391-405` (mic)
+**Status**: shipped as part of 4.1. Meeting-mode now skips `transcribeAudio` when the live transcript is substantive. Mic mode still uses `transcribeAudio` unconditionally — the plan scoped this item to meeting mode, and mic-mode recordings are typically shorter (memos) where the optimization delta is small.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:391-425`
 
 **Problem**: Full audio is sent to `/ai/transcribe`, which calls Whisper. But live chunks already have Whisper transcripts. Redundant work.
 

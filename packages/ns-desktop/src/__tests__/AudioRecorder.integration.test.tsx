@@ -39,9 +39,11 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 
 const mockTranscribeAudio = vi.fn();
 const mockTranscribeChunk = vi.fn();
+const mockStructureAndCreateNote = vi.fn();
 vi.mock("../api/ai.ts", () => ({
   transcribeAudio: (...args: unknown[]) => mockTranscribeAudio(...args),
   transcribeChunk: (...args: unknown[]) => mockTranscribeChunk(...args),
+  structureAndCreateNote: (...args: unknown[]) => mockStructureAndCreateNote(...args),
 }));
 
 const mockApiFetch = vi.fn();
@@ -68,6 +70,7 @@ describe("AudioRecorder — mic-only happy path", () => {
 
     mockTranscribeAudio.mockReset();
     mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
+    mockStructureAndCreateNote.mockReset();
     mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
   });
 
@@ -157,6 +160,100 @@ describe("AudioRecorder — mic-only happy path", () => {
 
     await waitFor(() => {
       expect(onNoteCreated).toHaveBeenCalledWith(note);
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  // Phase 4.2 — chunk upload is fire-and-forget. A slow
+  // `transcribeChunk` must NOT hold onstop open or block a second
+  // chunk from starting. We stall the first chunk's Whisper response
+  // with a manually-controlled promise and fire a second chunk while
+  // the first is still pending; both must register calls to
+  // `transcribeChunk` independently.
+  it("slow chunk upload does not block the next chunk's upload", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+
+    // First chunk: never resolves (stalled). Second chunk: resolves.
+    let resolveFirst: ((v: { text: string; chunkIndex: number }) => void) | null = null;
+    const firstPending = new Promise<{ text: string; chunkIndex: number }>((res) => {
+      resolveFirst = res;
+    });
+    mockTranscribeChunk
+      .mockReset()
+      .mockReturnValueOnce(firstPending)
+      .mockResolvedValue({ text: "second", chunkIndex: 1 });
+
+    mockTranscribeAudio.mockResolvedValue({ note: { id: "n", title: "", content: "" } });
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+
+    // Grab the first chunk recorder (index 1 — the second recorder
+    // constructed; index 0 is the main mic recorder).
+    const chunkRec1 = mediaRecorder.recorders[1];
+
+    // First chunk: feed data + stop. transcribeChunk is stalled, but
+    // the onstop handler should return synchronously (no await) and
+    // immediately spawn the next chunk recorder.
+    await act(async () => {
+      chunkRec1.emitData(new Blob([new Uint8Array(2048)], { type: "audio/webm" }));
+      chunkRec1.stop();
+    });
+
+    // Before the first chunk resolves, a new chunk recorder should
+    // already exist (restart-on-stop).
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThanOrEqual(3);
+    });
+
+    // Fire the second chunk while the first is still pending.
+    const chunkRec2 = mediaRecorder.recorders[2];
+    await act(async () => {
+      chunkRec2.emitData(new Blob([new Uint8Array(2048)], { type: "audio/webm" }));
+      chunkRec2.stop();
+    });
+
+    // Both transcribeChunk calls should have been invoked — the
+    // second did NOT wait for the first to finish.
+    await waitFor(() => {
+      expect(mockTranscribeChunk).toHaveBeenCalledTimes(2);
+    });
+
+    // Resolve the first so the promise doesn't leak.
+    resolveFirst!({ text: "first", chunkIndex: 0 });
+    await act(async () => {
+      await Promise.resolve();
     });
 
     expect(onError).not.toHaveBeenCalled();
@@ -605,6 +702,7 @@ describe("AudioRecorder — meeting-mode stop re-entry guard", () => {
     mediaDevices = installMediaDevicesMock();
     mockTranscribeAudio.mockReset();
     mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
+    mockStructureAndCreateNote.mockReset();
     mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
   });
 
@@ -708,6 +806,7 @@ describe("AudioRecorder — meeting-mode failure cleanup", () => {
 
     mockTranscribeAudio.mockReset();
     mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
+    mockStructureAndCreateNote.mockReset();
     mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
   });
 
@@ -816,5 +915,180 @@ describe("AudioRecorder — meeting-mode failure cleanup", () => {
     // any listeners that were opened (none here, but the invariant
     // is testable).
     expect(eventBus.listenerCount("meeting-recording-tick")).toBe(0);
+  });
+});
+
+// Phase 4.1 — dedup full-audio vs live-chunk transcription.
+// When the live transcript exceeds 100 chars (substantive content),
+// handleMeetingStop routes through `structureAndCreateNote`
+// (Claude-only, skipping Whisper on the full WAV). Shorter
+// transcripts still take the full `transcribeAudio` path.
+describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
+  let mediaRecorder: MediaRecorderMock;
+  let mediaDevices: MediaDevicesMock;
+
+  beforeEach(() => {
+    invokeBus.reset();
+    eventBus.reset();
+    invokeBus.resolve("check_meeting_recording_support", true);
+    mediaRecorder = installMediaRecorderMock();
+    mediaDevices = installMediaDevicesMock();
+    mockTranscribeAudio.mockReset();
+    mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
+    mockStructureAndCreateNote.mockReset();
+    mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
+  });
+
+  afterEach(() => {
+    mediaRecorder.uninstall();
+    mediaDevices.uninstall();
+    vi.useRealTimers();
+  });
+
+  it("substantive live transcript routes to structureAndCreateNote, skipping full Whisper", async () => {
+    // One chunk fetch returns bytes; first transcribeChunk returns a
+    // long string (>100 chars). Subsequent calls return empty.
+    const longChunkText = "meaningful transcribed content ".repeat(10); // ~300 chars
+    let chunkCallCount = 0;
+    invokeBus
+      .resolve("start_meeting_recording", undefined)
+      .on("get_meeting_audio_chunk", () => {
+        chunkCallCount++;
+        // First call returns a non-empty buffer; later calls empty
+        // so the chunk timer doesn't accumulate more chunks than we want.
+        return chunkCallCount === 1 ? Array.from(new Uint8Array(2048)) : [];
+      })
+      .resolve("stop_meeting_recording", []);
+
+    mockTranscribeChunk
+      .mockReset()
+      .mockResolvedValueOnce({ text: longChunkText, chunkIndex: 0 })
+      .mockResolvedValue({ text: "", chunkIndex: 0 });
+
+    const note = { id: "note-dedup", title: "T", content: "c" };
+    mockStructureAndCreateNote.mockResolvedValue({ note });
+
+    const onNoteCreated = vi.fn();
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+
+    vi.useFakeTimers();
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="meeting"
+        recordingSource="meeting"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={vi.fn()}
+        onRecordingStateChange={(s) => recordingHandles.push(s)}
+        triggerMode="meeting"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="meeting"
+          recordingSource="meeting"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={vi.fn()}
+          onRecordingStateChange={(s) => recordingHandles.push(s)}
+          triggerMode="meeting"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    // Advance 30s so the chunk timer fires once and uploads a chunk.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_100);
+      // Flush the invoke + transcribeChunk promise chain.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Now the live transcript should have the long chunk text.
+    const recording = recordingHandles.find((s) => s?.state === "recording")!;
+
+    await act(async () => {
+      recording.onStop();
+      await vi.advanceTimersByTimeAsync(100);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    vi.useRealTimers();
+
+    await waitFor(() => {
+      expect(onNoteCreated).toHaveBeenCalled();
+    });
+
+    expect(mockStructureAndCreateNote).toHaveBeenCalledTimes(1);
+    expect(mockTranscribeAudio).not.toHaveBeenCalled();
+    expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-dedup" }));
+  });
+
+  it("empty/short live transcript falls back to transcribeAudio (full Whisper)", async () => {
+    invokeBus
+      .resolve("start_meeting_recording", undefined)
+      .resolve("get_meeting_audio_chunk", [])
+      .resolve("stop_meeting_recording", []);
+
+    // Chunks return empty text — live transcript stays empty → fallback.
+    mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
+
+    const note = { id: "note-fallback", title: "T", content: "c" };
+    mockTranscribeAudio.mockResolvedValue({ note });
+
+    const onNoteCreated = vi.fn();
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="meeting"
+        recordingSource="meeting"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={vi.fn()}
+        onRecordingStateChange={(s) => recordingHandles.push(s)}
+        triggerMode="meeting"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="meeting"
+          recordingSource="meeting"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={vi.fn()}
+          onRecordingStateChange={(s) => recordingHandles.push(s)}
+          triggerMode="meeting"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      const rec = recordingHandles.find((s) => s?.state === "recording");
+      expect(rec).toBeTruthy();
+    });
+    const recording = recordingHandles.find((s) => s?.state === "recording")!;
+
+    await act(async () => {
+      recording.onStop();
+    });
+
+    await waitFor(() => {
+      expect(onNoteCreated).toHaveBeenCalled();
+    });
+
+    expect(mockTranscribeAudio).toHaveBeenCalledTimes(1);
+    expect(mockStructureAndCreateNote).not.toHaveBeenCalled();
+    expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-fallback" }));
   });
 });
