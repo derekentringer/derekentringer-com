@@ -6,6 +6,7 @@ import {
   getSyncMeta,
   setSyncMeta,
   fetchNoteById,
+  fetchNoteEmbeddingInputById,
   upsertNoteFromRemote,
   upsertFolderFromRemote,
   upsertImageFromRemote,
@@ -714,6 +715,20 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
     localFileHash = await getNoteLocalFileHash(change.id);
   }
 
+  // Phase 5.1 — embedding dedup. The embedding text is derived from
+  // `${title}\n\n${content}`, so if neither field changed there's
+  // nothing new to embed. Capturing this BEFORE the upsert is what
+  // makes the dedup possible; after upsert the prior row is already
+  // overwritten. A null prior row means "new note to this client" →
+  // always queue.
+  let embeddingInputsChanged = true;
+  if (semanticSearchEnabled && !noteData.deletedAt) {
+    const prior = await fetchNoteEmbeddingInputById(change.id);
+    if (prior && prior.title === noteData.title && prior.content === noteData.content) {
+      embeddingInputsChanged = false;
+    }
+  }
+
   await upsertNoteFromRemote(noteData);
 
   // If the note has a local file link and content actually changed, notify UI
@@ -728,8 +743,10 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
     }
   }
 
-  // Queue embedding generation for synced notes
-  if (semanticSearchEnabled && !noteData.deletedAt) {
+  // Queue embedding generation only when title/content actually
+  // changed. A 100-note pull where 5 rows changed used to queue 100
+  // OpenAI calls; now it queues 5.
+  if (semanticSearchEnabled && !noteData.deletedAt && embeddingInputsChanged) {
     import("./embeddingService.ts")
       .then((m) => m.queueEmbeddingForNote(noteData.id, noteData.title, noteData.content))
       .catch(() => {});

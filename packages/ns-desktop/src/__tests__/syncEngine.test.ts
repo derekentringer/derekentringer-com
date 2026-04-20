@@ -22,6 +22,7 @@ const mockRemoveSyncQueueEntries = vi.fn().mockResolvedValue(undefined);
 const mockGetSyncMeta = vi.fn().mockResolvedValue(null);
 const mockSetSyncMeta = vi.fn().mockResolvedValue(undefined);
 const mockFetchNoteById = vi.fn().mockResolvedValue(null);
+const mockFetchNoteEmbeddingInputById = vi.fn().mockResolvedValue(null);
 const mockUpsertNoteFromRemote = vi.fn().mockResolvedValue(undefined);
 const mockUpsertFolderFromRemote = vi.fn().mockResolvedValue(undefined);
 const mockSoftDeleteNoteFromRemote = vi.fn().mockResolvedValue(undefined);
@@ -33,6 +34,7 @@ vi.mock("../lib/db.ts", () => ({
   getSyncMeta: (...args: unknown[]) => mockGetSyncMeta(...args),
   setSyncMeta: (...args: unknown[]) => mockSetSyncMeta(...args),
   fetchNoteById: (...args: unknown[]) => mockFetchNoteById(...args),
+  fetchNoteEmbeddingInputById: (...args: unknown[]) => mockFetchNoteEmbeddingInputById(...args),
   upsertNoteFromRemote: (...args: unknown[]) => mockUpsertNoteFromRemote(...args),
   upsertFolderFromRemote: (...args: unknown[]) => mockUpsertFolderFromRemote(...args),
   softDeleteNoteFromRemote: (...args: unknown[]) => mockSoftDeleteNoteFromRemote(...args),
@@ -59,6 +61,11 @@ vi.mock("@tauri-apps/plugin-sql", () => ({
   default: { load: vi.fn().mockResolvedValue({ execute: vi.fn(), select: vi.fn() }) },
 }));
 
+const mockQueueEmbeddingForNote = vi.fn().mockResolvedValue(undefined);
+vi.mock("../lib/embeddingService.ts", () => ({
+  queueEmbeddingForNote: (...args: unknown[]) => mockQueueEmbeddingForNote(...args),
+}));
+
 // ---------- Import SUT after mocks ----------
 
 const {
@@ -69,6 +76,7 @@ const {
   manualSync,
   forcePushChanges,
   discardChanges,
+  setSyncSemanticSearchEnabled,
 } = await import("../lib/syncEngine.ts");
 
 // ---------- Helpers ----------
@@ -448,6 +456,109 @@ describe("syncEngine", () => {
     expect(mockSoftDeleteNoteFromRemote).toHaveBeenCalledWith("remote-note-2", "2024-06-01T00:00:00.000Z");
     // Should notify UI of data changes
     expect(onDataChanged).toHaveBeenCalled();
+  });
+
+  // Phase 5.1 — embedding dedup on pull
+  describe("embedding dedup on pull", () => {
+    const noteData = {
+      id: "note-dedup",
+      title: "Title",
+      content: "Hello world",
+      folder: null,
+      folderId: null,
+      folderPath: null,
+      tags: [],
+      summary: null,
+      favorite: false,
+      sortOrder: 0,
+      favoriteSortOrder: 0,
+      isLocalFile: false,
+      audioMode: null,
+      transcript: null,
+      createdAt: "2024-06-01T00:00:00.000Z",
+      updatedAt: "2024-06-01T00:00:00.000Z",
+      deletedAt: null,
+    };
+
+    async function runPullWithNote() {
+      mockGetSyncMeta.mockResolvedValue(null);
+      mockReadSyncQueue.mockResolvedValue([]);
+      mockApiFetch.mockResolvedValue(
+        makePullResponse([
+          { id: "note-dedup", type: "note", action: "update", data: noteData, timestamp: "2024-06-01T00:00:00.000Z" },
+        ]),
+      );
+      await initSyncEngine({ onStatusChange: vi.fn(), onDataChanged: vi.fn() });
+      await flushPromises();
+      // fetchNoteEmbeddingInputById is awaited inside applyNoteChange,
+      // so by now that call has definitely happened. The embedding
+      // queue itself is fire-and-forget via dynamic import, so assert
+      // on its state via waitFor in the individual test bodies rather
+      // than relying on microtask-tick counts.
+    }
+
+    /**
+     * Give the fire-and-forget embedding import a real chance to settle.
+     * Dynamic import() takes more than one microtask tick to resolve
+     * in vitest; flushPromises alone isn't enough.
+     */
+    async function settleEmbeddingDispatch() {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    it("skips queueEmbeddingForNote when title + content match the existing row", async () => {
+      setSyncSemanticSearchEnabled(true);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue({ title: "Title", content: "Hello world" });
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      expect(mockFetchNoteEmbeddingInputById).toHaveBeenCalledWith("note-dedup");
+      expect(mockUpsertNoteFromRemote).toHaveBeenCalledWith(noteData);
+      expect(mockQueueEmbeddingForNote).not.toHaveBeenCalled();
+    });
+
+    it("queues an embedding when content changed", async () => {
+      setSyncSemanticSearchEnabled(true);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue({ title: "Title", content: "stale body" });
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      expect(mockQueueEmbeddingForNote).toHaveBeenCalledWith("note-dedup", "Title", "Hello world");
+    });
+
+    it("queues an embedding when title changed (even if content matches)", async () => {
+      setSyncSemanticSearchEnabled(true);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue({ title: "Old Title", content: "Hello world" });
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      expect(mockQueueEmbeddingForNote).toHaveBeenCalledWith("note-dedup", "Title", "Hello world");
+    });
+
+    it("queues an embedding for a brand-new note (no prior row)", async () => {
+      setSyncSemanticSearchEnabled(true);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue(null);
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      expect(mockQueueEmbeddingForNote).toHaveBeenCalledWith("note-dedup", "Title", "Hello world");
+    });
+
+    it("skips queueEmbeddingForNote entirely when semantic search is disabled", async () => {
+      setSyncSemanticSearchEnabled(false);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue(null);
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      // Prior-row fetch is also skipped — dedup work is gated behind the same flag.
+      expect(mockFetchNoteEmbeddingInputById).not.toHaveBeenCalled();
+      expect(mockQueueEmbeddingForNote).not.toHaveBeenCalled();
+    });
   });
 
   // 13
