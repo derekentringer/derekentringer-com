@@ -210,7 +210,11 @@ export async function fetchNotes(options?: FetchNotesOptions): Promise<Note[]> {
   }
 
   const sortField = options?.sortBy ?? "updatedAt";
-  const sortOrder = options?.sortOrder ?? "desc";
+  // Manual (sort_order) is always ASC — position 0 is the top of the
+  // list. Honoring a DESC preference would invert the drag-to-top
+  // mental model.
+  const sortOrder =
+    sortField === "sortOrder" ? "asc" : (options?.sortOrder ?? "desc");
 
   const columnMap: Record<NoteSortField, string> = {
     title: "title",
@@ -235,6 +239,23 @@ export async function fetchNoteById(id: string): Promise<Note | null> {
     [id],
   );
   return rows.length > 0 ? rowToNote(rows[0]) : null;
+}
+
+/**
+ * Phase 5.1 — lightweight lookup used by the pull path to dedup
+ * embedding-queue work. Fetching only the two columns the embedding
+ * text is derived from avoids pulling a potentially 100 KB content
+ * payload through rowToNote just to compare strings.
+ */
+export async function fetchNoteEmbeddingInputById(
+  id: string,
+): Promise<{ title: string; content: string } | null> {
+  const db = await getDb();
+  const rows = await db.select<{ title: string; content: string }[]>(
+    "SELECT title, content FROM notes WHERE id = $1 LIMIT 1",
+    [id],
+  );
+  return rows.length > 0 ? { title: rows[0].title, content: rows[0].content } : null;
 }
 
 export interface CreateNoteInput {
@@ -628,10 +649,18 @@ interface FolderRow {
 function buildFolderTree(
   rows: FolderRow[],
   noteCounts: Map<string, number>,
+  noteActivity: Map<string, string> = new Map(),
 ): FolderInfo[] {
   const map = new Map<string, FolderInfo>();
 
   for (const row of rows) {
+    // lastActivityAt = max(folder.updated_at, max note.updated_at for
+    // notes directly in this folder). Subtree aggregation is done on
+    // the consumer side when sorting by Modified.
+    const folderStamp = row.updated_at ?? "";
+    const noteStamp = noteActivity.get(row.id) ?? "";
+    const lastActivity = folderStamp > noteStamp ? folderStamp : noteStamp;
+
     map.set(row.id, {
       id: row.id,
       name: row.name,
@@ -642,6 +671,7 @@ function buildFolderTree(
       count: noteCounts.get(row.id) ?? 0,
       totalCount: 0,
       createdAt: row.created_at,
+      lastActivityAt: lastActivity || undefined,
       children: [],
     });
   }
@@ -722,12 +752,17 @@ export async function fetchFolders(): Promise<FolderInfo[]> {
     "SELECT * FROM folders WHERE deleted_at IS NULL ORDER BY sort_order ASC, name ASC",
   );
 
-  const countRows = await db.select<{ folder_id: string; count: number }[]>(
-    "SELECT folder_id, COUNT(*) as count FROM notes WHERE is_deleted = 0 AND folder_id IS NOT NULL GROUP BY folder_id",
+  const countRows = await db.select<{ folder_id: string; count: number; max_updated_at: string | null }[]>(
+    "SELECT folder_id, COUNT(*) as count, MAX(updated_at) as max_updated_at FROM notes WHERE is_deleted = 0 AND folder_id IS NOT NULL GROUP BY folder_id",
   );
   const noteCounts = new Map(countRows.map((r) => [r.folder_id, r.count]));
+  const noteActivity = new Map(
+    countRows
+      .filter((r): r is typeof r & { max_updated_at: string } => !!r.max_updated_at)
+      .map((r) => [r.folder_id, r.max_updated_at]),
+  );
 
-  return buildFolderTree(folderRows, noteCounts);
+  return buildFolderTree(folderRows, noteCounts, noteActivity);
 }
 
 export interface CreateFolderOptions {
@@ -937,20 +972,6 @@ async function collectDescendantFolderIds(parentId: string): Promise<string[]> {
 // Reorder / Move
 // ---------------------------------------------------------------------------
 
-export async function reorderNotes(
-  order: { id: string; sortOrder: number }[],
-): Promise<void> {
-  const db = await getDb();
-  const now = new Date().toISOString();
-  for (const item of order) {
-    await db.execute(
-      "UPDATE notes SET sort_order = $1, updated_at = $2 WHERE id = $3",
-      [item.sortOrder, now, item.id],
-    );
-    enqueueSyncAction("update", item.id, "note").catch(() => {});
-  }
-}
-
 export async function reorderFavoriteNotes(
   order: { id: string; favoriteSortOrder: number }[],
 ): Promise<void> {
@@ -976,6 +997,122 @@ export async function moveFolderParent(
     [newParentId, now, folderId],
   );
   enqueueSyncAction("update", folderId, "folder").catch(() => {});
+}
+
+/**
+ * Phase A.5 — detect whether moving `folderId` under `newParentId`
+ * would cross the managed/unmanaged boundary. Same shape as the
+ * server's CrossBoundaryMoveError, computed from local SQLite so the
+ * desktop drag handler can gate the confirmation dialog without a
+ * network round-trip.
+ *
+ * `direction === null` means no boundary crossing — safe to apply
+ * without cascade.
+ */
+export async function detectCrossBoundaryLocalMove(
+  folderId: string,
+  newParentId: string | null,
+): Promise<{
+  direction: "toManaged" | "toUnmanaged" | null;
+  affectedFolderCount: number;
+  affectedNoteCount: number;
+}> {
+  const db = await getDb();
+  const self = await db.select<{ is_local_file: number }[]>(
+    "SELECT is_local_file FROM folders WHERE id = $1",
+    [folderId],
+  );
+  if (self.length === 0) {
+    return { direction: null, affectedFolderCount: 0, affectedNoteCount: 0 };
+  }
+  const currentFlag = self[0].is_local_file === 1;
+
+  // Target root flag: if moving to root, folder becomes its own root
+  // and preserves its flag — not a boundary cross. Otherwise read the
+  // new parent's flag (post-A.0 this equals the root's).
+  let targetFlag = currentFlag;
+  if (newParentId !== null) {
+    const parent = await db.select<{ is_local_file: number }[]>(
+      "SELECT is_local_file FROM folders WHERE id = $1",
+      [newParentId],
+    );
+    if (parent.length === 0) {
+      return { direction: null, affectedFolderCount: 0, affectedNoteCount: 0 };
+    }
+    targetFlag = parent[0].is_local_file === 1;
+  }
+
+  if (currentFlag === targetFlag) {
+    return { direction: null, affectedFolderCount: 0, affectedNoteCount: 0 };
+  }
+
+  // Count affected folders + notes in the subtree for the dialog copy.
+  const subtree = await db.select<{ id: string }[]>(
+    `WITH RECURSIVE subtree(id) AS (
+       SELECT id FROM folders WHERE id = $1
+       UNION ALL
+       SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+     )
+     SELECT id FROM subtree`,
+    [folderId],
+  );
+  const noteCount = await db.select<{ c: number }[]>(
+    `SELECT COUNT(*) as c FROM notes
+     WHERE is_deleted = 0
+       AND folder_id IN (SELECT id FROM folders WHERE id IN (${subtree.map((_, i) => `$${i + 1}`).join(",")}))`,
+    subtree.map((r) => r.id),
+  );
+
+  return {
+    direction: targetFlag ? "toManaged" : "toUnmanaged",
+    affectedFolderCount: subtree.length,
+    affectedNoteCount: noteCount[0]?.c ?? 0,
+  };
+}
+
+/**
+ * Phase A.5 — apply a confirmed cross-boundary move: flip every
+ * descendant's isLocalFile to `targetFlag` and update the folder's
+ * parentId, all in one operation. Enqueues a sync update per affected
+ * folder so the server cascades too.
+ *
+ * Caller must have already confirmed with the user via
+ * `CrossBoundaryMoveDialog` — this helper doesn't re-detect.
+ */
+export async function moveFolderWithCascade(
+  folderId: string,
+  newParentId: string | null,
+  targetFlag: boolean,
+): Promise<{ affectedFolderIds: string[] }> {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  const targetFlagInt = targetFlag ? 1 : 0;
+
+  const subtree = await db.select<{ id: string }[]>(
+    `WITH RECURSIVE subtree(id) AS (
+       SELECT id FROM folders WHERE id = $1
+       UNION ALL
+       SELECT f.id FROM folders f JOIN subtree s ON f.parent_id = s.id
+     )
+     SELECT id FROM subtree`,
+    [folderId],
+  );
+
+  for (const row of subtree) {
+    await db.execute(
+      "UPDATE folders SET is_local_file = $1, updated_at = $2 WHERE id = $3",
+      [targetFlagInt, now, row.id],
+    );
+    enqueueSyncAction("update", row.id, "folder").catch(() => {});
+  }
+
+  await db.execute(
+    "UPDATE folders SET parent_id = $1, updated_at = $2 WHERE id = $3",
+    [newParentId, now, folderId],
+  );
+  enqueueSyncAction("update", folderId, "folder").catch(() => {});
+
+  return { affectedFolderIds: subtree.map((r) => r.id) };
 }
 
 export async function reorderFolders(
@@ -1776,6 +1913,47 @@ export async function linkNoteToLocalFile(
 }
 
 /**
+ * Phase A.4 — fetch the notes directly in a folder that the reconciler
+ * needs to process on an isLocalFile flip. Returns id/title/content
+ * plus the current `local_path` so the caller knows whether the note
+ * is already on-disk (skip the write) or needs materializing.
+ *
+ * Excludes soft-deleted notes (those shouldn't touch disk anyway).
+ */
+export async function getFolderNotesForReconcile(
+  folderId: string,
+): Promise<
+  { id: string; title: string; content: string; localPath: string | null }[]
+> {
+  const db = await getDb();
+  return db.select<
+    { id: string; title: string; content: string; localPath: string | null }[]
+  >(
+    `SELECT id, title, content, local_path AS "localPath"
+     FROM notes
+     WHERE folder_id = $1 AND is_deleted = 0`,
+    [folderId],
+  );
+}
+
+/**
+ * Phase A.4 — get the previous isLocalFile flag of a folder so the sync
+ * engine can detect a flip before overwriting it. Returns null if the
+ * folder doesn't exist locally (first pull).
+ */
+export async function getLocalFolderIsLocalFile(
+  folderId: string,
+): Promise<boolean | null> {
+  const db = await getDb();
+  const rows = await db.select<{ is_local_file: number }[]>(
+    "SELECT is_local_file FROM folders WHERE id = $1",
+    [folderId],
+  );
+  if (rows.length === 0) return null;
+  return rows[0].is_local_file === 1;
+}
+
+/**
  * Unlink a note from its local file (convert to cloud-only).
  */
 export async function unlinkLocalFile(noteId: string): Promise<void> {
@@ -2359,6 +2537,61 @@ export async function backfillManagedFolders(): Promise<number> {
     );
   }
   return flipped;
+}
+
+const ISLOCALFILE_CASCADE_KEY = "is_local_file_cascade_done";
+
+/**
+ * Phase A.0 — normalize every folder's is_local_file to match its root
+ * ancestor's flag.
+ *
+ * Phase A's invariant: `folder.isLocalFile === rootAncestor(folder).isLocalFile`.
+ * This is stricter than Phase 1's backfill (which only flipped descendants
+ * of managed roots UP to 1) — it also flips mismatched children DOWN to 0
+ * when their root is unmanaged. Runs once per install, gated on a
+ * sync_meta flag.
+ *
+ * Idempotent: re-running is a no-op once convergent.
+ */
+export async function normalizeFolderIsLocalFileCascade(): Promise<number> {
+  const done = await getSyncMeta(ISLOCALFILE_CASCADE_KEY);
+  if (done === "1") return 0;
+
+  const db = await getDb();
+
+  // Walk the full tree, resolving each folder's root flag via a
+  // recursive CTE, then collect every row whose current flag disagrees
+  // with its computed root flag.
+  const rows = await db.select<{ id: string; root_flag: number }[]>(
+    `WITH RECURSIVE roots(id, root_flag, root_id) AS (
+       SELECT id, is_local_file, id FROM folders WHERE parent_id IS NULL
+       UNION ALL
+       SELECT f.id, r.root_flag, r.root_id
+       FROM folders f JOIN roots r ON f.parent_id = r.id
+     )
+     SELECT r.id, r.root_flag
+     FROM roots r
+     JOIN folders f ON f.id = r.id
+     WHERE f.is_local_file != r.root_flag`,
+  );
+
+  const now = new Date().toISOString();
+  for (const row of rows) {
+    await db.execute(
+      "UPDATE folders SET is_local_file = $1, updated_at = $2 WHERE id = $3",
+      [row.root_flag, now, row.id],
+    );
+    // Enqueue a sync update so the server sees the correction.
+    enqueueSyncAction("update", row.id, "folder").catch(() => {});
+  }
+
+  await setSyncMeta(ISLOCALFILE_CASCADE_KEY, "1");
+  if (rows.length > 0) {
+    console.log(
+      `[isLocalFile cascade] Normalized ${rows.length} folder(s) to match root ancestor flag`,
+    );
+  }
+  return rows.length;
 }
 
 const FRONTMATTER_MIGRATION_KEY = "frontmatter_migrated";

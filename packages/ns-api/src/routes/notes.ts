@@ -6,7 +6,6 @@ import type {
   NoteSortField,
   SortOrder,
   FolderListResponse,
-  ReorderNotesRequest,
   ReorderFavoriteNotesRequest,
   ReorderFoldersRequest,
   TagListResponse,
@@ -24,13 +23,13 @@ import {
   permanentDeleteTrash,
   createFolder,
   listFolders,
-  reorderNotes,
   reorderFavoriteNotes,
   renameFolder,
   deleteFolder,
   renameFolderById,
   deleteFolderById,
   moveFolder,
+  CrossBoundaryMoveError,
   reorderFolders,
   getFolderPath,
   listTags,
@@ -64,7 +63,9 @@ function isNotFoundError(error: unknown): boolean {
   );
 }
 
-const VALID_SORT_FIELDS: NoteSortField[] = ["title", "createdAt", "updatedAt", "sortOrder"];
+// `sortOrder` is retained on the shared type for favorites ordering
+// but is no longer a valid note-list sort field — Manual sort is gone.
+const VALID_SORT_FIELDS: NoteSortField[] = ["title", "createdAt", "updatedAt"];
 const VALID_SORT_ORDERS: SortOrder[] = ["asc", "desc"];
 
 const createNoteSchema = {
@@ -97,28 +98,6 @@ const updateNoteSchema = {
       favorite: { type: "boolean" },
       isLocalFile: { type: "boolean" },
       transcript: { type: ["string", "null"] },
-    },
-  },
-};
-
-const reorderSchema = {
-  body: {
-    type: "object" as const,
-    required: ["order"],
-    additionalProperties: false,
-    properties: {
-      order: {
-        type: "array",
-        items: {
-          type: "object",
-          required: ["id", "sortOrder"],
-          additionalProperties: false,
-          properties: {
-            id: { type: "string" },
-            sortOrder: { type: "integer" },
-          },
-        },
-      },
     },
   },
 };
@@ -342,21 +321,6 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // PUT /notes/reorder — MUST be before /:id
-  fastify.put<{ Body: ReorderNotesRequest }>(
-    "/reorder",
-    { schema: reorderSchema },
-    async (
-      request: FastifyRequest<{ Body: ReorderNotesRequest }>,
-      reply: FastifyReply,
-    ) => {
-      const userId = request.user.sub;
-      await reorderNotes(userId, request.body.order);
-      fastify.sseHub.notify(userId);
-      return reply.status(204).send();
-    },
-  );
-
   // GET /notes/tags — MUST be before /:id
   fastify.get(
     "/tags",
@@ -525,6 +489,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
         Querystring: {
           folder?: string;
           folderId?: string;
+          unfiled?: string;
           search?: string;
           searchMode?: string;
           tags?: string;
@@ -537,7 +502,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
-      const { folder, folderId, search, searchMode, tags, page, pageSize, sortBy, sortOrder } =
+      const { folder, folderId, unfiled, search, searchMode, tags, page, pageSize, sortBy, sortOrder } =
         request.query;
 
       if (sortBy && !VALID_SORT_FIELDS.includes(sortBy as NoteSortField)) {
@@ -572,6 +537,7 @@ export default async function noteRoutes(fastify: FastifyInstance) {
       const result = await listNotes(userId, {
         folder,
         folderId,
+        unfiledOnly: unfiled === "true",
         search,
         searchMode: searchMode as "keyword" | "semantic" | "hybrid" | undefined,
         tags: parsedTags,
@@ -841,9 +807,16 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // PATCH /notes/folders/:id/move — move folder to new parent
+  // PATCH /notes/folders/:id/move — move folder to new parent.
+  //
+  // Phase A.2: if the move crosses the managed/unmanaged boundary, the
+  // store throws CrossBoundaryMoveError and we return 409 with a
+  // structured body. Client shows a confirmation dialog and re-submits
+  // with ?confirmCrossBoundary=1 to flip the subtree's isLocalFile in
+  // one tx alongside the parent change.
   fastify.patch<{
     Params: { id: string };
+    Querystring: { confirmCrossBoundary?: string };
     Body: { parentId: string | null; sortOrder?: number };
   }>(
     "/folders/:id/move",
@@ -851,14 +824,23 @@ export default async function noteRoutes(fastify: FastifyInstance) {
     async (
       request: FastifyRequest<{
         Params: { id: string };
+        Querystring: { confirmCrossBoundary?: string };
         Body: { parentId: string | null; sortOrder?: number };
       }>,
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
       const { id } = request.params;
+      const confirm = request.query.confirmCrossBoundary === "1"
+        || request.query.confirmCrossBoundary === "true";
       try {
-        const folder = await moveFolder(userId, id, request.body.parentId, request.body.sortOrder);
+        const folder = await moveFolder(
+          userId,
+          id,
+          request.body.parentId,
+          request.body.sortOrder,
+          confirm,
+        );
         fastify.sseHub.notify(userId);
         return reply.send({
           id: folder.id,
@@ -867,6 +849,17 @@ export default async function noteRoutes(fastify: FastifyInstance) {
           sortOrder: folder.sortOrder,
         });
       } catch (error) {
+        if (error instanceof CrossBoundaryMoveError) {
+          return reply.status(409).send({
+            statusCode: 409,
+            error: "Conflict",
+            code: error.code,
+            direction: error.direction,
+            affectedFolderCount: error.affectedFolderCount,
+            affectedNoteCount: error.affectedNoteCount,
+            message: error.message,
+          });
+        }
         if (error instanceof Error && error.message.includes("Cannot move folder")) {
           return reply.status(400).send({
             statusCode: 400,

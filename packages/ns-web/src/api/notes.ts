@@ -9,7 +9,6 @@ import type {
   SortOrder,
   FolderListResponse,
   FolderInfo,
-  ReorderNotesRequest,
   ReorderFavoriteNotesRequest,
   ReorderFoldersRequest,
   TagListResponse,
@@ -21,6 +20,7 @@ import { apiFetch } from "./client.ts";
 export async function fetchNotes(params?: {
   folder?: string;
   folderId?: string;
+  unfiled?: boolean;
   search?: string;
   searchMode?: "keyword" | "semantic" | "hybrid";
   tags?: string[];
@@ -30,7 +30,8 @@ export async function fetchNotes(params?: {
   sortOrder?: SortOrder;
 }): Promise<NoteListResponse> {
   const qs = new URLSearchParams();
-  if (params?.folderId) qs.set("folderId", params.folderId);
+  if (params?.unfiled) qs.set("unfiled", "true");
+  else if (params?.folderId) qs.set("folderId", params.folderId);
   else if (params?.folder) qs.set("folder", params.folder);
   if (params?.search) qs.set("search", params.search);
   if (params?.searchMode) qs.set("searchMode", params.searchMode);
@@ -190,19 +191,6 @@ export async function createFolderApi(
   return response.json();
 }
 
-export async function reorderNotes(
-  data: ReorderNotesRequest,
-): Promise<void> {
-  const response = await apiFetch("/notes/reorder", {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to reorder notes: ${response.status}`);
-  }
-}
-
 export async function renameFolderApi(
   folderId: string,
   newName: string,
@@ -234,18 +222,69 @@ export async function deleteFolderApi(
   return response.json();
 }
 
+/**
+ * Phase A.2 structured rejection when a folder move crosses the
+ * managed/unmanaged boundary. Client catches this, shows the
+ * appropriate confirmation dialog, and re-invokes `moveFolderApi`
+ * with `confirmCrossBoundary: true`.
+ */
+export class CrossBoundaryMoveError extends Error {
+  readonly code = "cross_boundary_move";
+  readonly direction: "toManaged" | "toUnmanaged";
+  readonly affectedFolderCount: number;
+  readonly affectedNoteCount: number;
+
+  constructor(body: {
+    direction: "toManaged" | "toUnmanaged";
+    affectedFolderCount: number;
+    affectedNoteCount: number;
+    message?: string;
+  }) {
+    super(body.message ?? "Cross-boundary folder move requires confirmation");
+    this.direction = body.direction;
+    this.affectedFolderCount = body.affectedFolderCount;
+    this.affectedNoteCount = body.affectedNoteCount;
+  }
+}
+
 export async function moveFolderApi(
   folderId: string,
   parentId: string | null,
   sortOrder?: number,
+  opts?: { confirmCrossBoundary?: boolean },
 ): Promise<{ id: string; name: string; parentId: string | null; sortOrder: number }> {
   const body: Record<string, unknown> = { parentId };
   if (sortOrder !== undefined) body.sortOrder = sortOrder;
 
-  const response = await apiFetch(`/notes/folders/${encodeURIComponent(folderId)}/move`, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-  });
+  const qs = opts?.confirmCrossBoundary ? "?confirmCrossBoundary=1" : "";
+  const response = await apiFetch(
+    `/notes/folders/${encodeURIComponent(folderId)}/move${qs}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    },
+  );
+
+  if (response.status === 409) {
+    let parsed: {
+      code?: string;
+      direction?: "toManaged" | "toUnmanaged";
+      affectedFolderCount?: number;
+      affectedNoteCount?: number;
+      message?: string;
+    } = {};
+    try {
+      parsed = await response.json();
+    } catch { /* ignore parse error */ }
+    if (parsed.code === "cross_boundary_move" && parsed.direction) {
+      throw new CrossBoundaryMoveError({
+        direction: parsed.direction,
+        affectedFolderCount: parsed.affectedFolderCount ?? 0,
+        affectedNoteCount: parsed.affectedNoteCount ?? 0,
+        message: parsed.message,
+      });
+    }
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to move folder: ${response.status}`);

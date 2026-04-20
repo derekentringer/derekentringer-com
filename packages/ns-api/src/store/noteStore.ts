@@ -96,6 +96,10 @@ export interface ListNotesFilter {
   folder?: string;
   folderId?: string;
   folderIds?: string[];
+  // `true` → only notes with folderId IS NULL (the "Unfiled" view).
+  // Keeps pagination correct: filtering after the fact on the client
+  // missed unfiled notes beyond the first page.
+  unfiledOnly?: boolean;
   search?: string;
   searchMode?: SearchMode;
   tags?: string[];
@@ -121,7 +125,10 @@ export async function listNotes(
   const pageSize = filter?.pageSize ?? 50;
   const skip = (page - 1) * pageSize;
   const sortBy = filter?.sortBy ?? "updatedAt";
-  const sortOrder = filter?.sortOrder ?? "desc";
+  // Manual (sortOrder column) always sorts ASC — position 0 = top of
+  // list. Respecting a user-picked DESC direction would flip the list
+  // upside down and make dragging-to-top stick to the bottom.
+  const sortOrder = sortBy === "sortOrder" ? "asc" : (filter?.sortOrder ?? "desc");
 
   // Resolve folder + all descendant folders so clicking a parent shows nested notes
   if (filter?.folderId && !filter.folderIds) {
@@ -146,7 +153,9 @@ export async function listNotes(
   // Standard Prisma query (no search)
   const where: Record<string, unknown> = { userId, deletedAt: null };
 
-  if (filter?.folderIds && filter.folderIds.length > 0) {
+  if (filter?.unfiledOnly) {
+    where.folderId = null;
+  } else if (filter?.folderIds && filter.folderIds.length > 0) {
     where.folderId = { in: filter.folderIds };
   } else if (filter?.folder) {
     where.folder = filter.folder;
@@ -163,7 +172,9 @@ export async function listNotes(
     let paramIdx = 2;
     let whereClause = `"userId" = $1 AND "deletedAt" IS NULL`;
 
-    if (filter?.folderIds && filter.folderIds.length > 0) {
+    if (filter?.unfiledOnly) {
+      whereClause += ` AND "folderId" IS NULL`;
+    } else if (filter?.folderIds && filter.folderIds.length > 0) {
       whereClause += ` AND "folderId" = ANY($${paramIdx})`;
       params.push(filter.folderIds);
       paramIdx++;
@@ -606,6 +617,51 @@ export async function purgeOldTrash(days = 30): Promise<number> {
   return result.count;
 }
 
+/**
+ * Phase A.1 — invariant helper.
+ *
+ * Walk a folder's ancestor chain to the root (`parentId = null`) and
+ * return that root's `isLocalFile`. The Phase A invariant is that
+ * every descendant's flag equals its root's, so this is the authoritative
+ * value any write should use.
+ *
+ * - `parentId === null`: the new folder IS a root — it may set its own
+ *   flag freely; the caller's `proposedFlag` is returned verbatim.
+ * - Parent not found or user mismatch: fall through to `false`. A
+ *   missing/mismatched parent is an error case the downstream Prisma
+ *   call will surface via FK or auth.
+ * - Normal case: return `roots[0].isLocalFile`.
+ *
+ * Single recursive CTE query so depth doesn't multiply round-trips.
+ */
+export async function resolveRootIsLocalFile(
+  prismaLike: Pick<ReturnType<typeof getPrisma>, "$queryRawUnsafe">,
+  userId: string,
+  parentId: string | null,
+  proposedFlag: boolean,
+): Promise<boolean> {
+  if (parentId === null) return proposedFlag;
+  const rows = await prismaLike.$queryRawUnsafe<
+    { "isLocalFile": boolean }[]
+  >(
+    `WITH RECURSIVE ancestors(id, "isLocalFile", "parentId", "userId") AS (
+       SELECT id, "isLocalFile", "parentId", "userId"
+       FROM "folders" WHERE id = $1
+       UNION ALL
+       SELECT f.id, f."isLocalFile", f."parentId", f."userId"
+       FROM "folders" f
+       JOIN ancestors a ON f.id = a."parentId"
+     )
+     SELECT "isLocalFile" FROM ancestors
+     WHERE "parentId" IS NULL AND "userId" = $2
+     LIMIT 1`,
+    parentId,
+    userId,
+  );
+  if (rows.length === 0) return false;
+  return rows[0].isLocalFile;
+}
+
 export async function createFolder(
   userId: string,
   name: string,
@@ -620,22 +676,16 @@ export async function createFolder(
   });
   const nextSortOrder = (maxResult._max.sortOrder ?? -1) + 1;
 
-  // Inherit `isLocalFile` from the parent. A folder created under a
-  // managed-locally parent is itself part of the managed tree — every
-  // client (web, desktop, mobile) should see it as such so the delete
-  // UX + tombstone semantics stay consistent. Desktop would have
-  // stamped this for itself via resolveFolderForPath, but a folder
-  // created on web via REST needs the server to cascade the flag.
-  let inheritIsLocalFile = false;
-  if (parentId) {
-    const parent = await prisma.folder.findUnique({
-      where: { id: parentId },
-      select: { isLocalFile: true, userId: true },
-    });
-    if (parent && parent.userId === userId && parent.isLocalFile) {
-      inheritIsLocalFile = true;
-    }
-  }
+  // Phase A.1: cascade from the root ancestor, not just the immediate
+  // parent. A.0 normalized existing drift so these two values already
+  // match, but walking to the root keeps the rule self-documenting and
+  // defends against any future drift slipping past A.0.
+  const isLocalFile = await resolveRootIsLocalFile(
+    prisma,
+    userId,
+    parentId ?? null,
+    false,
+  );
 
   return prisma.folder.create({
     data: {
@@ -643,7 +693,7 @@ export async function createFolder(
       name,
       parentId: parentId ?? null,
       sortOrder: nextSortOrder,
-      isLocalFile: inheritIsLocalFile,
+      isLocalFile,
     },
   });
 }
@@ -688,13 +738,21 @@ export async function getFolderPath(folderId: string): Promise<string> {
 }
 
 function buildFolderTree(
-  flatFolders: (PrismaFolder & { count: number })[],
+  flatFolders: (PrismaFolder & { count: number; lastActivityAt?: Date | null })[],
 ): FolderInfo[] {
   const map = new Map<string, FolderInfo>();
   const roots: FolderInfo[] = [];
 
   // Create FolderInfo nodes
   for (const f of flatFolders) {
+    // lastActivityAt = max(folder.updatedAt, max(note.updatedAt) for
+    // notes directly in this folder). Subtree aggregation is done
+    // client-side so the server doesn't pay for a recursive join —
+    // the child values are already present on the returned tree.
+    const folderStamp = f.updatedAt?.getTime?.() ?? 0;
+    const noteStamp = f.lastActivityAt?.getTime?.() ?? 0;
+    const lastActivity = Math.max(folderStamp, noteStamp);
+
     map.set(f.id, {
       id: f.id,
       name: f.name,
@@ -709,6 +767,7 @@ function buildFolderTree(
       count: f.count,
       totalCount: f.count,
       createdAt: f.createdAt.toISOString(),
+      lastActivityAt: lastActivity > 0 ? new Date(lastActivity).toISOString() : undefined,
       children: [],
     });
   }
@@ -754,20 +813,27 @@ export async function listFolders(userId: string): Promise<FolderInfo[]> {
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
-  // Get note counts grouped by folderId
+  // Get note counts + most-recent-activity grouped by folderId in one
+  // pass. `_max.updatedAt` is the direct-children note activity; the
+  // client aggregates across descendants when sorting by Modified.
   const groups = await prisma.note.groupBy({
     by: ["folderId"],
     where: { userId, deletedAt: null, folderId: { not: null } },
     _count: { id: true },
+    _max: { updatedAt: true },
   });
 
   const countMap = new Map(
     groups.map((g) => [g.folderId as string, g._count.id]),
   );
+  const activityMap = new Map(
+    groups.map((g) => [g.folderId as string, g._max?.updatedAt ?? null]),
+  );
 
   const foldersWithCount = allFolders.map((f) => ({
     ...f,
     count: countMap.get(f.id) ?? 0,
+    lastActivityAt: activityMap.get(f.id) ?? null,
   }));
 
   return buildFolderTree(foldersWithCount);
@@ -812,21 +878,6 @@ export async function toggleFolderFavorite(
   });
 }
 
-export async function reorderNotes(
-  userId: string,
-  order: { id: string; sortOrder: number }[],
-): Promise<void> {
-  const prisma = getPrisma();
-  await prisma.$transaction(
-    order.map((item) =>
-      prisma.note.update({
-        where: { id: item.id, userId },
-        data: { sortOrder: item.sortOrder },
-      }),
-    ),
-  );
-}
-
 export async function reorderFavoriteNotes(
   userId: string,
   order: { id: string; favoriteSortOrder: number }[],
@@ -854,11 +905,37 @@ export async function renameFolderById(
   });
 }
 
+/**
+ * Phase A.2 — thrown when `moveFolder` is called with a new parent that
+ * crosses the managed/unmanaged boundary and the caller hasn't
+ * explicitly confirmed the conversion. The route handler translates
+ * this into a 409 with a structured body so the client can show the
+ * appropriate dialog and re-submit with `confirmCrossBoundary=true`.
+ */
+export class CrossBoundaryMoveError extends Error {
+  readonly code = "cross_boundary_move";
+  readonly direction: "toManaged" | "toUnmanaged";
+  readonly affectedFolderCount: number;
+  readonly affectedNoteCount: number;
+
+  constructor(params: {
+    direction: "toManaged" | "toUnmanaged";
+    affectedFolderCount: number;
+    affectedNoteCount: number;
+  }) {
+    super(`Cannot move folder across managed/unmanaged boundary without confirmation (direction=${params.direction})`);
+    this.direction = params.direction;
+    this.affectedFolderCount = params.affectedFolderCount;
+    this.affectedNoteCount = params.affectedNoteCount;
+  }
+}
+
 export async function moveFolder(
   userId: string,
   folderId: string,
   newParentId: string | null,
   sortOrder?: number,
+  confirmCrossBoundary = false,
 ): Promise<PrismaFolder> {
   const prisma = getPrisma();
 
@@ -868,6 +945,38 @@ export async function moveFolder(
     if (descendants.includes(newParentId)) {
       throw new Error("Cannot move folder into its own descendant");
     }
+  }
+
+  // Phase A.2: detect a move that crosses the managed/unmanaged boundary.
+  // Current-root flag vs. target-root flag. A mismatch means the folder's
+  // subtree should be re-flagged en masse, which is a user-consequential
+  // action — require explicit opt-in via confirmCrossBoundary.
+  const current = await prisma.folder.findUnique({
+    where: { id: folderId, userId },
+    select: { isLocalFile: true },
+  });
+  if (!current) {
+    throw new Error("Cannot move folder: not found");
+  }
+  const targetFlag = await resolveRootIsLocalFile(
+    prisma,
+    userId,
+    newParentId,
+    current.isLocalFile, // moving to root preserves the flag
+  );
+
+  const crossBoundary = current.isLocalFile !== targetFlag;
+
+  if (crossBoundary && !confirmCrossBoundary) {
+    const affectedIds = await getSelfAndDescendantIds(folderId);
+    const noteCount = await prisma.note.count({
+      where: { userId, folderId: { in: affectedIds }, deletedAt: null },
+    });
+    throw new CrossBoundaryMoveError({
+      direction: targetFlag ? "toManaged" : "toUnmanaged",
+      affectedFolderCount: affectedIds.length,
+      affectedNoteCount: noteCount,
+    });
   }
 
   const data: Record<string, unknown> = { parentId: newParentId };
@@ -880,6 +989,25 @@ export async function moveFolder(
       where: { userId, parentId: newParentId },
     });
     data.sortOrder = (maxResult._max.sortOrder ?? -1) + 1;
+  }
+
+  // Confirmed cross-boundary move: flip the folder + every descendant's
+  // flag in a single transaction alongside the parentId update. Once this
+  // commits the invariant holds again — the moved subtree's new root is
+  // the target's root, and every descendant matches.
+  if (crossBoundary) {
+    const affectedIds = await getSelfAndDescendantIds(folderId);
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.folder.update({
+        where: { id: folderId, userId },
+        data,
+      });
+      await tx.folder.updateMany({
+        where: { userId, id: { in: affectedIds } },
+        data: { isLocalFile: targetFlag },
+      });
+      return { ...updated, isLocalFile: targetFlag };
+    });
   }
 
   return prisma.folder.update({

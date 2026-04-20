@@ -34,7 +34,6 @@ vi.mock("../api/notes.ts", () => ({
   deleteFolderApi: vi.fn(),
   moveFolderApi: vi.fn(),
   reorderFoldersApi: vi.fn(),
-  reorderNotes: vi.fn(),
   renameTagApi: vi.fn(),
   deleteTagApi: vi.fn(),
 }));

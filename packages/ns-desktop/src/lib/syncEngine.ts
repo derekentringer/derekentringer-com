@@ -6,6 +6,10 @@ import {
   getSyncMeta,
   setSyncMeta,
   fetchNoteById,
+  fetchNoteEmbeddingInputById,
+  fetchImageById,
+  updateImageAfterUpload,
+  updateNote,
   upsertNoteFromRemote,
   upsertFolderFromRemote,
   upsertImageFromRemote,
@@ -19,15 +23,25 @@ import {
   getNoteLocalFileInfo,
   findManagedDirForFolder,
   getFolderManagedDiskPath,
+  getFolderNotesForReconcile,
+  getLocalFolderIsLocalFile,
+  linkNoteToLocalFile,
+  unlinkLocalFile,
   removeManagedDirectory,
 } from "./db.ts";
 import {
   computeContentHash,
+  ensureDirectory,
   fileExists,
+  filenameForNoteTitle,
   moveToTrash,
   stopDirectoryWatching,
   stopWatching,
+  writeLocalFile,
 } from "./localFileService.ts";
+import { readCachedImage } from "./imageCacheService.ts";
+import { uploadImage } from "../api/imageApi.ts";
+import { queueEmbeddingForNote } from "./embeddingService.ts";
 import type {
   SyncChange,
   SyncRejection,
@@ -372,6 +386,64 @@ async function triggerSync(): Promise<void> {
   }
 }
 
+/**
+ * Phase 5.2 — upload a single queued image entry. Extracted from
+ * pushChanges so offline-queued images can be uploaded in parallel
+ * via runWithConcurrency below. Per-upload errors are swallowed
+ * (logged only) so one failure doesn't block the rest of the batch.
+ */
+async function uploadQueuedImage(entry: { entity_id: string; payload: string | null }): Promise<void> {
+  if (!entry.payload) return;
+  try {
+    const imageRow = await fetchImageById(entry.entity_id);
+    if (!imageRow) return;
+    const cachedData = await readCachedImage(entry.entity_id, imageRow.mimeType);
+    if (!cachedData) return;
+    const file = new File(
+      [new Uint8Array(cachedData) as BlobPart],
+      imageRow.filename,
+      { type: imageRow.mimeType },
+    );
+    const result = await uploadImage(imageRow.noteId, file);
+    await updateImageAfterUpload(entry.entity_id, "", result.r2Url);
+    // Update note content: replace placeholder URL with real R2 URL
+    const placeholder = `notesync-local://${entry.entity_id}`;
+    if (imageRow.r2Url === placeholder) {
+      const noteData = await fetchNoteById(imageRow.noteId);
+      if (noteData && noteData.content.includes(placeholder)) {
+        await updateNote(imageRow.noteId, {
+          content: noteData.content.replaceAll(placeholder, result.r2Url),
+        });
+      }
+    }
+  } catch (err) {
+    console.error("Failed to upload queued image:", err);
+  }
+}
+
+/**
+ * Simple worker-pool runner. Spawns up to `limit` parallel workers,
+ * each pulling the next index off a shared counter. No external dep,
+ * no generator magic — just `Promise.all` over N workers.
+ */
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      await task(items[i]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+const IMAGE_UPLOAD_CONCURRENCY = 3;
+
 async function pushChanges(id: string): Promise<void> {
   const entries = await readSyncQueue(BATCH_LIMIT);
   if (entries.length === 0) return;
@@ -383,9 +455,26 @@ async function pushChanges(id: string): Promise<void> {
     deduped.set(key, entry);
   }
 
+  // Phase 5.2 — upload queued images in parallel (bounded). Image
+  // entries don't contribute to the sync push payload (they're
+  // uploaded directly via REST), so handling them ahead of the
+  // payload-build loop lets us overlap the uploads instead of
+  // serializing 10 uploads behind each other.
+  const imageUploadEntries: typeof entries = [];
+  const payloadEntries: typeof entries = [];
+  for (const entry of deduped.values()) {
+    const [, action] = entry.action.split(":");
+    if (entry.entity_type === "image" && action !== "delete") {
+      imageUploadEntries.push(entry);
+    } else {
+      payloadEntries.push(entry);
+    }
+  }
+  await runWithConcurrency(imageUploadEntries, IMAGE_UPLOAD_CONCURRENCY, uploadQueuedImage);
+
   const changes: SyncChange[] = [];
 
-  for (const entry of deduped.values()) {
+  for (const entry of payloadEntries) {
     const [, action] = entry.action.split(":");
     const entityType = entry.entity_type as "note" | "folder" | "image";
 
@@ -396,39 +485,6 @@ async function pushChanges(id: string): Promise<void> {
       if (note) data = note;
     } else if (action !== "delete" && entityType === "folder") {
       data = await readLocalFolder(entry.entity_id);
-    } else if (entityType === "image" && action !== "delete") {
-      // Pending upload: upload binary via API, then update local DB
-      if (entry.payload) {
-        try {
-          const { readCachedImage } = await import("./imageCacheService.ts");
-          const { fetchImageById, updateImageAfterUpload } = await import("./db.ts");
-          const imageRow = await fetchImageById(entry.entity_id);
-          if (imageRow) {
-            const cachedData = await readCachedImage(entry.entity_id, imageRow.mimeType);
-            if (cachedData) {
-              const file = new File([new Uint8Array(cachedData) as BlobPart], imageRow.filename, { type: imageRow.mimeType });
-              const { uploadImage } = await import("../api/imageApi.ts");
-              const result = await uploadImage(imageRow.noteId, file);
-              await updateImageAfterUpload(entry.entity_id, "", result.r2Url);
-              // Update note content: replace placeholder URL with real R2 URL
-              const placeholder = `notesync-local://${entry.entity_id}`;
-              if (imageRow.r2Url === placeholder) {
-                const noteData = await fetchNoteById(imageRow.noteId);
-                if (noteData && noteData.content.includes(placeholder)) {
-                  const { updateNote } = await import("./db.ts");
-                  await updateNote(imageRow.noteId, {
-                    content: noteData.content.replaceAll(placeholder, result.r2Url),
-                  });
-                }
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Failed to upload queued image:", err);
-        }
-      }
-      // Image was uploaded via API — server already has it, skip sync push
-      continue;
     }
 
     changes.push({
@@ -707,6 +763,20 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
     localFileHash = await getNoteLocalFileHash(change.id);
   }
 
+  // Phase 5.1 — embedding dedup. The embedding text is derived from
+  // `${title}\n\n${content}`, so if neither field changed there's
+  // nothing new to embed. Capturing this BEFORE the upsert is what
+  // makes the dedup possible; after upsert the prior row is already
+  // overwritten. A null prior row means "new note to this client" →
+  // always queue.
+  let embeddingInputsChanged = true;
+  if (semanticSearchEnabled && !noteData.deletedAt) {
+    const prior = await fetchNoteEmbeddingInputById(change.id);
+    if (prior && prior.title === noteData.title && prior.content === noteData.content) {
+      embeddingInputsChanged = false;
+    }
+  }
+
   await upsertNoteFromRemote(noteData);
 
   // If the note has a local file link and content actually changed, notify UI
@@ -721,11 +791,12 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
     }
   }
 
-  // Queue embedding generation for synced notes
-  if (semanticSearchEnabled && !noteData.deletedAt) {
-    import("./embeddingService.ts")
-      .then((m) => m.queueEmbeddingForNote(noteData.id, noteData.title, noteData.content))
-      .catch(() => {});
+  // Queue embedding generation only when title/content actually
+  // changed. A 100-note pull where 5 rows changed used to queue 100
+  // OpenAI calls; now it queues 5. Fire-and-forget — embedding is
+  // best-effort and must not block apply.
+  if (semanticSearchEnabled && !noteData.deletedAt && embeddingInputsChanged) {
+    queueEmbeddingForNote(noteData.id, noteData.title, noteData.content).catch(() => {});
   }
 }
 
@@ -743,7 +814,137 @@ async function applyFolderChange(change: SyncChange): Promise<void> {
 
   const folderData = change.data as FolderSyncData | null;
   if (!folderData) return;
+
+  // Phase A.4: detect an isLocalFile flip so we can reconcile on-disk
+  // state after the upsert lands. Read the CURRENT value before
+  // overwriting it. `null` means the folder is new locally — no flip
+  // to reconcile, the normal materialization path handles it.
+  const previousFlag = await getLocalFolderIsLocalFile(folderData.id);
+  const newFlag = folderData.isLocalFile ?? false;
+  const flipped = previousFlag !== null && previousFlag !== newFlag;
+
   await upsertFolderFromRemote(folderData);
+
+  if (flipped) {
+    try {
+      if (newFlag) {
+        await reconcileFolderFlipToManaged(folderData.id);
+      } else {
+        await reconcileFolderFlipToUnmanaged(folderData.id);
+      }
+    } catch (err) {
+      console.warn(
+        `[Phase A.4] Folder flip reconciliation failed for ${folderData.id}:`,
+        err,
+      );
+    }
+  }
+}
+
+/**
+ * Phase A.4 + A.5: run the same per-folder disk reconciliation that
+ * sync-pull fires, but on demand — used by desktop-initiated
+ * cross-boundary moves which don't go through `applyFolderChange`
+ * (the change is self-made, never arrives via pull). After
+ * `moveFolderWithCascade` flips the subtree's flags in SQLite, walk
+ * every affected folder and run the appropriate reconciler so the
+ * files land on disk (or get trashed) before the next periodic
+ * reconciliation could see a flagged-but-missing-on-disk folder and
+ * wrongly hard-delete it.
+ */
+export async function reconcileSubtreeFlagFlip(
+  folderIds: string[],
+  targetFlag: boolean,
+): Promise<void> {
+  for (const id of folderIds) {
+    try {
+      if (targetFlag) {
+        await reconcileFolderFlipToManaged(id);
+      } else {
+        await reconcileFolderFlipToUnmanaged(id);
+      }
+    } catch (err) {
+      console.warn(`[Phase A.5] Subtree reconcile failed for ${id}:`, err);
+    }
+  }
+}
+
+/**
+ * Phase A.4: the folder flipped from unmanaged → managed. Materialize
+ * its direct notes to disk if they aren't already, and create the
+ * containing directory if needed.
+ *
+ * Scope: notes *directly* in this folder. The folder's descendants
+ * have their own folder-update changes in the same pull and each
+ * handles its own notes independently. Across a cross-boundary move
+ * the server flips every folder atomically, so all descendants arrive
+ * flagged in the same batch.
+ */
+async function reconcileFolderFlipToManaged(folderId: string): Promise<void> {
+  const managedDir = await findManagedDirForFolder(folderId);
+  if (!managedDir) {
+    // Ancestor isn't a managed root locally yet (this desktop has no
+    // managed_directories row for the target root). Skip gracefully —
+    // can't write files without knowing where on disk they go. A
+    // future managed-dir registration + re-reconciliation can recover.
+    return;
+  }
+
+  let folderDiskPath: string;
+  if (managedDir.rootFolderId === folderId) {
+    folderDiskPath = managedDir.path;
+  } else {
+    const info = await getFolderManagedDiskPath(folderId);
+    if (!info) return;
+    folderDiskPath = info.diskPath;
+  }
+
+  try {
+    await ensureDirectory(folderDiskPath);
+  } catch (err) {
+    console.warn(`[Phase A.4] Failed to mkdir ${folderDiskPath}:`, err);
+    return;
+  }
+
+  const notes = await getFolderNotesForReconcile(folderId);
+  for (const note of notes) {
+    if (note.localPath) continue; // already on disk
+    try {
+      const filename = filenameForNoteTitle(note.title);
+      const filePath = `${folderDiskPath}/${filename}`;
+      const hash = await writeLocalFile(filePath, note.content);
+      await linkNoteToLocalFile(note.id, filePath, hash);
+    } catch (err) {
+      console.warn(
+        `[Phase A.4] Failed to materialize note ${note.id} to disk:`,
+        err,
+      );
+    }
+  }
+}
+
+/**
+ * Phase A.4: the folder flipped from managed → unmanaged. Trash any
+ * on-disk files that previously backed this folder's direct notes and
+ * drop their `local_path`.
+ */
+async function reconcileFolderFlipToUnmanaged(folderId: string): Promise<void> {
+  const notes = await getFolderNotesForReconcile(folderId);
+  for (const note of notes) {
+    if (!note.localPath) continue;
+    try {
+      await stopWatching(note.id);
+      if (await fileExists(note.localPath)) {
+        await moveToTrash(note.localPath);
+      }
+      await unlinkLocalFile(note.id);
+    } catch (err) {
+      console.warn(
+        `[Phase A.4] Failed to trash local file for note ${note.id} (${note.localPath}):`,
+        err,
+      );
+    }
+  }
 }
 
 /**

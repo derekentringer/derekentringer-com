@@ -158,7 +158,7 @@ export function FavoritesPanel({
             <option value="sortOrder">Manual</option>
             <option value="updatedAt">Modified</option>
             <option value="createdAt">Created</option>
-            <option value="title">Title</option>
+            <option value="title">Name</option>
           </select>
           <button
             onClick={() => onFavSortOrderChange(favSortOrder === "asc" ? "desc" : "asc")}

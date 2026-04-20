@@ -1,4 +1,4 @@
-import { readTextFile, writeTextFile, exists, stat, remove, watch, readDir, rename } from "@tauri-apps/plugin-fs";
+import { readTextFile, writeTextFile, exists, stat, remove, watch, readDir, rename, mkdir } from "@tauri-apps/plugin-fs";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { parseFrontmatter, injectFrontmatter } from "@derekentringer/ns-shared";
 
@@ -100,6 +100,28 @@ export function validateFileSize(sizeBytes: number): boolean {
 
 export async function deleteLocalFile(path: string): Promise<void> {
   await remove(path);
+}
+
+/**
+ * Ensure a directory exists on disk, creating parents as needed. No-op if
+ * it already exists. Used by the Phase A.4 disk reconciler when writing
+ * files into a newly-managed subtree whose on-disk structure may not yet
+ * exist.
+ */
+export async function ensureDirectory(path: string): Promise<void> {
+  if (await exists(path)) return;
+  await mkdir(path, { recursive: true });
+}
+
+/**
+ * Build a safe filename for a note from its title. Sanitizes characters
+ * that are invalid on common filesystems, falls back to "Untitled" if
+ * the title is empty after sanitization, and appends .md. Used by the
+ * Phase A.4 reconciler when a note needs to be materialized to disk.
+ */
+export function filenameForNoteTitle(title: string): string {
+  const sanitized = title.replace(/[/\\:*?"<>|]/g, "_").trim() || "Untitled";
+  return `${sanitized}.md`;
 }
 
 /**

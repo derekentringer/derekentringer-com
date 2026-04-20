@@ -22,6 +22,7 @@ const mockRemoveSyncQueueEntries = vi.fn().mockResolvedValue(undefined);
 const mockGetSyncMeta = vi.fn().mockResolvedValue(null);
 const mockSetSyncMeta = vi.fn().mockResolvedValue(undefined);
 const mockFetchNoteById = vi.fn().mockResolvedValue(null);
+const mockFetchNoteEmbeddingInputById = vi.fn().mockResolvedValue(null);
 const mockUpsertNoteFromRemote = vi.fn().mockResolvedValue(undefined);
 const mockUpsertFolderFromRemote = vi.fn().mockResolvedValue(undefined);
 const mockSoftDeleteNoteFromRemote = vi.fn().mockResolvedValue(undefined);
@@ -33,15 +34,54 @@ vi.mock("../lib/db.ts", () => ({
   getSyncMeta: (...args: unknown[]) => mockGetSyncMeta(...args),
   setSyncMeta: (...args: unknown[]) => mockSetSyncMeta(...args),
   fetchNoteById: (...args: unknown[]) => mockFetchNoteById(...args),
+  fetchNoteEmbeddingInputById: (...args: unknown[]) => mockFetchNoteEmbeddingInputById(...args),
   upsertNoteFromRemote: (...args: unknown[]) => mockUpsertNoteFromRemote(...args),
   upsertFolderFromRemote: (...args: unknown[]) => mockUpsertFolderFromRemote(...args),
   softDeleteNoteFromRemote: (...args: unknown[]) => mockSoftDeleteNoteFromRemote(...args),
   softDeleteFolderFromRemote: (...args: unknown[]) => mockSoftDeleteFolderFromRemote(...args),
   getNoteLocalPath: vi.fn().mockResolvedValue(null),
+  // Phase A.4 reconciler deps — default to "no flip" so existing tests
+  // don't trigger the reconcile path.
+  getLocalFolderIsLocalFile: vi.fn().mockResolvedValue(null),
+  getFolderNotesForReconcile: vi.fn().mockResolvedValue([]),
+  linkNoteToLocalFile: vi.fn().mockResolvedValue(undefined),
+  unlinkLocalFile: vi.fn().mockResolvedValue(undefined),
+  findManagedDirForFolder: vi.fn().mockResolvedValue(null),
+  getFolderManagedDiskPath: vi.fn().mockResolvedValue(null),
+  hardDeleteFolderFromRemote: vi.fn().mockResolvedValue(undefined),
+  hardDeleteNoteFromRemote: vi.fn().mockResolvedValue(undefined),
+  getNoteLocalFileHash: vi.fn().mockResolvedValue(null),
+  getNoteLocalFileInfo: vi.fn().mockResolvedValue(null),
+  removeManagedDirectory: vi.fn().mockResolvedValue(undefined),
+  softDeleteImageFromRemote: vi.fn().mockResolvedValue(undefined),
+  upsertImageFromRemote: vi.fn().mockResolvedValue(undefined),
+  // Phase 5.2 — parallel image upload mocks
+  fetchImageById: (...args: unknown[]) => mockFetchImageById(...args),
+  updateImageAfterUpload: (...args: unknown[]) => mockUpdateImageAfterUpload(...args),
+  updateNote: (...args: unknown[]) => mockUpdateNote(...args),
+}));
+
+const mockFetchImageById = vi.fn();
+const mockUpdateImageAfterUpload = vi.fn().mockResolvedValue(undefined);
+const mockUpdateNote = vi.fn().mockResolvedValue(undefined);
+const mockReadCachedImage = vi.fn();
+const mockUploadImage = vi.fn();
+
+vi.mock("../lib/imageCacheService.ts", () => ({
+  readCachedImage: (...args: unknown[]) => mockReadCachedImage(...args),
+}));
+
+vi.mock("../api/imageApi.ts", () => ({
+  uploadImage: (...args: unknown[]) => mockUploadImage(...args),
 }));
 
 vi.mock("@tauri-apps/plugin-sql", () => ({
   default: { load: vi.fn().mockResolvedValue({ execute: vi.fn(), select: vi.fn() }) },
+}));
+
+const mockQueueEmbeddingForNote = vi.fn().mockResolvedValue(undefined);
+vi.mock("../lib/embeddingService.ts", () => ({
+  queueEmbeddingForNote: (...args: unknown[]) => mockQueueEmbeddingForNote(...args),
 }));
 
 // ---------- Import SUT after mocks ----------
@@ -54,6 +94,7 @@ const {
   manualSync,
   forcePushChanges,
   discardChanges,
+  setSyncSemanticSearchEnabled,
 } = await import("../lib/syncEngine.ts");
 
 // ---------- Helpers ----------
@@ -433,6 +474,218 @@ describe("syncEngine", () => {
     expect(mockSoftDeleteNoteFromRemote).toHaveBeenCalledWith("remote-note-2", "2024-06-01T00:00:00.000Z");
     // Should notify UI of data changes
     expect(onDataChanged).toHaveBeenCalled();
+  });
+
+  // Phase 5.1 — embedding dedup on pull
+  describe("embedding dedup on pull", () => {
+    const noteData = {
+      id: "note-dedup",
+      title: "Title",
+      content: "Hello world",
+      folder: null,
+      folderId: null,
+      folderPath: null,
+      tags: [],
+      summary: null,
+      favorite: false,
+      sortOrder: 0,
+      favoriteSortOrder: 0,
+      isLocalFile: false,
+      audioMode: null,
+      transcript: null,
+      createdAt: "2024-06-01T00:00:00.000Z",
+      updatedAt: "2024-06-01T00:00:00.000Z",
+      deletedAt: null,
+    };
+
+    async function runPullWithNote() {
+      mockGetSyncMeta.mockResolvedValue(null);
+      mockReadSyncQueue.mockResolvedValue([]);
+      mockApiFetch.mockResolvedValue(
+        makePullResponse([
+          { id: "note-dedup", type: "note", action: "update", data: noteData, timestamp: "2024-06-01T00:00:00.000Z" },
+        ]),
+      );
+      await initSyncEngine({ onStatusChange: vi.fn(), onDataChanged: vi.fn() });
+      await flushPromises();
+      // fetchNoteEmbeddingInputById is awaited inside applyNoteChange,
+      // so by now that call has definitely happened. The embedding
+      // queue itself is fire-and-forget via dynamic import, so assert
+      // on its state via waitFor in the individual test bodies rather
+      // than relying on microtask-tick counts.
+    }
+
+    /**
+     * Give the fire-and-forget embedding import a real chance to settle.
+     * Dynamic import() takes more than one microtask tick to resolve
+     * in vitest; flushPromises alone isn't enough.
+     */
+    async function settleEmbeddingDispatch() {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    it("skips queueEmbeddingForNote when title + content match the existing row", async () => {
+      setSyncSemanticSearchEnabled(true);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue({ title: "Title", content: "Hello world" });
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      expect(mockFetchNoteEmbeddingInputById).toHaveBeenCalledWith("note-dedup");
+      expect(mockUpsertNoteFromRemote).toHaveBeenCalledWith(noteData);
+      expect(mockQueueEmbeddingForNote).not.toHaveBeenCalled();
+    });
+
+    it("queues an embedding when content changed", async () => {
+      setSyncSemanticSearchEnabled(true);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue({ title: "Title", content: "stale body" });
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      expect(mockQueueEmbeddingForNote).toHaveBeenCalledWith("note-dedup", "Title", "Hello world");
+    });
+
+    it("queues an embedding when title changed (even if content matches)", async () => {
+      setSyncSemanticSearchEnabled(true);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue({ title: "Old Title", content: "Hello world" });
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      expect(mockQueueEmbeddingForNote).toHaveBeenCalledWith("note-dedup", "Title", "Hello world");
+    });
+
+    it("queues an embedding for a brand-new note (no prior row)", async () => {
+      setSyncSemanticSearchEnabled(true);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue(null);
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      expect(mockQueueEmbeddingForNote).toHaveBeenCalledWith("note-dedup", "Title", "Hello world");
+    });
+
+    it("skips queueEmbeddingForNote entirely when semantic search is disabled", async () => {
+      setSyncSemanticSearchEnabled(false);
+      mockFetchNoteEmbeddingInputById.mockResolvedValue(null);
+
+      await runPullWithNote();
+      await settleEmbeddingDispatch();
+
+      // Prior-row fetch is also skipped — dedup work is gated behind the same flag.
+      expect(mockFetchNoteEmbeddingInputById).not.toHaveBeenCalled();
+      expect(mockQueueEmbeddingForNote).not.toHaveBeenCalled();
+    });
+  });
+
+  // Phase 5.2 — parallel image upload on push
+  describe("parallel image upload on push", () => {
+    function makeImageEntry(i: number) {
+      return {
+        id: i,
+        entity_type: "image" as const,
+        entity_id: `img-${i}`,
+        action: "image:create",
+        payload: JSON.stringify({ queued: true }),
+        created_at: "2024-06-01T00:00:00.000Z",
+      };
+    }
+
+    function stubImageDeps() {
+      mockFetchImageById.mockImplementation((id: string) =>
+        Promise.resolve({
+          id,
+          noteId: `note-for-${id}`,
+          filename: `${id}.png`,
+          mimeType: "image/png",
+          r2Url: `notesync-local://${id}`,
+        }),
+      );
+      mockReadCachedImage.mockResolvedValue(new Uint8Array([1, 2, 3]).buffer);
+      // fetchNoteById is used for the placeholder replace path; return
+      // a note whose content doesn't include the placeholder so we
+      // skip the updateNote call in most tests.
+      mockFetchNoteById.mockResolvedValue({
+        id: "note-for-img",
+        content: "no placeholder here",
+      });
+    }
+
+    it("uploads multiple queued images concurrently with a bound of 3", async () => {
+      const entries = Array.from({ length: 10 }, (_, i) => makeImageEntry(i));
+      mockGetSyncMeta.mockResolvedValue(null);
+      mockReadSyncQueue.mockResolvedValue(entries);
+      stubImageDeps();
+
+      let inFlight = 0;
+      let maxInFlight = 0;
+      mockUploadImage.mockImplementation(async () => {
+        inFlight++;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        // Small stagger so overlap is observable
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight--;
+        return { r2Url: "https://r2.example/x.png" };
+      });
+      mockApiFetch
+        .mockResolvedValueOnce(makePushResponse())
+        .mockResolvedValueOnce(makePullResponse());
+
+      await initSyncEngine({ onStatusChange: vi.fn(), onDataChanged: vi.fn() });
+      await new Promise((r) => setTimeout(r, 400));
+
+      // Every queued image got uploaded
+      expect(mockUploadImage).toHaveBeenCalledTimes(10);
+      // Concurrency cap held
+      expect(maxInFlight).toBeGreaterThan(1);
+      expect(maxInFlight).toBeLessThanOrEqual(3);
+    });
+
+    it("one failed upload does not block the rest of the batch", async () => {
+      const entries = Array.from({ length: 5 }, (_, i) => makeImageEntry(i));
+      mockGetSyncMeta.mockResolvedValue(null);
+      mockReadSyncQueue.mockResolvedValue(entries);
+      stubImageDeps();
+
+      mockUploadImage.mockImplementation(async (noteId: string) => {
+        if (noteId === "note-for-img-2") {
+          throw new Error("synthetic upload failure");
+        }
+        return { r2Url: "https://r2.example/x.png" };
+      });
+      mockApiFetch
+        .mockResolvedValueOnce(makePushResponse())
+        .mockResolvedValueOnce(makePullResponse());
+
+      await initSyncEngine({ onStatusChange: vi.fn(), onDataChanged: vi.fn() });
+      await new Promise((r) => setTimeout(r, 200));
+
+      // All 5 attempted; the failure was swallowed and the others
+      // went through.
+      expect(mockUploadImage).toHaveBeenCalledTimes(5);
+      expect(mockUpdateImageAfterUpload).toHaveBeenCalledTimes(4);
+    });
+
+    it("image entries do not end up in the /sync/push payload", async () => {
+      mockGetSyncMeta.mockResolvedValue(null);
+      mockReadSyncQueue.mockResolvedValue([makeImageEntry(0)]);
+      stubImageDeps();
+      mockUploadImage.mockResolvedValue({ r2Url: "https://r2.example/x.png" });
+      mockApiFetch
+        .mockResolvedValueOnce(makePushResponse())
+        .mockResolvedValueOnce(makePullResponse());
+
+      await initSyncEngine({ onStatusChange: vi.fn(), onDataChanged: vi.fn() });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const pushCall = mockApiFetch.mock.calls.find((c) => c[0] === "/sync/push");
+      expect(pushCall).toBeTruthy();
+      const body = JSON.parse(pushCall![1].body);
+      // Image entries are pushed via REST, not the sync protocol —
+      // the /sync/push payload must not reference them.
+      expect(body.changes.some((c: { id: string }) => c.id === "img-0")).toBe(false);
+    });
   });
 
   // 13

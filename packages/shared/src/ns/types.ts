@@ -12,7 +12,6 @@ export type {
   CreateFolderRequest,
   MoveFolderRequest,
   ReorderFoldersRequest,
-  ReorderNotesRequest,
   ReorderFavoriteNotesRequest,
   TagInfo,
   TagListResponse,

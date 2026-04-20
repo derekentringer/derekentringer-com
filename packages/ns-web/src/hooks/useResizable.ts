@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 export interface UseResizableOptions {
   direction: "horizontal" | "vertical";
@@ -42,6 +42,23 @@ export function useResizable({
   const [isDragging, setIsDragging] = useState(false);
 
   const dragRef = useRef({ startPos: 0, startSize: 0 });
+
+  // Re-clamp when min/max bounds shift. Consumers can pass a dynamic
+  // maxSize (e.g. derived from a ResizeObserver-measured container)
+  // without leaving a stale persisted size above the new ceiling.
+  useEffect(() => {
+    setSize((current) => {
+      const clamped = Math.min(maxSize, Math.max(minSize, current));
+      if (clamped !== current) {
+        try {
+          localStorage.setItem(storageKey, String(clamped));
+        } catch {
+          // localStorage unavailable
+        }
+      }
+      return clamped;
+    });
+  }, [minSize, maxSize, storageKey]);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
