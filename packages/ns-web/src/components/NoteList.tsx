@@ -19,7 +19,6 @@ interface NoteListProps {
   onDeleteNote?: (noteId: string) => void;
   onExportNote?: (noteId: string, format: ExportFormat) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
-  sortByManual: boolean;
 }
 
 interface ContextMenuState {
@@ -36,7 +35,6 @@ interface SortableNoteItemProps {
   onDeleteNote?: (noteId: string) => void;
   onExportNote?: (noteId: string, format: ExportFormat) => void;
   onToggleFavorite?: (noteId: string, favorite: boolean) => void;
-  sortByManual: boolean;
   contextMenu: ContextMenuState | null;
   onContextMenuOpen: (noteId: string, x: number, y: number) => void;
   onContextMenuClose: () => void;
@@ -52,7 +50,6 @@ function SortableNoteItem({
   onDeleteNote,
   onExportNote,
   onToggleFavorite,
-  sortByManual,
   contextMenu,
   onContextMenuOpen,
   onContextMenuClose,
@@ -66,7 +63,7 @@ function SortableNoteItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: note.id, disabled: !sortByManual });
+  } = useSortable({ id: note.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -95,17 +92,13 @@ function SortableNoteItem({
   }, [note.updatedAt]);
 
   return (
-    <div ref={setNodeRef} style={style} className="flex items-start relative mb-px">
-      {sortByManual && (
-        <span
-          {...attributes}
-          {...listeners}
-          className="cursor-grab px-1 pt-2.5 text-muted-foreground hover:text-foreground text-xs select-none shrink-0"
-          title="Drag to reorder"
-        >
-          &#x2630;
-        </span>
-      )}
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className="flex items-start relative mb-px"
+    >
       <button
         onClick={() => onSelect(note)}
         onDoubleClick={(e) => { e.preventDefault(); onDoubleClick?.(note); }}
@@ -127,8 +120,8 @@ function SortableNoteItem({
             <span className="shrink-0 mr-1 text-muted-foreground/50" title="Managed locally on desktop">
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
             </span>
           )}
@@ -226,7 +219,6 @@ export function NoteList({
   onDeleteNote,
   onExportNote,
   onToggleFavorite,
-  sortByManual,
 }: NoteListProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -266,7 +258,6 @@ export function NoteList({
             onDeleteNote={onDeleteNote}
             onExportNote={onExportNote}
             onToggleFavorite={onToggleFavorite}
-            sortByManual={sortByManual}
             contextMenu={contextMenu}
             onContextMenuOpen={(noteId, x, y) => setContextMenu({ noteId, x, y })}
             onContextMenuClose={() => setContextMenu(null)}

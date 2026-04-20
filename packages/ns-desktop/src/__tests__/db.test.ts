@@ -42,10 +42,12 @@ const {
   emptyTrash,
   purgeOldTrash,
   initFts,
-  reorderNotes,
   moveFolderParent,
   reorderFolders,
   backfillManagedFolders,
+  normalizeFolderIsLocalFileCascade,
+  detectCrossBoundaryLocalMove,
+  moveFolderWithCascade,
   unmanageManagedDirectory,
   incrementWatcherGapCount,
   getWatcherGapCount,
@@ -682,32 +684,6 @@ describe("restoreNote", () => {
   });
 });
 
-describe("reorderNotes", () => {
-  it("updates sort_order for each note", async () => {
-    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
-
-    await reorderNotes([
-      { id: "n1", sortOrder: 0 },
-      { id: "n2", sortOrder: 1 },
-      { id: "n3", sortOrder: 2 },
-    ]);
-    await new Promise((r) => setTimeout(r, 0)); // flush enqueue
-
-    const updateCalls = mockExecute.mock.calls.filter((c: unknown[]) =>
-      (c[0] as string).includes("UPDATE notes SET sort_order"),
-    );
-    expect(updateCalls.length).toBe(3);
-    expect(updateCalls[0][1][0]).toBe(0);
-    expect(updateCalls[1][1][0]).toBe(1);
-    expect(updateCalls[2][1][0]).toBe(2);
-  });
-
-  it("handles empty order array", async () => {
-    await reorderNotes([]);
-    expect(mockExecute).not.toHaveBeenCalled();
-  });
-});
-
 describe("moveFolderParent", () => {
   it("updates parent_id for a folder", async () => {
     mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
@@ -936,6 +912,209 @@ describe("backfillManagedFolders", () => {
       typeof c[0] === "string" && c[0].includes("UPDATE folders SET is_local_file"),
     );
     expect(updateCalls).toHaveLength(0);
+  });
+});
+
+describe("normalizeFolderIsLocalFileCascade (Phase A.0)", () => {
+  it("returns 0 and skips work when the flag is already set", async () => {
+    mockSelect.mockResolvedValueOnce([{ value: "1" }]);
+
+    const count = await normalizeFolderIsLocalFileCascade();
+
+    expect(count).toBe(0);
+    const updateCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it("flips mismatched folders to match their root ancestor's flag", async () => {
+    mockSelect.mockResolvedValueOnce([]); // flag not set
+    // Recursive CTE returns drifted folders + their root flag
+    mockSelect.mockResolvedValueOnce([
+      { id: "child-up", root_flag: 1 },    // was 0, root says 1
+      { id: "child-down", root_flag: 0 },  // was 1, root says 0
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await normalizeFolderIsLocalFileCascade();
+    await new Promise((r) => setTimeout(r, 0)); // flush enqueueSyncAction
+
+    expect(count).toBe(2);
+
+    const updateCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(2);
+    // First UPDATE flips child-up to 1
+    expect((updateCalls[0][1] as unknown[])[0]).toBe(1);
+    expect((updateCalls[0][1] as unknown[])[2]).toBe("child-up");
+    // Second flips child-down to 0
+    expect((updateCalls[1][1] as unknown[])[0]).toBe(0);
+    expect((updateCalls[1][1] as unknown[])[2]).toBe("child-down");
+
+    // sync_meta flag set
+    const flagSet = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INTO sync_meta") &&
+        (c[1] as unknown[])[0] === "is_local_file_cascade_done",
+    );
+    expect(flagSet).toBeDefined();
+
+    // sync_queue entry enqueued per flipped folder so the server picks up
+    // the correction.
+    const syncEnqueueCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INSERT INTO sync_queue"),
+    );
+    expect(syncEnqueueCalls).toHaveLength(2);
+  });
+
+  it("sets the flag and exits without UPDATEs when no drift exists", async () => {
+    mockSelect.mockResolvedValueOnce([]); // flag not set
+    mockSelect.mockResolvedValueOnce([]); // CTE returns empty — no drift
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const count = await normalizeFolderIsLocalFileCascade();
+
+    expect(count).toBe(0);
+    const updateCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file"),
+    );
+    expect(updateCalls).toHaveLength(0);
+
+    const flagSet = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INTO sync_meta") &&
+        (c[1] as unknown[])[0] === "is_local_file_cascade_done",
+    );
+    expect(flagSet).toBeDefined();
+  });
+});
+
+describe("detectCrossBoundaryLocalMove (Phase A.5)", () => {
+  it("returns direction=null when current and target roots have the same flag", async () => {
+    // self folder flag
+    mockSelect.mockResolvedValueOnce([{ is_local_file: 0 }]);
+    // new parent's flag (also 0)
+    mockSelect.mockResolvedValueOnce([{ is_local_file: 0 }]);
+
+    const result = await detectCrossBoundaryLocalMove("f-src", "f-dst");
+    expect(result.direction).toBeNull();
+    expect(result.affectedFolderCount).toBe(0);
+    expect(result.affectedNoteCount).toBe(0);
+  });
+
+  it("returns toManaged when moving an unmanaged folder into a managed parent", async () => {
+    mockSelect.mockResolvedValueOnce([{ is_local_file: 0 }]); // current
+    mockSelect.mockResolvedValueOnce([{ is_local_file: 1 }]); // target parent
+    // subtree CTE
+    mockSelect.mockResolvedValueOnce([{ id: "f-src" }, { id: "f-child" }]);
+    // note count
+    mockSelect.mockResolvedValueOnce([{ c: 4 }]);
+
+    const result = await detectCrossBoundaryLocalMove("f-src", "f-dst");
+    expect(result.direction).toBe("toManaged");
+    expect(result.affectedFolderCount).toBe(2);
+    expect(result.affectedNoteCount).toBe(4);
+  });
+
+  it("returns toUnmanaged when moving a managed folder into an unmanaged parent", async () => {
+    mockSelect.mockResolvedValueOnce([{ is_local_file: 1 }]);
+    mockSelect.mockResolvedValueOnce([{ is_local_file: 0 }]);
+    mockSelect.mockResolvedValueOnce([{ id: "f-src" }]);
+    mockSelect.mockResolvedValueOnce([{ c: 0 }]);
+
+    const result = await detectCrossBoundaryLocalMove("f-src", "f-dst");
+    expect(result.direction).toBe("toUnmanaged");
+    expect(result.affectedFolderCount).toBe(1);
+    expect(result.affectedNoteCount).toBe(0);
+  });
+
+  it("move to root (parentId=null) is never a cross-boundary move", async () => {
+    mockSelect.mockResolvedValueOnce([{ is_local_file: 1 }]);
+
+    const result = await detectCrossBoundaryLocalMove("f-src", null);
+    expect(result.direction).toBeNull();
+    // No extra queries performed — just the self-flag read.
+    expect(mockSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns direction=null when the folder doesn't exist locally", async () => {
+    mockSelect.mockResolvedValueOnce([]); // no row
+    const result = await detectCrossBoundaryLocalMove("missing", "f-dst");
+    expect(result.direction).toBeNull();
+  });
+});
+
+describe("moveFolderWithCascade (Phase A.5)", () => {
+  it("flips the subtree's isLocalFile and updates parent, enqueueing syncs", async () => {
+    mockSelect.mockResolvedValueOnce([
+      { id: "f-src" },
+      { id: "f-a" },
+      { id: "f-b" },
+    ]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    const result = await moveFolderWithCascade("f-src", "new-parent", true);
+    await new Promise((r) => setTimeout(r, 0)); // flush fire-and-forget
+
+    expect(result.affectedFolderIds).toEqual(["f-src", "f-a", "f-b"]);
+
+    const updateFlagCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file ="),
+    );
+    expect(updateFlagCalls).toHaveLength(3);
+    // All three flipped to 1
+    for (const call of updateFlagCalls) {
+      expect((call[1] as unknown[])[0]).toBe(1);
+    }
+    const flippedIds = updateFlagCalls.map((c) => (c[1] as unknown[])[2]);
+    expect(new Set(flippedIds)).toEqual(new Set(["f-src", "f-a", "f-b"]));
+
+    // Parent change applied
+    const parentChange = mockExecute.mock.calls.find(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET parent_id ="),
+    );
+    expect(parentChange).toBeDefined();
+    expect((parentChange![1] as unknown[])[0]).toBe("new-parent");
+    expect((parentChange![1] as unknown[])[2]).toBe("f-src");
+
+    // 4 syncs enqueued: 3 subtree + 1 parent update
+    const syncs = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("INSERT INTO sync_queue"),
+    );
+    expect(syncs.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("flipping to unmanaged writes 0 as the new flag", async () => {
+    mockSelect.mockResolvedValueOnce([{ id: "f-src" }]);
+    mockExecute.mockResolvedValue({ lastInsertId: 0, rowsAffected: 1 });
+
+    await moveFolderWithCascade("f-src", null, false);
+
+    const updateFlagCalls = mockExecute.mock.calls.filter(
+      (c: unknown[]) =>
+        typeof c[0] === "string" &&
+        (c[0] as string).includes("UPDATE folders SET is_local_file ="),
+    );
+    expect(updateFlagCalls).toHaveLength(1);
+    expect((updateFlagCalls[0][1] as unknown[])[0]).toBe(0);
   });
 });
 

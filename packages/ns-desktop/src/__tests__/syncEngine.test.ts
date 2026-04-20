@@ -38,6 +38,21 @@ vi.mock("../lib/db.ts", () => ({
   softDeleteNoteFromRemote: (...args: unknown[]) => mockSoftDeleteNoteFromRemote(...args),
   softDeleteFolderFromRemote: (...args: unknown[]) => mockSoftDeleteFolderFromRemote(...args),
   getNoteLocalPath: vi.fn().mockResolvedValue(null),
+  // Phase A.4 reconciler deps — default to "no flip" so existing tests
+  // don't trigger the reconcile path.
+  getLocalFolderIsLocalFile: vi.fn().mockResolvedValue(null),
+  getFolderNotesForReconcile: vi.fn().mockResolvedValue([]),
+  linkNoteToLocalFile: vi.fn().mockResolvedValue(undefined),
+  unlinkLocalFile: vi.fn().mockResolvedValue(undefined),
+  findManagedDirForFolder: vi.fn().mockResolvedValue(null),
+  getFolderManagedDiskPath: vi.fn().mockResolvedValue(null),
+  hardDeleteFolderFromRemote: vi.fn().mockResolvedValue(undefined),
+  hardDeleteNoteFromRemote: vi.fn().mockResolvedValue(undefined),
+  getNoteLocalFileHash: vi.fn().mockResolvedValue(null),
+  getNoteLocalFileInfo: vi.fn().mockResolvedValue(null),
+  removeManagedDirectory: vi.fn().mockResolvedValue(undefined),
+  softDeleteImageFromRemote: vi.fn().mockResolvedValue(undefined),
+  upsertImageFromRemote: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@tauri-apps/plugin-sql", () => ({

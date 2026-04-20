@@ -7,15 +7,18 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
-import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import { restrictToHorizontalAxis, snapCenterToCursor } from "@dnd-kit/modifiers";
 import type {
   Note,
   NoteSearchResult,
@@ -49,8 +52,9 @@ import {
   emptyTrash,
   purgeOldTrash,
   initFts,
-  reorderNotes,
   moveFolderParent,
+  detectCrossBoundaryLocalMove,
+  moveFolderWithCascade,
   syncNoteLinks,
   listNoteTitles,
   fetchNoteById,
@@ -69,6 +73,7 @@ import {
   enqueueSyncAction,
   migrateFrontmatter,
   backfillManagedFolders,
+  normalizeFolderIsLocalFileCascade,
   listManagedDirectories,
   addManagedDirectory,
   removeManagedDirectory,
@@ -84,6 +89,7 @@ import {
 } from "../lib/db.ts";
 import { AboutDialog } from "../components/AboutDialog.tsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
+import { CrossBoundaryMoveDialog } from "../components/CrossBoundaryMoveDialog.tsx";
 import {
   MarkdownEditor,
   type MarkdownEditorHandle,
@@ -198,8 +204,23 @@ type DrawerTab = "assistant" | "history" | "toc";
 
 const TRASH_RETENTION_KEY = "ns-desktop:trashRetentionDays";
 
-const validSortFields: NoteSortField[] = ["sortOrder", "updatedAt", "createdAt", "title"];
+// `sortOrder` is kept on the shared type for favorites but is no longer
+// a valid note-list sort field — Manual sort has been removed.
+const validSortFields: NoteSortField[] = ["updatedAt", "createdAt", "title"];
 const validSortOrders: SortOrder[] = ["asc", "desc"];
+
+// Hybrid collision detection: pointerWithin first so the cursor can
+// land precisely on a folder when dragging a note up into the folders
+// panel; then rectIntersection; then closestCenter for sortable note
+// reorder. closestCenter alone resolved upward drags to other notes
+// long before the pointer reached a folder in the stacked layout.
+const notesPageCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) return pointerCollisions;
+  const intersections = rectIntersection(args);
+  if (intersections.length > 0) return intersections;
+  return closestCenter(args);
+};
 
 function validateSortField(value: string | null, fallback: NoteSortField): NoteSortField {
   return value && validSortFields.includes(value as NoteSortField) ? value as NoteSortField : fallback;
@@ -241,6 +262,17 @@ export function NotesPage() {
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Phase A.5: pending cross-boundary folder move awaiting user confirmation.
+  const [pendingCrossBoundaryMove, setPendingCrossBoundaryMove] = useState<{
+    folderId: string;
+    folderName: string;
+    parentId: string | null;
+    direction: "toManaged" | "toUnmanaged";
+    targetFlag: boolean;
+    affectedFolderCount: number;
+    affectedNoteCount: number;
+  } | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveGeneration, setSaveGeneration] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -262,7 +294,7 @@ export function NotesPage() {
   // Folders
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
-  const [managedFolderIds, setManagedFolderIds] = useState<Set<string>>(new Set());
+  const [managedRootIds, setManagedRootIds] = useState<Set<string>>(new Set());
   const [locallyHostedNoteIds, setLocallyHostedNoteIds] = useState<Set<string>>(new Set());
 
   // Favorites
@@ -504,6 +536,11 @@ export function NotesPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  // Measured inner height of the sidebar. Drives the dynamic max for
+  // `folderResize` so the folders panel can never consume so much
+  // space that the stacked notes list falls below 100px.
+  const [sidebarHeight, setSidebarHeight] = useState(0);
 
   // Sync engine
   const [syncStatusState, setSyncStatusState] = useState<SyncStatus>("idle");
@@ -612,13 +649,37 @@ export function NotesPage() {
     storageKey: "ns-desktop-notelist-width",
   });
 
+  // Stacked sidebar layout: the folder panel sits above the notes
+  // list with a draggable horizontal divider. Enforce a 100px min on
+  // the folder panel itself AND a 100px floor for the notes panel
+  // below it (achieved by capping maxSize at sidebarHeight minus the
+  // sidebar chrome and the notes reservation).
+  //
+  // SIDEBAR_CHROME_PX covers the tab strip + divider; NOTES_MIN_PX
+  // is the bottom stop gap the user asked for.
+  const SIDEBAR_CHROME_PX = 40;
+  const NOTES_MIN_PX = 100;
+  const folderMaxHeight = sidebarHeight > 0
+    ? Math.max(NOTES_MIN_PX, sidebarHeight - SIDEBAR_CHROME_PX - NOTES_MIN_PX)
+    : 2000;
   const folderResize = useResizable({
     direction: "horizontal",
-    initialSize: 200,
-    minSize: 0,
-    maxSize: 2000,
+    initialSize: 220,
+    minSize: NOTES_MIN_PX,
+    maxSize: folderMaxHeight,
     storageKey: "ns-desktop-folder-height",
   });
+
+  useEffect(() => {
+    const el = sidebarRef.current;
+    if (!el) return;
+    const update = () => setSidebarHeight(el.clientHeight);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const splitResize = useResizable({
     direction: "vertical",
@@ -794,6 +855,11 @@ export function NotesPage() {
       // before folders.is_local_file existed gets its root + descendants
       // flagged so the server + web see they're managed-locally.
       await backfillManagedFolders();
+      // Phase A.0: normalize any drifted folder flag to match its root
+      // ancestor. Runs once per install (sync_meta-gated) and covers the
+      // cases Phase 1.3 didn't — e.g. a folder flagged isLocalFile=true
+      // under an unmanaged root.
+      await normalizeFolderIsLocalFileCascade();
       const [notesResult, foldersResult, tagsResult] = await Promise.all([
         fetchNotes({ sortBy, sortOrder }),
         fetchFolders(),
@@ -1793,7 +1859,7 @@ export function NotesPage() {
 
       // Register as managed directory
       await addManagedDirectory(dirPath, folderId);
-      setManagedFolderIds((prev) => new Set([...prev, folderId]));
+      setManagedRootIds((prev) => new Set([...prev, folderId]));
 
       // Export notes in this folder as .md files to the local directory
       const folderNotes = notes.filter((n) => n.folderId === folderId);
@@ -1859,7 +1925,7 @@ export function NotesPage() {
       // folder sync updates so other clients see the flag change, then
       // remove the managed_directories row.
       await unmanageManagedDirectory(dir.id, folderId);
-      setManagedFolderIds((prev) => {
+      setManagedRootIds((prev) => {
         const next = new Set(prev);
         next.delete(folderId);
         return next;
@@ -1961,7 +2027,7 @@ export function NotesPage() {
           if (localInfo.managedDir.rootFolderId === folderId) {
             await stopDirectoryWatching(localInfo.dirPath);
             await removeManagedDirectory(localInfo.managedDir.id);
-            setManagedFolderIds((prev) => {
+            setManagedRootIds((prev) => {
               const next = new Set(prev);
               next.delete(folderId);
               return next;
@@ -2011,14 +2077,9 @@ export function NotesPage() {
             ? null
             : targetId;
         if (folderId === newParentId) return;
-        try {
-          await moveFolderParent(folderId, newParentId);
-          await refreshFolders();
-          notifyLocalChange();
-        } catch (err) {
-          console.error("Failed to move folder:", err);
-          showError("Failed to move folder");
-        }
+        // Route through handleMoveFolder so the cross-boundary
+        // detection + dialog triggers on drag too (Phase A.5).
+        await handleMoveFolder(folderId, newParentId);
       }
       return;
     }
@@ -2032,10 +2093,19 @@ export function NotesPage() {
           ? null
           : folderTarget;
 
+      // Look up the destination name up-front so we can show a
+      // toast — without it the note can appear to "disappear" when
+      // the move succeeds but the current folder view filters it
+      // out (e.g. drop lands on a collapsed subfolder).
+      const destinationName = folderId === null
+        ? "Unfiled"
+        : findFolderById(folders, folderId)?.name ?? "folder";
+
       try {
         await updateNote(noteId, { folderId });
         await refreshSidebarData();
         notifyLocalChange();
+        setSuccessToast(`Moved to ${destinationName}`);
       } catch (err) {
         console.error("Failed to move note:", err);
         showError("Failed to move note");
@@ -2043,40 +2113,61 @@ export function NotesPage() {
       return;
     }
 
-    // Note reorder (manual sort)
-    if (active.id !== over.id) {
-      await handleReorder(activeId, overId);
-    }
+    // Note → Note is a no-op. Manual sort was removed; notes can still
+    // be dragged onto folders (handled above), but reordering within
+    // the list is no longer a feature.
   }
 
-  async function handleReorder(activeId: string, overId: string) {
-    const oldIndex = notes.findIndex((n) => n.id === activeId);
-    const newIndex = notes.findIndex((n) => n.id === overId);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const reordered = [...notes];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-
-    // Optimistic update
-    const updatedNotes = reordered.map((n, i) => ({ ...n, sortOrder: i }));
-    setNotes(updatedNotes);
-
+  async function handleMoveFolder(
+    folderId: string,
+    parentId: string | null,
+    opts?: { confirmCrossBoundary?: boolean },
+  ) {
     try {
-      await reorderNotes(
-        updatedNotes.map((n) => ({ id: n.id, sortOrder: n.sortOrder })),
-      );
-      notifyLocalChange();
-    } catch (err) {
-      console.error("Failed to reorder notes:", err);
-      showError("Failed to reorder notes");
-      await reloadNotes();
-    }
-  }
+      if (!opts?.confirmCrossBoundary) {
+        const cross = await detectCrossBoundaryLocalMove(folderId, parentId);
+        if (cross.direction) {
+          // Look up the folder's display name for the dialog copy.
+          function findName(nodes: typeof folders): string | null {
+            for (const f of nodes) {
+              if (f.id === folderId) return f.name;
+              const deeper = findName(f.children);
+              if (deeper) return deeper;
+            }
+            return null;
+          }
+          setPendingCrossBoundaryMove({
+            folderId,
+            folderName: findName(folders) ?? "this folder",
+            parentId,
+            direction: cross.direction,
+            targetFlag: cross.direction === "toManaged",
+            affectedFolderCount: cross.affectedFolderCount,
+            affectedNoteCount: cross.affectedNoteCount,
+          });
+          return;
+        }
+      }
 
-  async function handleMoveFolder(folderId: string, parentId: string | null) {
-    try {
-      await moveFolderParent(folderId, parentId);
+      if (opts?.confirmCrossBoundary) {
+        // Confirmed cross-boundary — flip subtree flags and move.
+        const { direction } = await detectCrossBoundaryLocalMove(folderId, parentId);
+        const targetFlag = direction === "toManaged";
+        const { affectedFolderIds } = await moveFolderWithCascade(
+          folderId,
+          parentId,
+          targetFlag,
+        );
+        // Phase A.5 fix: pull-side `applyFolderChange` never fires for
+        // a self-initiated move, so we must run the A.4 disk reconciler
+        // inline. Otherwise periodic reconciliation (every 10s) would
+        // see a flagged-but-missing-on-disk subtree and hard-delete it.
+        const { reconcileSubtreeFlagFlip } = await import("../lib/syncEngine.ts");
+        await reconcileSubtreeFlagFlip(affectedFolderIds, targetFlag);
+      } else {
+        await moveFolderParent(folderId, parentId);
+      }
+
       await refreshFolders();
       notifyLocalChange();
     } catch (err) {
@@ -2377,7 +2468,7 @@ export function NotesPage() {
           if (!existing) {
             await addManagedDirectory(dirPath, targetFolderId);
             if (targetFolderId) {
-              setManagedFolderIds((prev) => new Set([...prev, targetFolderId]));
+              setManagedRootIds((prev) => new Set([...prev, targetFolderId]));
             }
             // Start watching the directory
             await startDirectoryWatching(dirPath, {
@@ -2584,38 +2675,16 @@ export function NotesPage() {
 
       // --- Managed directory reconciliation and watchers ---
       const managedDirs = await listManagedDirectories();
-      // Update managed folder IDs for context menu display
-      // Collect managed root IDs AND all their descendant folder IDs
-      const mfIds = new Set<string>();
-      // Always add the root folder IDs first
+      // Phase A.6: the FolderTree context menu needs to know which folders
+      // are *managed roots* (to gate Start/Stop Managing Locally). The
+      // icon/"is this part of a managed tree" question is now answered
+      // by `folder.isLocalFile` directly on each FolderInfo — no more
+      // tree-walk needed.
+      const rootIds = new Set<string>();
       for (const dir of managedDirs) {
-        if (dir.rootFolderId) mfIds.add(dir.rootFolderId);
+        if (dir.rootFolderId) rootIds.add(dir.rootFolderId);
       }
-      // Then add all descendant folder IDs
-      const allFoldersNow = await fetchFolders();
-      function collectDescendantIds(items: FolderInfo[], ids: Set<string>) {
-        for (const f of items) {
-          ids.add(f.id);
-          collectDescendantIds(f.children, ids);
-        }
-      }
-      for (const dir of managedDirs) {
-        if (dir.rootFolderId) {
-          // Find the root in the tree and collect its children
-          function findAndCollect(items: FolderInfo[]) {
-            for (const f of items) {
-              if (f.id === dir.rootFolderId) {
-                collectDescendantIds(f.children, mfIds);
-                return true;
-              }
-              if (findAndCollect(f.children)) return true;
-            }
-            return false;
-          }
-          findAndCollect(allFoldersNow);
-        }
-      }
-      setManagedFolderIds(mfIds);
+      setManagedRootIds(rootIds);
 
       if (managedDirs.length > 0) {
         // Reconcile: detect new/missing/changed files
@@ -3482,7 +3551,7 @@ export function NotesPage() {
       {/* Shared DndContext for sidebar + note list (enables drag from notes to folders) */}
       <DndContext
         sensors={dndSensors}
-        collisionDetection={closestCenter}
+        collisionDetection={notesPageCollisionDetection}
         onDragStart={(event: DragStartEvent) => setActiveDragId(String(event.active.id))}
         onDragEnd={(event: DragEndEvent) => { setActiveDragId(null); handleDragEnd(event); }}
         onDragCancel={() => setActiveDragId(null)}
@@ -3490,6 +3559,7 @@ export function NotesPage() {
 
       {/* Sidebar */}
       <aside
+        ref={sidebarRef}
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode || collapseSidebar || sidebarHidden ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
       >
@@ -3503,8 +3573,15 @@ export function NotesPage() {
               showFavorites={favoriteFolders.length > 0 || favoriteNotes.length > 0}
             />
 
-            {/* Sidebar panel content — switches based on active tab */}
-            <div key={sidebarPanel} className={`${collapseNoteList ? "shrink-0 h-1/2" : "flex-1"} flex flex-col min-h-0 animate-fade-in`}>
+            {/* Sidebar panel content — switches based on active tab.
+                In the stacked (collapseNoteList) layout the folder
+                panel's height is driven by `folderResize`; otherwise
+                it fills the sidebar. */}
+            <div
+              key={sidebarPanel}
+              className={`${collapseNoteList ? "shrink-0" : "flex-1"} flex flex-col min-h-0 animate-fade-in`}
+              style={collapseNoteList ? { height: folderResize.size } : undefined}
+            >
               {sidebarPanel === "explorer" && (
                 <div className="flex-1 overflow-y-auto overflow-x-hidden">
                   <FolderTree
@@ -3520,7 +3597,7 @@ export function NotesPage() {
                     onToggleFavorite={handleToggleFolderFavorite}
                     onSaveLocally={handleSaveFolderLocally}
                     onStopManagingLocally={handleStopManagingFolderLocally}
-                    managedFolderIds={managedFolderIds}
+                    managedRootIds={managedRootIds}
                   />
                 </div>
               )}
@@ -3724,8 +3801,8 @@ export function NotesPage() {
               <>
                 <ResizeDivider
                   direction="horizontal"
-                  isDragging={false}
-                  onPointerDown={() => {}}
+                  isDragging={folderResize.isDragging}
+                  onPointerDown={folderResize.onPointerDown}
                 />
                 <div className="flex-1 min-h-0 overflow-hidden">
                     <NoteListPanel
@@ -3747,6 +3824,9 @@ export function NotesPage() {
                       locallyHostedNoteIds={locallyHostedNoteIds}
                       onUnlinkLocalFile={handleUnlinkLocalFile}
                       onSaveAsLocalFile={handleSaveAsLocalFile}
+                      onSaveToFile={handleSaveToFile}
+                      onUseLocalVersion={handleUseLocalVersion}
+                      onViewDiff={handleViewDiff}
                     />
                 </div>
               </>
@@ -3842,13 +3922,129 @@ export function NotesPage() {
         </>
       )}
 
-      <DragOverlay dropAnimation={null}>
+      {/* `snapCenterToCursor` pins the overlay's center to the pointer.
+          Without it, dnd-kit positions the overlay relative to the
+          dragged item's initial bounding rect + pointer delta — which
+          drifts when the item sits inside a nested scrollable
+          container (e.g. the combined-sidebar NoteListPanel), leaving
+          the card offset from the cursor. */}
+      {/* Drag preview renders a shrunken copy of the actual sidebar
+          item: notes get their title + metadata row, folders get the
+          chevron + name + count. Same paddings and inline elements as
+          the real item so the height matches. Width is fixed at a
+          reasonable value rather than matching the source rect —
+          making the card consistent across layout modes. */}
+      <DragOverlay
+        dropAnimation={null}
+        modifiers={[snapCenterToCursor]}
+        style={{ width: "auto", height: "auto" }}
+      >
         {activeDragId && (() => {
+          // Folder drag: mirror the FolderTree row layout
+          if (activeDragId.startsWith("drag-folder:")) {
+            const folderId = activeDragId.slice("drag-folder:".length);
+            function findFolder(nodes: typeof folders): typeof folders[number] | null {
+              for (const f of nodes) {
+                if (f.id === folderId) return f;
+                const deeper = findFolder(f.children);
+                if (deeper) return deeper;
+              }
+              return null;
+            }
+            const folder = findFolder(folders);
+            return (
+              <div className="bg-card border border-border rounded-md shadow-lg opacity-90 px-2">
+                <div className="w-[220px] pr-2 py-1 rounded text-sm text-foreground flex items-center">
+                  <span className="inline-flex items-center justify-center w-4 h-4 mr-0.5 text-[10px] shrink-0 select-none">
+                    ▶
+                  </span>
+                  <span className="truncate">{folder?.name || "Folder"}</span>
+                  {folder?.isLocalFile && (
+                    <span className="shrink-0 ml-1 text-primary">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                    </span>
+                  )}
+                  {folder?.favorite && (
+                    <span className="text-[10px] text-primary shrink-0 ml-0.5">★</span>
+                  )}
+                  {typeof folder?.totalCount === "number" && (
+                    <span className="ml-1 text-xs opacity-60 shrink-0">
+                      {folder.totalCount}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          }
+          // Note drag: mirror the NoteList row layout exactly —
+          // title row + snippet + metadata row (date + tag chips).
           const note = notes.find((n) => n.id === activeDragId);
           if (note) {
+            const date = new Date(note.updatedAt);
+            const diffMs = Date.now() - date.getTime();
+            const diffMin = Math.floor(diffMs / 60000);
+            const relativeDate =
+              diffMin < 1
+                ? "just now"
+                : diffMin < 60
+                  ? `${diffMin}m ago`
+                  : diffMin < 60 * 24
+                    ? `${Math.floor(diffMin / 60)}h ago`
+                    : diffMin < 60 * 24 * 7
+                      ? `${Math.floor(diffMin / (60 * 24))}d ago`
+                      : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+            const snippet = note.content ? stripMarkdown(note.content, 80) : null;
+            const hostedLocally = locallyHostedNoteIds.has(note.id);
             return (
-              <div className="px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground truncate max-w-[200px] opacity-90">
-                {note.title || "Untitled"}
+              <div className="bg-card border border-border rounded-md shadow-lg opacity-90">
+                <div className="w-[260px] px-2 py-1.5 rounded-md">
+                  {/* Title row */}
+                  <span className="flex items-center gap-1 overflow-hidden">
+                    {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+                    {note.isLocalFile && (
+                      <span
+                        className={`shrink-0 mr-1 ${hostedLocally ? "text-primary" : "text-muted-foreground"}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                      </span>
+                    )}
+                    <span className="text-sm font-medium truncate text-foreground">
+                      {note.title || "Untitled"}
+                    </span>
+                  </span>
+                  {/* Content preview */}
+                  {snippet && (
+                    <p className="text-xs text-foreground/45 truncate mt-0.5">{snippet}</p>
+                  )}
+                  {/* Metadata row */}
+                  <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                    <span className="text-[10px] text-muted-foreground shrink-0">{relativeDate}</span>
+                    {note.tags && note.tags.length > 0 && (
+                      <>
+                        <span className="text-[10px] text-muted-foreground">·</span>
+                        {note.tags.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag}
+                            className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {note.tags.length > 2 && (
+                          <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           }
@@ -4047,8 +4243,8 @@ export function NotesPage() {
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
                   </span>
                 )}
@@ -4700,6 +4896,24 @@ export function NotesPage() {
         if (note) openNoteAsTab(note);
       }}
     />
+
+    {/* Phase A.5: cross-boundary folder move confirmation */}
+    {pendingCrossBoundaryMove && (
+      <CrossBoundaryMoveDialog
+        direction={pendingCrossBoundaryMove.direction}
+        folderName={pendingCrossBoundaryMove.folderName}
+        affectedFolderCount={pendingCrossBoundaryMove.affectedFolderCount}
+        affectedNoteCount={pendingCrossBoundaryMove.affectedNoteCount}
+        onCancel={() => setPendingCrossBoundaryMove(null)}
+        onConfirm={() => {
+          const pending = pendingCrossBoundaryMove;
+          setPendingCrossBoundaryMove(null);
+          handleMoveFolder(pending.folderId, pending.parentId, {
+            confirmCrossBoundary: true,
+          });
+        }}
+      />
+    )}
     </div>
   );
 }

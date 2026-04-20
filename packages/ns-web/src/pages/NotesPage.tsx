@@ -4,15 +4,18 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
-import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import { restrictToHorizontalAxis, snapCenterToCursor } from "@dnd-kit/modifiers";
 import type { Note, NoteVersion, NoteSearchResult, NoteSortField, SortOrder, FolderInfo, TagInfo, NoteTitleEntry } from "@derekentringer/shared/ns";
 import { useAuth } from "../context/AuthContext.tsx";
 import { useCommands, CommandPalette, QuickSwitcher } from "../commands/index.ts";
@@ -28,10 +31,10 @@ import {
   permanentDeleteNote as apiPermanentDeleteNote,
   emptyTrash as apiEmptyTrash,
   createFolderApi,
-  reorderNotes as apiReorderNotes,
   renameFolderApi,
   deleteFolderApi,
   moveFolderApi,
+  CrossBoundaryMoveError,
   renameTagApi,
   deleteTagApi,
   fetchNoteTitles,
@@ -53,6 +56,7 @@ import {
   type ViewMode,
 } from "../components/EditorToolbar.tsx";
 import { FolderTree, flattenFolderTree, getFolderBreadcrumb } from "../components/FolderTree.tsx";
+import { CrossBoundaryMoveDialog } from "../components/CrossBoundaryMoveDialog.tsx";
 import { NoteList } from "../components/NoteList.tsx";
 import { TabBar, type Tab } from "../components/TabBar.tsx";
 import { FavoritesPanel } from "../components/FavoritesPanel.tsx";
@@ -100,8 +104,26 @@ import {
 
 type SidebarView = "notes" | "trash";
 
-const validSortFields: NoteSortField[] = ["sortOrder", "updatedAt", "createdAt", "title"];
+// `sortOrder` is kept on the shared type for favorites but is no longer
+// a valid note-list sort field — Manual sort has been removed.
+const validSortFields: NoteSortField[] = ["updatedAt", "createdAt", "title"];
 const validSortOrders: SortOrder[] = ["asc", "desc"];
+
+// Hybrid collision detection: when the pointer is directly over a
+// droppable (e.g. the user has dragged a note up into the folders
+// panel in the stacked sidebar layout), pick that exact target; else
+// fall back to rect intersection, then closestCenter so sortable
+// note reordering keeps working. `closestCenter` alone picks the
+// closest *center* — when the notes panel is much taller than the
+// folders panel, every upward drag was resolving to another note
+// long before the pointer reached a folder.
+const notesPageCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) return pointerCollisions;
+  const intersections = rectIntersection(args);
+  if (intersections.length > 0) return intersections;
+  return closestCenter(args);
+};
 
 function validateSortField(value: string | null, fallback: NoteSortField): NoteSortField {
   return value && validSortFields.includes(value as NoteSortField) ? value as NoteSortField : fallback;
@@ -119,6 +141,16 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const { isOnline, lastSyncedAt, pendingCount, isSyncing, reconciledIds } = useOfflineCache();
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncError, setSyncError] = useState<string | null>(null);
+
+  // Phase A.3: pending cross-boundary folder move awaiting user confirmation.
+  const [pendingCrossBoundaryMove, setPendingCrossBoundaryMove] = useState<{
+    folderId: string;
+    folderName: string;
+    parentId: string | null;
+    direction: "toManaged" | "toUnmanaged";
+    affectedFolderCount: number;
+    affectedNoteCount: number;
+  } | null>(null);
 
   const [notes, setNotes] = useState<NoteSearchResult[]>([]);
   const [searchResults, setSearchResults] = useState<NoteSearchResult[] | null>(null);
@@ -265,6 +297,11 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  // Measured inner height of the sidebar — drives the dynamic max
+  // for `folderResize` so the stacked notes list always keeps at
+  // least 100px of room below the folders panel.
+  const [sidebarHeight, setSidebarHeight] = useState(0);
 
   // Note titles state (for wiki-link autocomplete)
   const [noteTitles, setNoteTitles] = useState<NoteTitleEntry[]>([]);
@@ -331,13 +368,33 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [suggestedTags, setSuggestedTags] = useState<string[]>([]);
   const [isSuggestingTags, setIsSuggestingTags] = useState(false);
 
+  // Stacked sidebar layout: the folder panel sits above the notes
+  // list with a draggable horizontal divider. Enforce a 100px min on
+  // the folder panel itself AND a 100px floor for the notes panel
+  // below it (maxSize = sidebarHeight − chrome − notes reservation).
+  const SIDEBAR_CHROME_PX = 40;
+  const NOTES_MIN_PX = 100;
+  const folderMaxHeight = sidebarHeight > 0
+    ? Math.max(NOTES_MIN_PX, sidebarHeight - SIDEBAR_CHROME_PX - NOTES_MIN_PX)
+    : 2000;
   const folderResize = useResizable({
     direction: "horizontal",
-    initialSize: 160,
-    minSize: 0,
-    maxSize: 2000,
+    initialSize: 220,
+    minSize: NOTES_MIN_PX,
+    maxSize: folderMaxHeight,
     storageKey: "ns-folder-height",
   });
+
+  useEffect(() => {
+    const el = sidebarRef.current;
+    if (!el) return;
+    const update = () => setSidebarHeight(el.clientHeight);
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const sidebarResize = useResizable({
     direction: "vertical",
     initialSize: 220,
@@ -498,24 +555,20 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     async () => {
       const requestId = ++loadNotesCounterRef.current;
       try {
+        const isUnfiled = activeFolder === "__unfiled__";
         const folderIdParam =
-          activeFolder && activeFolder !== "__unfiled__"
-            ? activeFolder
-            : undefined;
+          activeFolder && !isUnfiled ? activeFolder : undefined;
         const result = await fetchNotes({
           folderId: folderIdParam,
+          unfiled: isUnfiled,
           tags: activeTags.length > 0 ? activeTags : undefined,
           sortBy,
           sortOrder,
         });
         if (requestId !== loadNotesCounterRef.current) return;
-        let filtered = result.notes;
-        if (activeFolder === "__unfiled__") {
-          filtered = filtered.filter((n) => !n.folderId);
-        }
-        setNotes(filtered);
+        setNotes(result.notes);
         // Cache all loaded notes for tab persistence across folder switches
-        for (const note of filtered) {
+        for (const note of result.notes) {
           tabNoteCacheRef.current.set(note.id, note);
         }
       } catch {
@@ -1218,32 +1271,6 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }
 
-  async function handleReorder(activeId: string, overId: string) {
-    const oldIndex = notes.findIndex((n) => n.id === activeId);
-    const newIndex = notes.findIndex((n) => n.id === overId);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const reordered = [...notes];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-
-    // Optimistic update
-    const updatedNotes = reordered.map((n, i) => ({ ...n, sortOrder: i }));
-    setNotes(updatedNotes);
-
-    try {
-      await apiReorderNotes({
-        order: updatedNotes.map((n) => ({
-          id: n.id,
-          sortOrder: n.sortOrder,
-        })),
-      });
-    } catch {
-      showError("Failed to reorder notes");
-      loadNotes();
-    }
-  }
-
   function handleTabDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -1279,12 +1306,10 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
             : targetId;
         // Don't move to self
         if (folderId === newParentId) return;
-        try {
-          await moveFolderApi(folderId, newParentId);
-          loadFolders();
-        } catch {
-          showError("Failed to move folder");
-        }
+        // Route through handleMoveFolder so the cross-boundary 409
+        // surfaces the same dialog UX as the context-menu "Move to
+        // Root" flow (Phase A.3).
+        await handleMoveFolder(folderId, newParentId);
       }
       return;
     }
@@ -1298,6 +1323,14 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
           ? null
           : folderTarget;
 
+      // Look up the destination name up-front so we can show a
+      // toast — without it the note can appear to "disappear" when
+      // the move succeeds but the current folder view filters it
+      // out (e.g. drop lands on a collapsed subfolder).
+      const destinationName = folderId === null
+        ? "Unfiled"
+        : findFolderById(folders, folderId)?.name ?? "folder";
+
       try {
         const updated = await updateNote(noteId, { folderId });
         setNotes((prev) =>
@@ -1305,16 +1338,17 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         );
         loadNotes();
         loadFolders();
+        setSuccessToast(`Moved to ${destinationName}`);
+        setTimeout(() => setSuccessToast(null), 3000);
       } catch {
         showError("Failed to move note");
       }
       return;
     }
 
-    // Note reorder
-    if (active.id !== over.id) {
-      handleReorder(activeId, overId);
-    }
+    // Note → Note is a no-op. Manual sort was removed; notes can be
+    // dragged onto folders (handled above) but reordering within the
+    // list is no longer a feature.
   }
 
   async function handleCreateFolder(name: string, parentId?: string) {
@@ -1340,12 +1374,38 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }
 
-  async function handleMoveFolder(folderId: string, parentId: string | null) {
+  async function handleMoveFolder(
+    folderId: string,
+    parentId: string | null,
+    opts?: { confirmCrossBoundary?: boolean },
+  ) {
     if (!isOnline) { showError("Folder operations require a connection"); return; }
     try {
-      await moveFolderApi(folderId, parentId);
+      await moveFolderApi(folderId, parentId, undefined, opts);
       loadFolders();
-    } catch {
+    } catch (err) {
+      if (err instanceof CrossBoundaryMoveError) {
+        // Find the folder's display name in the current tree for the
+        // dialog copy. Fall back to a generic label if we somehow don't
+        // have it locally.
+        function findName(nodes: typeof folders): string | null {
+          for (const f of nodes) {
+            if (f.id === folderId) return f.name;
+            const deeper = findName(f.children);
+            if (deeper) return deeper;
+          }
+          return null;
+        }
+        setPendingCrossBoundaryMove({
+          folderId,
+          folderName: findName(folders) ?? "this folder",
+          parentId,
+          direction: err.direction,
+          affectedFolderCount: err.affectedFolderCount,
+          affectedNoteCount: err.affectedNoteCount,
+        });
+        return;
+      }
       showError("Failed to move folder");
     }
   }
@@ -1734,18 +1794,10 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
   const flatFolders = useMemo(() => flattenFolderTree(folders), [folders]);
 
-  // Derive managed folder IDs from notes that are locally managed
-  // Accumulate all folder IDs that contain locally managed notes across
-  // all note loads (not just the current filtered view)
-  const managedFolderIdsRef = useRef(new Set<string>());
-  const managedFolderIds = useMemo(() => {
-    for (const note of notes) {
-      if (note.isLocalFile && note.folderId) {
-        managedFolderIdsRef.current.add(note.folderId);
-      }
-    }
-    return new Set(managedFolderIdsRef.current);
-  }, [notes]);
+  // Phase A.6: managed-locally UX is driven by `folder.isLocalFile` on
+  // each FolderInfo directly. The server cascades the flag from the
+  // root (Phases A.0 + A.1) so the tree is authoritative — no more
+  // deriving a Set by walking notes or managed_directories.
 
   // Resolve "system" theme to actual "dark" or "light" for CodeMirror
   const resolvedTheme = useMemo((): "dark" | "light" => {
@@ -2174,7 +2226,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       {/* Shared DndContext for sidebar + note list (enables drag from notes to folders) */}
       <DndContext
         sensors={dndSensors}
-        collisionDetection={closestCenter}
+        collisionDetection={notesPageCollisionDetection}
         onDragStart={(event: DragStartEvent) => setActiveDragId(String(event.active.id))}
         onDragEnd={(event: DragEndEvent) => { setActiveDragId(null); handleDragEnd(event); }}
         onDragCancel={() => setActiveDragId(null)}
@@ -2182,6 +2234,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
 
       {/* Sidebar */}
       <aside
+        ref={sidebarRef}
         className={`bg-sidebar flex flex-col shrink-0 overflow-hidden ${sidebarResize.isDragging ? "" : "transition-[width] duration-300 ease-in-out"}`}
         style={{ width: focusMode || collapseSidebar || sidebarHidden ? 0 : collapseNoteList ? Math.max(sidebarResize.size, 280) : sidebarResize.size }}
       >
@@ -2195,8 +2248,15 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               showFavorites={favoriteFolders.length > 0 || favoriteNotes.length > 0}
             />
 
-            {/* Sidebar panel content — switches based on active tab */}
-            <div key={sidebarPanel} className={`${collapseNoteList ? "shrink-0 h-1/2" : "flex-1"} flex flex-col min-h-0 animate-fade-in`}>
+            {/* Sidebar panel content — switches based on active tab.
+                In the stacked (collapseNoteList) layout the folder
+                panel's height is driven by `folderResize`; otherwise
+                it fills the sidebar. */}
+            <div
+              key={sidebarPanel}
+              className={`${collapseNoteList ? "shrink-0" : "flex-1"} flex flex-col min-h-0 animate-fade-in`}
+              style={collapseNoteList ? { height: folderResize.size } : undefined}
+            >
               {sidebarPanel === "explorer" && (
                 <div className="flex-1 overflow-y-auto">
                   <FolderTree
@@ -2210,7 +2270,6 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                     onMoveFolder={handleMoveFolder}
                     onExportFolder={handleExportFolder}
                     onToggleFavorite={handleToggleFolderFavorite}
-                    managedFolderIds={managedFolderIds}
                   />
                 </div>
               )}
@@ -2413,8 +2472,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               <>
                 <ResizeDivider
                   direction="horizontal"
-                  isDragging={false}
-                  onPointerDown={() => {}}
+                  isDragging={folderResize.isDragging}
+                  onPointerDown={folderResize.onPointerDown}
                 />
                 <div className="flex-1 min-h-0 overflow-hidden">
                     <NoteListPanel
@@ -2502,13 +2561,125 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         </>
       )}
 
-      <DragOverlay dropAnimation={null}>
+      {/* `snapCenterToCursor` pins the overlay's center to the pointer.
+          Without it, dnd-kit positions the overlay relative to the
+          dragged item's initial bounding rect + pointer delta — which
+          drifts when the item sits inside a nested scrollable
+          container (e.g. the combined-sidebar NoteListPanel), leaving
+          the card offset from the cursor. */}
+      {/* Drag preview renders a shrunken copy of the actual sidebar
+          item: notes get their title + metadata row, folders get the
+          chevron + name + count. Width is fixed at a reasonable value
+          rather than matching the source rect, so the card is
+          consistent across layout modes. */}
+      <DragOverlay
+        dropAnimation={null}
+        modifiers={[snapCenterToCursor]}
+        style={{ width: "auto", height: "auto" }}
+      >
         {activeDragId && (() => {
+          // Folder drag: mirror the FolderTree row layout
+          if (activeDragId.startsWith("drag-folder:")) {
+            const folderId = activeDragId.slice("drag-folder:".length);
+            function findFolder(nodes: typeof folders): typeof folders[number] | null {
+              for (const f of nodes) {
+                if (f.id === folderId) return f;
+                const deeper = findFolder(f.children);
+                if (deeper) return deeper;
+              }
+              return null;
+            }
+            const folder = findFolder(folders);
+            return (
+              <div className="bg-card border border-border rounded-md shadow-lg opacity-90 px-2">
+                <div className="w-[220px] pr-2 py-1 rounded text-sm text-foreground flex items-center">
+                  <span className="inline-flex items-center justify-center w-4 h-4 mr-0.5 text-[10px] shrink-0 select-none">
+                    ▶
+                  </span>
+                  <span className="truncate">{folder?.name || "Folder"}</span>
+                  {folder?.isLocalFile && (
+                    <span className="shrink-0 ml-1 text-muted-foreground/50">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                    </span>
+                  )}
+                  {folder?.favorite && (
+                    <span className="text-[10px] text-primary shrink-0 ml-0.5">★</span>
+                  )}
+                  {typeof folder?.totalCount === "number" && (
+                    <span className="ml-1 text-xs opacity-60 shrink-0">
+                      {folder.totalCount}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          }
+          // Note drag: mirror the NoteList row layout exactly —
+          // title row + snippet + metadata row (date + tag chips).
           const note = notes.find((n) => n.id === activeDragId);
           if (note) {
+            const date = new Date(note.updatedAt);
+            const diffMs = Date.now() - date.getTime();
+            const diffMin = Math.floor(diffMs / 60000);
+            const relativeDate =
+              diffMin < 1
+                ? "just now"
+                : diffMin < 60
+                  ? `${diffMin}m ago`
+                  : diffMin < 60 * 24
+                    ? `${Math.floor(diffMin / 60)}h ago`
+                    : diffMin < 60 * 24 * 7
+                      ? `${Math.floor(diffMin / (60 * 24))}d ago`
+                      : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+            const snippet = note.content ? stripMarkdown(note.content, 80) : null;
             return (
-              <div className="px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm text-foreground truncate max-w-[200px] opacity-90">
-                {note.title || "Untitled"}
+              <div className="bg-card border border-border rounded-md shadow-lg opacity-90">
+                <div className="w-[260px] px-2 py-1.5 rounded-md">
+                  {/* Title row */}
+                  <span className="flex items-center gap-1 overflow-hidden">
+                    {note.favorite && <span className="text-[10px] text-primary shrink-0">★</span>}
+                    {note.isLocalFile && (
+                      <span className="shrink-0 mr-1 text-muted-foreground/50">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="17 8 12 3 7 8" />
+                          <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                      </span>
+                    )}
+                    <span className="text-sm font-medium truncate text-foreground">
+                      {note.title || "Untitled"}
+                    </span>
+                  </span>
+                  {/* Content preview */}
+                  {snippet && (
+                    <p className="text-xs text-foreground/45 truncate mt-0.5">{snippet}</p>
+                  )}
+                  {/* Metadata row */}
+                  <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                    <span className="text-[10px] text-muted-foreground shrink-0">{relativeDate}</span>
+                    {note.tags && note.tags.length > 0 && (
+                      <>
+                        <span className="text-[10px] text-muted-foreground">·</span>
+                        {note.tags.slice(0, 2).map((tag) => (
+                          <span
+                            key={tag}
+                            className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {note.tags.length > 2 && (
+                          <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           }
@@ -2657,8 +2828,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   <span className="shrink-0 text-muted-foreground/50 mr-0.5" title="Managed locally on desktop">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
                   </span>
                 )}
@@ -3209,6 +3380,24 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         if (note) openNoteAsTab(note);
       }}
     />
+
+    {/* Phase A.3: cross-boundary folder move confirmation */}
+    {pendingCrossBoundaryMove && (
+      <CrossBoundaryMoveDialog
+        direction={pendingCrossBoundaryMove.direction}
+        folderName={pendingCrossBoundaryMove.folderName}
+        affectedFolderCount={pendingCrossBoundaryMove.affectedFolderCount}
+        affectedNoteCount={pendingCrossBoundaryMove.affectedNoteCount}
+        onCancel={() => setPendingCrossBoundaryMove(null)}
+        onConfirm={() => {
+          const pending = pendingCrossBoundaryMove;
+          setPendingCrossBoundaryMove(null);
+          handleMoveFolder(pending.folderId, pending.parentId, {
+            confirmCrossBoundary: true,
+          });
+        }}
+      />
+    )}
     </div>
   );
 }

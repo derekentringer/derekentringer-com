@@ -16,7 +16,9 @@ This is the contract, not the tour. For the tour (files, tables, protocol shape,
 
 The `force` flag on `SyncChange` no longer has a LWW bypass role (there's nothing to bypass). It now only enables the FK-retry path: on a P2003, retry the insert/update with the orphaning foreign key nulled out.
 
-## 2. Managed-locally flag — `isLocalFile`
+## 2. Managed-locally flag — `isLocalFile` (Phase A strict cascade)
+
+**Invariant (Phase A):** for every folder, `folder.isLocalFile === rootAncestor(folder).isLocalFile`. Enforced at every write site on every client. No drift permitted.
 
 `Folder.isLocalFile` and `Note.isLocalFile` mean "backed by an on-disk file on some desktop managing this subtree." Flags are **global, not per-device** — there's no per-desktop attribution.
 
@@ -24,15 +26,32 @@ The `force` flag on `SyncChange` no longer has a LWW bypass role (there's nothin
 - `addManagedDirectory` — root folder flipped at registration.
 - `resolveFolderForPath` — every folder auto-created to mirror an on-disk subdirectory.
 - Keep-local import flow — any folder/note created as part of the import.
-- `backfillManagedFolders` — one-time startup sweep walking the tree from each `managed_directories.root_folder_id`, stamping the flag on the root + all descendants.
+- `backfillManagedFolders` — one-time startup sweep walking the tree from each `managed_directories.root_folder_id`, stamping the flag on the root + all descendants (Phase 1.3).
+- `normalizeFolderIsLocalFileCascade` — one-time Phase A.0 sweep that forces every folder's flag to match its root ancestor's. Stricter than the Phase 1.3 backfill (flips UP or DOWN, not just UP). Gated on `sync_meta.is_local_file_cascade_done`.
+
+**Server-side invariant enforcement (Phase A.1):**
+- `resolveRootIsLocalFile(tx, userId, parentId, proposedFlag)` in `noteStore.ts` — single recursive-CTE query.
+- Called from `createFolder` (REST), `applyFolderChange` create + update branches (sync-push). Coerces the proposed flag to match the root; logs `[sync-push] Client drift` if the incoming value was wrong.
+
+**Cross-boundary moves (Phase A.2 + A.3 + A.5):**
+- `PATCH /notes/folders/:id/move` rejects cross-boundary moves with HTTP 409 + structured body `{ code: "cross_boundary_move", direction, affectedFolderCount, affectedNoteCount }`. Client shows a confirmation dialog; re-submits with `?confirmCrossBoundary=1`. Server flips every descendant's flag in one `$transaction` alongside the parent change.
+- Move to root (`parentId = null`) preserves the flag — never a cross-boundary move.
+- Desktop detects cross-boundary LOCALLY via `detectCrossBoundaryLocalMove` and applies via `moveFolderWithCascade` (offline-friendly). Same `CrossBoundaryMoveDialog` UX as web.
+
+**Desktop disk reconciler (Phase A.4):**
+- `applyFolderChange` compares the incoming flag to the local one. On flip:
+  - `false → true`: materializes every direct note without a `local_path` to disk via `writeLocalFile` + `linkNoteToLocalFile`. Uses `findManagedDirForFolder` + `getFolderManagedDiskPath` + `ensureDirectory` to compute + create the target path.
+  - `true → false`: `stopWatching` + `moveToTrash` + `unlinkLocalFile` for every direct note with a `local_path`.
+- Scope is per-folder; the server cascades flag flips across the whole subtree in one tx so every descendant folder-change carries its own flip signal.
 
 **Clear points (desktop only):**
 - `unmanageManagedDirectory` — clears on the root + every descendant via recursive CTE, enqueues folder sync updates per affected folder, then removes the `managed_directories` row (Phase 3.4).
 
 **Read points:**
 - Server REST `DELETE /notes/folders/:id` — always hard-deletes now (regardless of the flag); writes a tombstone. Phase 1.4.
-- Web UI `FolderDeleteDialog` — shows a managed-locally warning banner when the flag is true. Phase 1.6.
+- Web + desktop `FolderDeleteDialog` — managed-locally variant (single recursive-only Delete button) when `folder.isLocalFile === true`. Phase 1.6 + follow-ups.
 - Server `/sync/push` folder + `isLocalFile=true` note delete branches — hard-delete + tombstone.
+- Folder tree UI icon: driven by `folder.isLocalFile === true` directly (Phase A.6; the heuristic `managedFolderIds` Set is gone).
 
 **Not observable:** who the managing desktop is. The flag is a boolean, not a device list. Multiple desktops managing the same folder is undefined behavior (explicitly out of scope).
 

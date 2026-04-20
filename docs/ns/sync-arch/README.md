@@ -30,7 +30,7 @@ Post-hardening contract (Phases 1–3 outcomes): [`invariants.md`](invariants.md
 | [4](05-phase-4-housekeeping.md) | ✅ done | Indexes, comment drift, invariants doc | — |
 | [5](06-phase-5-performance.md) | pending | Post-hardening perf (embedding dedup, upload concurrency, SSE jitter) | 1–4 complete |
 | [6](07-phase-6-web-sync-unification.md) | pending | Web adopts `/sync/push|pull` | 1–5 complete + product trigger |
-| [A](08-phase-a-cascade.md) | pending | Strict `isLocalFile` cascade + cross-boundary move consent (conceptual "Notebook" model without the rename) | 1–4 complete |
+| [A](08-phase-a-cascade.md) | ✅ done | Strict `isLocalFile` cascade + cross-boundary move consent (conceptual "Notebook" model without the rename) | 1–4 complete |
 | [B](09-phase-b-notebook.md) | pending | Rename root folders to Notebooks; top-level-only managed/unmanaged; UX refresh | A complete |
 
 ## Release sequence

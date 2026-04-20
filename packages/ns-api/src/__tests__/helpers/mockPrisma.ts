@@ -35,6 +35,7 @@ export interface MockPrisma {
   $disconnect: Mock;
   $transaction: Mock;
   $queryRawUnsafe: Mock;
+  $executeRaw: Mock;
 }
 
 function createMockModel(): MockModel {
@@ -72,6 +73,7 @@ export function createMockPrisma(): MockPrisma {
     $disconnect: vi.fn(),
     $transaction: vi.fn(),
     $queryRawUnsafe: vi.fn(),
+    $executeRaw: vi.fn().mockResolvedValue(0),
   };
 
   mock.$transaction.mockImplementation(

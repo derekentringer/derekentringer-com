@@ -1,5 +1,7 @@
 # Phase A — Strict `isLocalFile` cascade + cross-boundary move consent
 
+**Status**: ✅ Complete (commits `661b6ee`…`21ef38b` on `feature/phase-a-cascade`)
+
 ## Goal
 
 Make managed-vs-unmanaged a property of the root-level folder only (conceptually a "Notebook"), with every descendant's `isLocalFile` flag guaranteed to equal its root ancestor's. Cross-boundary moves — dragging a folder across the managed/unmanaged line — require explicit user consent and trigger the appropriate on-disk work. No `isLocalFile` drift is possible at any write point on any client after this phase lands.

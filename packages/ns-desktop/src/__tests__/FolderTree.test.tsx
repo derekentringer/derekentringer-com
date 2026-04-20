@@ -143,7 +143,9 @@ describe("FolderTree", () => {
     expect(onCreateFolder).toHaveBeenCalledWith("New Folder");
   });
 
-  it("shows 'Move to Root' in context menu for nested folders", async () => {
+  it("never shows 'Move to Root' — users edit folder placement via drag-and-drop", async () => {
+    // Both a nested folder and a root-level folder should hide the
+    // option now that the action is drag-only.
     const folders = [
       makeFolder({
         id: "f1",
@@ -153,40 +155,9 @@ describe("FolderTree", () => {
     ];
     render(<FolderTree {...defaultProps} folders={folders} />);
 
-    const button = screen.getByText("Nested");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.getByText("Move to Root")).toBeInTheDocument();
-  });
-
-  it("does not show 'Move to Root' for root-level folders", async () => {
-    const folders = [makeFolder({ id: "f1", name: "Root Level" })];
-    render(<FolderTree {...defaultProps} folders={folders} />);
-
-    const button = screen.getByText("Root Level");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
+    const nested = screen.getByText("Nested");
+    await userEvent.pointer({ keys: "[MouseRight]", target: nested });
     expect(screen.queryByText("Move to Root")).not.toBeInTheDocument();
-  });
-
-  it("calls onMoveFolder when 'Move to Root' is clicked", async () => {
-    const onMoveFolder = vi.fn();
-    const folders = [
-      makeFolder({
-        id: "f1",
-        name: "Parent",
-        children: [makeFolder({ id: "f2", name: "Nested", parentId: "f1" })],
-      }),
-    ];
-    render(
-      <FolderTree {...defaultProps} folders={folders} onMoveFolder={onMoveFolder} />,
-    );
-
-    const button = screen.getByText("Nested");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-    await userEvent.click(screen.getByText("Move to Root"));
-
-    expect(onMoveFolder).toHaveBeenCalledWith("f2", null);
   });
 
   it("shows Favorite in context menu when onToggleFavorite is provided", async () => {

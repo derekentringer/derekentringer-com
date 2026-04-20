@@ -129,6 +129,34 @@ describe("useResizable", () => {
     expect(result.current.size).toBe(500);
   });
 
+  it("re-clamps current size when maxSize shrinks below it", () => {
+    localStorage.setItem("test-resize", "400");
+    const { result, rerender } = renderHook(
+      ({ maxSize }: { maxSize: number }) => useResizable({ ...defaultOpts, maxSize }),
+      { initialProps: { maxSize: 500 } },
+    );
+    expect(result.current.size).toBe(400);
+
+    // Shrinking the bound below the current size must drop the
+    // panel down to the new ceiling (mimics a window resize that
+    // tightens the viewport-derived max).
+    rerender({ maxSize: 300 });
+    expect(result.current.size).toBe(300);
+    expect(localStorage.getItem("test-resize")).toBe("300");
+  });
+
+  it("re-clamps current size when minSize rises above it", () => {
+    localStorage.setItem("test-resize", "150");
+    const { result, rerender } = renderHook(
+      ({ minSize }: { minSize: number }) => useResizable({ ...defaultOpts, minSize }),
+      { initialProps: { minSize: 100 } },
+    );
+    expect(result.current.size).toBe(150);
+
+    rerender({ minSize: 200 });
+    expect(result.current.size).toBe(200);
+  });
+
   it("persists size to localStorage on pointer up", () => {
     const { result } = renderHook(() => useResizable(defaultOpts));
 
