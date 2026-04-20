@@ -45,7 +45,7 @@ export interface NoteListResponse {
 }
 
 export type NoteSortField = "title" | "createdAt" | "updatedAt" | "sortOrder";
-export type FolderSortField = "name" | "createdAt";
+export type FolderSortField = "name" | "createdAt" | "updatedAt";
 export type SortOrder = "asc" | "desc";
 
 export interface FolderInfo {
@@ -65,6 +65,14 @@ export interface FolderInfo {
    * may omit it.
    */
   isLocalFile?: boolean;
+  /**
+   * Most recent activity timestamp for this folder: max of the folder's
+   * own updatedAt and the updatedAt of any note whose folderId points
+   * to this folder (direct children only — callers that want subtree
+   * activity should aggregate recursively). Optional for wire
+   * backward-compat; undefined means "unknown, fall back to createdAt".
+   */
+  lastActivityAt?: string;
   children: FolderInfo[];
 }
 

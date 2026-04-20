@@ -632,10 +632,18 @@ interface FolderRow {
 function buildFolderTree(
   rows: FolderRow[],
   noteCounts: Map<string, number>,
+  noteActivity: Map<string, string> = new Map(),
 ): FolderInfo[] {
   const map = new Map<string, FolderInfo>();
 
   for (const row of rows) {
+    // lastActivityAt = max(folder.updated_at, max note.updated_at for
+    // notes directly in this folder). Subtree aggregation is done on
+    // the consumer side when sorting by Modified.
+    const folderStamp = row.updated_at ?? "";
+    const noteStamp = noteActivity.get(row.id) ?? "";
+    const lastActivity = folderStamp > noteStamp ? folderStamp : noteStamp;
+
     map.set(row.id, {
       id: row.id,
       name: row.name,
@@ -646,6 +654,7 @@ function buildFolderTree(
       count: noteCounts.get(row.id) ?? 0,
       totalCount: 0,
       createdAt: row.created_at,
+      lastActivityAt: lastActivity || undefined,
       children: [],
     });
   }
@@ -726,12 +735,17 @@ export async function fetchFolders(): Promise<FolderInfo[]> {
     "SELECT * FROM folders WHERE deleted_at IS NULL ORDER BY sort_order ASC, name ASC",
   );
 
-  const countRows = await db.select<{ folder_id: string; count: number }[]>(
-    "SELECT folder_id, COUNT(*) as count FROM notes WHERE is_deleted = 0 AND folder_id IS NOT NULL GROUP BY folder_id",
+  const countRows = await db.select<{ folder_id: string; count: number; max_updated_at: string | null }[]>(
+    "SELECT folder_id, COUNT(*) as count, MAX(updated_at) as max_updated_at FROM notes WHERE is_deleted = 0 AND folder_id IS NOT NULL GROUP BY folder_id",
   );
   const noteCounts = new Map(countRows.map((r) => [r.folder_id, r.count]));
+  const noteActivity = new Map(
+    countRows
+      .filter((r): r is typeof r & { max_updated_at: string } => !!r.max_updated_at)
+      .map((r) => [r.folder_id, r.max_updated_at]),
+  );
 
-  return buildFolderTree(folderRows, noteCounts);
+  return buildFolderTree(folderRows, noteCounts, noteActivity);
 }
 
 export interface CreateFolderOptions {

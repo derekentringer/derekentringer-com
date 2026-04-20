@@ -1,7 +1,27 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useDroppable, useDraggable } from "@dnd-kit/core";
-import type { FolderInfo } from "@derekentringer/shared/ns";
+import type { FolderInfo, FolderSortField, SortOrder } from "@derekentringer/shared/ns";
+import {
+  sortFolderTree,
+  filterFolderTree,
+  folderIdsToExpandForFilter,
+} from "@derekentringer/shared/ns";
 import { ConfirmDialog } from "./ConfirmDialog.tsx";
+
+const VALID_FOLDER_SORT_FIELDS: FolderSortField[] = ["name", "createdAt", "updatedAt"];
+const VALID_SORT_ORDERS: SortOrder[] = ["asc", "desc"];
+
+function validateFolderSortField(value: string | null, fallback: FolderSortField): FolderSortField {
+  return value && VALID_FOLDER_SORT_FIELDS.includes(value as FolderSortField)
+    ? (value as FolderSortField)
+    : fallback;
+}
+
+function validateSortOrder(value: string | null, fallback: SortOrder): SortOrder {
+  return value && VALID_SORT_ORDERS.includes(value as SortOrder)
+    ? (value as SortOrder)
+    : fallback;
+}
 
 interface FolderTreeProps {
   folders: FolderInfo[];
@@ -21,6 +41,10 @@ interface FolderTreeNodeProps {
   depth: number;
   activeFolder: string | null;
   expandedMap: Map<string, boolean>;
+  // Set of folder ids that must render expanded regardless of the
+  // user-managed expandedMap — populated while the filter input has
+  // text so every folder on the path to a match is visible.
+  forcedExpanded: Set<string> | null;
   onToggleExpand: (folderId: string) => void;
   onSelectFolder: (folderId: string | null) => void;
   renamingFolder: string | null;
@@ -75,6 +99,7 @@ function FolderTreeNode({
   depth,
   activeFolder,
   expandedMap,
+  forcedExpanded,
   onToggleExpand,
   onSelectFolder,
   renamingFolder,
@@ -89,7 +114,11 @@ function FolderTreeNode({
   setNewFolderName,
   onCreateSubmit,
 }: FolderTreeNodeProps) {
-  const isExpanded = expandedMap.get(folder.id) ?? false;
+  // Forced expansion wins over user state so filter matches are
+  // visible in-tree; otherwise fall back to the user-managed map.
+  const isExpanded =
+    (forcedExpanded?.has(folder.id) ?? false) ||
+    (expandedMap.get(folder.id) ?? false);
   const hasChildren = folder.children.length > 0;
   const paddingLeft = depth * 16 + 8;
 
@@ -183,6 +212,7 @@ function FolderTreeNode({
             depth={depth + 1}
             activeFolder={activeFolder}
             expandedMap={expandedMap}
+            forcedExpanded={forcedExpanded}
             onToggleExpand={onToggleExpand}
             onSelectFolder={onSelectFolder}
             renamingFolder={renamingFolder}
@@ -261,6 +291,40 @@ export function FolderTree({
       return false;
     }
   });
+
+  // Sort + filter state — mirrors NoteListPanel for UX parity.
+  const [sortBy, setSortBy] = useState<FolderSortField>(() => {
+    try {
+      return validateFolderSortField(localStorage.getItem("ns-folder-sort-by"), "name");
+    } catch { return "name"; }
+  });
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    try {
+      return validateSortOrder(localStorage.getItem("ns-folder-sort-order"), "asc");
+    } catch { return "asc"; }
+  });
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => { try { localStorage.setItem("ns-folder-sort-by", sortBy); } catch {} }, [sortBy]);
+  useEffect(() => { try { localStorage.setItem("ns-folder-sort-order", sortOrder); } catch {} }, [sortOrder]);
+
+  // Apply filter first (keeps ancestors of matches), then sort the
+  // pruned tree. Doing it in this order means sorted-by-Modified works
+  // on the subset the user is currently looking at.
+  const displayFolders = useMemo(() => {
+    const filtered = filter ? filterFolderTree(folders, filter) : folders;
+    return sortFolderTree(filtered, sortBy, sortOrder);
+  }, [folders, filter, sortBy, sortOrder]);
+
+  // Auto-expand every folder on the path to a filter match so the
+  // match is visible without the user having to click down into the
+  // tree. When the filter is cleared, expandedMap reverts to its
+  // user-managed state.
+  const forcedExpanded = useMemo(
+    () => (filter ? folderIdsToExpandForFilter(folders, filter) : null),
+    [folders, filter],
+  );
+
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Ensure new root folders default to expanded (only if they have children)
@@ -383,13 +447,55 @@ export function FolderTree({
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" /></svg>
           Folders
         </span>
-        <button
-          onClick={() => setIsCreating(true)}
-          className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          title="New folder"
-        >
-          +
-        </button>
+        <div className="flex items-center gap-1">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as FolderSortField)}
+            className="appearance-none h-5 pr-4 pl-1.5 py-0 rounded bg-subtle bg-[length:8px_8px] bg-[right_4px_center] bg-no-repeat border-none text-[10px] text-muted-foreground hover:text-foreground focus:outline-none cursor-pointer"
+            style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
+            aria-label="Sort folders by"
+          >
+            <option value="name">Name</option>
+            <option value="createdAt">Created</option>
+            <option value="updatedAt">Modified</option>
+          </select>
+          <button
+            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            title={sortOrder === "asc" ? "Ascending" : "Descending"}
+            aria-label={`Sort folders ${sortOrder === "asc" ? "ascending" : "descending"}`}
+          >
+            {sortOrder === "asc" ? "\u2191" : "\u2193"}
+          </button>
+          <button
+            onClick={() => setIsCreating(true)}
+            className="w-5 h-5 flex items-center justify-center rounded bg-subtle text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            title="New folder"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      {/* Filter input */}
+      <div className="relative mb-1">
+        <input
+          type="text"
+          placeholder="Filter folders..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="w-full py-1 px-2 text-xs bg-input border border-border rounded text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+        {filter && (
+          <button
+            type="button"
+            onClick={() => setFilter("")}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors text-[10px] cursor-pointer"
+            aria-label="Clear filter"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* All Notes */}
@@ -423,13 +529,14 @@ export function FolderTree({
           )}
 
           {/* Folder tree */}
-          {folders.map((folder) => (
+          {displayFolders.map((folder) => (
             <FolderTreeNode
               key={folder.id}
               folder={folder}
               depth={0}
               activeFolder={activeFolder}
               expandedMap={expandedMap}
+              forcedExpanded={forcedExpanded}
               onToggleExpand={handleToggleExpand}
               onSelectFolder={onSelectFolder}
               renamingFolder={renamingFolder}

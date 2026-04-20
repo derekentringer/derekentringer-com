@@ -738,13 +738,21 @@ export async function getFolderPath(folderId: string): Promise<string> {
 }
 
 function buildFolderTree(
-  flatFolders: (PrismaFolder & { count: number })[],
+  flatFolders: (PrismaFolder & { count: number; lastActivityAt?: Date | null })[],
 ): FolderInfo[] {
   const map = new Map<string, FolderInfo>();
   const roots: FolderInfo[] = [];
 
   // Create FolderInfo nodes
   for (const f of flatFolders) {
+    // lastActivityAt = max(folder.updatedAt, max(note.updatedAt) for
+    // notes directly in this folder). Subtree aggregation is done
+    // client-side so the server doesn't pay for a recursive join —
+    // the child values are already present on the returned tree.
+    const folderStamp = f.updatedAt?.getTime?.() ?? 0;
+    const noteStamp = f.lastActivityAt?.getTime?.() ?? 0;
+    const lastActivity = Math.max(folderStamp, noteStamp);
+
     map.set(f.id, {
       id: f.id,
       name: f.name,
@@ -759,6 +767,7 @@ function buildFolderTree(
       count: f.count,
       totalCount: f.count,
       createdAt: f.createdAt.toISOString(),
+      lastActivityAt: lastActivity > 0 ? new Date(lastActivity).toISOString() : undefined,
       children: [],
     });
   }
@@ -804,20 +813,27 @@ export async function listFolders(userId: string): Promise<FolderInfo[]> {
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
-  // Get note counts grouped by folderId
+  // Get note counts + most-recent-activity grouped by folderId in one
+  // pass. `_max.updatedAt` is the direct-children note activity; the
+  // client aggregates across descendants when sorting by Modified.
   const groups = await prisma.note.groupBy({
     by: ["folderId"],
     where: { userId, deletedAt: null, folderId: { not: null } },
     _count: { id: true },
+    _max: { updatedAt: true },
   });
 
   const countMap = new Map(
     groups.map((g) => [g.folderId as string, g._count.id]),
   );
+  const activityMap = new Map(
+    groups.map((g) => [g.folderId as string, g._max?.updatedAt ?? null]),
+  );
 
   const foldersWithCount = allFolders.map((f) => ({
     ...f,
     count: countMap.get(f.id) ?? 0,
+    lastActivityAt: activityMap.get(f.id) ?? null,
   }));
 
   return buildFolderTree(foldersWithCount);
