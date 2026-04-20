@@ -547,6 +547,14 @@ pub fn check_support() -> Result<bool, String> {
 }
 
 pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
+    // Concurrency contract: this fn is registered as a synchronous
+    // `#[tauri::command]`, which Tauri v2 dispatches on the main
+    // thread sequentially (only `async fn` commands are spawned on
+    // the tokio pool). Two JS-side `invoke("start_meeting_recording")`
+    // calls cannot run concurrently in Rust, so the check-then-insert
+    // pattern on `RECORDING` below is race-free without a CAS guard.
+    // If this command is ever converted to async, gate the entry with
+    // an AtomicBool CAS to preserve idempotence.
     {
         let guard = RECORDING.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {

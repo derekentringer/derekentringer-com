@@ -77,6 +77,16 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // Phase 2.6 re-entrance guard. `cleanup()` is called from multiple
+  // places (unmount effect, handleMeetingRecord catch, handleMicRecord
+  // catch, handleMicRecord onstop, handleMeetingStop outer catch).
+  // A second call after a first has already nulled refs would be a
+  // no-op, but we also want to avoid re-stopping already-stopped
+  // MediaRecorders (which throws) and re-unlistening a consumed
+  // unlisten fn. The flag is reset to `false` at the start of every
+  // recording (`handleMeetingRecord` / `handleMicRecord`) so the
+  // next session gets a fresh cleanup.
+  const cleanupDoneRef = useRef(false);
 
   // Chunked transcription state
   const sessionIdRef = useRef("");
@@ -122,6 +132,15 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   }, [showModes]);
 
   const cleanup = useCallback(() => {
+    // Re-entrance guard: cleanup is called from several places and
+    // re-entering after refs are already nulled would still re-fire
+    // `track.stop()` on an already-stopped stream and re-invoke an
+    // already-consumed tickUnlisten fn. The flag is reset when a
+    // new recording starts, so the next session gets a fresh
+    // cleanup.
+    if (cleanupDoneRef.current) return;
+    cleanupDoneRef.current = true;
+
     // Stop active MediaRecorders before nulling refs so onstop can
     // flush any buffered chunks cleanly. Guard with state checks — a
     // double-stop on an already-inactive recorder throws
@@ -277,6 +296,9 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
 
   async function handleMeetingRecord() {
     try {
+      // New session — re-arm the cleanup guard so the next stop /
+      // unmount runs through cleanup() fully.
+      cleanupDoneRef.current = false;
       await invoke("start_meeting_recording");
       isMeetingRef.current = true;
       setState("recording");
@@ -367,6 +389,15 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         setState("idle");
         setElapsed(0);
         setLiveTranscript("");
+        // Reset per-session chunk state so the next recording starts
+        // with a clean map, fresh session ID, and chunk index 0.
+        // `cleanup()` is only called on the error path above — the
+        // success path leaves MediaRecorder refs untouched (Rust
+        // owns the capture in meeting mode), so we reset the
+        // session-scoped refs here explicitly.
+        transcriptChunksRef.current = new Map();
+        sessionIdRef.current = "";
+        chunkIndexRef.current = 0;
       }
     } catch (err) {
       cleanup();
@@ -378,6 +409,9 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
 
   async function handleMicRecord() {
     try {
+      // New session — re-arm the cleanup guard so the next stop /
+      // unmount runs through cleanup() fully.
+      cleanupDoneRef.current = false;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 

@@ -173,6 +173,10 @@ pub fn check_support() -> Result<bool, String> {
 }
 
 pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
+    // See audio_capture.rs::start_recording for the concurrency
+    // contract: synchronous `#[tauri::command]` handlers run on the
+    // main thread sequentially, so the check-then-insert below is
+    // race-free without a CAS guard.
     {
         let guard = RECORDING.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {

@@ -217,6 +217,140 @@ describe("AudioRecorder — mic-only happy path", () => {
     expect(onError).toHaveBeenCalledWith("Microphone permission denied");
   });
 
+  // Phase 2.6 — cleanup() re-entrance guard. Double-calling
+  // cleanup (e.g., stop handler fires cleanup, then unmount fires
+  // it again) must be a no-op on the second call, so track.stop()
+  // and tickUnlisten aren't re-invoked on already-released
+  // resources. We exercise this via a full record → stop → unmount
+  // cycle and assert track.stop is called exactly once per track.
+  it("cleanup is idempotent across stop + unmount", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+
+    mockTranscribeAudio.mockResolvedValue({ note: { id: "n", title: "", content: "" } });
+
+    const { rerender, unmount } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={(s) => recordingHandles.push(s)}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={(s) => recordingHandles.push(s)}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      const rec = recordingHandles.find((s) => s?.state === "recording");
+      expect(rec).toBeTruthy();
+    });
+    const recording = recordingHandles.find((s) => s?.state === "recording")!;
+
+    // Stop — first cleanup call happens inside the mic onstop.
+    await act(async () => {
+      recording.onStop();
+    });
+    await waitFor(() => {
+      expect(mockTranscribeAudio).toHaveBeenCalled();
+    });
+
+    // Unmount — fires cleanup AGAIN. The guard must make it a no-op.
+    await act(async () => {
+      unmount();
+    });
+
+    // track.stop was called exactly once by the first cleanup; the
+    // second cleanup must not call it again.
+    const micTrack = mediaDevices.stream.getTracks()[0];
+    expect(micTrack.stop).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  // Phase 2.5 — chunkRecorderShouldRestartRef must be set false
+  // synchronously before the chunk recorder's .stop() fires, so the
+  // onstop handler never spawns another chunk recorder after the
+  // final stop. This pins the restart-on-stop race (handleStop at
+  // line 509-514) closed.
+  it("stop does not trigger a chunk recorder restart", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+
+    mockTranscribeAudio.mockResolvedValue({ note: { id: "n", title: "", content: "" } });
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={(s) => recordingHandles.push(s)}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={(s) => recordingHandles.push(s)}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    // Main mic recorder + the chunk recorder spawned by
+    // startMicChunkRecorder. Wait for both.
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThanOrEqual(2);
+    });
+    const recordersBeforeStop = mediaRecorder.recorders.length;
+
+    const recording = recordingHandles.find((s) => s?.state === "recording");
+    expect(recording).toBeTruthy();
+
+    // Invoke stop — chunk recorder's onstop will fire and check
+    // `chunkRecorderShouldRestartRef.current`. handleStop sets it
+    // false *before* calling .stop(), so the handler must see false
+    // and NOT call startMicChunkRecorder again.
+    await act(async () => {
+      recording!.onStop();
+    });
+
+    // Allow any queued microtasks (onstop handlers) to flush.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mediaRecorder.recorders).toHaveLength(recordersBeforeStop);
+  });
+
   // Phase 1.4 — unmount during an active recording must stop the
   // MediaRecorder (not just null the ref) and release the mic stream
   // tracks. Without the cleanup fix, the MediaRecorder stays in the
@@ -275,6 +409,106 @@ describe("AudioRecorder — mic-only happy path", () => {
     const micTrack = mediaDevices.stream.getTracks()[0];
     expect(micTrack.stop).toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+// Phase 2.1 — double-call guard on handleMeetingStop. The re-entry
+// guard at the top of the function (`if (!isMeetingRef.current)
+// return; isMeetingRef.current = false;`) runs synchronously before
+// any await, so a second Stop click (rapid) while the first
+// `stop_meeting_recording` invoke is still in flight must be a
+// no-op: Rust must only see a single `stop_meeting_recording` call.
+describe("AudioRecorder — meeting-mode stop re-entry guard", () => {
+  let mediaRecorder: MediaRecorderMock;
+  let mediaDevices: MediaDevicesMock;
+
+  beforeEach(() => {
+    invokeBus.reset();
+    eventBus.reset();
+    mediaRecorder = installMediaRecorderMock();
+    mediaDevices = installMediaDevicesMock();
+    mockTranscribeAudio.mockReset();
+    mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
+    mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
+  });
+
+  afterEach(() => {
+    mediaRecorder.uninstall();
+    mediaDevices.uninstall();
+  });
+
+  it("rapid double onStop invokes stop_meeting_recording exactly once", async () => {
+    // Make stop_meeting_recording deliberately slow so a second Stop
+    // click lands during its await window. We use a manually-resolved
+    // promise to control the timing precisely.
+    let resolveStop: ((bytes: number[]) => void) | null = null;
+    const slowStop = new Promise<number[]>((resolve) => {
+      resolveStop = resolve;
+    });
+
+    invokeBus
+      .resolve("check_meeting_recording_support", true)
+      .resolve("start_meeting_recording", undefined)
+      .resolve("get_meeting_audio_chunk", [])
+      .on("stop_meeting_recording", () => slowStop);
+
+    mockTranscribeAudio.mockResolvedValue({ note: { id: "n", title: "", content: "" } });
+
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+    const onRecordingStateChange = (s: { state: string; onStop: () => void } | null) => {
+      recordingHandles.push(s);
+    };
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="meeting"
+        recordingSource="meeting"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={vi.fn()}
+        onError={vi.fn()}
+        onRecordingStateChange={onRecordingStateChange}
+        triggerMode="meeting"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="meeting"
+          recordingSource="meeting"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={vi.fn()}
+          onError={vi.fn()}
+          onRecordingStateChange={onRecordingStateChange}
+          triggerMode="meeting"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    // Wait until the component advertises the recording state so we
+    // have an onStop handle to call.
+    await waitFor(() => {
+      const rec = recordingHandles.find((s) => s?.state === "recording");
+      expect(rec).toBeTruthy();
+    });
+    const recording = recordingHandles.find((s) => s?.state === "recording")!;
+
+    // Fire two onStop calls back-to-back, before the first one's
+    // `stop_meeting_recording` invoke resolves.
+    await act(async () => {
+      recording.onStop();
+      recording.onStop();
+    });
+
+    expect(invokeBus.callsFor("stop_meeting_recording")).toHaveLength(1);
+
+    // Let the stop promise resolve so the pending await unwinds cleanly.
+    resolveStop!([]);
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
 });
 

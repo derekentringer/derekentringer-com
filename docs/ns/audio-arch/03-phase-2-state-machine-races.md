@@ -1,6 +1,6 @@
 # Phase 2 — State Machine Races: Start/Stop Guards, Ref Staleness
 
-**Status**: pending
+**Status**: ✅ shipped (2.1–2.6)
 
 ## Goal
 
@@ -18,9 +18,11 @@ Eliminate race conditions where rapid user clicks (start while stopping, stop du
 
 ## Items
 
-### 2.1 — Double-call guard for `stop_meeting_recording`
+### 2.1 — Double-call guard for `stop_meeting_recording` ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:286-293`
+**Status**: shipped — verification + test. The existing guard at `AudioRecorder.tsx:314-315` (`if (!isMeetingRef.current) return; isMeetingRef.current = false;`) runs synchronously before any `await`, so a second `onStop()` call during the first's pending `invoke("stop_meeting_recording")` sees `false` and short-circuits. New integration test `"rapid double onStop invokes stop_meeting_recording exactly once"` uses a manually-resolved `stop_meeting_recording` promise to hold the first call in-flight, fires two `onStop()`s back-to-back, and asserts `invokeBus.callsFor("stop_meeting_recording").length === 1`.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:314-315`
 
 **Problem**: `handleMeetingStop()` checks `isMeetingRef.current`, then sets it to false. But between check and set, another invocation can see true.
 
@@ -53,9 +55,11 @@ Alternatively: use a state machine (enum: "idle" | "recording" | "stopping" | "p
 
 **Estimated effort**: 1 hour
 
-### 2.2 — Rust-side `start_recording` idempotence
+### 2.2 — Rust-side `start_recording` idempotence ✅
 
-**Location**: `packages/ns-desktop/src-tauri/src/audio_capture.rs:425-430` (macOS) + `audio_capture_win.rs:89-95` (Windows)
+**Status**: shipped — documentation-only. Confirmed via Tauri v2 docs + source: only `async fn` commands are spawned on the tokio task pool; synchronous `#[tauri::command]` handlers (which `start_meeting_recording` is) run on the main thread sequentially. Two rapid JS-side invokes cannot execute concurrently in Rust, so the check-then-insert pattern on `RECORDING: Mutex<Option<RecordingState>>` is race-free without a CAS guard. Added documentation comments to both platforms' `start_recording` explaining the concurrency contract and noting the fix (`AtomicBool` CAS) needed if this ever becomes async.
+
+**Location**: `packages/ns-desktop/src-tauri/src/audio_capture.rs:549-567` (macOS) + `audio_capture_win.rs:182-196` (Windows)
 
 **Problem**: Both check `if guard.is_some()` and return error. But if two Tauri commands invoke `start_recording` concurrently, the second can slip past the check.
 
@@ -70,9 +74,11 @@ Alternatively: use a state machine (enum: "idle" | "recording" | "stopping" | "p
 
 **Estimated effort**: 0.5 hours
 
-### 2.3 — Clean up session state on recording stop
+### 2.3 — Clean up session state on recording stop ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:256-280` (meeting stop) + `379-415` (mic stop)
+**Status**: shipped — meeting-mode success path's `finally` block now explicitly resets `transcriptChunksRef`, `sessionIdRef`, and `chunkIndexRef` before the state flips to `"idle"`. Mic-mode already reset these via its onstop `cleanup()` call. The start-of-next-recording paths (`startMeetingChunkCapture`, `handleMicRecord`) already reset these too, but adding the explicit reset on stop closes the window where the refs held stale data between stop and the next start.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:367-380` (meeting stop finally)
 
 **Problem**: On stop, refs are nulled but `sessionIdRef`, `chunkIndexRef`, `transcriptChunksRef` are not cleared. If user starts recording again immediately, old chunks could theoretically be assembled with new ones (low probability due to unique session ID, but possible if session ID collision).
 
@@ -89,9 +95,11 @@ Alternatively: use a state machine (enum: "idle" | "recording" | "stopping" | "p
 
 **Estimated effort**: 0.5 hours
 
-### 2.4 — Chunk recorder stop idempotence
+### 2.4 — Chunk recorder stop idempotence ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:435-439` (chunk timer callback)
+**Status**: shipped — verification only. Grep confirmed all three `chunkRecorderRef.stop()` call sites (`cleanup` at line 142, chunk timer at line 468, `handleStop` at line 520) are guarded by either `state !== "inactive"` (cleanup, with try/catch) or `state === "recording"` (timer + handleStop). Optional chaining handles null refs.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:468-469, 520-521`
 
 **Problem**: Every 20 seconds, `chunkRecorderRef.current.stop()` is called. If `chunkRecorderRef` is null (recording ended), `chunkRecorderRef.current.stop()` throws.
 
@@ -111,9 +119,11 @@ Already present at line 436, so this is **verification only** — ensure all `.s
 
 **Estimated effort**: 0.5 hours
 
-### 2.5 — Prevent chunk restart after final stop
+### 2.5 — Prevent chunk restart after final stop ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:487-490` (handleStop function)
+**Status**: shipped — verification + test. `handleStop` sets `chunkRecorderShouldRestartRef.current = false` synchronously *before* calling `chunkRecorderRef.current.stop()` (lines 518-520), so the chunk recorder's `onstop` handler reads `false` when it decides whether to restart. New integration test `"stop does not trigger a chunk recorder restart"` records the MediaRecorder instance count before stop, fires onStop, flushes microtasks, and asserts no new chunk recorder was spawned.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:518-522` (handleStop function)
 
 **Problem**: `chunkRecorderShouldRestartRef.current` is set to `false` in `handleStop`, but the chunk recorder's `onstop` handler might be in flight and reads the old value (true), causing it to restart.
 
@@ -138,9 +148,11 @@ if (chunkRecorderShouldRestartRef.current && streamRef.current) {
 
 **Estimated effort**: 0.5 hours
 
-### 2.6 — Re-entrance guard for `cleanup()` function
+### 2.6 — Re-entrance guard for `cleanup()` function ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:124-150`
+**Status**: shipped — added `cleanupDoneRef` (useRef) initialized to false; `cleanup()` short-circuits when it reads `true` on entry, and sets `true` before any teardown. The flag is reset to `false` at the start of each new recording (`handleMeetingRecord` + `handleMicRecord`) so the next session's cleanup runs through fully. New integration test `"cleanup is idempotent across stop + unmount"` records → stops → unmounts and asserts `track.stop` is called exactly once across the two cleanup invocations.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:82-92, 134-141`
 
 **Problem**: `cleanup()` is called from multiple places (unmount, error path, stop handler). If called twice, it might clear refs that are being used by an in-flight operation.
 
