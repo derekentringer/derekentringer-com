@@ -122,6 +122,28 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   }, [showModes]);
 
   const cleanup = useCallback(() => {
+    // Stop active MediaRecorders before nulling refs so onstop can
+    // flush any buffered chunks cleanly. Guard with state checks — a
+    // double-stop on an already-inactive recorder throws
+    // InvalidStateError, and unmount can reach here after stop() has
+    // already been called.
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // Already stopping / stopped — onstop will still fire, safe to ignore.
+      }
+    }
+    if (chunkRecorderRef.current && chunkRecorderRef.current.state !== "inactive") {
+      // Prevent the restart handler from spawning another recorder
+      // after this stop fires during unmount.
+      chunkRecorderShouldRestartRef.current = false;
+      try {
+        chunkRecorderRef.current.stop();
+      } catch {
+        // Same as above — safe to ignore.
+      }
+    }
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;

@@ -1,6 +1,6 @@
 # Phase 1 — Resource Lifecycle: Temp Files, Streams, Threads
 
-**Status**: pending
+**Status**: ✅ shipped (1.0–1.6)
 
 ## Goal
 
@@ -19,9 +19,15 @@ Plug resource leaks: ensure every temp file, MediaRecorder, stream, and writer t
 
 ## Items
 
-### 1.0 — Startup cleanup sweep (v2.38.0 verification)
+### 1.0 — Startup cleanup sweep (v2.38.0 verification) ✅
 
-**Location**: `packages/ns-desktop/src-tauri/src/lib.rs` (app initialization) + `audio_capture_shared.rs:343-374`
+**Status**: shipped — `cleanup_stale_temp_files()` is split into a thin wrapper around `cleanup_stale_temp_files_in(&Path)` so tests can sandbox the sweep. Added two Rust tests in `audio_capture_shared.rs`:
+- `cleanup_stale_temp_files_in_removes_notesync_prefixed_wav_and_pcm` — writes 3 target files (`notesync_meeting_*.wav`, `notesync_sys_*.pcm`, `notesync_mic_*.pcm`) + 4 survivors (wrong prefix, wrong extension, notesync-prefixed non-audio) into a scoped `TempAudioDir`, asserts only the targets are removed and the returned `(count, bytes)` is accurate.
+- `cleanup_stale_temp_files_in_returns_zero_when_dir_missing` — verifies graceful no-op against a nonexistent path.
+
+Startup wiring at `lib.rs:412-414` (background thread) is already live from v2.38.0 and unchanged.
+
+**Location**: `packages/ns-desktop/src-tauri/src/lib.rs` (app initialization) + `audio_capture_shared.rs:343-385`
 
 **Problem**: Already shipped in v2.38.0 (`cleanup_stale_temp_files()`), but verify it's called and effective.
 
@@ -36,9 +42,11 @@ Plug resource leaks: ensure every temp file, MediaRecorder, stream, and writer t
 
 **Estimated effort**: 0.5 hours
 
-### 1.1 — Atomic read-and-remove for final WAV
+### 1.1 — Atomic read-and-remove for final WAV ✅
 
-**Location**: `packages/ns-desktop/src-tauri/src/audio_capture_shared.rs:329-336`
+**Status**: shipped — `read_and_remove_file` now logs unlink failure at ERROR (was WARN). Added two tests: happy-path (`read_and_remove_file_returns_bytes_and_deletes`) and unix-only blocked-unlink (`read_and_remove_file_returns_bytes_even_when_unlink_fails`) that locks the parent dir read-only to force the unlink to fail, then asserts bytes are still returned. The ERROR log also calls out that startup sweep will clean up next launch.
+
+**Location**: `packages/ns-desktop/src-tauri/src/audio_capture_shared.rs:329-338`
 
 **Problem**: `read_and_remove_file()` reads file successfully but unlink fails (permission denied on Windows, etc.) → logs warning but returns success → WAV stays in temp dir.
 
@@ -54,7 +62,9 @@ Plug resource leaks: ensure every temp file, MediaRecorder, stream, and writer t
 
 **Estimated effort**: 1 hour
 
-### 1.2 — Writer thread panic handling
+### 1.2 — Writer thread panic handling ✅
+
+**Status**: shipped — new `join_writer_and_cleanup(handle, path, label)` helper in `audio_capture_shared.rs` unlinks the PCM temp file on panic or writer error before returning the error. Both macOS `stop_recording` (`audio_capture.rs:664-687`) and Windows `stop_recording` (`audio_capture_win.rs:286-305`) now join **both** writers first (collecting each result into an `Option<Result<…>>`) then propagate the first error, so a panic in one writer never leaves the other writer's PCM orphaned. Three new tests in `audio_capture_shared.rs` cover panic, writer-error, and happy-path (file preserved for the mix step).
 
 **Location**: `packages/ns-desktop/src-tauri/src/audio_capture_shared.rs:163-179` + Rust call sites
 
@@ -72,9 +82,13 @@ Plug resource leaks: ensure every temp file, MediaRecorder, stream, and writer t
 
 **Estimated effort**: 1.5 hours
 
-### 1.3 — PCM temp file cleanup on early error paths
+### 1.3 — PCM temp file cleanup on early error paths ✅
 
-**Location**: `packages/ns-desktop/src-tauri/src/audio_capture.rs:425-589` (macOS) + `audio_capture_win.rs:89-213` (Windows)
+**Status**: shipped — introduced `StartupGuard` (Drop-based rollback) in both `audio_capture.rs` (macOS) and `audio_capture_win.rs` (Windows). Every fallible `?` between the first `spawn_writer_thread` and the final `commit()` now runs the guard's Drop impl, which calls the new shared helper `rollback_writer_and_unlink(sender, writer, path)` — drops the sender to close the channel, joins the writer thread, and *unconditionally* unlinks the PCM (unlike `join_writer_and_cleanup`, which preserves PCMs on success for the mix step). The macOS guard also rolls back the CoreAudio process tap + aggregate device in reverse allocation order. On happy path, `rollback.commit()` hands back the tracked sender + writer handles and marks the guard defused so Drop becomes a no-op.
+
+New tests: `rollback_writer_and_unlink_*` (2) in `audio_capture_shared.rs` verifying the helper drains real writer threads + unlinks even after a clean exit, and `startup_guard_tests::*` (2) in `audio_capture.rs` verifying drop-without-commit tears down both writer PCMs and is a no-op when no resources were set.
+
+**Location**: `packages/ns-desktop/src-tauri/src/audio_capture.rs:37-149, 547-622` (macOS) + `audio_capture_win.rs:82-170, 193-309` (Windows)
 
 **Problem**: If any step in `start_recording` fails after `spawn_writer_thread` is called (e.g., `create_process_tap` fails 30 times, or `get_device_channels` fails), the PCM files are created but not cleaned up (sender thread still holding open the file).
 
@@ -93,9 +107,11 @@ Plug resource leaks: ensure every temp file, MediaRecorder, stream, and writer t
 
 **Estimated effort**: 2 hours
 
-### 1.4 — MediaRecorder cleanup on TS unmount
+### 1.4 — MediaRecorder cleanup on TS unmount ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:124-150` (cleanup function)
+**Status**: shipped — `cleanup()` now checks `.state !== "inactive"` on both `mediaRecorderRef.current` and `chunkRecorderRef.current` and calls `.stop()` inside a try/catch before nulling refs and stopping stream tracks. For the chunk recorder, `chunkRecorderShouldRestartRef.current = false` is set first so the onstop restart handler doesn't spawn another recorder after unmount. New integration test `"unmount during recording stops MediaRecorder and releases stream"` in `AudioRecorder.integration.test.tsx` mounts, triggers recording, unmounts mid-stream, and asserts the mock MediaRecorder is `"inactive"` and `track.stop` was called.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:124-170` (cleanup function)
 
 **Problem**: `cleanup()` nulls refs but doesn't explicitly stop `mediaRecorderRef.current` or `chunkRecorderRef.current` if they're still recording.
 
@@ -111,9 +127,11 @@ Plug resource leaks: ensure every temp file, MediaRecorder, stream, and writer t
 
 **Estimated effort**: 1 hour
 
-### 1.5 — Timer and interval cleanup on early error
+### 1.5 — Timer and interval cleanup on early error ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:124-150` (cleanup function) + error paths in `handleMeetingRecord`, `handleMicRecord`
+**Status**: shipped — verification + test coverage. A code audit of `handleMeetingRecord`, `handleMeetingStop`, and `handleMicRecord` confirmed every `catch` block calls `cleanup()` *before* `onError(...)`; cleanup nulls `timerRef` / `chunkTimerRef`, unlistens the tick event, stops stream tracks, and (Phase 1.4) stops active MediaRecorders. Two new integration tests pin this down: `"getUserMedia rejection cleans up and reports onError"` (mic path, `DOMException` with `NotAllowedError`) and `"start_meeting_recording rejection runs cleanup, no listener leaks"` (meeting path asserting zero `meeting-recording-tick` listeners after the rejected start). No code change was needed in `AudioRecorder.tsx` for 1.5 — the existing `catch → cleanup() → onError()` order already satisfied the invariant; the tests lock it in against regressions.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:124-170` (cleanup function) + error paths in `handleMeetingRecord`, `handleMicRecord`
 
 **Problem**: 
 - If `start_meeting_recording()` throws after `startMeetingChunkCapture()`, `chunkTimerRef` is set but might not be cleared (depends on catch order).
@@ -132,7 +150,9 @@ Plug resource leaks: ensure every temp file, MediaRecorder, stream, and writer t
 
 **Estimated effort**: 1 hour
 
-### 1.6 — Tauri event listener cleanup on unmount
+### 1.6 — Tauri event listener cleanup on unmount ✅
+
+**Status**: shipped — code audit confirmed AudioRecorder only registers a single `listen()` call (`meeting-recording-tick` at line 289) and the unlisten is invoked in both `cleanup()` and `handleMeetingStop`. New integration test `"unmount during meeting recording calls unlisten for tick events"` uses the Phase 0.3 `MockTauriEventBus` to verify the listener count goes `0 → 1 → 0` across mount → start → unmount, plus `eventBus.totalUnlistens >= 1`.
 
 **Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:93` (tickUnlistenRef), `138-140` (cleanup)
 

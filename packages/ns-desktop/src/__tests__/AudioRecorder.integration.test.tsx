@@ -161,4 +161,250 @@ describe("AudioRecorder — mic-only happy path", () => {
 
     expect(onError).not.toHaveBeenCalled();
   });
+
+  // Phase 1.5 — getUserMedia rejection must run cleanup before
+  // surfacing the error, so no mic track, timer, or MediaRecorder
+  // leaks from a failed mic-start.
+  it("getUserMedia rejection cleans up and reports onError", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+    const onRecordingStateChange = vi.fn();
+
+    // Replace the getUserMedia shim with one that rejects.
+    // The component branches on DOMException + "NotAllowedError" for
+    // the specific mic-denied message, so reject with a real
+    // DOMException (jsdom ships one) rather than a generic Error.
+    mediaDevices.getUserMediaSpy.mockRejectedValueOnce(
+      new DOMException("denied", "NotAllowedError"),
+    );
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={onRecordingStateChange}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={onRecordingStateChange}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalled();
+    });
+
+    // No MediaRecorder ever got constructed because getUserMedia
+    // rejected before it.
+    expect(mediaRecorder.recorders).toHaveLength(0);
+    // Permission-denied branch surfaces the specific message.
+    expect(onError).toHaveBeenCalledWith("Microphone permission denied");
+  });
+
+  // Phase 1.4 — unmount during an active recording must stop the
+  // MediaRecorder (not just null the ref) and release the mic stream
+  // tracks. Without the cleanup fix, the MediaRecorder stays in the
+  // "recording" state indefinitely and the mic track is never
+  // released, which on real hardware keeps the mic TCC indicator lit
+  // and eventually triggers WebKit/CoreAudio warnings.
+  it("unmount during recording stops MediaRecorder and releases stream", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+    const onRecordingStateChange = vi.fn();
+
+    mockTranscribeAudio.mockResolvedValue({ note: { id: "n", title: "", content: "" } });
+
+    const { rerender, unmount } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={onRecordingStateChange}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={onRecordingStateChange}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+
+    const mainRecorder = mediaRecorder.recorders[0];
+    expect(mainRecorder.state).toBe("recording");
+
+    // Unmount mid-recording. cleanup() fires via the useEffect
+    // teardown and should stop the recorder + mic tracks.
+    await act(async () => {
+      unmount();
+    });
+
+    expect(mainRecorder.state).toBe("inactive");
+    const micTrack = mediaDevices.stream.getTracks()[0];
+    expect(micTrack.stop).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+// Phase 1.5 — meeting-mode start failure must run cleanup before
+// surfacing the error, so no chunk timer / tick listener leaks from
+// a failed `start_meeting_recording`.
+describe("AudioRecorder — meeting-mode failure cleanup", () => {
+  let mediaRecorder: MediaRecorderMock;
+  let mediaDevices: MediaDevicesMock;
+
+  beforeEach(() => {
+    invokeBus.reset();
+    eventBus.reset();
+    // Meeting support on; the trigger routes through handleMeetingRecord.
+    invokeBus.resolve("check_meeting_recording_support", true);
+    // `invoke("start_meeting_recording")` rejects — the whole setup should roll back.
+    invokeBus.reject("start_meeting_recording", new Error("tap unavailable"));
+
+    mediaRecorder = installMediaRecorderMock();
+    mediaDevices = installMediaDevicesMock();
+
+    mockTranscribeAudio.mockReset();
+    mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
+    mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
+  });
+
+  afterEach(() => {
+    mediaRecorder.uninstall();
+    mediaDevices.uninstall();
+  });
+
+  // Phase 1.6 — happy-path meeting start registers the tick
+  // listener, and unmount during recording must run the unlisten so
+  // the MockTauriEventBus ends with zero active listeners.
+  it("unmount during meeting recording calls unlisten for tick events", async () => {
+    // Override the rejection from beforeEach to let the start
+    // succeed, then register the other commands the meeting path
+    // touches (chunk fetch never fires because we unmount first).
+    invokeBus.reset();
+    invokeBus
+      .resolve("check_meeting_recording_support", true)
+      .resolve("start_meeting_recording", undefined)
+      .resolve("get_meeting_audio_chunk", []);
+
+    const onError = vi.fn();
+
+    const { rerender, unmount } = render(
+      <AudioRecorder
+        defaultMode="meeting"
+        recordingSource="meeting"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={vi.fn()}
+        onError={onError}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="meeting"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="meeting"
+          recordingSource="meeting"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={vi.fn()}
+          onError={onError}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="meeting"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    // Wait for the tick listener to be registered by the component.
+    await waitFor(() => {
+      expect(eventBus.listenerCount("meeting-recording-tick")).toBe(1);
+    });
+
+    // Unmount mid-recording; cleanup should invoke the unlisten fn.
+    await act(async () => {
+      unmount();
+    });
+
+    expect(eventBus.listenerCount("meeting-recording-tick")).toBe(0);
+    expect(eventBus.totalActiveListeners()).toBe(0);
+    expect(eventBus.totalUnlistens).toBeGreaterThanOrEqual(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("start_meeting_recording rejection runs cleanup, no listener leaks", async () => {
+    const onError = vi.fn();
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="meeting"
+        recordingSource="meeting"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={vi.fn()}
+        onError={onError}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="meeting"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="meeting"
+          recordingSource="meeting"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={vi.fn()}
+          onError={onError}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="meeting"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalled();
+    });
+
+    // The listen() for meeting-recording-tick happens AFTER
+    // start_meeting_recording succeeds, so a failed start should
+    // leave zero active tick listeners. Also verifies cleanup closed
+    // any listeners that were opened (none here, but the invariant
+    // is testable).
+    expect(eventBus.listenerCount("meeting-recording-tick")).toBe(0);
+  });
 });

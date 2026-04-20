@@ -158,6 +158,55 @@ pub fn read_pcm_since(path: &Path, byte_offset: u64) -> Result<Vec<f32>, String>
     Ok(samples)
 }
 
+/// Join a writer thread spawned by `spawn_writer_thread`. On panic or
+/// writer error, unlinks the PCM temp file before returning the error
+/// — otherwise a crashed writer leaves its half-written PCM in
+/// `$TMPDIR` forever (or until the startup sweep in
+/// `cleanup_stale_temp_files`). On success the file is preserved so
+/// the subsequent `mix_to_wav` step can consume it.
+pub fn join_writer_and_cleanup(
+    handle: thread::JoinHandle<Result<(), String>>,
+    path: &Path,
+    label: &str,
+) -> Result<(), String> {
+    match handle.join() {
+        Err(_) => {
+            if let Err(e) = std::fs::remove_file(path) {
+                log::warn!("Failed to unlink {label} PCM after panic: {e}");
+            }
+            Err(format!("{label} writer thread panicked"))
+        }
+        Ok(Err(e)) => {
+            if let Err(unlink_err) = std::fs::remove_file(path) {
+                log::warn!("Failed to unlink {label} PCM after writer error: {unlink_err}");
+            }
+            Err(format!("{label} writer error: {e}"))
+        }
+        Ok(Ok(())) => Ok(()),
+    }
+}
+
+/// Rollback-style cleanup for a writer thread that was spawned as
+/// part of a partially-completed `start_recording` setup. Drops the
+/// sender to close the channel, joins the writer thread, and
+/// *unconditionally* unlinks the PCM temp file — even on a clean
+/// writer exit — because during rollback the partial capture is
+/// abandoned and the file has no further consumer.
+///
+/// Contrast `join_writer_and_cleanup`, which preserves the PCM on
+/// success so the subsequent `mix_to_wav` step can consume it.
+pub fn rollback_writer_and_unlink(
+    sender: Option<mpsc::SyncSender<Vec<f32>>>,
+    writer: Option<thread::JoinHandle<Result<(), String>>>,
+    path: &Path,
+) {
+    drop(sender);
+    if let Some(h) = writer {
+        let _ = h.join();
+    }
+    let _ = std::fs::remove_file(path);
+}
+
 /// Spawn a thread that receives f32 chunks via channel and writes raw PCM (LE)
 /// to the given temp file. The capture callbacks feed this via `try_send`.
 pub fn spawn_writer_thread(
@@ -329,9 +378,11 @@ pub fn mix_to_wav(
 pub fn read_and_remove_file(path: &str) -> Result<Vec<u8>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("Read final WAV: {e}"))?;
     if let Err(e) = std::fs::remove_file(path) {
-        // Not fatal — we already have the bytes. Log so the leak
-        // doesn't silently return.
-        log::warn!("Failed to remove final WAV at {path}: {e}");
+        // Not fatal — the caller already has the bytes and the
+        // startup sweep (`cleanup_stale_temp_files`) will clear the
+        // leftover on next launch. Logged at ERROR so the leak is
+        // visible in production logs rather than silently swallowed.
+        log::error!("Failed to remove final WAV at {path}: {e}");
     }
     Ok(bytes)
 }
@@ -341,8 +392,14 @@ pub fn read_and_remove_file(path: &str) -> Result<Vec<u8>, String> {
 /// recordings that crashed mid-stop). Called from app startup so
 /// already-leaked files heal on next launch.
 pub fn cleanup_stale_temp_files() -> (usize, u64) {
-    let temp_dir = std::env::temp_dir();
-    let read_dir = match std::fs::read_dir(&temp_dir) {
+    cleanup_stale_temp_files_in(&std::env::temp_dir())
+}
+
+/// Same as `cleanup_stale_temp_files` but against a caller-supplied
+/// base directory. Split out so tests can sandbox the sweep in a
+/// scoped `TempAudioDir` rather than touching the real `$TMPDIR`.
+pub fn cleanup_stale_temp_files_in(base_dir: &Path) -> (usize, u64) {
+    let read_dir = match std::fs::read_dir(base_dir) {
         Ok(d) => d,
         Err(_) => return (0, 0),
     };
@@ -450,12 +507,179 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_stale_temp_files_only_touches_notesync_prefixed_files() {
-        // We can't easily sandbox std::env::temp_dir(), so the safest
-        // behavior check is "it doesn't crash when there's nothing to
-        // clean up". Exhaustive path testing is Phase 1.0 work once we
-        // add a $TMPDIR override for tests.
-        let (removed, bytes) = cleanup_stale_temp_files();
-        let _ = (removed, bytes); // no assertion — just smoke
+    fn cleanup_stale_temp_files_in_removes_notesync_prefixed_wav_and_pcm() {
+        let dir = TempAudioDir::new().unwrap();
+
+        // Files that should be swept.
+        let targets = [
+            ("notesync_meeting_123.wav", 128u64),
+            ("notesync_sys_456.pcm", 64u64),
+            ("notesync_mic_789.pcm", 32u64),
+        ];
+        for (name, size) in targets.iter() {
+            let path = dir.path_in(name);
+            std::fs::write(&path, vec![0u8; *size as usize]).unwrap();
+        }
+
+        // Files that must survive: wrong prefix, wrong extension, and
+        // a notesync-prefixed file with an unrelated extension.
+        let survivors = [
+            ("other_app.wav", 16u64),
+            ("random.pcm", 16u64),
+            ("notesync_meeting.txt", 16u64),
+            ("notesync_config.json", 16u64),
+        ];
+        for (name, size) in survivors.iter() {
+            std::fs::write(dir.path_in(name), vec![0u8; *size as usize]).unwrap();
+        }
+
+        let (removed, bytes_removed) = cleanup_stale_temp_files_in(dir.path());
+
+        assert_eq!(removed, targets.len(), "removed count mismatch");
+        let expected_bytes: u64 = targets.iter().map(|(_, s)| *s).sum();
+        assert_eq!(bytes_removed, expected_bytes, "bytes freed mismatch");
+
+        for (name, _) in targets.iter() {
+            assert!(!dir.path_in(name).exists(), "target {name} should be gone");
+        }
+        for (name, _) in survivors.iter() {
+            assert!(dir.path_in(name).exists(), "survivor {name} should remain");
+        }
+    }
+
+    #[test]
+    fn cleanup_stale_temp_files_in_returns_zero_when_dir_missing() {
+        let missing = std::path::PathBuf::from(
+            "/nonexistent-path-for-notesync-cleanup-test-12345",
+        );
+        let (removed, bytes) = cleanup_stale_temp_files_in(&missing);
+        assert_eq!(removed, 0);
+        assert_eq!(bytes, 0);
+    }
+
+    #[test]
+    fn read_and_remove_file_returns_bytes_and_deletes() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("final.wav");
+        std::fs::write(&path, b"hello-wav").unwrap();
+
+        let bytes = read_and_remove_file(path.to_str().unwrap()).unwrap();
+        assert_eq!(bytes, b"hello-wav");
+        assert!(!path.exists(), "file should be removed after read");
+    }
+
+    #[test]
+    fn join_writer_and_cleanup_unlinks_pcm_on_panic() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("sys.pcm");
+        std::fs::write(&path, b"partial").unwrap();
+
+        // Suppress the panic stderr noise so the test output stays clean.
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let handle: std::thread::JoinHandle<Result<(), String>> =
+            std::thread::spawn(|| panic!("simulated writer panic"));
+        // `join` receives the panic and returns Err.
+        let err = join_writer_and_cleanup(handle, &path, "System").unwrap_err();
+        std::panic::set_hook(prev_hook);
+
+        assert!(err.contains("panicked"), "unexpected error: {err}");
+        assert!(!path.exists(), "pcm should be unlinked after panic");
+    }
+
+    #[test]
+    fn join_writer_and_cleanup_unlinks_pcm_on_writer_error() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("sys.pcm");
+        std::fs::write(&path, b"partial").unwrap();
+
+        let handle: std::thread::JoinHandle<Result<(), String>> =
+            std::thread::spawn(|| Err("disk full".to_string()));
+
+        let err = join_writer_and_cleanup(handle, &path, "System").unwrap_err();
+        assert!(err.contains("disk full"), "write error should propagate: {err}");
+        assert!(!path.exists(), "pcm should be unlinked after writer error");
+    }
+
+    #[test]
+    fn join_writer_and_cleanup_preserves_pcm_on_ok() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("sys.pcm");
+        std::fs::write(&path, b"good pcm payload").unwrap();
+
+        let handle: std::thread::JoinHandle<Result<(), String>> =
+            std::thread::spawn(|| Ok(()));
+
+        join_writer_and_cleanup(handle, &path, "System").unwrap();
+        assert!(path.exists(), "pcm must survive happy path so mix_to_wav can read it");
+    }
+
+    #[test]
+    fn rollback_writer_and_unlink_drains_sender_and_unlinks_pcm() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("sys.pcm");
+
+        // Spawn a real writer; push one chunk so the file exists on
+        // disk with non-zero content. Then rollback.
+        let (tx, rx) = mpsc::sync_channel::<Vec<f32>>(16);
+        let writer = spawn_writer_thread(path.clone(), rx);
+
+        tx.send(vec![0.25f32, -0.25f32, 0.5f32]).unwrap();
+
+        // Give the writer thread a moment to pick up and write the
+        // chunk. 50 ms is plenty for a single buffered write.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(path.exists(), "writer should have created the PCM file");
+
+        rollback_writer_and_unlink(Some(tx), Some(writer), &path);
+
+        assert!(
+            !path.exists(),
+            "rollback must unlink the PCM even after a clean writer exit"
+        );
+    }
+
+    #[test]
+    fn rollback_writer_and_unlink_is_noop_for_missing_resources() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("never_created.pcm");
+        // No sender, no writer, no file — simulates a guard that was
+        // dropped before any resources were allocated. Must not panic.
+        rollback_writer_and_unlink(None, None, &path);
+        assert!(!path.exists());
+    }
+
+    /// Unlink failure must still return the read bytes. We can only
+    /// reliably force a unix-style unlink failure via a read-only
+    /// parent dir, so Windows is skipped — the behavior there is
+    /// identical, verified via code review of the single
+    /// `log::error!` line.
+    #[cfg(unix)]
+    #[test]
+    fn read_and_remove_file_returns_bytes_even_when_unlink_fails() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("locked.wav");
+        std::fs::write(&path, b"locked-content").unwrap();
+
+        // Drop write + execute bits on the parent so unlink fails but
+        // read still succeeds. Restore before the dir drops so
+        // TempDir cleanup doesn't fail.
+        let parent = dir.path();
+        let original = std::fs::metadata(parent).unwrap().permissions();
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+        let result = read_and_remove_file(path.to_str().unwrap());
+
+        std::fs::set_permissions(parent, original).unwrap();
+
+        let bytes = result.expect("should still return bytes when unlink fails");
+        assert_eq!(bytes, b"locked-content");
+        // File is left behind — startup sweep will clean it up on next launch.
+        assert!(path.exists(), "file left behind when unlink is blocked");
+
+        // Clean up ourselves so TempDir drop doesn't error.
+        std::fs::remove_file(&path).ok();
     }
 }
