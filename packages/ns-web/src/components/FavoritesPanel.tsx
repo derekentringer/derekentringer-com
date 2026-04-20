@@ -140,7 +140,11 @@ export function FavoritesPanel({
   const sortByManual = favSortBy === "sortOrder";
 
   return (
-    <div className="px-2 pt-2" data-testid="favorites-panel">
+    <div data-testid="favorites-panel">
+      {/* Sticky header — pins title + sort controls to the top of the
+          scrolling ancestor (the sidebar `overflow-y-auto` wrapper in
+          NotesPage). Matches the NOTES + FOLDERS panel UX. */}
+      <div className="sticky top-0 z-10 bg-sidebar px-2 pt-2">
       <div className="flex items-center justify-between mb-1">
         <span className="flex items-center gap-1.5 text-sm text-muted-foreground uppercase tracking-wider">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
@@ -171,8 +175,9 @@ export function FavoritesPanel({
           </button>
         </div>
       </div>
+      </div>
 
-      <div className="overflow-y-auto">
+      <div className="px-2">
             {/* Favorite folders */}
             {favoriteFolders.map((folder) => (
               <button
