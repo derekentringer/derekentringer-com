@@ -55,6 +55,24 @@ vi.mock("../lib/db.ts", () => ({
   removeManagedDirectory: vi.fn().mockResolvedValue(undefined),
   softDeleteImageFromRemote: vi.fn().mockResolvedValue(undefined),
   upsertImageFromRemote: vi.fn().mockResolvedValue(undefined),
+  // Phase 5.2 — parallel image upload mocks
+  fetchImageById: (...args: unknown[]) => mockFetchImageById(...args),
+  updateImageAfterUpload: (...args: unknown[]) => mockUpdateImageAfterUpload(...args),
+  updateNote: (...args: unknown[]) => mockUpdateNote(...args),
+}));
+
+const mockFetchImageById = vi.fn();
+const mockUpdateImageAfterUpload = vi.fn().mockResolvedValue(undefined);
+const mockUpdateNote = vi.fn().mockResolvedValue(undefined);
+const mockReadCachedImage = vi.fn();
+const mockUploadImage = vi.fn();
+
+vi.mock("../lib/imageCacheService.ts", () => ({
+  readCachedImage: (...args: unknown[]) => mockReadCachedImage(...args),
+}));
+
+vi.mock("../api/imageApi.ts", () => ({
+  uploadImage: (...args: unknown[]) => mockUploadImage(...args),
 }));
 
 vi.mock("@tauri-apps/plugin-sql", () => ({
@@ -558,6 +576,115 @@ describe("syncEngine", () => {
       // Prior-row fetch is also skipped — dedup work is gated behind the same flag.
       expect(mockFetchNoteEmbeddingInputById).not.toHaveBeenCalled();
       expect(mockQueueEmbeddingForNote).not.toHaveBeenCalled();
+    });
+  });
+
+  // Phase 5.2 — parallel image upload on push
+  describe("parallel image upload on push", () => {
+    function makeImageEntry(i: number) {
+      return {
+        id: i,
+        entity_type: "image" as const,
+        entity_id: `img-${i}`,
+        action: "image:create",
+        payload: JSON.stringify({ queued: true }),
+        created_at: "2024-06-01T00:00:00.000Z",
+      };
+    }
+
+    function stubImageDeps() {
+      mockFetchImageById.mockImplementation((id: string) =>
+        Promise.resolve({
+          id,
+          noteId: `note-for-${id}`,
+          filename: `${id}.png`,
+          mimeType: "image/png",
+          r2Url: `notesync-local://${id}`,
+        }),
+      );
+      mockReadCachedImage.mockResolvedValue(new Uint8Array([1, 2, 3]).buffer);
+      // fetchNoteById is used for the placeholder replace path; return
+      // a note whose content doesn't include the placeholder so we
+      // skip the updateNote call in most tests.
+      mockFetchNoteById.mockResolvedValue({
+        id: "note-for-img",
+        content: "no placeholder here",
+      });
+    }
+
+    it("uploads multiple queued images concurrently with a bound of 3", async () => {
+      const entries = Array.from({ length: 10 }, (_, i) => makeImageEntry(i));
+      mockGetSyncMeta.mockResolvedValue(null);
+      mockReadSyncQueue.mockResolvedValue(entries);
+      stubImageDeps();
+
+      let inFlight = 0;
+      let maxInFlight = 0;
+      mockUploadImage.mockImplementation(async () => {
+        inFlight++;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        // Small stagger so overlap is observable
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight--;
+        return { r2Url: "https://r2.example/x.png" };
+      });
+      mockApiFetch
+        .mockResolvedValueOnce(makePushResponse())
+        .mockResolvedValueOnce(makePullResponse());
+
+      await initSyncEngine({ onStatusChange: vi.fn(), onDataChanged: vi.fn() });
+      await new Promise((r) => setTimeout(r, 400));
+
+      // Every queued image got uploaded
+      expect(mockUploadImage).toHaveBeenCalledTimes(10);
+      // Concurrency cap held
+      expect(maxInFlight).toBeGreaterThan(1);
+      expect(maxInFlight).toBeLessThanOrEqual(3);
+    });
+
+    it("one failed upload does not block the rest of the batch", async () => {
+      const entries = Array.from({ length: 5 }, (_, i) => makeImageEntry(i));
+      mockGetSyncMeta.mockResolvedValue(null);
+      mockReadSyncQueue.mockResolvedValue(entries);
+      stubImageDeps();
+
+      mockUploadImage.mockImplementation(async (noteId: string) => {
+        if (noteId === "note-for-img-2") {
+          throw new Error("synthetic upload failure");
+        }
+        return { r2Url: "https://r2.example/x.png" };
+      });
+      mockApiFetch
+        .mockResolvedValueOnce(makePushResponse())
+        .mockResolvedValueOnce(makePullResponse());
+
+      await initSyncEngine({ onStatusChange: vi.fn(), onDataChanged: vi.fn() });
+      await new Promise((r) => setTimeout(r, 200));
+
+      // All 5 attempted; the failure was swallowed and the others
+      // went through.
+      expect(mockUploadImage).toHaveBeenCalledTimes(5);
+      expect(mockUpdateImageAfterUpload).toHaveBeenCalledTimes(4);
+    });
+
+    it("image entries do not end up in the /sync/push payload", async () => {
+      mockGetSyncMeta.mockResolvedValue(null);
+      mockReadSyncQueue.mockResolvedValue([makeImageEntry(0)]);
+      stubImageDeps();
+      mockUploadImage.mockResolvedValue({ r2Url: "https://r2.example/x.png" });
+      mockApiFetch
+        .mockResolvedValueOnce(makePushResponse())
+        .mockResolvedValueOnce(makePullResponse());
+
+      await initSyncEngine({ onStatusChange: vi.fn(), onDataChanged: vi.fn() });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const pushCall = mockApiFetch.mock.calls.find((c) => c[0] === "/sync/push");
+      expect(pushCall).toBeTruthy();
+      const body = JSON.parse(pushCall![1].body);
+      // Image entries are pushed via REST, not the sync protocol —
+      // the /sync/push payload must not reference them.
+      expect(body.changes.some((c: { id: string }) => c.id === "img-0")).toBe(false);
     });
   });
 

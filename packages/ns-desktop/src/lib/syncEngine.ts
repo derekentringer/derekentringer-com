@@ -7,6 +7,9 @@ import {
   setSyncMeta,
   fetchNoteById,
   fetchNoteEmbeddingInputById,
+  fetchImageById,
+  updateImageAfterUpload,
+  updateNote,
   upsertNoteFromRemote,
   upsertFolderFromRemote,
   upsertImageFromRemote,
@@ -36,6 +39,8 @@ import {
   stopWatching,
   writeLocalFile,
 } from "./localFileService.ts";
+import { readCachedImage } from "./imageCacheService.ts";
+import { uploadImage } from "../api/imageApi.ts";
 import type {
   SyncChange,
   SyncRejection,
@@ -380,6 +385,64 @@ async function triggerSync(): Promise<void> {
   }
 }
 
+/**
+ * Phase 5.2 — upload a single queued image entry. Extracted from
+ * pushChanges so offline-queued images can be uploaded in parallel
+ * via runWithConcurrency below. Per-upload errors are swallowed
+ * (logged only) so one failure doesn't block the rest of the batch.
+ */
+async function uploadQueuedImage(entry: { entity_id: string; payload: string | null }): Promise<void> {
+  if (!entry.payload) return;
+  try {
+    const imageRow = await fetchImageById(entry.entity_id);
+    if (!imageRow) return;
+    const cachedData = await readCachedImage(entry.entity_id, imageRow.mimeType);
+    if (!cachedData) return;
+    const file = new File(
+      [new Uint8Array(cachedData) as BlobPart],
+      imageRow.filename,
+      { type: imageRow.mimeType },
+    );
+    const result = await uploadImage(imageRow.noteId, file);
+    await updateImageAfterUpload(entry.entity_id, "", result.r2Url);
+    // Update note content: replace placeholder URL with real R2 URL
+    const placeholder = `notesync-local://${entry.entity_id}`;
+    if (imageRow.r2Url === placeholder) {
+      const noteData = await fetchNoteById(imageRow.noteId);
+      if (noteData && noteData.content.includes(placeholder)) {
+        await updateNote(imageRow.noteId, {
+          content: noteData.content.replaceAll(placeholder, result.r2Url),
+        });
+      }
+    }
+  } catch (err) {
+    console.error("Failed to upload queued image:", err);
+  }
+}
+
+/**
+ * Simple worker-pool runner. Spawns up to `limit` parallel workers,
+ * each pulling the next index off a shared counter. No external dep,
+ * no generator magic — just `Promise.all` over N workers.
+ */
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      await task(items[i]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+const IMAGE_UPLOAD_CONCURRENCY = 3;
+
 async function pushChanges(id: string): Promise<void> {
   const entries = await readSyncQueue(BATCH_LIMIT);
   if (entries.length === 0) return;
@@ -391,9 +454,26 @@ async function pushChanges(id: string): Promise<void> {
     deduped.set(key, entry);
   }
 
+  // Phase 5.2 — upload queued images in parallel (bounded). Image
+  // entries don't contribute to the sync push payload (they're
+  // uploaded directly via REST), so handling them ahead of the
+  // payload-build loop lets us overlap the uploads instead of
+  // serializing 10 uploads behind each other.
+  const imageUploadEntries: typeof entries = [];
+  const payloadEntries: typeof entries = [];
+  for (const entry of deduped.values()) {
+    const [, action] = entry.action.split(":");
+    if (entry.entity_type === "image" && action !== "delete") {
+      imageUploadEntries.push(entry);
+    } else {
+      payloadEntries.push(entry);
+    }
+  }
+  await runWithConcurrency(imageUploadEntries, IMAGE_UPLOAD_CONCURRENCY, uploadQueuedImage);
+
   const changes: SyncChange[] = [];
 
-  for (const entry of deduped.values()) {
+  for (const entry of payloadEntries) {
     const [, action] = entry.action.split(":");
     const entityType = entry.entity_type as "note" | "folder" | "image";
 
@@ -404,39 +484,6 @@ async function pushChanges(id: string): Promise<void> {
       if (note) data = note;
     } else if (action !== "delete" && entityType === "folder") {
       data = await readLocalFolder(entry.entity_id);
-    } else if (entityType === "image" && action !== "delete") {
-      // Pending upload: upload binary via API, then update local DB
-      if (entry.payload) {
-        try {
-          const { readCachedImage } = await import("./imageCacheService.ts");
-          const { fetchImageById, updateImageAfterUpload } = await import("./db.ts");
-          const imageRow = await fetchImageById(entry.entity_id);
-          if (imageRow) {
-            const cachedData = await readCachedImage(entry.entity_id, imageRow.mimeType);
-            if (cachedData) {
-              const file = new File([new Uint8Array(cachedData) as BlobPart], imageRow.filename, { type: imageRow.mimeType });
-              const { uploadImage } = await import("../api/imageApi.ts");
-              const result = await uploadImage(imageRow.noteId, file);
-              await updateImageAfterUpload(entry.entity_id, "", result.r2Url);
-              // Update note content: replace placeholder URL with real R2 URL
-              const placeholder = `notesync-local://${entry.entity_id}`;
-              if (imageRow.r2Url === placeholder) {
-                const noteData = await fetchNoteById(imageRow.noteId);
-                if (noteData && noteData.content.includes(placeholder)) {
-                  const { updateNote } = await import("./db.ts");
-                  await updateNote(imageRow.noteId, {
-                    content: noteData.content.replaceAll(placeholder, result.r2Url),
-                  });
-                }
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Failed to upload queued image:", err);
-        }
-      }
-      // Image was uploaded via API — server already has it, skip sync push
-      continue;
     }
 
     changes.push({
