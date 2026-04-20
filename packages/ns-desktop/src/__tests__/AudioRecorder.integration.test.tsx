@@ -162,6 +162,182 @@ describe("AudioRecorder — mic-only happy path", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  // Phase 3.6 — chunk transcription failure is non-fatal. A
+  // `transcribeChunk` rejection just logs a warning and skips that
+  // index in `transcriptChunksRef`; the full-audio transcribe on
+  // stop still runs and the note is still returned to the parent.
+  it("chunk transcription failure does not block final note creation", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+
+    // First chunk fails, subsequent calls return empty (none arrive
+    // but the mock has to return something).
+    mockTranscribeChunk
+      .mockReset()
+      .mockRejectedValueOnce(new Error("Whisper 429"))
+      .mockResolvedValue({ text: "", chunkIndex: 0 });
+
+    const note = { id: "note-chunk-fail", title: "T", content: "c" };
+    mockTranscribeAudio.mockResolvedValue({ note });
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={(s) => recordingHandles.push(s)}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={(s) => recordingHandles.push(s)}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+
+    // Fire a chunk on the chunk recorder — triggers transcribeChunk
+    // which is mocked to reject. The component must swallow.
+    const chunkRecorder = mediaRecorder.recorders[1];
+    await act(async () => {
+      chunkRecorder.emitData(new Blob([new Uint8Array(2048)], { type: "audio/webm" }));
+      chunkRecorder.stop();
+    });
+    await waitFor(() => {
+      expect(mockTranscribeChunk).toHaveBeenCalled();
+    });
+
+    // Stop recording. Full-audio transcribeAudio is mocked to succeed.
+    const recording = recordingHandles.find((s) => s?.state === "recording")!;
+    await act(async () => {
+      recording.onStop();
+    });
+
+    await waitFor(() => {
+      expect(onNoteCreated).toHaveBeenCalled();
+    });
+
+    // Even though the chunk failed, the note was created from the
+    // full-audio transcribe. No onError bubbled from the chunk failure.
+    expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-chunk-fail" }));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  // Phase 3.2 — live-transcript PATCH race. The note is created by
+  // `transcribeAudio` first; the PATCH that attaches the live
+  // transcript runs after and is best-effort. Two invariants:
+  //   1. PATCH failure (non-2xx) does NOT prevent the note from
+  //      being handed to the parent.
+  //   2. `result.note.transcript` is only mirrored into the in-memory
+  //      note when the server actually persisted it (response.ok) —
+  //      otherwise the UI would show a transcript that isn't in the
+  //      database.
+  it("PATCH failure still returns the note without mirroring transcript", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
+
+    // Emit some live-transcript chunks so capturedTranscript is non-empty
+    // and the PATCH branch actually fires.
+    mockTranscribeChunk
+      .mockReset()
+      .mockResolvedValueOnce({ text: "chunk-a", chunkIndex: 0 })
+      .mockResolvedValue({ text: "", chunkIndex: 0 });
+
+    const note = { id: "note-patch-fail", title: "T", content: "c" };
+    mockTranscribeAudio.mockResolvedValue({ note });
+
+    // PATCH returns 500 (ok: false). Note creation itself still succeeds.
+    mockApiFetch.mockReset().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={(s) => recordingHandles.push(s)}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={(s) => recordingHandles.push(s)}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+
+    // Feed a chunk to the chunk recorder so `transcribeChunk` is
+    // invoked and populates transcriptChunksRef.
+    const chunkRecorder = mediaRecorder.recorders[1];
+    await act(async () => {
+      chunkRecorder.emitData(new Blob([new Uint8Array(2048)], { type: "audio/webm" }));
+      chunkRecorder.stop();
+    });
+    await waitFor(() => {
+      expect(mockTranscribeChunk).toHaveBeenCalled();
+    });
+
+    // Trigger stop — this fires transcribeAudio then PATCH.
+    const recording = recordingHandles.find((s) => s?.state === "recording")!;
+    await act(async () => {
+      recording.onStop();
+    });
+
+    await waitFor(() => {
+      expect(onNoteCreated).toHaveBeenCalled();
+    });
+
+    // PATCH was called with the transcript payload.
+    const patchCall = mockApiFetch.mock.calls.find(
+      (args) => typeof args[0] === "string" && args[0].includes("/notes/note-patch-fail"),
+    );
+    expect(patchCall).toBeDefined();
+
+    // Note was still returned to the parent despite PATCH failing.
+    const receivedNote = onNoteCreated.mock.calls[0][0];
+    expect(receivedNote.id).toBe("note-patch-fail");
+
+    // `transcript` field must NOT be populated on the in-memory note
+    // because the server didn't persist it. UI must not show a
+    // transcript that only exists client-side.
+    expect(receivedNote.transcript).toBeUndefined();
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   // Phase 1.5 — getUserMedia rejection must run cleanup before
   // surfacing the error, so no mic track, timer, or MediaRecorder
   // leaks from a failed mic-start.

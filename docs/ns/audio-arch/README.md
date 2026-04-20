@@ -27,7 +27,7 @@ Post-hardening contract (Phases 1–4 outcomes): [`invariants.md`](invariants.md
 | [0](01-phase-0-test-harness.md) | ✅ core shipped (0.5/0.6 deferred) | Test fixtures for audio I/O, Whisper mocks, Tauri command simulation | — |
 | [1](02-phase-1-resource-lifecycle.md) | ✅ shipped (1.0–1.6) | Plug temp file, stream, and thread leaks on all code paths | 0 |
 | [2](03-phase-2-state-machine-races.md) | ✅ shipped (2.1–2.6) | Eliminate stop-during-start, start-during-stop, race-prone refs | 0 |
-| [3](04-phase-3-transcript-correctness.md) | pending | Fix chunk ordering, dedup, Whisper retry semantics, session cleanup | 0 |
+| [3](04-phase-3-transcript-correctness.md) | ✅ shipped (3.1–3.6) | Fix chunk ordering, dedup, Whisper retry semantics, session cleanup | 0 |
 | [4](05-phase-4-performance.md) | pending | Parallelize, deduplicate API calls, optimize live chunking | 1–3 complete |
 | [5](06-phase-5-test-coverage.md) | pending | Close test gaps, add integration tests for meeting mode | 1–4 complete |
 

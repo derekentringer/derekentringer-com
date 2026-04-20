@@ -102,10 +102,13 @@ describe("whisperService", () => {
 
   // Phase 0.1 — new coverage of error surfaces the inline fetch mocks couldn't hit.
   describe("error-path coverage (Phase 0.1 additions)", () => {
-    it("does NOT retry on 429 (rate limit) — documents a gap Phase 3 should close", async () => {
-      // Reference test for Phase 3.3: 429 is explicitly NOT in
-      // RETRYABLE_STATUSES today. When Phase 3 adds retry+backoff
-      // semantics for 429 this test should flip to an expect(retry).
+    it("retries on 429 (rate limit) up to MAX_RETRIES, then gives up", async () => {
+      // Phase 3.3: 429 is now in RETRYABLE_STATUSES — OpenAI pushes
+      // back on burst traffic often enough that a 1s-backoff retry
+      // loop is the right call. This test exercises the "three
+      // attempts total (1 initial + 2 retries), all 429" path.
+      whisper.fail(429, "Rate limit exceeded");
+      whisper.fail(429, "Rate limit exceeded");
       whisper.fail(429, "Rate limit exceeded");
 
       const { transcribeAudio } = await import("../services/whisperService.js");
@@ -113,7 +116,21 @@ describe("whisperService", () => {
       await expect(transcribeAudio(Buffer.from("data"), "test.webm")).rejects.toThrow(
         "Whisper API error (429): Rate limit exceeded",
       );
-      whisper.assertAttempts(1);
+      whisper.assertRetrySequence([429, 429, 429]);
+    });
+
+    it("succeeds after a single 429 retry", async () => {
+      // Happy-path for the new 429 retry: first attempt rate-limited,
+      // second attempt succeeds, caller never sees the 429.
+      whisper.fail(429, "Rate limit exceeded");
+      whisper.succeed("recovered after rate limit");
+
+      const { transcribeAudio } = await import("../services/whisperService.js");
+
+      await expect(transcribeAudio(Buffer.from("data"), "test.webm")).resolves.toBe(
+        "recovered after rate limit",
+      );
+      whisper.assertRetrySequence([429, 200]);
     });
 
     it("surfaces a timeout error without retrying", async () => {

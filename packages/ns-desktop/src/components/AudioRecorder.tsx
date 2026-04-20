@@ -3,6 +3,7 @@ import type { AudioMode, RecordingSource } from "../hooks/useAiSettings.ts";
 import type { Note } from "@derekentringer/ns-shared";
 import { transcribeAudio, transcribeChunk } from "../api/ai.ts";
 import { apiFetch } from "../api/client.ts";
+import { assembleTranscript } from "../lib/transcriptAssembly.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -193,17 +194,10 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   // Cleanup on unmount
   useEffect(() => cleanup, [cleanup]);
 
-  // Build the full transcript from ordered chunks
+  // See `assembleTranscript` in `../lib/transcriptAssembly.ts` — the
+  // chunk-ordering rules and trade-offs live there alongside unit tests.
   function getOrderedTranscript(): string {
-    const map = transcriptChunksRef.current;
-    if (map.size === 0) return "";
-    const maxIdx = Math.max(...map.keys());
-    const parts: string[] = [];
-    for (let i = 0; i <= maxIdx; i++) {
-      const text = map.get(i);
-      if (text) parts.push(text);
-    }
-    return parts.join(" ");
+    return assembleTranscript(transcriptChunksRef.current);
   }
 
   // Start an independent MediaRecorder on the shared mic stream whose sole job
@@ -368,17 +362,24 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       try {
         const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
 
-        // Save transcript directly to the note via API
+        // Save transcript directly to the note via API. Failure is
+        // non-fatal — the note was already created by `transcribeAudio`,
+        // so we still hand it to the parent. We only mirror the
+        // transcript into `result.note` when the server actually
+        // persisted it (response.ok) so the UI doesn't show a
+        // transcript that isn't in the database.
         if (capturedTranscript && capturedTranscript.trim().length > 0) {
           try {
-            await apiFetch(`/notes/${result.note.id}`, {
+            const patchRes = await apiFetch(`/notes/${result.note.id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ transcript: capturedTranscript }),
             });
-            result.note.transcript = capturedTranscript;
+            if (patchRes.ok) {
+              result.note.transcript = capturedTranscript;
+            }
           } catch {
-            // Non-fatal
+            // Network error or refresh failure — non-fatal.
           }
         }
 
@@ -446,15 +447,20 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
           // Always transcribe the full audio for highest quality final note
           const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
 
-          // Save transcript directly to the note via API
+          // Save transcript directly to the note via API. See
+          // handleMeetingStop for the full rationale — we only mirror
+          // the transcript into the in-memory `result.note` when the
+          // server actually persisted it (response.ok).
           if (capturedTranscript && capturedTranscript.trim().length > 0) {
             try {
-              await apiFetch(`/notes/${result.note.id}`, {
+              const patchRes = await apiFetch(`/notes/${result.note.id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ transcript: capturedTranscript }),
               });
-              result.note.transcript = capturedTranscript;
+              if (patchRes.ok) {
+                result.note.transcript = capturedTranscript;
+              }
             } catch {
               // Non-fatal
             }

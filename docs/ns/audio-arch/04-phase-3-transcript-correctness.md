@@ -1,6 +1,6 @@
 # Phase 3 — Transcript Correctness: Ordering, Dedup, Whisper Semantics
 
-**Status**: pending
+**Status**: ✅ shipped (3.1–3.6)
 
 ## Goal
 
@@ -19,9 +19,11 @@ Ensure the final note's transcript is never corrupted, out-of-order, or missing 
 
 ## Items
 
-### 3.1 — Chunk ordering verification and dedup
+### 3.1 — Chunk ordering verification and dedup ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:156-166` (getOrderedTranscript) + transcribeChunk result handler
+**Status**: shipped — extracted the assembly logic into `packages/ns-desktop/src/lib/transcriptAssembly.ts::assembleTranscript(map)`, rewritten to sort `map.entries()` numerically and join the values. Missing indices naturally drop out (no `undefined` in the output), huge maps no longer risk a `Math.max(...keys)` stack overflow, and duplicate-index (last-write-wins) behavior is preserved via `Map.set()`. New unit tests in `src/lib/__tests__/transcriptAssembly.test.ts` cover out-of-order inserts, missing indices, 5000-entry stress, dedup, single-chunk, and whitespace hygiene.
+
+**Location**: `packages/ns-desktop/src/lib/transcriptAssembly.ts` + `AudioRecorder.tsx:196-199` (thin wrapper)
 
 **Problem**: `getOrderedTranscript()` iterates `0..maxIdx` and assumes every index has content. If index 5 is missing (failed Whisper), it produces `undefined`, which `.join(" ")` converts to "undefined text".
 
@@ -46,9 +48,11 @@ function getOrderedTranscript(): string {
 
 **Estimated effort**: 1 hour
 
-### 3.2 — Live transcript save race with note creation
+### 3.2 — Live transcript save race with note creation ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:324-339` (meeting mode) + `393-405` (mic mode)
+**Status**: shipped — `apiFetch` returns a `Response` without throwing on non-2xx, so the previous code updated `result.note.transcript = capturedTranscript` even when the server returned 500 (UI would then show a transcript that wasn't persisted). Both meeting-mode (line 368-378) and mic-mode (line 453-464) PATCH paths now mirror the transcript into the in-memory note only when `patchRes.ok`. New integration test `"PATCH failure still returns the note without mirroring transcript"` exercises a 500 response and asserts the note is still handed to `onNoteCreated` but without a `transcript` field.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:367-382` (meeting) + `453-469` (mic)
 
 **Problem**: Note is created, then PATCH is sent to save transcript. If PATCH fails, note exists with empty transcript. Worse: if PATCH succeeds but note wasn't yet fetched by UI, user sees old empty transcript briefly.
 
@@ -65,9 +69,11 @@ function getOrderedTranscript(): string {
 
 **Estimated effort**: 0.5 hours
 
-### 3.3 — Whisper retries are transient-only, with proper backoff
+### 3.3 — Whisper retries are transient-only, with proper backoff ✅
 
-**Location**: `packages/ns-api/src/services/whisperService.ts:14-52` (single-chunk retry) + `55-91` (chunked retry)
+**Status**: shipped — added `429` to `RETRYABLE_STATUSES` in `whisperService.ts` with a comment explaining why (OpenAI rate-limit pushback on burst traffic is expected, not a permanent failure). Existing backoff logic (1s × attempt) handles the delay. Permanent errors (401/400/404/413/422) continue to propagate immediately. The Phase 0.6 reference test was flipped: `"does NOT retry on 429"` became `"retries on 429 up to MAX_RETRIES, then gives up"` + added a happy-path companion `"succeeds after a single 429 retry"`. Jitter was considered but skipped (the 1s-×-attempt spacing is already conservative for a single-user app).
+
+**Location**: `packages/ns-api/src/services/whisperService.ts:8-21`
 
 **Problem**: 
 - Current backoff is `1000 * attempt`, which is correct (1s, 2s, 3s...).
@@ -86,9 +92,11 @@ function getOrderedTranscript(): string {
 
 **Estimated effort**: 1 hour
 
-### 3.4 — Session cleanup after note creation
+### 3.4 — Session cleanup after note creation ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:256-280` + `379-415`
+**Status**: shipped via the Phase 2.3 work. Mic mode's `onstop` handler calls `cleanup()` before `transcribeAudio`, which resets `transcriptChunksRef` / `sessionIdRef` / `chunkIndexRef`. Meeting mode's success path resets these same refs in its `finally` block after the note is created. Back-to-back recordings therefore start with an empty map, fresh session ID, and chunk index 0 — no stale-state carryover.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:367-382` (meeting finally) + `452` (mic cleanup call)
 
 **Problem**: Live transcript chunks are accumulated in `transcriptChunksRef.current`. After note creation and PATCH, refs are not cleared. If user starts a new recording immediately, old chunk data might leak into new session (unlikely due to unique sessionId, but possible in collision scenarios).
 
@@ -99,9 +107,11 @@ function getOrderedTranscript(): string {
 
 **Estimated effort**: 0.5 hours
 
-### 3.5 — Full-audio transcription is atomic
+### 3.5 — Full-audio transcription is atomic ✅
 
-**Location**: `packages/ns-api/src/routes/ai.ts:590-703`
+**Status**: shipped — both `/ai/transcribe` and `/ai/structure-transcript` were missing `try/catch` around the final `createNote()` call, so a DB-side failure (connection loss, constraint violation) would fall through to Fastify's default 500 handler with an inconsistent response shape. Both routes now wrap `createNote` and return `502 { statusCode, error, message }` — the same shape used for Whisper / Claude failures. Earlier branches in both routes (Whisper fail → 502, empty transcript → 422, structuring fail → 502) were already correct and left alone.
+
+**Location**: `packages/ns-api/src/routes/ai.ts:432-452` (structure-transcript) + `686-706` (transcribe)
 
 **Problem**: `/ai/transcribe` is called after live chunks are captured. If Whisper fails during full-audio transcription, the note is never created. But live transcript is already displayed in UI (from earlier chunks). User might think note was created.
 
@@ -117,9 +127,11 @@ function getOrderedTranscript(): string {
 
 **Estimated effort**: 1 hour
 
-### 3.6 — Chunk transcription failure handling
+### 3.6 — Chunk transcription failure handling ✅
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:200-208` (meeting) + `379-415` (mic)
+**Status**: shipped — verification + test. Both `startMicChunkRecorder.onstop` (line 235-243) and `sendNativeChunk` (line 253-270) already wrap `transcribeChunk` in try/catch with `console.warn` on failure, so a chunk-level rejection is non-fatal by design. Combined with Phase 3.1's `assembleTranscript`, missing chunks drop out of the live transcript cleanly. New integration test `"chunk transcription failure does not block final note creation"` rejects the first chunk with a simulated 429, completes the stop flow, and asserts the note is still created via the full-audio transcribe path with no `onError` fired.
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:235-243` (mic chunk onstop) + `253-270` (native chunk)
 
 **Problem**: If `transcribeChunk` fails, error is logged but silently skipped (live transcript has a gap). User might not realize chunks weren't transcribed. On final transcribe, they see inconsistent transcript (live gaps + full audio).
 
