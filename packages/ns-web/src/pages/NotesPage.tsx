@@ -4,10 +4,13 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -105,6 +108,22 @@ type SidebarView = "notes" | "trash";
 // a valid note-list sort field — Manual sort has been removed.
 const validSortFields: NoteSortField[] = ["updatedAt", "createdAt", "title"];
 const validSortOrders: SortOrder[] = ["asc", "desc"];
+
+// Hybrid collision detection: when the pointer is directly over a
+// droppable (e.g. the user has dragged a note up into the folders
+// panel in the stacked sidebar layout), pick that exact target; else
+// fall back to rect intersection, then closestCenter so sortable
+// note reordering keeps working. `closestCenter` alone picks the
+// closest *center* — when the notes panel is much taller than the
+// folders panel, every upward drag was resolving to another note
+// long before the pointer reached a folder.
+const notesPageCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) return pointerCollisions;
+  const intersections = rectIntersection(args);
+  if (intersections.length > 0) return intersections;
+  return closestCenter(args);
+};
 
 function validateSortField(value: string | null, fallback: NoteSortField): NoteSortField {
   return value && validSortFields.includes(value as NoteSortField) ? value as NoteSortField : fallback;
@@ -2207,7 +2226,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       {/* Shared DndContext for sidebar + note list (enables drag from notes to folders) */}
       <DndContext
         sensors={dndSensors}
-        collisionDetection={closestCenter}
+        collisionDetection={notesPageCollisionDetection}
         onDragStart={(event: DragStartEvent) => setActiveDragId(String(event.active.id))}
         onDragEnd={(event: DragEndEvent) => { setActiveDragId(null); handleDragEnd(event); }}
         onDragCancel={() => setActiveDragId(null)}
