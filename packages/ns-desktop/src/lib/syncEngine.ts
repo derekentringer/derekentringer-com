@@ -41,6 +41,7 @@ import {
 } from "./localFileService.ts";
 import { readCachedImage } from "./imageCacheService.ts";
 import { uploadImage } from "../api/imageApi.ts";
+import { queueEmbeddingForNote } from "./embeddingService.ts";
 import type {
   SyncChange,
   SyncRejection,
@@ -792,11 +793,10 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
 
   // Queue embedding generation only when title/content actually
   // changed. A 100-note pull where 5 rows changed used to queue 100
-  // OpenAI calls; now it queues 5.
+  // OpenAI calls; now it queues 5. Fire-and-forget — embedding is
+  // best-effort and must not block apply.
   if (semanticSearchEnabled && !noteData.deletedAt && embeddingInputsChanged) {
-    import("./embeddingService.ts")
-      .then((m) => m.queueEmbeddingForNote(noteData.id, noteData.title, noteData.content))
-      .catch(() => {});
+    queueEmbeddingForNote(noteData.id, noteData.title, noteData.content).catch(() => {});
   }
 }
 
