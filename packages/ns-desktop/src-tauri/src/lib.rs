@@ -210,7 +210,7 @@ fn start_meeting_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn stop_meeting_recording() -> Result<String, String> {
+fn stop_meeting_recording() -> Result<Vec<u8>, String> {
     #[cfg(target_os = "macos")]
     {
         audio_capture::stop_recording()
@@ -400,6 +400,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Sweep stale `notesync_*.{wav,pcm}` from $TMPDIR left over
+            // by earlier versions that didn't clean up the mixed WAV,
+            // or by recordings that crashed mid-stop. Fire-and-forget
+            // on a background thread so it doesn't slow cold-start.
+            std::thread::spawn(|| {
+                audio_capture_shared::cleanup_stale_temp_files();
+            });
+
             // Build and set custom menu
             if let Ok(menu) = build_menu(app) {
                 app.set_menu(menu)?;

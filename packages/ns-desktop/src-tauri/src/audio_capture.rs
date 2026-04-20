@@ -9,8 +9,8 @@ use objc2::AnyThread;
 use tauri::Emitter;
 
 use crate::audio_capture_shared::{
-    encode_mixed_wav_chunk, mix_to_wav, read_pcm_since, spawn_writer_thread, to_mono,
-    ChunkResampler,
+    encode_mixed_wav_chunk, mix_to_wav, read_and_remove_file, read_pcm_since,
+    spawn_writer_thread, to_mono, ChunkResampler,
 };
 
 struct RecordingState {
@@ -638,7 +638,7 @@ pub fn get_audio_chunk() -> Result<Vec<u8>, String> {
     Ok(wav_bytes)
 }
 
-pub fn stop_recording() -> Result<String, String> {
+pub fn stop_recording() -> Result<Vec<u8>, String> {
     let mut state = {
         let mut guard = RECORDING.lock().map_err(|e| e.to_string())?;
         guard.take().ok_or("No recording in progress")?
@@ -702,7 +702,7 @@ pub fn stop_recording() -> Result<String, String> {
     );
 
     // Stream-mix both temp files into output WAV (constant memory, ~2MB working set)
-    let result = mix_to_wav(
+    let wav_path = mix_to_wav(
         &state.system_temp_path,
         state.system_sample_rate,
         state.system_channels,
@@ -711,9 +711,13 @@ pub fn stop_recording() -> Result<String, String> {
         state.mic_channels,
     );
 
-    // Clean up temp files
+    // Clean up raw PCM temp files (the mix is done; they're not needed)
     let _ = std::fs::remove_file(&state.system_temp_path);
     let _ = std::fs::remove_file(&state.mic_temp_path);
 
-    result
+    // Read the mixed WAV into memory and delete the file. Returning
+    // bytes (instead of the path) keeps the temp dir clean — the
+    // previous API returned a path and relied on the TS side to
+    // delete, which it never did, leaking ~1 MB/sec per meeting.
+    wav_path.and_then(|p| read_and_remove_file(&p))
 }

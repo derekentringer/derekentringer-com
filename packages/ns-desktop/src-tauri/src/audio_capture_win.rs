@@ -37,7 +37,8 @@
 #![cfg(target_os = "windows")]
 
 use crate::audio_capture_shared::{
-    encode_mixed_wav_chunk, mix_to_wav, read_pcm_since, spawn_writer_thread, to_mono,
+    encode_mixed_wav_chunk, mix_to_wav, read_and_remove_file, read_pcm_since,
+    spawn_writer_thread, to_mono,
     ChunkResampler,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -259,7 +260,7 @@ pub fn get_audio_chunk() -> Result<Vec<u8>, String> {
     Ok(wav_bytes)
 }
 
-pub fn stop_recording() -> Result<String, String> {
+pub fn stop_recording() -> Result<Vec<u8>, String> {
     let mut state = {
         let mut guard = RECORDING.lock().map_err(|e| e.to_string())?;
         guard.take().ok_or("No recording in progress")?
@@ -307,7 +308,7 @@ pub fn stop_recording() -> Result<String, String> {
         mic_size as f64 / (1024.0 * 1024.0),
     );
 
-    let result = mix_to_wav(
+    let wav_path = mix_to_wav(
         &state.sys_temp_path,
         state.sys_sample_rate,
         state.sys_channels,
@@ -320,7 +321,9 @@ pub fn stop_recording() -> Result<String, String> {
     let _ = std::fs::remove_file(&state.sys_temp_path);
     let _ = std::fs::remove_file(&state.mic_temp_path);
 
-    result
+    // Read the mixed WAV into memory and delete the file so nothing
+    // lingers in `%TEMP%` after the TS side consumes the bytes.
+    wav_path.and_then(|p| read_and_remove_file(&p))
 }
 
 // ── Helpers ────────────────────────────────────────────────────────

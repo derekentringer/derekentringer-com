@@ -5,7 +5,6 @@ import { transcribeAudio, transcribeChunk } from "../api/ai.ts";
 import { apiFetch } from "../api/client.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { readFile } from "@tauri-apps/plugin-fs";
 
 const MODE_LABELS: Record<AudioMode, string> = {
   meeting: "Meeting",
@@ -307,7 +306,12 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       // mixing the final WAV.
       setState("processing");
 
-      const wavPath = await invoke<string>("stop_meeting_recording");
+      // Rust returns the mixed WAV as a byte array and deletes the
+      // underlying temp file in the same call, so nothing lingers in
+      // $TMPDIR. Earlier versions returned a path the TS side was
+      // supposed to read + delete; the delete never happened and
+      // every meeting leaked ~1 MB/sec to System Data on macOS.
+      const wavBytes = await invoke<number[]>("stop_meeting_recording");
 
       // Unlisten ticks
       if (tickUnlistenRef.current) {
@@ -315,9 +319,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         tickUnlistenRef.current = null;
       }
 
-      // Read the WAV file from disk
-      const data = await readFile(wavPath);
-      const blob = new Blob([data], { type: "audio/wav" });
+      const blob = new Blob([new Uint8Array(wavBytes)], { type: "audio/wav" });
 
       try {
         const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
