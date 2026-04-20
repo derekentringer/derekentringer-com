@@ -33,6 +33,7 @@ vi.mock("../lib/db.ts", () => ({
   getSyncMeta: vi.fn().mockResolvedValue(null),
   setSyncMeta: vi.fn().mockResolvedValue(undefined),
   fetchNoteById: vi.fn().mockResolvedValue(null),
+  fetchNoteEmbeddingInputById: vi.fn().mockResolvedValue(null),
   upsertNoteFromRemote: vi.fn().mockResolvedValue(undefined),
   upsertFolderFromRemote: (...args: unknown[]) => mockUpsertFolderFromRemote(...args),
   upsertImageFromRemote: vi.fn().mockResolvedValue(undefined),

@@ -241,6 +241,23 @@ export async function fetchNoteById(id: string): Promise<Note | null> {
   return rows.length > 0 ? rowToNote(rows[0]) : null;
 }
 
+/**
+ * Phase 5.1 — lightweight lookup used by the pull path to dedup
+ * embedding-queue work. Fetching only the two columns the embedding
+ * text is derived from avoids pulling a potentially 100 KB content
+ * payload through rowToNote just to compare strings.
+ */
+export async function fetchNoteEmbeddingInputById(
+  id: string,
+): Promise<{ title: string; content: string } | null> {
+  const db = await getDb();
+  const rows = await db.select<{ title: string; content: string }[]>(
+    "SELECT title, content FROM notes WHERE id = $1 LIMIT 1",
+    [id],
+  );
+  return rows.length > 0 ? { title: rows[0].title, content: rows[0].content } : null;
+}
+
 export interface CreateNoteInput {
   title?: string;
   content?: string;
