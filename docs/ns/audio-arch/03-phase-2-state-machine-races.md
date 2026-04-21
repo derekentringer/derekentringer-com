@@ -1,6 +1,6 @@
 # Phase 2 — State Machine Races: Start/Stop Guards, Ref Staleness
 
-**Status**: ✅ shipped (2.1–2.6)
+**Status**: mostly shipped — TS items (2.1, 2.3, 2.4, 2.5, 2.6) all in place; Rust doc-comment from 2.2 reverted. See revert commit `54ea383`.
 
 ## Goal
 
@@ -55,9 +55,9 @@ Alternatively: use a state machine (enum: "idle" | "recording" | "stopping" | "p
 
 **Estimated effort**: 1 hour
 
-### 2.2 — Rust-side `start_recording` idempotence ✅
+### 2.2 — Rust-side `start_recording` idempotence ❌ reverted (doc comment only)
 
-**Status**: shipped — documentation-only. Confirmed via Tauri v2 docs + source: only `async fn` commands are spawned on the tokio task pool; synchronous `#[tauri::command]` handlers (which `start_meeting_recording` is) run on the main thread sequentially. Two rapid JS-side invokes cannot execute concurrently in Rust, so the check-then-insert pattern on `RECORDING: Mutex<Option<RecordingState>>` is race-free without a CAS guard. Added documentation comments to both platforms' `start_recording` explaining the concurrency contract and noting the fix (`AtomicBool` CAS) needed if this ever becomes async.
+**Status**: the investigation finding is still valid — confirmed via Tauri v2 docs + source that synchronous `#[tauri::command]` handlers run serialized on the main thread, so the check-then-insert pattern is race-free without a CAS guard. But the doc comments I added to both platforms' `start_recording` were lost when we reverted `audio_capture.rs` + `audio_capture_win.rs` to develop in `54ea383`. Cheap to re-land as pure documentation if desired.
 
 **Location**: `packages/ns-desktop/src-tauri/src/audio_capture.rs:549-567` (macOS) + `audio_capture_win.rs:182-196` (Windows)
 

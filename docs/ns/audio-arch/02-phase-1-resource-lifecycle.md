@@ -1,6 +1,6 @@
 # Phase 1 — Resource Lifecycle: Temp Files, Streams, Threads
 
-**Status**: ✅ shipped (1.0–1.6)
+**Status**: partial — TS items (1.0, 1.1, 1.4, 1.5, 1.6) shipped; Rust items (1.2, 1.3) reverted after real-use regression. See revert commit `54ea383`.
 
 ## Goal
 
@@ -62,9 +62,9 @@ Startup wiring at `lib.rs:412-414` (background thread) is already live from v2.3
 
 **Estimated effort**: 1 hour
 
-### 1.2 — Writer thread panic handling ✅
+### 1.2 — Writer thread panic handling ❌ reverted
 
-**Status**: shipped — new `join_writer_and_cleanup(handle, path, label)` helper in `audio_capture_shared.rs` unlinks the PCM temp file on panic or writer error before returning the error. Both macOS `stop_recording` (`audio_capture.rs:664-687`) and Windows `stop_recording` (`audio_capture_win.rs:286-305`) now join **both** writers first (collecting each result into an `Option<Result<…>>`) then propagate the first error, so a panic in one writer never leaves the other writer's PCM orphaned. Three new tests in `audio_capture_shared.rs` cover panic, writer-error, and happy-path (file preserved for the mix step).
+**Status**: reverted in `54ea383`. The `join_writer_and_cleanup` helper and its integration in `stop_recording` were undone when we reverted `audio_capture.rs` + `audio_capture_win.rs` to develop's versions during the TCC-permission debugging saga. The develop stop path uses the simpler pre-existing join logic (`.join().map_err(...)?`). The helper itself has also been removed from `audio_capture_shared.rs` since it was unused; re-landing this item requires re-introducing both the helper and the callsite in a follow-up.
 
 **Location**: `packages/ns-desktop/src-tauri/src/audio_capture_shared.rs:163-179` + Rust call sites
 
@@ -82,11 +82,11 @@ Startup wiring at `lib.rs:412-414` (background thread) is already live from v2.3
 
 **Estimated effort**: 1.5 hours
 
-### 1.3 — PCM temp file cleanup on early error paths ✅
+### 1.3 — PCM temp file cleanup on early error paths ❌ reverted
 
-**Status**: shipped — introduced `StartupGuard` (Drop-based rollback) in both `audio_capture.rs` (macOS) and `audio_capture_win.rs` (Windows). Every fallible `?` between the first `spawn_writer_thread` and the final `commit()` now runs the guard's Drop impl, which calls the new shared helper `rollback_writer_and_unlink(sender, writer, path)` — drops the sender to close the channel, joins the writer thread, and *unconditionally* unlinks the PCM (unlike `join_writer_and_cleanup`, which preserves PCMs on success for the mix step). The macOS guard also rolls back the CoreAudio process tap + aggregate device in reverse allocation order. On happy path, `rollback.commit()` hands back the tracked sender + writer handles and marks the guard defused so Drop becomes a no-op.
+**Status**: reverted in `54ea383`. `StartupGuard` and `rollback_writer_and_unlink` have been removed. The develop-parity capture code doesn't clean up partially-allocated resources on an early `?` — an orphaned PCM would get swept at next app launch via `cleanup_stale_temp_files()`, which is a much coarser fallback than the guard provided but matches what develop ships.
 
-New tests: `rollback_writer_and_unlink_*` (2) in `audio_capture_shared.rs` verifying the helper drains real writer threads + unlinks even after a clean exit, and `startup_guard_tests::*` (2) in `audio_capture.rs` verifying drop-without-commit tears down both writer PCMs and is a no-op when no resources were set.
+Re-landing requires reintroducing `StartupGuard` + `rollback_writer_and_unlink` together; both platforms need it. If reintroduced, test against a packaged `.app` build (not `tauri dev`) so TCC permission state doesn't confuse the results.
 
 **Location**: `packages/ns-desktop/src-tauri/src/audio_capture.rs:37-149, 547-622` (macOS) + `audio_capture_win.rs:82-170, 193-309` (Windows)
 

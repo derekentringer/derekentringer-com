@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { AudioMode, RecordingSource } from "../hooks/useAiSettings.ts";
 import type { Note } from "@derekentringer/ns-shared";
-import { transcribeAudio, transcribeChunk } from "../api/ai.ts";
+import { structureAndCreateNote, transcribeAudio, transcribeChunk } from "../api/ai.ts";
 import { apiFetch } from "../api/client.ts";
 import { assembleTranscript } from "../lib/transcriptAssembly.ts";
 import { invoke } from "@tauri-apps/api/core";
@@ -88,6 +88,15 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   // recording (`handleMeetingRecord` / `handleMicRecord`) so the
   // next session gets a fresh cleanup.
   const cleanupDoneRef = useRef(false);
+
+  // In-flight chunk transcribe promises. Each `sendNativeChunk` and
+  // mic `recorder.onstop` registers its transcribe promise here on
+  // fire-and-forget, and removes it via `.finally()`. On
+  // `handleMeetingStop` we await everything still in this set before
+  // snapshotting the live transcript, so the dedup fast-path below
+  // never misses late-arriving chunks. Also used to gate whether a
+  // final-chunk flush is worth firing.
+  const pendingChunksRef = useRef<Set<Promise<unknown>>>(new Set());
 
   // Chunked transcription state
   const sessionIdRef = useRef("");
@@ -189,6 +198,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     sessionIdRef.current = "";
     chunkIndexRef.current = 0;
     isMeetingRef.current = false;
+    pendingChunksRef.current.clear();
   }, []);
 
   // Cleanup on unmount
@@ -272,7 +282,13 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     const idx = chunkIndexRef.current++;
     const sid = sessionIdRef.current;
 
-    // Fire-and-forget. Two invariants keep this safe:
+    // Fire-and-forget. Register the promise in `pendingChunksRef`
+    // so `handleMeetingStop` can await in-flight chunks before
+    // snapshotting the transcript — otherwise a chunk whose Whisper
+    // response is still in flight when the user clicks Stop gets
+    // dropped from the final note.
+    //
+    // Two invariants keep fire-and-forget safe:
     //   1. `idx` was claimed synchronously before this promise ran,
     //      so chunks never collide on the same index even when
     //      multiple uploads are in flight concurrently.
@@ -280,7 +296,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     //      directly; if the user has already stopped by then, the
     //      assembled live transcript was captured at stop time and
     //      this write just updates an abandoned map.
-    transcribeChunk(blob, sid, idx)
+    const promise = transcribeChunk(blob, sid, idx)
       .then((result) => {
         if (result.text && result.text.trim()) {
           transcriptChunksRef.current.set(result.chunkIndex, result.text.trim());
@@ -289,7 +305,11 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       })
       .catch((err) => {
         console.warn("Native chunk transcription failed:", err);
+      })
+      .finally(() => {
+        pendingChunksRef.current.delete(promise);
       });
+    pendingChunksRef.current.add(promise);
   }
 
   function startMeetingChunkCapture() {
@@ -353,18 +373,48 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     isMeetingRef.current = false;
 
     try {
-      // Capture transcript — try ref map first, fall back to state ref
+      // Stop the chunk timer first so no new chunks fire while we're
+      // flushing the in-flight ones.
+      stopMeetingChunkCapture();
+
+      // Flip UI to "processing" so the Stop button disappears and
+      // the user sees the spinner. We do this BEFORE the flush so
+      // the UI doesn't sit visually unchanged for ~10s while Whisper
+      // finishes the last chunk.
+      setState("processing");
+
+      // Step 1: drain any in-flight chunk Whisper responses so the
+      // snapshot we take below includes every chunk that had been
+      // fired during recording. Without this, a chunk whose Whisper
+      // response is still in flight at stop-time is silently dropped
+      // from the note's transcript.
+      if (pendingChunksRef.current.size > 0) {
+        await Promise.allSettled([...pendingChunksRef.current]);
+      }
+
+      // Step 2: peek at the live transcript. If it already has
+      // substantive content (>100 chars, the dedup threshold from
+      // Phase 4.1), we'll take the live-transcript fast path and
+      // skip full-Whisper on the mixed WAV — which means we also
+      // want the *tail* audio (the 0–`CHUNK_INTERVAL_MS` window
+      // between the last chunk tick and the user's Stop click).
+      // Fire one final `sendNativeChunk` to grab it, then drain
+      // again. If the live transcript is below threshold (short
+      // recording or mostly-silent audio) we'll fall through to
+      // `transcribeAudio` anyway — no point paying an extra
+      // ~5–10s Whisper call for tail audio we're about to discard.
+      const priorTranscript = getOrderedTranscript();
+      if (priorTranscript.trim().length > 100) {
+        await sendNativeChunk();
+        if (pendingChunksRef.current.size > 0) {
+          await Promise.allSettled([...pendingChunksRef.current]);
+        }
+      }
+
+      // NOW snapshot the live transcript — guaranteed complete.
       const fromMap = getOrderedTranscript();
       const fromState = liveTranscriptRef.current;
       const capturedTranscript = fromMap || fromState;
-
-      // Stop live transcription chunk capture
-      stopMeetingChunkCapture();
-
-      // Flip UI to "processing" *before* the native stop call so the Stop
-      // button disappears and the user sees the spinner while Rust is
-      // mixing the final WAV.
-      setState("processing");
 
       // Rust returns the mixed WAV as a byte array and deletes the
       // underlying temp file in the same call, so nothing lingers in
@@ -382,25 +432,24 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       const blob = new Blob([new Uint8Array(wavBytes)], { type: "audio/wav" });
 
       try {
-        // Always run full-Whisper on the mixed WAV. An earlier
-        // Phase-4.1 optimization tried to short-circuit this with
-        // the concatenated live-chunk transcript when it looked
-        // "substantive enough" (>100 chars), but that produced
-        // wrong or truncated notes in practice because:
-        //   1. The live transcript never includes the trailing
-        //      `CHUNK_INTERVAL_MS` of audio — whatever played
-        //      between the last chunk tick and the user's Stop
-        //      click is simply missing from the chunks.
-        //   2. Fire-and-forget chunk uploads mean a chunk whose
-        //      Whisper response hasn't returned by stop time is
-        //      missing from `transcriptChunksRef` when we snapshot
-        //      it here.
-        // Both gaps are invisible to the caller: the note just
-        // comes out with content silently dropped. Re-introducing
-        // the fast-path requires a "final-chunk flush on stop"
-        // that waits for in-flight responses and synthesizes one
-        // last chunk covering the tail audio — deferred.
-        const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
+        // Phase 4.1 (re-enabled via final-chunk flush): if the live
+        // transcript is substantive (>100 chars) AND it covers the
+        // tail audio thanks to the flush above, send it straight to
+        // Claude structuring via `/ai/structure-transcript` and skip
+        // a second full-WAV Whisper pass. Saves one Whisper call per
+        // meeting (~5–30s + cost). Short recordings fall back to
+        // full-Whisper on the blob so a brief memo still gets
+        // accurate transcription.
+        const useLiveTranscript =
+          !!capturedTranscript && capturedTranscript.trim().length > 100;
+
+        const result = useLiveTranscript
+          ? await structureAndCreateNote(
+              capturedTranscript,
+              modeRef.current,
+              folderIdRef.current,
+            )
+          : await transcribeAudio(blob, modeRef.current, folderIdRef.current);
 
         // Save transcript directly to the note via API. Failure is
         // non-fatal — the note was already created, so we still hand

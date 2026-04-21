@@ -1,6 +1,6 @@
 # Phase 4 — Performance: API Dedup, Parallelization, Chunking Tuning
 
-**Status**: partial — 4.2–4.4 shipped; 4.1/4.5 reverted after real-use regression
+**Status**: ✅ shipped (4.1–4.5) — 4.1/4.5 were reverted once after a real-use regression, then re-landed with the final-chunk flush fix (see 4.1 below).
 
 ## Goal
 
@@ -18,18 +18,18 @@ Reduce wasted API calls, parallelize sequential awaits, and optimize live chunki
 
 ## Items
 
-### 4.1 — Deduplicate full-audio vs live-chunk transcription ❌ reverted
+### 4.1 — Deduplicate full-audio vs live-chunk transcription ✅ (re-landed)
 
-**Status**: shipped then reverted after a real-use regression. Initial implementation routed `handleMeetingStop` through `structureAndCreateNote` (Claude-only) when `capturedTranscript.trim().length > 100`, skipping a full-Whisper pass. In practice the generated notes were truncated or missing content because:
+**Status**: shipped, then reverted after a real-use regression, then re-landed safely once the underlying gaps were closed.
 
-1. **Trailing-audio gap** — the chunk timer fires every `CHUNK_INTERVAL_MS` (30s). Audio captured after the last chunk tick and before the user's Stop click is never chunked, so it's absent from `transcriptChunksRef` and therefore from the note.
-2. **In-flight chunks** — fire-and-forget uploads (Phase 4.2) mean any chunk whose Whisper response hasn't returned by the time `handleMeetingStop` snapshots the transcript is missing.
+**History**:
+- **First land (commit `dcf64d7`)**: routed `handleMeetingStop` through `structureAndCreateNote` (Claude-only) when `capturedTranscript.trim().length > 100`, skipping a full-Whisper pass.
+- **Revert (commit `54ea383`)**: notes came out truncated or wrong because (1) the tail audio between the last chunk tick and Stop was never chunked, and (2) fire-and-forget chunks whose Whisper response hadn't returned by stop-time were missing from the snapshot. Both gaps silently dropped content.
+- **Re-land**: `handleMeetingStop` now drains `pendingChunksRef` (all in-flight chunk promises), then — if the pre-flush transcript looks substantive — fires one final `sendNativeChunk()` to grab the tail audio and awaits that too before snapshotting. With the flush in place, the live-transcript dedup is safe: what we hand to `structureAndCreateNote` is the complete ordered transcript covering every second of the recording. Short recordings (<100 chars of live content) still fall through to full-Whisper on the mixed WAV, so brief memos don't pay an extra chunk Whisper round-trip.
 
-Both gaps are invisible — the note silently comes out with content dropped. Re-introducing the optimization requires a "final-chunk flush" on stop (await pending chunks + synthesize one last chunk covering the tail) which was out of scope; see the open follow-up item in the project tracker.
+Why it's safe now: `sendNativeChunk` registers each transcribe promise in `pendingChunksRef.current` (added via the promise, removed via its `.finally()`), so on stop we know exactly what's in flight. `cleanup()` also clears the set so sessions don't cross-contaminate.
 
-Revert touched `AudioRecorder.tsx::handleMeetingStop` (deleted the `useLiveTranscript` branch), the `structureAndCreateNote` import, and two integration tests in `AudioRecorder.integration.test.tsx` (the fast-path assertion test removed; the full-flow test updated to assert `transcribeAudio` is called and the live transcript is PATCHed onto the note as a preview, matching the pre-4.1 behavior).
-
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:391-408` (meeting-mode stop)
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx::handleMeetingStop` (post-revert version with flush)
 
 **Problem**: Server receives full audio transcription request after already having transcribed live chunks. Whisper is called twice on (nearly) the same audio.
 
@@ -147,9 +147,9 @@ const CHUNK_INTERVAL_MS = 30_000;  // 30 seconds
 
 **Estimated effort**: 1 hour (measurement + tuning)
 
-### 4.5 — Avoid re-transcribing live chunks in final note ❌ reverted
+### 4.5 — Avoid re-transcribing live chunks in final note ✅ (re-landed with 4.1)
 
-**Status**: reverted along with 4.1 (see above). Meeting-mode now always re-transcribes the full mixed WAV. Re-enabling requires the final-chunk flush work.
+**Status**: shipped together with the 4.1 re-land. Meeting-mode recordings with substantive live transcripts route through `structureAndCreateNote` (Claude structuring on the already-Whisper-transcribed live text), skipping a second full-WAV Whisper pass. Short recordings still take the full-Whisper path for accuracy.
 
 **Problem**: Full audio is sent to `/ai/transcribe`, which calls Whisper. But live chunks already have Whisper transcripts. Redundant work.
 
