@@ -253,6 +253,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
@@ -336,7 +337,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   }, [isOpen]);
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, []);
 
   useEffect(() => {
@@ -802,7 +805,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+      <div ref={messagesScrollRef} className="flex-1 overflow-y-auto p-2 space-y-2">
         {/* Live recording card — sticky at top */}
         {isRecording && (
           <div className="sticky top-0 z-10 w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
@@ -1163,8 +1166,18 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Tips */}
-      {!isRecording && !isStreaming && messages.length === 0 && <TypingTips />}
+      {/* Tips — always reserve space so the panel's total height doesn't
+          change when messages.length crosses 0. The TypingTips component
+          itself only animates when empty-chat state is true; in other
+          states we render an empty placeholder with matching padding so
+          the input footer stays at a stable Y position. */}
+      {!isRecording && !isStreaming && messages.length === 0 ? (
+        <TypingTips />
+      ) : (
+        <div className="px-3 py-1.5 shrink-0" aria-hidden="true">
+          <p className="text-xs invisible">placeholder</p>
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t border-border p-3 shrink-0">
