@@ -37,8 +37,8 @@
 #![cfg(target_os = "windows")]
 
 use crate::audio_capture_shared::{
-    encode_mixed_wav_chunk, join_writer_and_cleanup, mix_to_wav, read_and_remove_file,
-    read_pcm_since, rollback_writer_and_unlink, spawn_writer_thread, to_mono,
+    encode_mixed_wav_chunk, mix_to_wav, read_and_remove_file, read_pcm_since,
+    spawn_writer_thread, to_mono,
     ChunkResampler,
 };
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -80,92 +80,6 @@ unsafe impl Send for RecordingState {}
 
 static RECORDING: Mutex<Option<RecordingState>> = Mutex::new(None);
 
-/// Roll-back guard for `start_recording` on Windows. Tracks the
-/// spawned writer threads and their PCM temp paths as setup
-/// progresses. Any `?` between the first writer spawn and the final
-/// `commit()` triggers the Drop impl, which closes senders, joins
-/// the writer threads, and unlinks the PCM fragments — preventing
-/// partial `notesync_*.pcm` files from accumulating in `%TEMP%`.
-struct StartupGuard {
-    mic_path: PathBuf,
-    sys_path: PathBuf,
-    mic_sender: Option<mpsc::SyncSender<Vec<f32>>>,
-    mic_writer: Option<thread::JoinHandle<Result<(), String>>>,
-    sys_sender: Option<mpsc::SyncSender<Vec<f32>>>,
-    sys_writer: Option<thread::JoinHandle<Result<(), String>>>,
-    defused: bool,
-}
-
-struct CommittedStartup {
-    mic_sender: mpsc::SyncSender<Vec<f32>>,
-    mic_writer: thread::JoinHandle<Result<(), String>>,
-    sys_sender: mpsc::SyncSender<Vec<f32>>,
-    sys_writer: thread::JoinHandle<Result<(), String>>,
-}
-
-impl StartupGuard {
-    fn new(mic_path: PathBuf, sys_path: PathBuf) -> Self {
-        Self {
-            mic_path,
-            sys_path,
-            mic_sender: None,
-            mic_writer: None,
-            sys_sender: None,
-            sys_writer: None,
-            defused: false,
-        }
-    }
-
-    fn set_mic_writer(
-        &mut self,
-        sender: mpsc::SyncSender<Vec<f32>>,
-        writer: thread::JoinHandle<Result<(), String>>,
-    ) {
-        self.mic_sender = Some(sender);
-        self.mic_writer = Some(writer);
-    }
-
-    fn set_sys_writer(
-        &mut self,
-        sender: mpsc::SyncSender<Vec<f32>>,
-        writer: thread::JoinHandle<Result<(), String>>,
-    ) {
-        self.sys_sender = Some(sender);
-        self.sys_writer = Some(writer);
-    }
-
-    fn commit(mut self) -> CommittedStartup {
-        self.defused = true;
-        CommittedStartup {
-            mic_sender: self.mic_sender.take().expect("mic_sender not set"),
-            mic_writer: self.mic_writer.take().expect("mic_writer not set"),
-            sys_sender: self.sys_sender.take().expect("sys_sender not set"),
-            sys_writer: self.sys_writer.take().expect("sys_writer not set"),
-        }
-    }
-}
-
-impl Drop for StartupGuard {
-    fn drop(&mut self) {
-        if self.defused {
-            return;
-        }
-
-        rollback_writer_and_unlink(
-            self.mic_sender.take(),
-            self.mic_writer.take(),
-            &self.mic_path,
-        );
-        rollback_writer_and_unlink(
-            self.sys_sender.take(),
-            self.sys_writer.take(),
-            &self.sys_path,
-        );
-
-        log::warn!("Windows start_recording rolled back partially-allocated resources");
-    }
-}
-
 pub fn check_support() -> Result<bool, String> {
     // cpal's WASAPI backend works on Windows 10+, which covers every version
     // Tauri itself supports. Return true unconditionally.
@@ -173,10 +87,6 @@ pub fn check_support() -> Result<bool, String> {
 }
 
 pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
-    // See audio_capture.rs::start_recording for the concurrency
-    // contract: synchronous `#[tauri::command]` handlers run on the
-    // main thread sequentially, so the check-then-insert below is
-    // race-free without a CAS guard.
     {
         let guard = RECORDING.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
@@ -191,10 +101,6 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
         .as_millis();
     let mic_temp_path = temp_dir.join(format!("notesync_mic_{timestamp}.pcm"));
     let sys_temp_path = temp_dir.join(format!("notesync_sys_{timestamp}.pcm"));
-
-    // Rollback guard — any `?` below will trigger Drop which closes
-    // senders, joins writer threads, and unlinks PCM fragments.
-    let mut rollback = StartupGuard::new(mic_temp_path.clone(), sys_temp_path.clone());
 
     let host = cpal::default_host();
 
@@ -219,7 +125,6 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
 
     let (mic_tx, mic_rx) = mpsc::sync_channel::<Vec<f32>>(128);
     let mic_writer = spawn_writer_thread(mic_temp_path.clone(), mic_rx);
-    rollback.set_mic_writer(mic_tx.clone(), mic_writer);
 
     let mic_rms = Arc::new(Mutex::new(0.0f32));
     let mic_stream = build_input_stream(
@@ -259,7 +164,6 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
 
     let (sys_tx, sys_rx) = mpsc::sync_channel::<Vec<f32>>(128);
     let sys_writer = spawn_writer_thread(sys_temp_path.clone(), sys_rx);
-    rollback.set_sys_writer(sys_tx.clone(), sys_writer);
 
     let sys_stream = build_input_stream(
         &sys_device,
@@ -285,16 +189,13 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
 
     // ── Store state ─────────────────────────────────────────────────
     let mut guard = RECORDING.lock().map_err(|e| e.to_string())?;
-    // All setup succeeded — defuse the rollback and take ownership
-    // of the senders + writer handles it was tracking.
-    let committed = rollback.commit();
     *guard = Some(RecordingState {
         mic_stream: Some(mic_stream),
         sys_stream: Some(sys_stream),
-        mic_sender: Some(committed.mic_sender),
-        sys_sender: Some(committed.sys_sender),
-        mic_writer: Some(committed.mic_writer),
-        sys_writer: Some(committed.sys_writer),
+        mic_sender: Some(mic_tx),
+        sys_sender: Some(sys_tx),
+        mic_writer: Some(mic_writer),
+        sys_writer: Some(sys_writer),
         mic_temp_path,
         sys_temp_path,
         mic_sample_rate,
@@ -383,23 +284,11 @@ pub fn stop_recording() -> Result<Vec<u8>, String> {
     state.sys_sender.take();
 
     // Wait for writer threads to flush remaining samples to disk.
-    // Join both before propagating any error so a panic in one
-    // writer doesn't leave the other's PCM orphaned in %TEMP%.
-    // `join_writer_and_cleanup` unlinks the corresponding PCM on
-    // panic/writer error.
-    let mic_result = state
-        .mic_writer
-        .take()
-        .map(|h| join_writer_and_cleanup(h, &state.mic_temp_path, "Mic"));
-    let sys_result = state
-        .sys_writer
-        .take()
-        .map(|h| join_writer_and_cleanup(h, &state.sys_temp_path, "System"));
-    if let Some(Err(e)) = mic_result {
-        return Err(e);
+    if let Some(h) = state.mic_writer.take() {
+        let _ = h.join();
     }
-    if let Some(Err(e)) = sys_result {
-        return Err(e);
+    if let Some(h) = state.sys_writer.take() {
+        let _ = h.join();
     }
 
     // Wait for tick thread to exit (bounded — tick thread polls stop_flag).

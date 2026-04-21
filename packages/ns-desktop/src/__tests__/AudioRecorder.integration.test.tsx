@@ -39,11 +39,9 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
 
 const mockTranscribeAudio = vi.fn();
 const mockTranscribeChunk = vi.fn();
-const mockStructureAndCreateNote = vi.fn();
 vi.mock("../api/ai.ts", () => ({
   transcribeAudio: (...args: unknown[]) => mockTranscribeAudio(...args),
   transcribeChunk: (...args: unknown[]) => mockTranscribeChunk(...args),
-  structureAndCreateNote: (...args: unknown[]) => mockStructureAndCreateNote(...args),
 }));
 
 const mockApiFetch = vi.fn();
@@ -70,7 +68,6 @@ describe("AudioRecorder — mic-only happy path", () => {
 
     mockTranscribeAudio.mockReset();
     mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
-    mockStructureAndCreateNote.mockReset();
     mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
   });
 
@@ -768,7 +765,6 @@ describe("AudioRecorder — meeting-mode stop re-entry guard", () => {
     mediaDevices = installMediaDevicesMock();
     mockTranscribeAudio.mockReset();
     mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
-    mockStructureAndCreateNote.mockReset();
     mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
   });
 
@@ -872,7 +868,6 @@ describe("AudioRecorder — meeting-mode failure cleanup", () => {
 
     mockTranscribeAudio.mockReset();
     mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
-    mockStructureAndCreateNote.mockReset();
     mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
   });
 
@@ -984,12 +979,13 @@ describe("AudioRecorder — meeting-mode failure cleanup", () => {
   });
 });
 
-// Phase 4.1 — dedup full-audio vs live-chunk transcription.
-// When the live transcript exceeds 100 chars (substantive content),
-// handleMeetingStop routes through `structureAndCreateNote`
-// (Claude-only, skipping Whisper on the full WAV). Shorter
-// transcripts still take the full `transcribeAudio` path.
-describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
+// Meeting-mode transcription path. Phase 4.1 (dedup: skip full
+// Whisper when live transcript is substantive) was reverted because
+// the live transcript misses trailing audio + in-flight chunk
+// responses, producing truncated notes. The canonical path is now
+// always `transcribeAudio(blob)` on the full mixed WAV; live chunks
+// are kept as a best-effort preview and PATCHed onto the note.
+describe("AudioRecorder — meeting-mode transcription", () => {
   let mediaRecorder: MediaRecorderMock;
   let mediaDevices: MediaDevicesMock;
 
@@ -1001,7 +997,6 @@ describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
     mediaDevices = installMediaDevicesMock();
     mockTranscribeAudio.mockReset();
     mockTranscribeChunk.mockReset().mockResolvedValue({ text: "", chunkIndex: 0 });
-    mockStructureAndCreateNote.mockReset();
     mockApiFetch.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
   });
 
@@ -1011,98 +1006,10 @@ describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
     vi.useRealTimers();
   });
 
-  it("substantive live transcript routes to structureAndCreateNote, skipping full Whisper", async () => {
-    // One chunk fetch returns bytes; first transcribeChunk returns a
-    // long string (>100 chars). Subsequent calls return empty.
-    const longChunkText = "meaningful transcribed content ".repeat(10); // ~300 chars
-    let chunkCallCount = 0;
-    invokeBus
-      .resolve("start_meeting_recording", undefined)
-      .on("get_meeting_audio_chunk", () => {
-        chunkCallCount++;
-        // First call returns a non-empty buffer; later calls empty
-        // so the chunk timer doesn't accumulate more chunks than we want.
-        return chunkCallCount === 1 ? Array.from(new Uint8Array(2048)) : [];
-      })
-      .resolve("stop_meeting_recording", []);
-
-    mockTranscribeChunk
-      .mockReset()
-      .mockResolvedValueOnce({ text: longChunkText, chunkIndex: 0 })
-      .mockResolvedValue({ text: "", chunkIndex: 0 });
-
-    const note = { id: "note-dedup", title: "T", content: "c" };
-    mockStructureAndCreateNote.mockResolvedValue({ note });
-
-    const onNoteCreated = vi.fn();
-    const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
-
-    vi.useFakeTimers();
-    const { rerender } = render(
-      <AudioRecorder
-        defaultMode="meeting"
-        recordingSource="meeting"
-        onRecordingSourceChange={vi.fn()}
-        onNoteCreated={onNoteCreated}
-        onError={vi.fn()}
-        onRecordingStateChange={(s) => recordingHandles.push(s)}
-        triggerMode="meeting"
-        triggerKey={0}
-      />,
-    );
-
-    await act(async () => {
-      rerender(
-        <AudioRecorder
-          defaultMode="meeting"
-          recordingSource="meeting"
-          onRecordingSourceChange={vi.fn()}
-          onNoteCreated={onNoteCreated}
-          onError={vi.fn()}
-          onRecordingStateChange={(s) => recordingHandles.push(s)}
-          triggerMode="meeting"
-          triggerKey={1}
-        />,
-      );
-    });
-
-    // Advance 30s so the chunk timer fires once and uploads a chunk.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_100);
-      // Flush the invoke + transcribeChunk promise chain.
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // Now the live transcript should have the long chunk text.
-    const recording = recordingHandles.find((s) => s?.state === "recording")!;
-
-    await act(async () => {
-      recording.onStop();
-      await vi.advanceTimersByTimeAsync(100);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    vi.useRealTimers();
-
-    await waitFor(() => {
-      expect(onNoteCreated).toHaveBeenCalled();
-    });
-
-    expect(mockStructureAndCreateNote).toHaveBeenCalledTimes(1);
-    expect(mockTranscribeAudio).not.toHaveBeenCalled();
-    expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-dedup" }));
-  });
-
-  // Phase 5.2 — full meeting-mode flow test. Drives the component
-  // through N chunk-timer ticks, asserts each chunk is transcribed
-  // and the assembled live transcript reflects the ordered chunks,
-  // then stops and verifies the final note is created with the live
-  // transcript (the dedup fast-path from 4.1) rather than a second
-  // full Whisper pass.
-  it("records 3 chunks in order, assembles live transcript, creates note", async () => {
+  // Phase 5.2 — full meeting-mode flow: N chunk-timer ticks → live
+  // transcript accumulates → stop → full-audio transcribeAudio
+  // creates the note → the live transcript is PATCHed onto the note.
+  it("records 3 chunks in order, assembles live transcript, creates note via full Whisper", async () => {
     let chunkCallCount = 0;
     invokeBus
       .resolve("start_meeting_recording", undefined)
@@ -1124,7 +1031,7 @@ describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
       .mockResolvedValue({ text: "", chunkIndex: 0 });
 
     const note = { id: "note-full-flow", title: "T", content: "c" };
-    mockStructureAndCreateNote.mockResolvedValue({ note });
+    mockTranscribeAudio.mockResolvedValue({ note });
 
     const onNoteCreated = vi.fn();
     const recordingHandles: Array<{ state: string; onStop: () => void } | null> = [];
@@ -1186,20 +1093,23 @@ describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
       expect(onNoteCreated).toHaveBeenCalled();
     });
 
-    // Dedup fast-path was taken — live transcript > 100 chars.
-    expect(mockStructureAndCreateNote).toHaveBeenCalledTimes(1);
-    expect(mockTranscribeAudio).not.toHaveBeenCalled();
+    // Canonical path — full Whisper on the mixed WAV produced the note.
+    expect(mockTranscribeAudio).toHaveBeenCalledTimes(1);
 
-    // Transcript passed to structureAndCreateNote should be all three
-    // chunks concatenated in index order.
-    const [transcriptArg] = mockStructureAndCreateNote.mock.calls[0];
-    expect(transcriptArg).toContain("chunk zero text");
-    expect(transcriptArg).toContain("chunk one text");
-    expect(transcriptArg).toContain("chunk two text");
-    // Verify ordering — "zero" appears before "one" appears before "two".
-    const i0 = transcriptArg.indexOf("chunk zero");
-    const i1 = transcriptArg.indexOf("chunk one");
-    const i2 = transcriptArg.indexOf("chunk two");
+    // The live transcript (all three chunks in index order) gets
+    // PATCHed onto the note via apiFetch so the final note still
+    // carries the preview text that built up during recording.
+    const patchCall = mockApiFetch.mock.calls.find(
+      (args) => typeof args[0] === "string" && args[0].includes("/notes/note-full-flow"),
+    );
+    expect(patchCall).toBeDefined();
+    const patchBody = JSON.parse((patchCall![1] as { body: string }).body);
+    expect(patchBody.transcript).toContain("chunk zero text");
+    expect(patchBody.transcript).toContain("chunk one text");
+    expect(patchBody.transcript).toContain("chunk two text");
+    const i0 = patchBody.transcript.indexOf("chunk zero");
+    const i1 = patchBody.transcript.indexOf("chunk one");
+    const i2 = patchBody.transcript.indexOf("chunk two");
     expect(i0).toBeLessThan(i1);
     expect(i1).toBeLessThan(i2);
   });
@@ -1211,7 +1121,9 @@ describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
   // + fake-timer + React state machine adds timing fragility without
   // additional coverage beyond what the pure-function tests provide.
 
-  it("empty/short live transcript falls back to transcribeAudio (full Whisper)", async () => {
+  // Empty live transcript — full Whisper still runs on stop. This is
+  // the canonical path (the only path, now that 4.1 is reverted).
+  it("empty live transcript still creates note via full Whisper", async () => {
     invokeBus
       .resolve("start_meeting_recording", undefined)
       .resolve("get_meeting_audio_chunk", [])
@@ -1269,7 +1181,6 @@ describe("AudioRecorder — meeting-mode transcription dedup (4.1)", () => {
     });
 
     expect(mockTranscribeAudio).toHaveBeenCalledTimes(1);
-    expect(mockStructureAndCreateNote).not.toHaveBeenCalled();
     expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-fallback" }));
   });
 });

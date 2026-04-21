@@ -1,6 +1,6 @@
 # Phase 4 — Performance: API Dedup, Parallelization, Chunking Tuning
 
-**Status**: ✅ shipped (4.1–4.5)
+**Status**: partial — 4.2–4.4 shipped; 4.1/4.5 reverted after real-use regression
 
 ## Goal
 
@@ -18,11 +18,18 @@ Reduce wasted API calls, parallelize sequential awaits, and optimize live chunki
 
 ## Items
 
-### 4.1 — Deduplicate full-audio vs live-chunk transcription ✅
+### 4.1 — Deduplicate full-audio vs live-chunk transcription ❌ reverted
 
-**Status**: shipped — Option A implemented in `handleMeetingStop`. If `capturedTranscript.trim().length > 100`, skip `transcribeAudio` (full-WAV Whisper) and route through `structureAndCreateNote` (Claude-only via `/ai/structure-transcript`). Short or empty transcripts fall back to the full-Whisper path so brief memos still get accurate transcription. The `stop_meeting_recording` invoke still runs unconditionally (it cleans up audio units + temp files); the returned WAV bytes are just discarded on the live-transcript path. New tests: `"substantive live transcript routes to structureAndCreateNote"` (uses fake timers to advance the chunk interval so a real long chunk arrives) + `"empty/short live transcript falls back to transcribeAudio"` (no chunks → fallback verified). Known limitation: the live transcript can miss up to `CHUNK_INTERVAL_MS` (30s) of trailing audio that didn't trigger a chunk timer before stop; a final-chunk flush is a future-phase concern.
+**Status**: shipped then reverted after a real-use regression. Initial implementation routed `handleMeetingStop` through `structureAndCreateNote` (Claude-only) when `capturedTranscript.trim().length > 100`, skipping a full-Whisper pass. In practice the generated notes were truncated or missing content because:
 
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:391-425` (meeting-mode stop branching)
+1. **Trailing-audio gap** — the chunk timer fires every `CHUNK_INTERVAL_MS` (30s). Audio captured after the last chunk tick and before the user's Stop click is never chunked, so it's absent from `transcriptChunksRef` and therefore from the note.
+2. **In-flight chunks** — fire-and-forget uploads (Phase 4.2) mean any chunk whose Whisper response hasn't returned by the time `handleMeetingStop` snapshots the transcript is missing.
+
+Both gaps are invisible — the note silently comes out with content dropped. Re-introducing the optimization requires a "final-chunk flush" on stop (await pending chunks + synthesize one last chunk covering the tail) which was out of scope; see the open follow-up item in the project tracker.
+
+Revert touched `AudioRecorder.tsx::handleMeetingStop` (deleted the `useLiveTranscript` branch), the `structureAndCreateNote` import, and two integration tests in `AudioRecorder.integration.test.tsx` (the fast-path assertion test removed; the full-flow test updated to assert `transcribeAudio` is called and the live transcript is PATCHed onto the note as a preview, matching the pre-4.1 behavior).
+
+**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:391-408` (meeting-mode stop)
 
 **Problem**: Server receives full audio transcription request after already having transcribed live chunks. Whisper is called twice on (nearly) the same audio.
 
@@ -140,11 +147,9 @@ const CHUNK_INTERVAL_MS = 30_000;  // 30 seconds
 
 **Estimated effort**: 1 hour (measurement + tuning)
 
-### 4.5 — Avoid re-transcribing live chunks in final note ✅
+### 4.5 — Avoid re-transcribing live chunks in final note ❌ reverted
 
-**Status**: shipped as part of 4.1. Meeting-mode now skips `transcribeAudio` when the live transcript is substantive. Mic mode still uses `transcribeAudio` unconditionally — the plan scoped this item to meeting mode, and mic-mode recordings are typically shorter (memos) where the optimization delta is small.
-
-**Location**: `packages/ns-desktop/src/components/AudioRecorder.tsx:391-425`
+**Status**: reverted along with 4.1 (see above). Meeting-mode now always re-transcribes the full mixed WAV. Re-enabling requires the final-chunk flush work.
 
 **Problem**: Full audio is sent to `/ai/transcribe`, which calls Whisper. But live chunks already have Whisper transcripts. Redundant work.
 

@@ -9,8 +9,8 @@ use objc2::AnyThread;
 use tauri::Emitter;
 
 use crate::audio_capture_shared::{
-    encode_mixed_wav_chunk, join_writer_and_cleanup, mix_to_wav, read_and_remove_file,
-    read_pcm_since, rollback_writer_and_unlink, spawn_writer_thread, to_mono, ChunkResampler,
+    encode_mixed_wav_chunk, mix_to_wav, read_and_remove_file, read_pcm_since,
+    spawn_writer_thread, to_mono, ChunkResampler,
 };
 
 struct RecordingState {
@@ -37,130 +37,6 @@ struct RecordingState {
 unsafe impl Send for RecordingState {}
 
 static RECORDING: Mutex<Option<RecordingState>> = Mutex::new(None);
-
-/// Roll-back guard for `start_recording`. Each fallible allocation
-/// (writer threads, process tap, aggregate device) is registered with
-/// the guard as it happens. If any subsequent `?` returns early, the
-/// guard's `Drop` impl drains senders, joins + unlinks PCM temp
-/// files, and destroys the macOS hardware resources — so an early
-/// error never leaves `notesync_*.pcm` behind in `$TMPDIR` or leaks a
-/// process tap / aggregate device registration in CoreAudio.
-/// Successful setup calls `.commit()` to extract the resources into a
-/// `RecordingState` without running the rollback.
-struct StartupGuard {
-    mic_path: PathBuf,
-    sys_path: PathBuf,
-    mic_sender: Option<mpsc::SyncSender<Vec<f32>>>,
-    mic_writer: Option<thread::JoinHandle<Result<(), String>>>,
-    sys_sender: Option<mpsc::SyncSender<Vec<f32>>>,
-    sys_writer: Option<thread::JoinHandle<Result<(), String>>>,
-    tap_id: Option<u32>,
-    aggregate_device_id: Option<u32>,
-    defused: bool,
-}
-
-struct CommittedStartup {
-    mic_sender: mpsc::SyncSender<Vec<f32>>,
-    mic_writer: thread::JoinHandle<Result<(), String>>,
-    sys_sender: mpsc::SyncSender<Vec<f32>>,
-    sys_writer: thread::JoinHandle<Result<(), String>>,
-    tap_id: u32,
-    aggregate_device_id: u32,
-}
-
-impl StartupGuard {
-    fn new(mic_path: PathBuf, sys_path: PathBuf) -> Self {
-        Self {
-            mic_path,
-            sys_path,
-            mic_sender: None,
-            mic_writer: None,
-            sys_sender: None,
-            sys_writer: None,
-            tap_id: None,
-            aggregate_device_id: None,
-            defused: false,
-        }
-    }
-
-    fn set_mic_writer(
-        &mut self,
-        sender: mpsc::SyncSender<Vec<f32>>,
-        writer: thread::JoinHandle<Result<(), String>>,
-    ) {
-        self.mic_sender = Some(sender);
-        self.mic_writer = Some(writer);
-    }
-
-    fn set_sys_writer(
-        &mut self,
-        sender: mpsc::SyncSender<Vec<f32>>,
-        writer: thread::JoinHandle<Result<(), String>>,
-    ) {
-        self.sys_sender = Some(sender);
-        self.sys_writer = Some(writer);
-    }
-
-    fn set_tap(&mut self, id: u32) {
-        self.tap_id = Some(id);
-    }
-
-    fn set_aggregate(&mut self, id: u32) {
-        self.aggregate_device_id = Some(id);
-    }
-
-    fn commit(mut self) -> CommittedStartup {
-        self.defused = true;
-        CommittedStartup {
-            mic_sender: self.mic_sender.take().expect("mic_sender not set before commit"),
-            mic_writer: self.mic_writer.take().expect("mic_writer not set before commit"),
-            sys_sender: self.sys_sender.take().expect("sys_sender not set before commit"),
-            sys_writer: self.sys_writer.take().expect("sys_writer not set before commit"),
-            tap_id: self.tap_id.take().expect("tap_id not set before commit"),
-            aggregate_device_id: self
-                .aggregate_device_id
-                .take()
-                .expect("aggregate_device_id not set before commit"),
-        }
-    }
-}
-
-impl Drop for StartupGuard {
-    fn drop(&mut self) {
-        if self.defused {
-            return;
-        }
-
-        // Rollback_writer_and_unlink drops the sender (closing the
-        // channel so the writer loop exits), joins the writer
-        // thread, and unlinks the PCM temp file. Any sender clones
-        // inside audio_units were dropped by the caller's own local
-        // drop before this guard drops (the guard is declared before
-        // the audio_units, so it outlives them).
-        rollback_writer_and_unlink(
-            self.mic_sender.take(),
-            self.mic_writer.take(),
-            &self.mic_path,
-        );
-        rollback_writer_and_unlink(
-            self.sys_sender.take(),
-            self.sys_writer.take(),
-            &self.sys_path,
-        );
-
-        // Destroy CoreAudio hardware in reverse allocation order.
-        unsafe {
-            if let Some(id) = self.aggregate_device_id.take() {
-                AudioHardwareDestroyAggregateDevice(id);
-            }
-            if let Some(id) = self.tap_id.take() {
-                objc2_core_audio::AudioHardwareDestroyProcessTap(id);
-            }
-        }
-
-        log::warn!("start_recording rolled back partially-allocated resources");
-    }
-}
 
 fn request_microphone_permission() -> Result<(), String> {
     use objc2_foundation::NSString;
@@ -547,14 +423,6 @@ pub fn check_support() -> Result<bool, String> {
 }
 
 pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
-    // Concurrency contract: this fn is registered as a synchronous
-    // `#[tauri::command]`, which Tauri v2 dispatches on the main
-    // thread sequentially (only `async fn` commands are spawned on
-    // the tokio pool). Two JS-side `invoke("start_meeting_recording")`
-    // calls cannot run concurrently in Rust, so the check-then-insert
-    // pattern on `RECORDING` below is race-free without a CAS guard.
-    // If this command is ever converted to async, gate the entry with
-    // an AtomicBool CAS to preserve idempotence.
     {
         let guard = RECORDING.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
@@ -569,12 +437,6 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
         .as_millis();
     let system_temp_path = temp_dir.join(format!("notesync_sys_{timestamp}.pcm"));
     let mic_temp_path = temp_dir.join(format!("notesync_mic_{timestamp}.pcm"));
-
-    // Rollback guard — every fallible `?` below between here and the
-    // final `commit()` will trigger this guard's Drop impl, which
-    // tears down any writer threads, PCM temp files, and CoreAudio
-    // hardware we've already allocated.
-    let mut rollback = StartupGuard::new(mic_temp_path.clone(), system_temp_path.clone());
 
     // Step 1: Pre-request ALL permissions before any HAL operations.
     // This ensures exactly 2 dialogs on first use, 0 on subsequent uses.
@@ -594,7 +456,6 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
 
     let (mic_tx, mic_rx) = mpsc::sync_channel::<Vec<f32>>(128);
     let mic_writer = spawn_writer_thread(mic_temp_path.clone(), mic_rx);
-    rollback.set_mic_writer(mic_tx.clone(), mic_writer);
 
     let mic_rms = Arc::new(Mutex::new(0.0f32));
     let mic_audio_unit = setup_input_audio_unit(
@@ -652,12 +513,10 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     let system_sample_rate = get_device_sample_rate(output_device_id)?;
 
     let (tap_id, tap_uuid) = create_process_tap(&output_uid_nsstring)?;
-    rollback.set_tap(tap_id);
     log::info!("System audio tap created (tap_id={})", tap_id);
 
     // Step 4: Create aggregate device (no dialog — permission already granted)
     let aggregate_device_id = create_aggregate_device(&tap_uuid)?;
-    rollback.set_aggregate(aggregate_device_id);
     log::info!("Aggregate device created (id={})", aggregate_device_id);
 
     let system_channels = get_device_channels(aggregate_device_id, true).unwrap_or(2);
@@ -665,7 +524,6 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     // Step 5: Set up system audio capture with disk streaming
     let (sys_tx, sys_rx) = mpsc::sync_channel::<Vec<f32>>(128);
     let sys_writer = spawn_writer_thread(system_temp_path.clone(), sys_rx);
-    rollback.set_sys_writer(sys_tx.clone(), sys_writer);
 
     let audio_rms = Arc::new(Mutex::new(0.0f32));
     let system_audio_unit = setup_input_audio_unit(
@@ -707,24 +565,21 @@ pub fn start_recording(app_handle: tauri::AppHandle) -> Result<(), String> {
     });
 
     let mut guard = RECORDING.lock().map_err(|e| e.to_string())?;
-    // All setup succeeded — take ownership away from the rollback
-    // guard so its Drop doesn't tear everything down.
-    let committed = rollback.commit();
     *guard = Some(RecordingState {
         system_audio_unit,
         mic_audio_unit,
-        system_sender: Some(committed.sys_sender),
-        mic_sender: Some(committed.mic_sender),
-        system_writer: Some(committed.sys_writer),
-        mic_writer: Some(committed.mic_writer),
+        system_sender: Some(sys_tx),
+        mic_sender: Some(mic_tx),
+        system_writer: Some(sys_writer),
+        mic_writer: Some(mic_writer),
         system_temp_path,
         mic_temp_path,
         system_sample_rate: system_sample_rate as u32,
         mic_sample_rate: mic_sample_rate as u32,
         system_channels,
         mic_channels,
-        tap_id: committed.tap_id,
-        aggregate_device_id: committed.aggregate_device_id,
+        tap_id,
+        aggregate_device_id,
         stop_flag,
         sys_chunk_read_pos: 0,
         mic_chunk_read_pos: 0,
@@ -806,24 +661,18 @@ pub fn stop_recording() -> Result<Vec<u8>, String> {
     state.system_sender.take();
     state.mic_sender.take();
 
-    // Wait for writer threads to flush and close files. Join both
-    // first before propagating any error — otherwise a panic in one
-    // writer would early-return and leave the other writer's PCM
-    // orphaned in $TMPDIR. `join_writer_and_cleanup` unlinks the
-    // corresponding PCM on panic/error, so the temp dir stays clean.
-    let sys_result = state
-        .system_writer
-        .take()
-        .map(|h| join_writer_and_cleanup(h, &state.system_temp_path, "System"));
-    let mic_result = state
-        .mic_writer
-        .take()
-        .map(|h| join_writer_and_cleanup(h, &state.mic_temp_path, "Mic"));
-    if let Some(Err(e)) = sys_result {
-        return Err(e);
+    // Wait for writer threads to flush and close files
+    if let Some(handle) = state.system_writer.take() {
+        handle
+            .join()
+            .map_err(|_| "System writer thread panicked".to_string())?
+            .map_err(|e| format!("System writer error: {e}"))?;
     }
-    if let Some(Err(e)) = mic_result {
-        return Err(e);
+    if let Some(handle) = state.mic_writer.take() {
+        handle
+            .join()
+            .map_err(|_| "Mic writer thread panicked".to_string())?
+            .map_err(|e| format!("Mic writer error: {e}"))?;
     }
 
     // Destroy audio hardware
@@ -871,64 +720,4 @@ pub fn stop_recording() -> Result<Vec<u8>, String> {
     // previous API returned a path and relied on the TS side to
     // delete, which it never did, leaking ~1 MB/sec per meeting.
     wav_path.and_then(|p| read_and_remove_file(&p))
-}
-
-// Phase 1.3 — rollback tests for `StartupGuard`. We only exercise
-// the writer / PCM-cleanup path because the CoreAudio hardware
-// tracking (tap_id, aggregate_device_id) would panic a bare test
-// runner without a device present. Those branches are verified
-// indirectly by the shared `rollback_writer_and_unlink` tests plus
-// the fact that `commit()` asserts all fields are Some — so a
-// mis-wired guard would surface as a start_recording panic at the
-// next in-device run rather than a silent leak.
-#[cfg(test)]
-mod startup_guard_tests {
-    use super::*;
-    use crate::audio_test_support::TempAudioDir;
-
-    #[test]
-    fn drop_without_commit_unlinks_both_pcms_and_drains_writers() {
-        let dir = TempAudioDir::new().unwrap();
-        let mic_path = dir.path_in("notesync_mic_test.pcm");
-        let sys_path = dir.path_in("notesync_sys_test.pcm");
-
-        let (mic_tx, mic_rx) = mpsc::sync_channel::<Vec<f32>>(8);
-        let mic_writer = spawn_writer_thread(mic_path.clone(), mic_rx);
-        let (sys_tx, sys_rx) = mpsc::sync_channel::<Vec<f32>>(8);
-        let sys_writer = spawn_writer_thread(sys_path.clone(), sys_rx);
-
-        // Push a sample into each so the PCM files are real on disk.
-        mic_tx.send(vec![0.0f32; 16]).unwrap();
-        sys_tx.send(vec![0.0f32; 16]).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        assert!(mic_path.exists());
-        assert!(sys_path.exists());
-
-        // Build a guard and register both writers, then drop without commit.
-        {
-            let mut guard = StartupGuard::new(mic_path.clone(), sys_path.clone());
-            guard.set_mic_writer(mic_tx, mic_writer);
-            guard.set_sys_writer(sys_tx, sys_writer);
-            // No commit — Drop runs at end of scope.
-        }
-
-        assert!(!mic_path.exists(), "mic PCM should be unlinked on rollback");
-        assert!(!sys_path.exists(), "sys PCM should be unlinked on rollback");
-    }
-
-    #[test]
-    fn drop_before_any_resources_allocated_is_noop() {
-        let dir = TempAudioDir::new().unwrap();
-        let mic_path = dir.path_in("notesync_mic_unused.pcm");
-        let sys_path = dir.path_in("notesync_sys_unused.pcm");
-
-        {
-            let _guard = StartupGuard::new(mic_path.clone(), sys_path.clone());
-            // Neither set_*_writer nor commit called — Drop should
-            // just attempt (no-op) removes on non-existent paths.
-        }
-
-        assert!(!mic_path.exists());
-        assert!(!sys_path.exists());
-    }
 }

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { AudioMode, RecordingSource } from "../hooks/useAiSettings.ts";
 import type { Note } from "@derekentringer/ns-shared";
-import { structureAndCreateNote, transcribeAudio, transcribeChunk } from "../api/ai.ts";
+import { transcribeAudio, transcribeChunk } from "../api/ai.ts";
 import { apiFetch } from "../api/client.ts";
 import { assembleTranscript } from "../lib/transcriptAssembly.ts";
 import { invoke } from "@tauri-apps/api/core";
@@ -21,14 +21,7 @@ const SOURCE_LABELS: Record<RecordingSource, string> = {
 
 const MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 const MAX_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
-// Phase 4.4: 30s cadence. Whisper typically returns a transcribed
-// chunk in 5–10s, so a 20s interval meant the next chunk timer
-// fired while the previous upload was still in flight, stacking
-// requests and producing ~3 concurrent Whisper calls by mid-meeting.
-// 30s cuts API load by ~33% with a 10s latency trade-off on the
-// live transcript — acceptable because the live view is a
-// best-effort preview, not the canonical transcript.
-const CHUNK_INTERVAL_MS = 30_000;
+const CHUNK_INTERVAL_MS = 20_000; // Send a chunk every 20 seconds
 
 const PREFERRED_MIME_TYPES = [
   "audio/webm;codecs=opus",
@@ -389,35 +382,25 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       const blob = new Blob([new Uint8Array(wavBytes)], { type: "audio/wav" });
 
       try {
-        // Phase 4.1 — dedup full-audio vs live-chunk transcription.
-        // If the live chunks already gathered a substantive transcript
-        // (>100 chars, threshold from the hardening plan's "Option A"),
-        // skip re-running Whisper on the full WAV and hand the live
-        // transcript directly to Claude structuring via
-        // `/ai/structure-transcript`. That saves one full-audio
-        // Whisper pass per meeting — in a 10-minute meeting, the live
-        // chunks have already seen the entire audio anyway, so the
-        // duplicate Whisper pass is pure waste.
-        //
-        // The live transcript can miss up to one chunk interval of
-        // trailing audio (the final ~30s window before stop that
-        // didn't trigger a chunk timer). That trade-off is documented
-        // in the plan; users who need perfect tail-end coverage can
-        // record past the content they care about, or we can add a
-        // "final-chunk flush" in a future phase.
-        //
-        // Short transcripts fall back to the full-Whisper path so
-        // brief memos still get transcribed accurately.
-        const useLiveTranscript =
-          !!capturedTranscript && capturedTranscript.trim().length > 100;
-
-        const result = useLiveTranscript
-          ? await structureAndCreateNote(
-              capturedTranscript,
-              modeRef.current,
-              folderIdRef.current,
-            )
-          : await transcribeAudio(blob, modeRef.current, folderIdRef.current);
+        // Always run full-Whisper on the mixed WAV. An earlier
+        // Phase-4.1 optimization tried to short-circuit this with
+        // the concatenated live-chunk transcript when it looked
+        // "substantive enough" (>100 chars), but that produced
+        // wrong or truncated notes in practice because:
+        //   1. The live transcript never includes the trailing
+        //      `CHUNK_INTERVAL_MS` of audio — whatever played
+        //      between the last chunk tick and the user's Stop
+        //      click is simply missing from the chunks.
+        //   2. Fire-and-forget chunk uploads mean a chunk whose
+        //      Whisper response hasn't returned by stop time is
+        //      missing from `transcriptChunksRef` when we snapshot
+        //      it here.
+        // Both gaps are invisible to the caller: the note just
+        // comes out with content silently dropped. Re-introducing
+        // the fast-path requires a "final-chunk flush on stop"
+        // that waits for in-flight responses and synthesizes one
+        // last chunk covering the tail audio — deferred.
+        const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
 
         // Save transcript directly to the note via API. Failure is
         // non-fatal — the note was already created, so we still hand
