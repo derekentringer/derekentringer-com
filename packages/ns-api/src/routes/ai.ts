@@ -429,13 +429,25 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const noteRow = await createNote(userId, {
-        title: structured.title,
-        content: structured.content,
-        tags: structured.tags,
-        audioMode: mode as AudioMode,
-        folderId,
-      });
+      // Phase 3.5 — see `/ai/transcribe` above for the atomicity
+      // rationale. Consistent error shape on createNote failure.
+      let noteRow;
+      try {
+        noteRow = await createNote(userId, {
+          title: structured.title,
+          content: structured.content,
+          tags: structured.tags,
+          audioMode: mode as AudioMode,
+          folderId,
+        });
+      } catch (err) {
+        request.log.error(err, "Note creation failed after transcript structuring");
+        return reply.status(502).send({
+          statusCode: 502,
+          error: "Bad Gateway",
+          message: err instanceof Error ? err.message : "Failed to create note",
+        });
+      }
 
       const note = toNote(noteRow);
 
@@ -683,13 +695,29 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       }
 
-      const noteRow = await createNote(userId, {
-        title: structured.title,
-        content: structured.content,
-        tags: structured.tags,
-        audioMode: mode,
-        folderId,
-      });
+      // Phase 3.5 — note creation is the last step; wrapping it in
+      // its own try/catch keeps the response shape consistent
+      // (`{ statusCode, error, message }`) instead of falling through
+      // to Fastify's default 500 handler. The user's audio is already
+      // transcribed and structured by this point, so a DB failure
+      // here feels like a backend problem to the client.
+      let noteRow;
+      try {
+        noteRow = await createNote(userId, {
+          title: structured.title,
+          content: structured.content,
+          tags: structured.tags,
+          audioMode: mode,
+          folderId,
+        });
+      } catch (err) {
+        request.log.error(err, "Note creation failed after successful transcription + structuring");
+        return reply.status(502).send({
+          statusCode: 502,
+          error: "Bad Gateway",
+          message: err instanceof Error ? err.message : "Failed to create note",
+        });
+      }
 
       const note = toNote(noteRow);
 

@@ -116,12 +116,13 @@ function relativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Displays transcript text with a typing animation for new characters, auto-scrolling to bottom */
+/** Displays transcript text with a typing animation, sticking to bottom unless the user scrolls up */
 function LiveTranscript({ text }: { text: string }) {
   const [displayLen, setDisplayLen] = useState(text.length);
   const targetLen = text.length;
   const prevTextRef = useRef(text);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
 
   useEffect(() => {
     if (text.length > prevTextRef.current.length) {
@@ -142,15 +143,29 @@ function LiveTranscript({ text }: { text: string }) {
   }, [displayLen, targetLen]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const el = scrollRef.current;
+    if (!el) return;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [displayLen]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const threshold = 8;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+  };
 
   const displayed = text.slice(0, displayLen);
 
   return (
-    <div ref={scrollRef} className="overflow-y-auto h-full pb-2">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="max-h-[200px] overflow-y-auto pb-2"
+    >
       <p className="text-sm text-muted-foreground leading-relaxed">
         {displayed}
       </p>
@@ -968,9 +983,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               >
                 <div className="pt-1.5">
                   {hasTranscript ? (
-                    <div className="max-h-[200px] overflow-y-auto">
-                      <LiveTranscript text={liveTranscript!} />
-                    </div>
+                    <LiveTranscript text={liveTranscript!} />
                   ) : (
                     <div className="flex items-center gap-2 py-1">
                       <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">

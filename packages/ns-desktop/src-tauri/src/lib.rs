@@ -14,6 +14,11 @@ mod audio_capture;
 #[cfg(target_os = "windows")]
 mod audio_capture_win;
 
+// Phase 0.2 — shared test fixtures for the audio pipeline. Only
+// compiled under `cargo test`; never part of a release binary.
+#[cfg(test)]
+mod audio_test_support;
+
 const KEYRING_SERVICE: &str = "com.derekentringer.notesync";
 
 fn get_migrations() -> Vec<Migration> {
