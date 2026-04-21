@@ -114,12 +114,13 @@ function relativeTime(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Displays transcript text with a typing animation for new characters, auto-scrolling to bottom */
+/** Displays transcript text with a typing animation, sticking to bottom unless the user scrolls up */
 function LiveTranscript({ text }: { text: string }) {
   const [displayLen, setDisplayLen] = useState(text.length);
   const targetLen = text.length;
   const prevTextRef = useRef(text);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
 
   useEffect(() => {
     if (text.length > prevTextRef.current.length) {
@@ -140,15 +141,29 @@ function LiveTranscript({ text }: { text: string }) {
   }, [displayLen, targetLen]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const el = scrollRef.current;
+    if (!el) return;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [displayLen]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const threshold = 8;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+  };
 
   const displayed = text.slice(0, displayLen);
 
   return (
-    <div ref={scrollRef} className="overflow-y-auto h-full pb-2">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="max-h-[200px] overflow-y-auto pb-2"
+    >
       <p className="text-sm text-muted-foreground leading-relaxed">
         {displayed}
       </p>
@@ -253,6 +268,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
@@ -336,7 +352,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   }, [isOpen]);
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, []);
 
   useEffect(() => {
@@ -802,10 +820,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {/* Live recording card — sticky at top */}
+      <div ref={messagesScrollRef} className="flex-1 overflow-y-auto">
+        {/* Live recording card — sticky at panel top, flush with panel left/right while recording */}
         {isRecording && (
-          <div className="sticky top-0 z-10 w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
+          <div className="sticky top-0 z-10 bg-card border-b border-border p-3 animate-fade-in">
             <div className="flex items-center gap-1.5 mb-2">
               <span className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
@@ -949,9 +967,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               >
                 <div className="pt-1.5">
                   {hasTranscript ? (
-                    <div className="max-h-[200px] overflow-y-auto">
-                      <LiveTranscript text={liveTranscript!} />
-                    </div>
+                    <LiveTranscript text={liveTranscript!} />
                   ) : (
                     <div className="flex items-center gap-2 py-1">
                       <span className="flex items-end gap-0.5 text-muted-foreground/40 shrink-0 h-3.5 w-3.5 justify-center">
@@ -967,6 +983,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             </div>
           </div>
         )}
+        <div className="p-2 space-y-2">
         {messages.length === 0 && !isRecording && (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40">
@@ -1161,10 +1178,21 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           </div>
         ))}
         <div ref={messagesEndRef} />
+        </div>
       </div>
 
-      {/* Tips */}
-      {!isRecording && !isStreaming && messages.length === 0 && <TypingTips />}
+      {/* Tips — always reserve space so the panel's total height doesn't
+          change when messages.length crosses 0. The TypingTips component
+          itself only animates when empty-chat state is true; in other
+          states we render an empty placeholder with matching padding so
+          the input footer stays at a stable Y position. */}
+      {!isRecording && !isStreaming && messages.length === 0 ? (
+        <TypingTips />
+      ) : (
+        <div className="px-3 py-1.5 shrink-0" aria-hidden="true">
+          <p className="text-xs invisible">placeholder</p>
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t border-border p-3 shrink-0">

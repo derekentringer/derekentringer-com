@@ -27,6 +27,33 @@ This project uses **gitflow**:
 - All changes go through PRs: `feature/*` → `develop` → `main`
 - Tag releases on `main` (e.g., `v1.0.5`)
 
+## Releases
+
+Use the `npm run release` helper at the repo root. It handles the ns-web `package.json` bump, the annotated git tag, the push of main + tag, and the main → develop sync in one command.
+
+```bash
+# After merging develop → main via PR:
+git checkout main
+git pull origin main
+npm run release -- 2.39.0  # <major.minor.patch>
+```
+
+What the script does (in order):
+
+1. Preflight — fails fast if not on `main`, if the working tree is dirty, if local is out of sync with `origin/main`, or if the target tag already exists.
+2. Writes the new version into `packages/ns-web/package.json` (the fallback `vite.config.ts` uses on Railway, which can't resolve `git describe` from its shallow clone).
+3. Commits the bump (`chore: bump ns-web to <version> for release`).
+4. Creates annotated tag `v<version>`.
+5. Pushes `main` + the tag.
+6. Merges `main` back into `develop` and pushes.
+7. Leaves the working tree back on `main`.
+
+**Why this is needed for ns-web but not ns-desktop**: Desktop syncs `tauri.conf.json` from the latest git tag automatically — `tauri:build*` scripts run `tauri:version-sync[:dev]` before bundling, and `npm run dev` does the same via a `predev` hook. Railway's web build, in contrast, runs `vite build` against a shallow clone, so `git describe --tags` fails and `vite.config.ts` falls back to `package.json.version`. Bumping that file is the only way prod web catches the new version.
+
+**If a step fails mid-run**: the working tree may be in a partial state. Check `git status`, `git tag --list`, and `git log origin/main..HEAD`; the steps are idempotent once you clean up whatever already succeeded (e.g., delete a locally-created tag, reset the bump commit, re-run).
+
+Release notes on desktop are generated separately by `packages/ns-desktop/scripts/generate-release-notes.mjs` during `vite:build`; no manual step needed there.
+
 ## Deployment
 
 - **Platform**: Railway (Railpack builder, not Docker)

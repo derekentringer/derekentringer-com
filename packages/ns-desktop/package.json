@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "npm run tauri:version-sync:dev",
     "dev": "tauri dev",
     "build": "vite build",
     "tauri:build": "npm run tauri:version-sync:dev && cross-env VITE_API_URL=http://localhost:3004 tauri build",

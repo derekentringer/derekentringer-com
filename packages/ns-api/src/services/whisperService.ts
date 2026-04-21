@@ -5,7 +5,19 @@ const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
 const WHISPER_TIMEOUT_MS = 300_000; // 5 minutes per chunk
 const MAX_PARALLEL_CHUNKS = 3;
 const MAX_RETRIES = 2;
-const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+// Retryable statuses:
+//   - 429 (rate limit) — OpenAI pushes back on burst traffic; the
+//     pipeline can send 3 parallel chunks per meeting and dozens of
+//     live chunks across a long session, so transient 429s are
+//     expected. Backoff is 1s * attempt, giving the quota a second
+//     or two to refresh.
+//   - 502 / 503 / 504 — upstream gateway / unavailable / timeout,
+//     all transient.
+// Permanent errors (401 auth, 400 bad request, 404 model missing,
+// 413 file too large, 422 unprocessable) propagate immediately so
+// the caller sees the real reason instead of three identical errors
+// spaced 1s apart.
+const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

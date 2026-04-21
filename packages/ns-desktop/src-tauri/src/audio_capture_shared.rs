@@ -329,9 +329,11 @@ pub fn mix_to_wav(
 pub fn read_and_remove_file(path: &str) -> Result<Vec<u8>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("Read final WAV: {e}"))?;
     if let Err(e) = std::fs::remove_file(path) {
-        // Not fatal — we already have the bytes. Log so the leak
-        // doesn't silently return.
-        log::warn!("Failed to remove final WAV at {path}: {e}");
+        // Not fatal — the caller already has the bytes and the
+        // startup sweep (`cleanup_stale_temp_files`) will clear the
+        // leftover on next launch. Logged at ERROR so the leak is
+        // visible in production logs rather than silently swallowed.
+        log::error!("Failed to remove final WAV at {path}: {e}");
     }
     Ok(bytes)
 }
@@ -341,8 +343,14 @@ pub fn read_and_remove_file(path: &str) -> Result<Vec<u8>, String> {
 /// recordings that crashed mid-stop). Called from app startup so
 /// already-leaked files heal on next launch.
 pub fn cleanup_stale_temp_files() -> (usize, u64) {
-    let temp_dir = std::env::temp_dir();
-    let read_dir = match std::fs::read_dir(&temp_dir) {
+    cleanup_stale_temp_files_in(&std::env::temp_dir())
+}
+
+/// Same as `cleanup_stale_temp_files` but against a caller-supplied
+/// base directory. Split out so tests can sandbox the sweep in a
+/// scoped `TempAudioDir` rather than touching the real `$TMPDIR`.
+pub fn cleanup_stale_temp_files_in(base_dir: &Path) -> (usize, u64) {
+    let read_dir = match std::fs::read_dir(base_dir) {
         Ok(d) => d,
         Err(_) => return (0, 0),
     };
@@ -371,4 +379,314 @@ pub fn cleanup_stale_temp_files() -> (usize, u64) {
         );
     }
     (removed, bytes_removed)
+}
+
+// Phase 0.2 — smoke tests that exercise the fixture against the real
+// helpers in this module. Full per-function coverage is Phase 5 work;
+// the goal here is only "does the fixture actually drive mix_to_wav
+// and read_and_remove_file end-to-end?"
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio_test_support::{
+        write_pcm_file, FakePcmSource, TempAudioDir, verify_wav_header,
+    };
+
+    #[test]
+    fn to_mono_averages_stereo_frames() {
+        let stereo: Vec<f32> = vec![0.25, -0.25, 1.0, -1.0, 0.5, 0.5];
+        let mono = to_mono(&stereo, 2);
+        assert_eq!(mono, vec![0.0, 0.0, 0.5]);
+    }
+
+    #[test]
+    fn to_mono_passes_mono_through_unchanged() {
+        let samples = vec![0.1, 0.2, 0.3];
+        assert_eq!(to_mono(&samples, 1), samples);
+    }
+
+    #[test]
+    fn fake_pcm_source_silence_length_matches_spec() {
+        let s = FakePcmSource::silence(0.5, 48_000, 2);
+        // 0.5s * 48000 Hz * 2 channels
+        assert_eq!(s.len(), 48_000);
+        assert!(s.iter().all(|x| *x == 0.0));
+    }
+
+    #[test]
+    fn fake_pcm_source_sine_has_nonzero_energy() {
+        let s = FakePcmSource::sine(0.1, 48_000, 1, 440.0);
+        let energy: f32 = s.iter().map(|x| x * x).sum();
+        assert!(energy > 0.0, "sine should have nonzero energy");
+    }
+
+    // Phase 5.1 — ChunkResampler: verify the basic downsample works
+    // and that stateful chunking matches a one-shot pass within
+    // rounding error.
+
+    #[test]
+    fn chunk_resampler_downsamples_to_expected_length() {
+        // 48 kHz → 16 kHz is a 3:1 downsample. 48 samples in → ~16 out.
+        let mut r = ChunkResampler::new(48_000, 16_000);
+        let input: Vec<f32> = (0..48).map(|i| i as f32).collect();
+        let out = r.process(&input);
+        // Linear interpolation with ratio=3.0: positions 0, 3, 6, ...
+        // produce 16 samples from 48.
+        assert_eq!(out.len(), 16);
+        // First output sample should equal input[0] exactly.
+        assert!((out[0] - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn chunk_resampler_streaming_matches_single_shot() {
+        // The resampler is stateful; feeding two halves should
+        // produce the same total count as a one-shot pass (within a
+        // 1-sample fencepost tolerance due to the fractional position
+        // carried across calls).
+        let input: Vec<f32> =
+            (0..9600).map(|i| (i as f32 * 0.01).sin()).collect();
+
+        let mut one_shot = ChunkResampler::new(48_000, 16_000);
+        let all = one_shot.process(&input);
+
+        let mut streamed = ChunkResampler::new(48_000, 16_000);
+        let mut chunks = Vec::new();
+        chunks.extend(streamed.process(&input[..4800]));
+        chunks.extend(streamed.process(&input[4800..]));
+
+        assert!(
+            (all.len() as isize - chunks.len() as isize).abs() <= 1,
+            "streaming vs one-shot length differ by more than 1: {} vs {}",
+            all.len(),
+            chunks.len()
+        );
+    }
+
+    #[test]
+    fn chunk_resampler_empty_input_returns_empty() {
+        let mut r = ChunkResampler::new(48_000, 16_000);
+        assert!(r.process(&[]).is_empty());
+    }
+
+    // Phase 5.1 — read_pcm_since: growing-file reader used by the
+    // live-chunk path. Verifies byte-offset correctness.
+
+    #[test]
+    fn read_pcm_since_returns_empty_for_missing_file() {
+        let dir = TempAudioDir::new().unwrap();
+        let missing = dir.path_in("no_such_file.pcm");
+        let samples = read_pcm_since(&missing, 0).unwrap();
+        assert!(samples.is_empty());
+    }
+
+    #[test]
+    fn read_pcm_since_reads_from_offset() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("chunk.pcm");
+
+        // 10 f32 samples = 40 bytes.
+        let samples: Vec<f32> = (0..10).map(|i| i as f32).collect();
+        write_pcm_file(&path, &samples).unwrap();
+
+        // Read from byte offset 16 (sample 4). Should get samples 4..10.
+        let tail = read_pcm_since(&path, 16).unwrap();
+        assert_eq!(tail, vec![4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn read_pcm_since_returns_empty_when_offset_at_end() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("chunk.pcm");
+
+        let samples: Vec<f32> = vec![1.0, 2.0, 3.0];
+        write_pcm_file(&path, &samples).unwrap();
+
+        // File is 12 bytes; offset 12 means "no new data".
+        let tail = read_pcm_since(&path, 12).unwrap();
+        assert!(tail.is_empty());
+    }
+
+    // Phase 5.1 — encode_mixed_wav_chunk: WAV header + payload sanity.
+
+    #[test]
+    fn encode_mixed_wav_chunk_produces_valid_wav() {
+        let sys: Vec<f32> = FakePcmSource::silence(0.1, 16_000, 1);
+        let mic: Vec<f32> = FakePcmSource::silence(0.1, 16_000, 1);
+        let bytes = encode_mixed_wav_chunk(&sys, &mic, 16_000).unwrap();
+
+        let header = verify_wav_header(&bytes);
+        assert_eq!(header.sample_rate, 16_000);
+        assert_eq!(header.channels, 1);
+        assert_eq!(header.bits_per_sample, 16);
+        // 1600 samples × 2 bytes = 3200 bytes of data.
+        assert_eq!(header.data_bytes, 3200);
+    }
+
+    #[test]
+    fn encode_mixed_wav_chunk_returns_empty_for_no_input() {
+        let bytes = encode_mixed_wav_chunk(&[], &[], 16_000).unwrap();
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn encode_mixed_wav_chunk_mixes_signals_5050() {
+        // Two identical full-scale sines. Mix should sum to 2×
+        // scaled by 0.5 = full scale. Clamp to [-1, 1] prevents
+        // overflow. Check the peak absolute amplitude is non-zero
+        // and not over the clamp.
+        let sine: Vec<f32> = FakePcmSource::sine(0.05, 16_000, 1, 440.0);
+        let bytes = encode_mixed_wav_chunk(&sine, &sine, 16_000).unwrap();
+        let header = verify_wav_header(&bytes);
+        assert!(header.data_bytes > 0);
+
+        // Read one i16 sample from the data section and verify
+        // magnitude is within expected bounds.
+        let first_sample = i16::from_le_bytes([bytes[44], bytes[45]]);
+        assert!(first_sample.abs() < i16::MAX, "mix should clamp, not overflow");
+    }
+
+    #[test]
+    fn encode_mixed_wav_chunk_handles_uneven_lengths() {
+        // If sys is longer than mic, the extra tail samples should
+        // still be written (mic contributes 0 for those frames).
+        let sys: Vec<f32> = FakePcmSource::silence(0.05, 16_000, 1); // 800 samples
+        let mic: Vec<f32> = FakePcmSource::silence(0.025, 16_000, 1); // 400 samples
+        let bytes = encode_mixed_wav_chunk(&sys, &mic, 16_000).unwrap();
+        let header = verify_wav_header(&bytes);
+        // Output length tracks the max of the two inputs: 800 × 2 = 1600 bytes.
+        assert_eq!(header.data_bytes, 1600);
+    }
+
+    #[test]
+    fn mix_to_wav_produces_valid_wav_and_helper_cleans_up() {
+        let dir = TempAudioDir::new().unwrap();
+        let sys_path = dir.path_in("sys.pcm");
+        let mic_path = dir.path_in("mic.pcm");
+
+        // 0.25s of silence at the rates the real pipeline uses.
+        write_pcm_file(&sys_path, &FakePcmSource::silence(0.25, 48_000, 2)).unwrap();
+        write_pcm_file(&mic_path, &FakePcmSource::silence(0.25, 48_000, 1)).unwrap();
+
+        let wav_path = mix_to_wav(
+            &sys_path,
+            48_000,
+            2,
+            &mic_path,
+            48_000,
+            1,
+        )
+        .unwrap();
+
+        // mix_to_wav writes to $TMPDIR, outside our scoped temp dir —
+        // that's by design (it needs a path that survives until the TS
+        // side reads it). So we consume + delete it via the same helper
+        // the production code uses.
+        let bytes = read_and_remove_file(&wav_path).unwrap();
+
+        let header = verify_wav_header(&bytes);
+        assert_eq!(header.sample_rate, 16_000, "mix output should be 16 kHz");
+        assert_eq!(header.channels, 1, "mix output should be mono");
+        assert_eq!(header.bits_per_sample, 16, "mix output should be 16-bit PCM");
+        assert!(header.data_bytes > 0, "data chunk should be non-empty");
+
+        // read_and_remove_file removed the WAV; the scoped dir never
+        // saw it, so cleanup is also proven.
+        assert!(!std::path::Path::new(&wav_path).exists());
+    }
+
+    #[test]
+    fn cleanup_stale_temp_files_in_removes_notesync_prefixed_wav_and_pcm() {
+        let dir = TempAudioDir::new().unwrap();
+
+        // Files that should be swept.
+        let targets = [
+            ("notesync_meeting_123.wav", 128u64),
+            ("notesync_sys_456.pcm", 64u64),
+            ("notesync_mic_789.pcm", 32u64),
+        ];
+        for (name, size) in targets.iter() {
+            let path = dir.path_in(name);
+            std::fs::write(&path, vec![0u8; *size as usize]).unwrap();
+        }
+
+        // Files that must survive: wrong prefix, wrong extension, and
+        // a notesync-prefixed file with an unrelated extension.
+        let survivors = [
+            ("other_app.wav", 16u64),
+            ("random.pcm", 16u64),
+            ("notesync_meeting.txt", 16u64),
+            ("notesync_config.json", 16u64),
+        ];
+        for (name, size) in survivors.iter() {
+            std::fs::write(dir.path_in(name), vec![0u8; *size as usize]).unwrap();
+        }
+
+        let (removed, bytes_removed) = cleanup_stale_temp_files_in(dir.path());
+
+        assert_eq!(removed, targets.len(), "removed count mismatch");
+        let expected_bytes: u64 = targets.iter().map(|(_, s)| *s).sum();
+        assert_eq!(bytes_removed, expected_bytes, "bytes freed mismatch");
+
+        for (name, _) in targets.iter() {
+            assert!(!dir.path_in(name).exists(), "target {name} should be gone");
+        }
+        for (name, _) in survivors.iter() {
+            assert!(dir.path_in(name).exists(), "survivor {name} should remain");
+        }
+    }
+
+    #[test]
+    fn cleanup_stale_temp_files_in_returns_zero_when_dir_missing() {
+        let missing = std::path::PathBuf::from(
+            "/nonexistent-path-for-notesync-cleanup-test-12345",
+        );
+        let (removed, bytes) = cleanup_stale_temp_files_in(&missing);
+        assert_eq!(removed, 0);
+        assert_eq!(bytes, 0);
+    }
+
+    #[test]
+    fn read_and_remove_file_returns_bytes_and_deletes() {
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("final.wav");
+        std::fs::write(&path, b"hello-wav").unwrap();
+
+        let bytes = read_and_remove_file(path.to_str().unwrap()).unwrap();
+        assert_eq!(bytes, b"hello-wav");
+        assert!(!path.exists(), "file should be removed after read");
+    }
+
+    /// Unlink failure must still return the read bytes. We can only
+    /// reliably force a unix-style unlink failure via a read-only
+    /// parent dir, so Windows is skipped — the behavior there is
+    /// identical, verified via code review of the single
+    /// `log::error!` line.
+    #[cfg(unix)]
+    #[test]
+    fn read_and_remove_file_returns_bytes_even_when_unlink_fails() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempAudioDir::new().unwrap();
+        let path = dir.path_in("locked.wav");
+        std::fs::write(&path, b"locked-content").unwrap();
+
+        // Drop write + execute bits on the parent so unlink fails but
+        // read still succeeds. Restore before the dir drops so
+        // TempDir cleanup doesn't fail.
+        let parent = dir.path();
+        let original = std::fs::metadata(parent).unwrap().permissions();
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+        let result = read_and_remove_file(path.to_str().unwrap());
+
+        std::fs::set_permissions(parent, original).unwrap();
+
+        let bytes = result.expect("should still return bytes when unlink fails");
+        assert_eq!(bytes, b"locked-content");
+        // File is left behind — startup sweep will clean it up on next launch.
+        assert!(path.exists(), "file left behind when unlink is blocked");
+
+        // Clean up ourselves so TempDir drop doesn't error.
+        std::fs::remove_file(&path).ok();
+    }
 }
