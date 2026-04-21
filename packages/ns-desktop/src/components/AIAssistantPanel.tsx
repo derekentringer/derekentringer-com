@@ -805,10 +805,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       </div>
 
       {/* Messages */}
-      <div ref={messagesScrollRef} className="flex-1 overflow-y-auto p-2 space-y-2">
-        {/* Live recording card — sticky at top */}
+      <div ref={messagesScrollRef} className="flex-1 overflow-y-auto">
+        {/* Live recording card — sticky at panel top, flush with panel left/right while recording */}
         {isRecording && (
-          <div className="sticky top-0 z-10 w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
+          <div className="sticky top-0 z-10 bg-card border-b border-border p-3 animate-fade-in">
             <div className="flex items-center gap-1.5 mb-2">
               <span className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
@@ -970,6 +970,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             </div>
           </div>
         )}
+        <div className="p-2 space-y-2">
         {messages.length === 0 && !isRecording && (
           <div className="flex flex-col items-center justify-center py-12 gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground/40">
@@ -1164,6 +1165,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           </div>
         ))}
         <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Tips — always reserve space so the panel's total height doesn't
