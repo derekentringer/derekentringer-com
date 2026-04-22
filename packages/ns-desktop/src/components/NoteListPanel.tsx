@@ -23,7 +23,6 @@ interface NoteListPanelProps {
   localFileStatuses?: Map<string, LocalFileStatus>;
   locallyHostedNoteIds?: Set<string>;
   onUnlinkLocalFile?: (noteId: string) => void;
-  onSaveAsLocalFile?: (noteId: string) => void;
   onSaveToFile?: (noteId: string) => void;
   onUseLocalVersion?: (noteId: string) => void;
   onViewDiff?: (noteId: string) => void;
@@ -48,7 +47,6 @@ export function NoteListPanel({
   localFileStatuses,
   locallyHostedNoteIds,
   onUnlinkLocalFile,
-  onSaveAsLocalFile,
   onSaveToFile,
   onUseLocalVersion,
   onViewDiff,
@@ -148,7 +146,6 @@ export function NoteListPanel({
             localFileStatuses={localFileStatuses}
             locallyHostedNoteIds={locallyHostedNoteIds}
             onUnlinkLocalFile={onUnlinkLocalFile}
-            onSaveAsLocalFile={onSaveAsLocalFile}
             onSaveToFile={onSaveToFile}
             onUseLocalVersion={onUseLocalVersion}
             onViewDiff={onViewDiff}

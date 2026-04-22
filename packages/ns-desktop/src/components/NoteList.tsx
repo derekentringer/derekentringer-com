@@ -24,7 +24,6 @@ interface NoteListProps {
   localFileStatuses?: Map<string, LocalFileStatus>;
   locallyHostedNoteIds?: Set<string>;
   onUnlinkLocalFile?: (noteId: string) => void;
-  onSaveAsLocalFile?: (noteId: string) => void;
   onSaveToFile?: (noteId: string) => void;
   onUseLocalVersion?: (noteId: string) => void;
   onViewDiff?: (noteId: string) => void;
@@ -52,7 +51,6 @@ interface SortableNoteItemProps {
   localFileStatus?: LocalFileStatus;
   hostedLocally?: boolean;
   onUnlinkLocalFile?: (noteId: string) => void;
-  onSaveAsLocalFile?: (noteId: string) => void;
   onSaveToFile?: (noteId: string) => void;
   onUseLocalVersion?: (noteId: string) => void;
   onViewDiff?: (noteId: string) => void;
@@ -89,7 +87,6 @@ function SortableNoteItem({
   localFileStatus,
   hostedLocally,
   onUnlinkLocalFile,
-  onSaveAsLocalFile,
   onSaveToFile,
   onUseLocalVersion,
   onViewDiff,
@@ -229,17 +226,6 @@ function SortableNoteItem({
               {note.favorite ? "Unfavorite" : "Favorite"}
             </button>
           )}
-          {!note.isLocalFile && onSaveAsLocalFile && (
-            <button
-              onClick={() => {
-                onSaveAsLocalFile(note.id);
-                onContextMenuClose();
-              }}
-              className="w-full text-left px-3 py-1 text-xs text-foreground hover:bg-accent transition-colors cursor-pointer"
-            >
-              Start Managing Locally
-            </button>
-          )}
           {note.isLocalFile && onUnlinkLocalFile && (
             <button
               onClick={() => {
@@ -277,7 +263,6 @@ export function NoteList({
   localFileStatuses,
   locallyHostedNoteIds,
   onUnlinkLocalFile,
-  onSaveAsLocalFile,
   onSaveToFile,
   onUseLocalVersion,
   onViewDiff,
@@ -330,7 +315,6 @@ export function NoteList({
             localFileStatus={localFileStatuses?.get(note.id)}
             hostedLocally={locallyHostedNoteIds?.has(note.id)}
             onUnlinkLocalFile={onUnlinkLocalFile}
-            onSaveAsLocalFile={onSaveAsLocalFile}
             onSaveToFile={onSaveToFile}
             onUseLocalVersion={onUseLocalVersion}
             onViewDiff={onViewDiff}

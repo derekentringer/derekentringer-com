@@ -2992,33 +2992,6 @@ export function NotesPage() {
   async function handleDirectoryDeleted() { /* reconciliation handles */ }
   async function handleDirectoryRenamed() { /* reconciliation handles */ }
 
-  async function handleSaveAsLocalFile(noteId: string) {
-    const note = notes.find((n) => n.id === noteId);
-    if (!note) return;
-    try {
-      const defaultName = `${note.title || "untitled"}.md`;
-      const savePath = await pickSaveLocation(defaultName);
-      if (!savePath) return;
-
-      const hash = await writeLocalFile(savePath, note.content);
-      await linkNoteToLocalFile(noteId, savePath, hash);
-      await updateNote(noteId, { isLocalFile: true });
-      await startWatching(noteId, savePath, handleExternalChange, handleFileDeleted);
-
-      setLocalFileStatuses((prev) => {
-        const next = new Map(prev);
-        next.set(noteId, "synced");
-        return next;
-      });
-      setNotes((prev) => prev.map((n) => n.id === noteId ? { ...n, isLocalFile: true } : n));
-      notifyLocalChange();
-      setSuccessToast("Linked to local file");
-    } catch (err) {
-      console.error("Failed to save as local file:", err);
-      showError("Failed to save as local file");
-    }
-  }
-
   async function handleUnlinkLocalFile(noteId: string) {
     try {
       await stopWatching(noteId);
@@ -3853,7 +3826,6 @@ export function NotesPage() {
                       localFileStatuses={localFileStatuses}
                       locallyHostedNoteIds={locallyHostedNoteIds}
                       onUnlinkLocalFile={handleUnlinkLocalFile}
-                      onSaveAsLocalFile={handleSaveAsLocalFile}
                       onSaveToFile={handleSaveToFile}
                       onUseLocalVersion={handleUseLocalVersion}
                       onViewDiff={handleViewDiff}
@@ -3934,7 +3906,6 @@ export function NotesPage() {
                 localFileStatuses={localFileStatuses}
                 locallyHostedNoteIds={locallyHostedNoteIds}
                 onUnlinkLocalFile={handleUnlinkLocalFile}
-                onSaveAsLocalFile={handleSaveAsLocalFile}
                 onSaveToFile={handleSaveToFile}
                 onUseLocalVersion={handleUseLocalVersion}
                 onViewDiff={handleViewDiff}
