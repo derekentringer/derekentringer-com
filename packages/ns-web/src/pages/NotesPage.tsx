@@ -318,6 +318,21 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
   const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
   const audioControlRef = useRef<AudioRecorderControl | null>(null);
+  // Phase 3: count of in-flight detached processing tasks; drives the
+  // beforeunload close-while-processing warning.
+  const [inFlightAudioCount, setInFlightAudioCount] = useState(0);
+  const inFlightAudioCountRef = useRef(0);
+  inFlightAudioCountRef.current = inFlightAudioCount;
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (inFlightAudioCountRef.current === 0) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
   // Recording folder — captures active folder when recording starts, independent of sidebar browsing
@@ -3428,6 +3443,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         onError={showError}
         onRecordingStateChange={setRecordingState}
         controlRef={audioControlRef}
+        onInFlightCountChange={setInFlightAudioCount}
         onModeChange={(m) => updateAiSetting("audioMode", m)}
         triggerMode={recordTrigger?.mode}
         triggerKey={recordTrigger?.key}

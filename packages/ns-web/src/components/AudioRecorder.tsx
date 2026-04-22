@@ -74,10 +74,10 @@ interface AudioRecorderProps {
   triggerKey?: number;
   /** When true, renders no UI — only responds to triggerMode/triggerKey */
   headless?: boolean;
-  /** Phase 2: populated by the component with a `retry` / `discard` control.
-   *  Parent holds the ref and calls these when the user clicks Retry or
-   *  Discard on a failed chat card. */
+  /** Phase 2: populated by the component with a `retry` / `discard` control. */
   controlRef?: React.MutableRefObject<AudioRecorderControl | null>;
+  /** Phase 3: fires whenever the in-flight processing-task count changes. */
+  onInFlightCountChange?: (count: number) => void;
 }
 
 export interface AudioRecorderControl {
@@ -89,7 +89,7 @@ function generateSessionId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless, controlRef }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless, controlRef, onInFlightCountChange }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -107,11 +107,17 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
   const onNoteCreatedRef = useRef(onNoteCreated);
   const onErrorRef = useRef(onError);
   const onNoteFailedRef = useRef(onNoteFailed);
+  const onInFlightCountChangeRef = useRef(onInFlightCountChange);
   modeRef.current = mode;
   folderIdRef.current = folderId;
   onNoteCreatedRef.current = onNoteCreated;
   onErrorRef.current = onError;
   onNoteFailedRef.current = onNoteFailed;
+  onInFlightCountChangeRef.current = onInFlightCountChange;
+
+  function emitInFlightCount() {
+    onInFlightCountChangeRef.current?.(inFlightTasksRef.current.size);
+  }
 
   // Per-session AbortControllers for detached processing tasks. Aborted
   // on unmount so pending fetches don't run against a dead parent.
@@ -186,6 +192,7 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       }
       inFlightTasksRef.current.clear();
       snapshotsRef.current.clear();
+      emitInFlightCount();
     };
   }, [cleanup]);
 
@@ -232,8 +239,10 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     snapshotsRef.current.set(snapshot.sessionId, snapshot);
     const controller = new AbortController();
     inFlightTasksRef.current.set(snapshot.sessionId, controller);
+    emitInFlightCount();
     processSession(snapshot, controller.signal).finally(() => {
       inFlightTasksRef.current.delete(snapshot.sessionId);
+      emitInFlightCount();
     });
   }
 
@@ -251,7 +260,9 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       discard: (sessionId: string) => {
         const existing = inFlightTasksRef.current.get(sessionId);
         if (existing) existing.abort();
-        inFlightTasksRef.current.delete(sessionId);
+        if (inFlightTasksRef.current.delete(sessionId)) {
+          emitInFlightCount();
+        }
         snapshotsRef.current.delete(sessionId);
       },
     };
