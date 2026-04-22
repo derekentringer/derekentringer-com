@@ -86,17 +86,30 @@ interface AudioRecorderProps {
    *  session exists yet when these fire. */
   onError: (message: string) => void;
   /** Fired when a detached processing task fails. Carries sessionId so the
-   *  parent can mark the right chat card as failed (Phase 2). For Phase 1,
-   *  if unset, falls back to `onError`. */
+   *  parent can mark the right chat card as failed. If unset, falls back
+   *  to `onError`. */
   onNoteFailed?: (sessionId: string, message: string) => void;
   onRecordingStateChange?: (recordingState: AudioRecordingState | null) => void;
   onModeChange?: (mode: AudioMode) => void;
   triggerMode?: AudioMode;
   triggerKey?: number;
   headless?: boolean;
+  /** Phase 2: populated by the component with a `retry` / `discard` control.
+   *  Parent holds the ref and calls these when the user clicks Retry or
+   *  Discard on a failed chat card. */
+  controlRef?: React.MutableRefObject<AudioRecorderControl | null>;
 }
 
-export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecordingSourceChange, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless }: AudioRecorderProps) {
+export interface AudioRecorderControl {
+  /** Re-run processing for a previously-failed session. No-op if the
+   *  snapshot has been discarded or was never stored. */
+  retry: (sessionId: string) => void;
+  /** Drop the snapshot for a session. Called by the parent when the user
+   *  clicks Discard on a failed card. */
+  discard: (sessionId: string) => void;
+}
+
+export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecordingSourceChange, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless, controlRef }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -155,9 +168,15 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   // Per-session AbortControllers for detached processing tasks. On unmount
   // we abort every in-flight task so pending fetches don't run against a
   // dead parent and their `onNoteCreated` / `onNoteFailed` callbacks don't
-  // fire into unmounted state. Keyed by sessionId so retry (Phase 2) can
-  // target a specific session.
+  // fire into unmounted state. Keyed by sessionId so retry can target a
+  // specific session.
   const inFlightTasksRef = useRef<Map<string, AbortController>>(new Map());
+
+  // Phase 2: snapshots retained for retry. Purged on success or discard.
+  // A failed session's snapshot stays here until the user retries (re-runs)
+  // or discards (drops). On unmount the whole map is cleared — retries
+  // can't survive a remount.
+  const snapshotsRef = useRef<Map<string, SessionSnapshot>>(new Map());
 
   // Check meeting recording support on mount
   useEffect(() => {
@@ -241,6 +260,9 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
 
   // Cleanup on unmount — also abort every in-flight detached processing
   // task so their fetches stop and their callbacks don't fire after unmount.
+  // Snapshots are dropped too: retries can't survive a remount because the
+  // parent's chat-load repaint rule will have already relabeled any
+  // persisted "processing" card as failed-with-no-retry.
   useEffect(() => {
     return () => {
       cleanup();
@@ -248,6 +270,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         controller.abort();
       }
       inFlightTasksRef.current.clear();
+      snapshotsRef.current.clear();
     };
   }, [cleanup]);
 
@@ -350,29 +373,61 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       }
 
       if (signal.aborted) return;
+      // Phase 2: success drops the snapshot — there's nothing to retry.
+      snapshotsRef.current.delete(sessionId);
       onNoteCreatedRef.current(result.note, sessionId, capturedTranscript);
     } catch (err) {
       if (signal.aborted) return;
       const message = err instanceof Error ? err.message : "Transcription failed";
+      // Phase 2: snapshot stays until the user retries or discards.
       if (onNoteFailedRef.current) {
         onNoteFailedRef.current(sessionId, message);
       } else {
-        // Phase 1 fallback — parents that haven't wired onNoteFailed yet still
-        // get a toast so the user knows processing failed.
+        // Fallback — parents that haven't wired onNoteFailed still get a
+        // toast so the user knows processing failed.
         onErrorRef.current(message);
       }
     }
   }
 
-  /** Fires a detached processing task for the given snapshot. Registers the
-   *  AbortController so unmount cleanup can cancel in-flight work. */
+  /** Fires a detached processing task for the given snapshot. Stores the
+   *  snapshot for potential retry and registers the AbortController so
+   *  unmount cleanup can cancel in-flight work. */
   function startProcessing(snapshot: SessionSnapshot) {
+    snapshotsRef.current.set(snapshot.sessionId, snapshot);
     const controller = new AbortController();
     inFlightTasksRef.current.set(snapshot.sessionId, controller);
     processSession(snapshot, controller.signal).finally(() => {
       inFlightTasksRef.current.delete(snapshot.sessionId);
     });
   }
+
+  // Phase 2: expose retry/discard through a control ref so the parent can
+  // wire up Retry/Discard buttons on failed chat cards without needing the
+  // component's internals.
+  useEffect(() => {
+    if (!controlRef) return;
+    controlRef.current = {
+      retry: (sessionId: string) => {
+        const snap = snapshotsRef.current.get(sessionId);
+        if (!snap) return;
+        // If a retry is already in flight for this session, cancel it first
+        // so we don't double-fire.
+        const existing = inFlightTasksRef.current.get(sessionId);
+        if (existing) existing.abort();
+        startProcessing(snap);
+      },
+      discard: (sessionId: string) => {
+        const existing = inFlightTasksRef.current.get(sessionId);
+        if (existing) existing.abort();
+        inFlightTasksRef.current.delete(sessionId);
+        snapshotsRef.current.delete(sessionId);
+      },
+    };
+    return () => {
+      if (controlRef) controlRef.current = null;
+    };
+  }, [controlRef]);
 
   async function sendNativeChunk() {
     // Get mixed system+mic audio chunk from the Rust recording. We

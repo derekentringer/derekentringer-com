@@ -183,7 +183,8 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
-import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
+import { AudioRecorder, type AudioRecordingState, type AudioRecorderControl } from "../components/AudioRecorder.tsx";
+import type { AudioSessionResult } from "../components/AIAssistantPanel.tsx";
 import { RecordingBar } from "../components/RecordingBar.tsx";
 import { FolderPicker } from "../components/FolderPicker.tsx";
 import { SyncSwarmGame } from "../components/SyncSwarmGame.tsx";
@@ -383,7 +384,13 @@ export function NotesPage() {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
-  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string; sessionId: string } | null>(null);
+  // Phase 2: unified success/failure result for the AI assistant panel to
+  // match against a meeting-summary card by sessionId. Each new result
+  // increments the identity of the prop so the panel's effect re-fires for
+  // every outcome — even if an earlier fail lands on the same sessionId
+  // as a later retry success.
+  const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
+  const audioControlRef = useRef<AudioRecorderControl | null>(null);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const [showGame, setShowGame] = useState(false);
 
@@ -1560,7 +1567,8 @@ export function NotesPage() {
       loadNoteTitles();
       setDashboardKey((k) => k + 1);
       notifyLocalChange();
-      setCompletedAudioNote({
+      setAudioSessionResult({
+        kind: "success",
         id: finalNote.id,
         title: finalNote.title,
         content: finalNote.content,
@@ -1576,11 +1584,20 @@ export function NotesPage() {
     }
   }
 
-  // Phase 1: a detached processing task failed. Toast for now; Phase 2 marks
-  // the corresponding chat card as failed with Retry/Discard.
-  function handleAudioNoteFailed(_sessionId: string, message: string) {
-    showError(message);
-    sessionContextsRef.current.delete(_sessionId);
+  // Phase 2: route failures into the chat card as a failed state with
+  // Retry/Discard affordances. Session context stays alive so Retry can
+  // still access its liveTranscript + relevantNotes.
+  function handleAudioNoteFailed(sessionId: string, message: string) {
+    setAudioSessionResult({ kind: "fail", sessionId, message });
+  }
+
+  function handleAudioRetry(sessionId: string) {
+    audioControlRef.current?.retry(sessionId);
+  }
+
+  function handleAudioDiscard(sessionId: string) {
+    audioControlRef.current?.discard(sessionId);
+    sessionContextsRef.current.delete(sessionId);
   }
 
   async function handleDelete() {
@@ -4699,10 +4716,12 @@ export function NotesPage() {
                   liveTranscript={recordingState?.liveTranscript ?? ""}
                   relevantNotes={meetingContext.relevantNotes}
                   recordingMode={recordingState?.mode}
-                  completedNote={completedAudioNote}
+                  audioSessionResult={audioSessionResult}
                   activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                   chatRefreshKey={chatRefreshKey}
                   activeSessionId={recordingState?.sessionId}
+                  onAudioRetry={handleAudioRetry}
+                  onAudioDiscard={handleAudioDiscard}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
@@ -4890,6 +4909,7 @@ export function NotesPage() {
         onNoteFailed={handleAudioNoteFailed}
         onError={showError}
         onRecordingStateChange={setRecordingState}
+        controlRef={audioControlRef}
         onModeChange={(m) => updateAiSetting("audioMode", m)}
         triggerMode={recordTrigger?.mode}
         triggerKey={recordTrigger?.key}
