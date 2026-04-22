@@ -315,7 +315,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
-  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string } | null>(null);
+  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string; sessionId: string } | null>(null);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
   // Recording folder — captures active folder when recording starts, independent of sidebar browsing
@@ -340,26 +340,33 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     recordingState?.liveTranscript ?? "",
   );
 
-  // Capture liveTranscript in a ref so it survives the recording state reset
-  const lastLiveTranscriptRef = useRef("");
-  useEffect(() => {
-    const t = recordingState?.liveTranscript ?? "";
-    if (t.length > 0) lastLiveTranscriptRef.current = t;
-  }, [recordingState?.liveTranscript]);
+  // Per-session context captured during recording. Keyed by sessionId so
+  // multiple in-flight processing tasks don't clobber each other's context
+  // when handleAudioNoteCreated fires for each session.
+  const sessionContextsRef = useRef<Map<string, {
+    liveTranscript: string;
+    relevantNotes: typeof meetingContext.relevantNotes;
+    mode: string;
+  }>>(new Map());
 
-  // Capture relevant notes in a ref so they survive the recording state reset
-  const lastRelevantNotesRef = useRef<typeof meetingContext.relevantNotes>([]);
   useEffect(() => {
-    if (meetingContext.relevantNotes.length > 0) {
-      lastRelevantNotesRef.current = meetingContext.relevantNotes;
-    }
-  }, [meetingContext.relevantNotes]);
+    if (!recordingState?.sessionId) return;
+    const sid = recordingState.sessionId;
+    const existing = sessionContextsRef.current.get(sid);
+    const entry = existing ?? { liveTranscript: "", relevantNotes: [], mode: recordingState.mode };
+    const t = recordingState.liveTranscript ?? "";
+    if (t.length > 0) entry.liveTranscript = t;
+    entry.mode = recordingState.mode;
+    sessionContextsRef.current.set(sid, entry);
+  }, [recordingState?.sessionId, recordingState?.liveTranscript, recordingState?.mode]);
 
-  // Capture recording mode in a ref so it survives the recording state reset
-  const lastRecordingModeRef = useRef<string>("meeting");
   useEffect(() => {
-    if (recordingState?.mode) lastRecordingModeRef.current = recordingState.mode;
-  }, [recordingState?.mode]);
+    const sid = recordingState?.sessionId;
+    if (!sid) return;
+    if (meetingContext.relevantNotes.length === 0) return;
+    const entry = sessionContextsRef.current.get(sid);
+    if (entry) entry.relevantNotes = meetingContext.relevantNotes;
+  }, [meetingContext.relevantNotes, recordingState?.sessionId]);
   const [showGame, setShowGame] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -2029,49 +2036,61 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }
 
-  async function handleAudioNoteCreated(note: Note, capturedTranscript?: string) {
-    const surfacedNotes = lastRelevantNotesRef.current;
-    const liveText = capturedTranscript ?? lastLiveTranscriptRef.current;
+  async function handleAudioNoteCreated(note: Note, sessionId: string, capturedTranscript?: string) {
+    const ctx = sessionContextsRef.current.get(sessionId) ?? {
+      liveTranscript: "",
+      relevantNotes: [],
+      mode: "meeting",
+    };
+    const surfacedNotes = ctx.relevantNotes;
+    const liveText = capturedTranscript ?? ctx.liveTranscript;
     const hasRefs = surfacedNotes.length > 0;
     const hasLiveTranscript = liveText.trim().length > 0;
 
-    if (hasRefs || hasLiveTranscript) {
-      const updateData: { content?: string; transcript?: string } = {};
+    try {
+      if (hasRefs || hasLiveTranscript) {
+        const updateData: { content?: string; transcript?: string } = {};
 
-      // Append related notes wiki-links to content
-      if (hasRefs) {
-        const referencesSection = "\n\n## Related Notes Referenced\n" +
-          surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
-        updateData.content = (note.content || "") + referencesSection;
-      }
+        if (hasRefs) {
+          const referencesSection = "\n\n## Related Notes Referenced\n" +
+            surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
+          updateData.content = (note.content || "") + referencesSection;
+        }
 
-      // Save raw transcript as metadata
-      if (hasLiveTranscript) {
-        updateData.transcript = liveText;
-      }
+        if (hasLiveTranscript) {
+          updateData.transcript = liveText;
+        }
 
-      try {
-        const updated = await updateNote(note.id, updateData);
-        setNotes((prev) => [updated, ...prev]);
-        openNoteAsTab(updated);
-      } catch {
+        try {
+          const updated = await updateNote(note.id, updateData);
+          setNotes((prev) => [updated, ...prev]);
+          openNoteAsTab(updated);
+        } catch {
+          setNotes((prev) => [note, ...prev]);
+          openNoteAsTab(note);
+        }
+      } else {
         setNotes((prev) => [note, ...prev]);
         openNoteAsTab(note);
       }
-    } else {
-      setNotes((prev) => [note, ...prev]);
-      openNoteAsTab(note);
+      loadFolders();
+      setDashboardKey((k) => k + 1);
+      setCompletedAudioNote({
+        id: note.id,
+        title: note.title,
+        content: note.content,
+        mode: ctx.mode,
+        sessionId,
+      });
+    } finally {
+      sessionContextsRef.current.delete(sessionId);
     }
-    loadFolders();
-    setDashboardKey((k) => k + 1);
-    setCompletedAudioNote({
-      id: note.id,
-      title: note.title,
-      content: note.content,
-      mode: lastRecordingModeRef.current,
-    });
-    lastLiveTranscriptRef.current = "";
-    lastRelevantNotesRef.current = [];
+  }
+
+  // Phase 1: toast-only failure UX. Phase 2 will mark the matching card as failed.
+  function handleAudioNoteFailed(sessionId: string, message: string) {
+    showError(message);
+    sessionContextsRef.current.delete(sessionId);
   }
 
   // Clear UI state when switching notes
@@ -3317,6 +3336,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   completedNote={completedAudioNote}
                   activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                   chatRefreshKey={chatRefreshKey}
+                  activeSessionId={recordingState?.sessionId}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
@@ -3389,6 +3409,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         defaultMode={settings.audioMode}
         folderId={recordingFolderId ?? undefined}
         onNoteCreated={handleAudioNoteCreated}
+        onNoteFailed={handleAudioNoteFailed}
         onError={showError}
         onRecordingStateChange={setRecordingState}
         onModeChange={(m) => updateAiSetting("audioMode", m)}

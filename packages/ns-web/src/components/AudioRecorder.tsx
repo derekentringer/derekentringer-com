@@ -29,6 +29,8 @@ function getSupportedMimeType(): string | undefined {
   return undefined;
 }
 
+// "processing" exists in the type for parity with desktop, but the mic-only
+// web path never enters it — stop is synchronous, processing runs detached.
 export type RecorderState = "idle" | "recording" | "processing";
 
 export interface AudioRecordingState {
@@ -37,14 +39,34 @@ export interface AudioRecordingState {
   mode: AudioMode;
   stream: MediaStream | null;
   liveTranscript: string;
+  sessionId: string;
   onStop: () => void;
+}
+
+/** Self-contained snapshot of a recording session, handed to a detached
+ *  processing task. Contains everything needed to transcribe/PATCH without
+ *  reading component refs — so a new recording can safely start while this
+ *  session's task is still in flight. */
+interface SessionSnapshot {
+  sessionId: string;
+  mode: AudioMode;
+  folderId?: string;
+  capturedTranscript: string;
+  audioBlob: Blob;
 }
 
 interface AudioRecorderProps {
   defaultMode: AudioMode;
   folderId?: string;
-  onNoteCreated: (note: Note, liveTranscript?: string) => void;
+  /** Fired when a detached processing task finishes successfully. sessionId
+   *  identifies which recording this note came from — needed because multiple
+   *  processing tasks can be in flight concurrently. */
+  onNoteCreated: (note: Note, sessionId: string, liveTranscript?: string) => void;
+  /** Immediate capture-path errors (mic denied). No session exists yet. */
   onError: (message: string) => void;
+  /** Fired when a detached processing task fails. For Phase 1, parents that
+   *  leave this unset still get a toast via `onError`. */
+  onNoteFailed?: (sessionId: string, message: string) => void;
   onRecordingStateChange?: (recordingState: AudioRecordingState | null) => void;
   onModeChange?: (mode: AudioMode) => void;
   /** When set, auto-starts recording with this mode. Change `triggerKey` to re-trigger. */
@@ -58,7 +80,7 @@ function generateSessionId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -75,10 +97,16 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
   const folderIdRef = useRef(folderId);
   const onNoteCreatedRef = useRef(onNoteCreated);
   const onErrorRef = useRef(onError);
+  const onNoteFailedRef = useRef(onNoteFailed);
   modeRef.current = mode;
   folderIdRef.current = folderId;
   onNoteCreatedRef.current = onNoteCreated;
   onErrorRef.current = onError;
+  onNoteFailedRef.current = onNoteFailed;
+
+  // Per-session AbortControllers for detached processing tasks. Aborted
+  // on unmount so pending fetches don't run against a dead parent.
+  const inFlightTasksRef = useRef<Map<string, AbortController>>(new Map());
 
   // Chunked transcription state
   const sessionIdRef = useRef("");
@@ -136,8 +164,62 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     chunkIndexRef.current = 0;
   }, []);
 
-  // Cleanup on unmount
-  useEffect(() => cleanup, [cleanup]);
+  // Cleanup on unmount — also abort every in-flight detached processing
+  // task so their fetches stop and their callbacks don't fire after unmount.
+  useEffect(() => {
+    return () => {
+      cleanup();
+      for (const controller of inFlightTasksRef.current.values()) {
+        controller.abort();
+      }
+      inFlightTasksRef.current.clear();
+    };
+  }, [cleanup]);
+
+  // ─── Detached processing ────────────────────────────────────────────────
+  // Runs transcribe → PATCH → onNoteCreated/onNoteFailed. Takes a self-
+  // contained snapshot; reads no component refs except callback refs.
+  async function processSession(snapshot: SessionSnapshot, signal: AbortSignal) {
+    const { sessionId, mode: snapMode, folderId: snapFolderId, capturedTranscript, audioBlob } = snapshot;
+
+    try {
+      const result = await transcribeAudio(audioBlob, snapMode, snapFolderId);
+      if (signal.aborted) return;
+
+      if (capturedTranscript && capturedTranscript.trim().length > 0) {
+        try {
+          await apiFetch(`/notes/${result.note.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ transcript: capturedTranscript }),
+            signal,
+          });
+          result.note.transcript = capturedTranscript;
+        } catch {
+          // Non-fatal — note still created without transcript
+        }
+      }
+
+      if (signal.aborted) return;
+      onNoteCreatedRef.current(result.note, sessionId, capturedTranscript);
+    } catch (err) {
+      if (signal.aborted) return;
+      const message = err instanceof Error ? err.message : "Transcription failed";
+      if (onNoteFailedRef.current) {
+        onNoteFailedRef.current(sessionId, message);
+      } else {
+        onErrorRef.current(message);
+      }
+    }
+  }
+
+  function startProcessing(snapshot: SessionSnapshot) {
+    const controller = new AbortController();
+    inFlightTasksRef.current.set(snapshot.sessionId, controller);
+    processSession(snapshot, controller.signal).finally(() => {
+      inFlightTasksRef.current.delete(snapshot.sessionId);
+    });
+  }
 
   const handleStop = useCallback(() => {
     if (mediaRecorderRef.current?.state === "recording") {
@@ -213,6 +295,7 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
         mode,
         stream: streamRef.current,
         liveTranscript,
+        sessionId: sessionIdRef.current,
         onStop: handleStop,
       });
     }
@@ -244,42 +327,30 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
         }
       };
 
-      recorder.onstop = async () => {
+      recorder.onstop = () => {
         const blobType = recorder.mimeType || "audio/webm";
-        const blob = new Blob(chunksRef.current, { type: blobType });
-        // Capture transcript before cleanup destroys it
+        const audioBlob = new Blob(chunksRef.current, { type: blobType });
         const fromMap = getOrderedTranscript();
         const fromState = liveTranscriptRef.current;
         const capturedTranscript = fromMap || fromState;
+
+        const snapshot: SessionSnapshot = {
+          sessionId: sessionIdRef.current,
+          mode: modeRef.current,
+          folderId: folderIdRef.current,
+          capturedTranscript,
+          audioBlob,
+        };
+
         cleanup();
-        setState("processing");
+        // Mic has no meaningful sync-async boundary on stop, so we never
+        // enter the "processing" state. Go straight to idle; processing
+        // runs detached.
+        setState("idle");
+        setElapsed(0);
+        setLiveTranscript("");
 
-        try {
-          // Always transcribe the full audio for highest quality final note
-          const result = await transcribeAudio(blob, modeRef.current, folderIdRef.current);
-
-          // Save transcript directly to the note via API (bypass React closure issues)
-          if (capturedTranscript && capturedTranscript.trim().length > 0) {
-            try {
-              await apiFetch(`/notes/${result.note.id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ transcript: capturedTranscript }),
-              });
-              result.note.transcript = capturedTranscript;
-            } catch {
-              // Non-fatal — note still created without transcript
-            }
-          }
-
-          onNoteCreatedRef.current(result.note);
-        } catch (err) {
-          onErrorRef.current(err instanceof Error ? err.message : "Transcription failed");
-        } finally {
-          setState("idle");
-          setElapsed(0);
-          setLiveTranscript("");
-        }
+        startProcessing(snapshot);
       };
 
       recorder.start(1000); // 1s data chunks for smooth collection
