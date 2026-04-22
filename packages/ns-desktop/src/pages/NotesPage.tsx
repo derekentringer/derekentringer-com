@@ -383,7 +383,7 @@ export function NotesPage() {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
-  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string } | null>(null);
+  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string; sessionId: string } | null>(null);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const [showGame, setShowGame] = useState(false);
 
@@ -407,26 +407,37 @@ export function NotesPage() {
     recordingState?.liveTranscript ?? "",
   );
 
-  // Capture liveTranscript in a ref so it survives the recording state reset
-  const lastLiveTranscriptRef = useRef("");
-  useEffect(() => {
-    const t = recordingState?.liveTranscript ?? "";
-    if (t.length > 0) lastLiveTranscriptRef.current = t;
-  }, [recordingState?.liveTranscript]);
+  // Per-session context captured during recording. Keyed by sessionId so
+  // multiple in-flight processing tasks don't clobber each other's context
+  // when handleAudioNoteCreated fires for each session.
+  const sessionContextsRef = useRef<Map<string, {
+    liveTranscript: string;
+    relevantNotes: typeof meetingContext.relevantNotes;
+    mode: string;
+  }>>(new Map());
 
-  // Capture relevant notes in a ref so they survive the recording state reset
-  const lastRelevantNotesRef = useRef<typeof meetingContext.relevantNotes>([]);
+  // Update the active session's context whenever the recording state emits
+  // new values. On recording start the entry is created; on recording stop
+  // the entry is read-only until handleAudioNoteCreated consumes + deletes it.
   useEffect(() => {
-    if (meetingContext.relevantNotes.length > 0) {
-      lastRelevantNotesRef.current = meetingContext.relevantNotes;
-    }
-  }, [meetingContext.relevantNotes]);
+    if (!recordingState?.sessionId) return;
+    const sid = recordingState.sessionId;
+    const existing = sessionContextsRef.current.get(sid);
+    const entry = existing ?? { liveTranscript: "", relevantNotes: [], mode: recordingState.mode };
+    const t = recordingState.liveTranscript ?? "";
+    if (t.length > 0) entry.liveTranscript = t;
+    entry.mode = recordingState.mode;
+    sessionContextsRef.current.set(sid, entry);
+  }, [recordingState?.sessionId, recordingState?.liveTranscript, recordingState?.mode]);
 
-  // Capture recording mode in a ref so it survives the recording state reset
-  const lastRecordingModeRef = useRef<string>("meeting");
+  // Route meeting-context updates to the currently-recording session only.
   useEffect(() => {
-    if (recordingState?.mode) lastRecordingModeRef.current = recordingState.mode;
-  }, [recordingState?.mode]);
+    const sid = recordingState?.sessionId;
+    if (!sid) return;
+    if (meetingContext.relevantNotes.length === 0) return;
+    const entry = sessionContextsRef.current.get(sid);
+    if (entry) entry.relevantNotes = meetingContext.relevantNotes;
+  }, [meetingContext.relevantNotes, recordingState?.sessionId]);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -1495,11 +1506,20 @@ export function NotesPage() {
     }
   }
 
-  async function handleAudioNoteCreated(serverNote: Note, capturedTranscript?: string) {
+  async function handleAudioNoteCreated(serverNote: Note, sessionId: string, capturedTranscript?: string) {
     try {
+      // Pull this session's context from the session-keyed map. May be absent
+      // if the session predated the recording-state subscription (test paths)
+      // — default to empty.
+      const ctx = sessionContextsRef.current.get(sessionId) ?? {
+        liveTranscript: "",
+        relevantNotes: [],
+        mode: "meeting",
+      };
+
       let finalNote = serverNote;
-      const surfacedNotes = lastRelevantNotesRef.current;
-      const liveText = capturedTranscript ?? lastLiveTranscriptRef.current;
+      const surfacedNotes = ctx.relevantNotes;
+      const liveText = capturedTranscript ?? ctx.liveTranscript;
       const hasRefs = surfacedNotes.length > 0;
       const hasLiveTranscript = liveText.trim().length > 0;
 
@@ -1544,14 +1564,23 @@ export function NotesPage() {
         id: finalNote.id,
         title: finalNote.title,
         content: finalNote.content,
-        mode: lastRecordingModeRef.current,
+        mode: ctx.mode,
+        sessionId,
       });
-      lastLiveTranscriptRef.current = "";
-      lastRelevantNotesRef.current = [];
     } catch (err) {
       console.error("Failed to save audio note:", err);
       showError(`Failed to save audio note: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      // Drop the session context once we're done with it — success or error.
+      sessionContextsRef.current.delete(sessionId);
     }
+  }
+
+  // Phase 1: a detached processing task failed. Toast for now; Phase 2 marks
+  // the corresponding chat card as failed with Retry/Discard.
+  function handleAudioNoteFailed(_sessionId: string, message: string) {
+    showError(message);
+    sessionContextsRef.current.delete(_sessionId);
   }
 
   async function handleDelete() {
@@ -4673,6 +4702,7 @@ export function NotesPage() {
                   completedNote={completedAudioNote}
                   activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                   chatRefreshKey={chatRefreshKey}
+                  activeSessionId={recordingState?.sessionId}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
@@ -4857,6 +4887,7 @@ export function NotesPage() {
         recordingSource={aiSettings.recordingSource}
         onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
         onNoteCreated={handleAudioNoteCreated}
+        onNoteFailed={handleAudioNoteFailed}
         onError={showError}
         onRecordingStateChange={setRecordingState}
         onModeChange={(m) => updateAiSetting("audioMode", m)}

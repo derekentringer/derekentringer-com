@@ -185,6 +185,10 @@ interface MeetingSummaryData {
   noteId?: string;
   noteTitle?: string;
   keyTopics?: string[];
+  /** Tied to the AudioRecorder session that produced this card. Used to match
+   *  the right card when a `completedNote` arrives — critical once multiple
+   *  processing tasks can be in flight concurrently (Phase 1 detach). */
+  sessionId?: string;
 }
 
 interface Message {
@@ -251,12 +255,15 @@ interface AIAssistantPanelProps {
   liveTranscript?: string;
   relevantNotes?: MeetingContextNote[];
   recordingMode?: string;
-  completedNote?: { id: string; title: string; content: string; mode: string } | null;
+  completedNote?: { id: string; title: string; content: string; mode: string; sessionId: string } | null;
   activeNote?: { id: string; title: string; content: string } | null;
   chatRefreshKey?: number;
+  /** sessionId of the currently-recording session; stamped on the meeting
+   *  summary card when recording stops so completedNote can match by id. */
+  activeSessionId?: string;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, completedNote, activeNote, chatRefreshKey }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, completedNote, activeNote, chatRefreshKey, activeSessionId }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -369,17 +376,22 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }
   }, [isRecording]);
 
-  // Insert meeting summary into chat when recording stops
+  // Insert meeting summary into chat when recording stops. We capture the
+  // sessionId of the stopped session so the enrichment effect can match
+  // the correct card when multiple processing tasks are in flight.
   const prevRecordingRef = useRef(isRecording);
   const prevRecordingModeRef = useRef(recordingMode);
+  const prevSessionIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (isRecording) {
       prevRecordingModeRef.current = recordingMode;
+      prevSessionIdRef.current = activeSessionId;
     }
     if (prevRecordingRef.current && !isRecording) {
-      // Recording just stopped — capture the meeting context
+      // Recording just stopped — capture the meeting context.
       const notes = relevantNotes ?? [];
       const transcript = liveTranscript ?? "";
+      const sessionId = prevSessionIdRef.current;
       if (notes.length > 0 || transcript.trim().length > 0) {
         setMessages((prev) => [
           ...prev,
@@ -390,23 +402,44 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               relevantNotes: [...notes],
               transcript,
               mode: prevRecordingModeRef.current,
+              sessionId,
             },
           },
         ]);
       }
     }
     prevRecordingRef.current = isRecording;
-  }, [isRecording, relevantNotes, liveTranscript, recordingMode]);
+  }, [isRecording, relevantNotes, liveTranscript, recordingMode, activeSessionId]);
 
-  // Enrich meeting-ended card when completed note arrives
+  // Enrich the meeting-ended card whose sessionId matches the completed note.
+  // Concurrent processing means "last unenriched" is no longer safe — two
+  // cards can coexist and the wrong one would be enriched otherwise.
   useEffect(() => {
     if (!completedNote) return;
     setMessages((prev) => {
       let idx = -1;
       for (let i = prev.length - 1; i >= 0; i--) {
-        if (prev[i].role === "meeting-summary" && prev[i].meetingData && !prev[i].meetingData!.noteId) {
+        const md = prev[i].meetingData;
+        if (
+          prev[i].role === "meeting-summary" &&
+          md &&
+          !md.noteId &&
+          md.sessionId === completedNote.sessionId
+        ) {
           idx = i;
           break;
+        }
+      }
+      // Fallback: if no sessionId match (e.g. pre-Phase-1 persisted cards
+      // loaded from chat history that lack sessionId), enrich the last
+      // unenriched card so old chat histories still work through the upgrade.
+      if (idx === -1) {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const md = prev[i].meetingData;
+          if (prev[i].role === "meeting-summary" && md && !md.noteId && !md.sessionId) {
+            idx = i;
+            break;
+          }
         }
       }
       if (idx === -1) return prev;
