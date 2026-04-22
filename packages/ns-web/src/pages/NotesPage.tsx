@@ -318,15 +318,16 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
   const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
   const audioControlRef = useRef<AudioRecorderControl | null>(null);
-  // Phase 3: count of in-flight detached processing tasks; drives the
-  // beforeunload close-while-processing warning.
+  // Phase 3: any audio work that would be lost on quit — active recording,
+  // the brief sync stop half, or a detached processing task. Kept in a ref
+  // so the beforeunload effect installs once and reads the live value.
   const [inFlightAudioCount, setInFlightAudioCount] = useState(0);
-  const inFlightAudioCountRef = useRef(0);
-  inFlightAudioCountRef.current = inFlightAudioCount;
+  const hasAudioWorkRef = useRef(false);
+  hasAudioWorkRef.current = recordingState !== null || inFlightAudioCount > 0;
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (inFlightAudioCountRef.current === 0) return;
+      if (!hasAudioWorkRef.current) return;
       e.preventDefault();
       e.returnValue = "";
     };

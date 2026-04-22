@@ -394,16 +394,17 @@ export function NotesPage() {
   // Phase 3: count of in-flight detached processing tasks. Drives the
   // close-while-processing warning.
   const [inFlightAudioCount, setInFlightAudioCount] = useState(0);
-  const inFlightAudioCountRef = useRef(0);
-  inFlightAudioCountRef.current = inFlightAudioCount;
+  // Any audio work that would be lost on quit: active recording, the brief
+  // sync stop half (drain/flush/native release for meeting mode), or a
+  // detached processing task. Kept in a ref so the close-warning effect
+  // installs once on mount and reads the live value without tearing down.
+  const hasAudioWorkRef = useRef(false);
+  hasAudioWorkRef.current = recordingState !== null || inFlightAudioCount > 0;
 
-  // Install close-warning listeners once on mount. Both handlers read the
-  // live count from a ref so the effect doesn't tear down + re-install on
-  // every count change (async Tauri listen setup is fragile to tear-downs).
   useEffect(() => {
     // Web / webview fallback — catches refresh, tab close, in-webview nav.
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (inFlightAudioCountRef.current === 0) return;
+      if (!hasAudioWorkRef.current) return;
       e.preventDefault();
       e.returnValue = ""; // Chrome/Edge require returnValue to be set.
     };
@@ -421,12 +422,11 @@ export function NotesPage() {
         if (cancelled) return;
         const win = getCurrentWindow();
         const unlisten = await win.onCloseRequested(async (event) => {
-          const count = inFlightAudioCountRef.current;
-          if (count === 0) return;
+          if (!hasAudioWorkRef.current) return;
           const confirmed = await ask(
-            `${count} recording${count > 1 ? "s are" : " is"} still processing. ` +
-              `Quitting now will discard them. Quit anyway?`,
-            { title: "Recordings in progress", kind: "warning" },
+            "A recording is in progress or still processing. " +
+              "Quitting now will discard it. Quit anyway?",
+            { title: "Recording in progress", kind: "warning" },
           );
           if (!confirmed) event.preventDefault();
         });
