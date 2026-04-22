@@ -71,7 +71,8 @@ import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.t
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
-import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
+import { AudioRecorder, type AudioRecordingState, type AudioRecorderControl } from "../components/AudioRecorder.tsx";
+import type { AudioSessionResult } from "../components/AIAssistantPanel.tsx";
 import { RecordingBar } from "../components/RecordingBar.tsx";
 import { FolderPicker } from "../components/FolderPicker.tsx";
 import { AIAssistantPanel } from "../components/AIAssistantPanel.tsx";
@@ -315,7 +316,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
-  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string; sessionId: string } | null>(null);
+  const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
+  const audioControlRef = useRef<AudioRecorderControl | null>(null);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
   // Recording folder — captures active folder when recording starts, independent of sidebar browsing
@@ -2075,7 +2077,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       }
       loadFolders();
       setDashboardKey((k) => k + 1);
-      setCompletedAudioNote({
+      setAudioSessionResult({
+        kind: "success",
         id: note.id,
         title: note.title,
         content: note.content,
@@ -2087,9 +2090,19 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }
 
-  // Phase 1: toast-only failure UX. Phase 2 will mark the matching card as failed.
+  // Phase 2: route failure into the chat card as a failed state with
+  // Retry/Discard. Session context stays alive so retry can still access
+  // liveTranscript + relevantNotes.
   function handleAudioNoteFailed(sessionId: string, message: string) {
-    showError(message);
+    setAudioSessionResult({ kind: "fail", sessionId, message });
+  }
+
+  function handleAudioRetry(sessionId: string) {
+    audioControlRef.current?.retry(sessionId);
+  }
+
+  function handleAudioDiscard(sessionId: string) {
+    audioControlRef.current?.discard(sessionId);
     sessionContextsRef.current.delete(sessionId);
   }
 
@@ -3333,10 +3346,12 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   liveTranscript={recordingState?.liveTranscript ?? ""}
                   relevantNotes={meetingContext.relevantNotes}
                   recordingMode={recordingState?.mode}
-                  completedNote={completedAudioNote}
+                  audioSessionResult={audioSessionResult}
                   activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                   chatRefreshKey={chatRefreshKey}
                   activeSessionId={recordingState?.sessionId}
+                  onAudioRetry={handleAudioRetry}
+                  onAudioDiscard={handleAudioDiscard}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
@@ -3412,6 +3427,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         onNoteFailed={handleAudioNoteFailed}
         onError={showError}
         onRecordingStateChange={setRecordingState}
+        controlRef={audioControlRef}
         onModeChange={(m) => updateAiSetting("audioMode", m)}
         triggerMode={recordTrigger?.mode}
         triggerKey={recordTrigger?.key}
