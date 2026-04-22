@@ -1575,4 +1575,105 @@ describe("AudioRecorder — meeting-mode transcription", () => {
     expect(mockTranscribeAudio).toHaveBeenCalledTimes(1); // only the original fail
     expect(onNoteCreated).not.toHaveBeenCalled();
   });
+
+  // Phase 3: onInFlightCountChange tracks detached task population.
+  it("onInFlightCountChange reports start → settle → discard transitions", async () => {
+    const onInFlightCountChange = vi.fn();
+    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void } | null> = { current: null };
+
+    // First session succeeds; second session fails.
+    mockTranscribeAudio
+      .mockReset()
+      .mockResolvedValueOnce({ note: { id: "ok", title: "", content: "" } })
+      .mockRejectedValueOnce(new Error("oops"));
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={vi.fn()}
+        onNoteFailed={vi.fn()}
+        onError={vi.fn()}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={0}
+        controlRef={controlRef}
+        onInFlightCountChange={onInFlightCountChange}
+      />,
+    );
+
+    // Kick off session A
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={vi.fn()}
+          onNoteFailed={vi.fn()}
+          onError={vi.fn()}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={1}
+          controlRef={controlRef}
+          onInFlightCountChange={onInFlightCountChange}
+        />,
+      );
+    });
+
+    await waitFor(() => expect(mediaRecorder.recorders.length).toBeGreaterThan(0));
+    const recorderA = mediaRecorder.recorders[0];
+    await act(async () => {
+      recorderA.emitData(new Blob(["a"], { type: "audio/webm" }));
+      recorderA.stop();
+    });
+
+    // Session A completes → count goes 0 → 1 → 0.
+    await waitFor(() => {
+      const vals = onInFlightCountChange.mock.calls.map((c) => c[0] as number);
+      expect(vals).toContain(1);
+      expect(vals[vals.length - 1]).toBe(0);
+    });
+    onInFlightCountChange.mockClear();
+
+    // Kick off session B (which will fail, leaving count at 0 after settle).
+    const onNoteFailed = vi.fn();
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={vi.fn()}
+          onNoteFailed={onNoteFailed}
+          onError={vi.fn()}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={2}
+          controlRef={controlRef}
+          onInFlightCountChange={onInFlightCountChange}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      const recs = mediaRecorder.recorders.filter((r) => r.state === "recording");
+      expect(recs.length).toBeGreaterThan(0);
+    });
+    const recorderB = mediaRecorder.recorders.find((r) => r.state === "recording" && r !== recorderA)!;
+
+    await act(async () => {
+      recorderB.emitData(new Blob(["b"], { type: "audio/webm" }));
+      recorderB.stop();
+    });
+
+    await waitFor(() => {
+      expect(onNoteFailed).toHaveBeenCalledTimes(1);
+      const vals = onInFlightCountChange.mock.calls.map((c) => c[0] as number);
+      // Saw count=1 during flight, then count=0 on settle.
+      expect(vals).toContain(1);
+      expect(vals[vals.length - 1]).toBe(0);
+    });
+  });
 });

@@ -98,6 +98,10 @@ interface AudioRecorderProps {
    *  Parent holds the ref and calls these when the user clicks Retry or
    *  Discard on a failed chat card. */
   controlRef?: React.MutableRefObject<AudioRecorderControl | null>;
+  /** Phase 3: fires whenever the in-flight processing-task count changes.
+   *  The parent uses this to surface a "N recordings still processing"
+   *  indicator and to gate a close-while-processing warning. */
+  onInFlightCountChange?: (count: number) => void;
 }
 
 export interface AudioRecorderControl {
@@ -109,7 +113,7 @@ export interface AudioRecorderControl {
   discard: (sessionId: string) => void;
 }
 
-export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecordingSourceChange, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless, controlRef }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecordingSourceChange, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless, controlRef, onInFlightCountChange }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -159,11 +163,17 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   const onNoteCreatedRef = useRef(onNoteCreated);
   const onErrorRef = useRef(onError);
   const onNoteFailedRef = useRef(onNoteFailed);
+  const onInFlightCountChangeRef = useRef(onInFlightCountChange);
   modeRef.current = mode;
   folderIdRef.current = folderId;
   onNoteCreatedRef.current = onNoteCreated;
   onErrorRef.current = onError;
   onNoteFailedRef.current = onNoteFailed;
+  onInFlightCountChangeRef.current = onInFlightCountChange;
+
+  function emitInFlightCount() {
+    onInFlightCountChangeRef.current?.(inFlightTasksRef.current.size);
+  }
 
   // Per-session AbortControllers for detached processing tasks. On unmount
   // we abort every in-flight task so pending fetches don't run against a
@@ -271,6 +281,7 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       }
       inFlightTasksRef.current.clear();
       snapshotsRef.current.clear();
+      emitInFlightCount();
     };
   }, [cleanup]);
 
@@ -397,8 +408,10 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     snapshotsRef.current.set(snapshot.sessionId, snapshot);
     const controller = new AbortController();
     inFlightTasksRef.current.set(snapshot.sessionId, controller);
+    emitInFlightCount();
     processSession(snapshot, controller.signal).finally(() => {
       inFlightTasksRef.current.delete(snapshot.sessionId);
+      emitInFlightCount();
     });
   }
 
@@ -420,7 +433,9 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       discard: (sessionId: string) => {
         const existing = inFlightTasksRef.current.get(sessionId);
         if (existing) existing.abort();
-        inFlightTasksRef.current.delete(sessionId);
+        if (inFlightTasksRef.current.delete(sessionId)) {
+          emitInFlightCount();
+        }
         snapshotsRef.current.delete(sessionId);
       },
     };

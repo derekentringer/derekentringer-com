@@ -391,6 +391,61 @@ export function NotesPage() {
   // as a later retry success.
   const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
   const audioControlRef = useRef<AudioRecorderControl | null>(null);
+  // Phase 3: count of in-flight detached processing tasks. Drives the
+  // close-while-processing warning.
+  const [inFlightAudioCount, setInFlightAudioCount] = useState(0);
+  const inFlightAudioCountRef = useRef(0);
+  inFlightAudioCountRef.current = inFlightAudioCount;
+
+  // Install close-warning listeners once on mount. Both handlers read the
+  // live count from a ref so the effect doesn't tear down + re-install on
+  // every count change (async Tauri listen setup is fragile to tear-downs).
+  useEffect(() => {
+    // Web / webview fallback — catches refresh, tab close, in-webview nav.
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (inFlightAudioCountRef.current === 0) return;
+      e.preventDefault();
+      e.returnValue = ""; // Chrome/Edge require returnValue to be set.
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    // Tauri native window close — catches the red-dot / Cmd+Q on macOS
+    // and [X] on Windows. Wrapped in a dynamic import so this file still
+    // runs cleanly in jsdom tests that don't have @tauri-apps/api/window.
+    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const { ask } = await import("@tauri-apps/plugin-dialog");
+        if (cancelled) return;
+        const win = getCurrentWindow();
+        const unlisten = await win.onCloseRequested(async (event) => {
+          const count = inFlightAudioCountRef.current;
+          if (count === 0) return;
+          const confirmed = await ask(
+            `${count} recording${count > 1 ? "s are" : " is"} still processing. ` +
+              `Quitting now will discard them. Quit anyway?`,
+            { title: "Recordings in progress", kind: "warning" },
+          );
+          if (!confirmed) event.preventDefault();
+        });
+        if (cancelled) {
+          unlisten();
+        } else {
+          unlistenFn = unlisten;
+        }
+      } catch {
+        // Not running under Tauri — beforeunload is enough.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const [showGame, setShowGame] = useState(false);
 
@@ -4910,6 +4965,7 @@ export function NotesPage() {
         onError={showError}
         onRecordingStateChange={setRecordingState}
         controlRef={audioControlRef}
+        onInFlightCountChange={setInFlightAudioCount}
         onModeChange={(m) => updateAiSetting("audioMode", m)}
         triggerMode={recordTrigger?.mode}
         triggerKey={recordTrigger?.key}
