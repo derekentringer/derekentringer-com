@@ -438,49 +438,29 @@ describe("NoteList", () => {
   // Local file context menu items
   // ---------------------------------------------------------------------------
 
-  it("shows 'Start Managing Locally' in context menu for non-local notes", async () => {
-    const note = makeNote({ id: "1", title: "Cloud Note", isLocalFile: false });
-    const onSaveAsLocalFile = vi.fn();
+  it("never shows 'Start Managing Locally' in the note context menu", async () => {
+    // Regression: this option is folder-root only — must never appear on notes,
+    // regardless of whether the note is already managed as a local file.
+    for (const isLocalFile of [false, true]) {
+      const note = makeNote({ id: `n-${isLocalFile}`, title: `T-${isLocalFile}`, isLocalFile });
+      const { unmount } = render(
+        <DndWrapper>
+          <NoteList
+            notes={[note]}
+            selectedId={null}
+            onSelect={vi.fn()}
+            onDeleteNote={vi.fn()}
+            onUnlinkLocalFile={vi.fn()}
+          />
+        </DndWrapper>,
+      );
 
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={[note]}
-          selectedId={null}
-          onSelect={vi.fn()}
-          onDeleteNote={vi.fn()}
-          onSaveAsLocalFile={onSaveAsLocalFile}
-        />
-      </DndWrapper>,
-    );
+      const button = screen.getByText(`T-${isLocalFile}`);
+      await userEvent.pointer({ keys: "[MouseRight]", target: button });
 
-    const button = screen.getByText("Cloud Note");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.getByText("Start Managing Locally")).toBeInTheDocument();
-  });
-
-  it("calls onSaveAsLocalFile when Start Managing Locally is clicked", async () => {
-    const note = makeNote({ id: "note-save", title: "Save Me", isLocalFile: false });
-    const onSaveAsLocalFile = vi.fn();
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={[note]}
-          selectedId={null}
-          onSelect={vi.fn()}
-          onDeleteNote={vi.fn()}
-          onSaveAsLocalFile={onSaveAsLocalFile}
-        />
-      </DndWrapper>,
-    );
-
-    const button = screen.getByText("Save Me");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-    await userEvent.click(screen.getByText("Start Managing Locally"));
-
-    expect(onSaveAsLocalFile).toHaveBeenCalledWith("note-save");
+      expect(screen.queryByText("Start Managing Locally")).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("shows 'Stop Managing Locally' in context menu for local file notes", async () => {
@@ -526,28 +506,6 @@ describe("NoteList", () => {
     await userEvent.click(screen.getByText("Stop Managing Locally"));
 
     expect(onUnlinkLocalFile).toHaveBeenCalledWith("note-unlink");
-  });
-
-  it("does not show 'Start Managing Locally' for local file notes", async () => {
-    const note = makeNote({ id: "1", title: "Already Local", isLocalFile: true });
-    const onSaveAsLocalFile = vi.fn();
-
-    render(
-      <DndWrapper>
-        <NoteList
-          notes={[note]}
-          selectedId={null}
-          onSelect={vi.fn()}
-          onDeleteNote={vi.fn()}
-          onSaveAsLocalFile={onSaveAsLocalFile}
-        />
-      </DndWrapper>,
-    );
-
-    const button = screen.getByText("Already Local");
-    await userEvent.pointer({ keys: "[MouseRight]", target: button });
-
-    expect(screen.queryByText("Start Managing Locally")).not.toBeInTheDocument();
   });
 
   it("does not show 'Stop Managing Locally' for non-local notes", async () => {

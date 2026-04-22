@@ -611,21 +611,26 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   const handleMicRecordRef = useRef<(() => void) | null>(null);
   handleMeetingRecordRef.current = handleMeetingRecord;
   handleMicRecordRef.current = handleMicRecord;
+  // Seed with the triggerKey present at mount so a stale value persisted in the
+  // parent across a Settings navigation doesn't re-fire recording on remount.
+  const lastConsumedTriggerKeyRef = useRef<number | undefined>(triggerKey);
   useEffect(() => {
-    if (triggerKey && triggerMode && state === "idle") {
-      setMode(triggerMode);
-      onModeChange?.(triggerMode);
-      const shouldUseMeeting = (triggerMode === "meeting" || triggerMode === "lecture") && meetingSupported;
-      onRecordingSourceChange(shouldUseMeeting ? "meeting" : "microphone");
-      // Call the correct handler directly — don't rely on prop round-trip for useMeeting
-      requestAnimationFrame(() => {
-        if (shouldUseMeeting) {
-          handleMeetingRecordRef.current?.();
-        } else {
-          handleMicRecordRef.current?.();
-        }
-      });
-    }
+    if (!triggerKey || !triggerMode) return;
+    if (triggerKey === lastConsumedTriggerKeyRef.current) return;
+    if (state !== "idle") return;
+    lastConsumedTriggerKeyRef.current = triggerKey;
+    setMode(triggerMode);
+    onModeChange?.(triggerMode);
+    const shouldUseMeeting = (triggerMode === "meeting" || triggerMode === "lecture") && meetingSupported;
+    onRecordingSourceChange(shouldUseMeeting ? "meeting" : "microphone");
+    // Call the correct handler directly — don't rely on prop round-trip for useMeeting
+    requestAnimationFrame(() => {
+      if (shouldUseMeeting) {
+        handleMeetingRecordRef.current?.();
+      } else {
+        handleMicRecordRef.current?.();
+      }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerKey]);
 

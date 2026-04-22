@@ -1195,4 +1195,46 @@ describe("AudioRecorder — meeting-mode transcription", () => {
     expect(mockStructureAndCreateNote).not.toHaveBeenCalled();
     expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-fallback" }));
   });
+
+  // Regression: NotesPage shows Settings via an early-return, so the parent's
+  // `recordTrigger` state survives the navigation but AudioRecorder unmounts
+  // and remounts. The mount should NOT auto-start recording from the stale
+  // triggerKey — only a genuine *change* to triggerKey should fire.
+  it("does not auto-record on remount with a stale triggerKey", async () => {
+    const { unmount } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={vi.fn()}
+        onError={vi.fn()}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={42}
+      />,
+    );
+    unmount();
+
+    // Fresh mount with the same triggerKey value (as if returning from Settings).
+    render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={vi.fn()}
+        onError={vi.fn()}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={42}
+      />,
+    );
+
+    // Give rAF + effects a chance to fire if the bug existed.
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+
+    expect(mediaDevices.getUserMediaSpy).not.toHaveBeenCalled();
+    expect(mediaRecorder.recorders.length).toBe(0);
+  });
 });
