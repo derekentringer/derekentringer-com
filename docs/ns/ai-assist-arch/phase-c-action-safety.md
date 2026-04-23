@@ -1,6 +1,6 @@
 # Phase C — Action Safety
 
-**Status**: 🟡 planned
+**Status**: 🟠 in progress (all sub-phases implemented on `feat/ai-assist-phase-c`; PR #471 open)
 **Branch**: `feat/ai-assist-phase-c` (off `develop-ai-assist`)
 **Depends on**: A (nice-to-have for conversational confirmation flow); D.1 (token logging) recommended to observe cost of confirmation round-trips
 **Blocks**: responsible shipping of any future Claude-driven bulk operations
@@ -92,16 +92,26 @@ Per-session setting: "Auto-approve reads and favorites; always confirm deletes a
 
 ## Sub-tasks
 
-- [ ] **C.1.1** — Extend `ToolResult` union with `needs_confirmation` variant.
-- [ ] **C.1.2** — In `assistantTools.ts:executeTool`, for destructive cases: instead of calling the real mutator, return a `needs_confirmation` result.
-- [ ] **C.1.3** — Serialize the pending action through the SSE stream as a new event kind.
-- [ ] **C.1.4** — New `POST /ai/tools/confirm` endpoint: takes the `DestructiveAction`, executes it, returns the result.
-- [ ] **C.1.5** — Panel renders `ConfirmationCard` for pending actions (inline in the message stream).
-- [ ] **C.2.1** — Diff-rendering component (reuse `DiffView`).
-- [ ] **C.3.1** — Tool description + confirmation copy updates.
-- [ ] **C.4.1** — Frontend groups N consecutive confirmations of the same type into one card.
-- [ ] **C.5.1** — Per-tool auto-approval settings in `useAiSettings`.
-- [ ] **C.5.2** — Settings UI section (requires Phase E UX helper if not existing).
+- [x] **C.1.1** — `ToolResult` gains a `needsConfirmation?: PendingConfirmation` field + `ConfirmationPreview` union.
+- [x] **C.1.2** — `executeTool(..., { autoApprove })` gates destructive tools through `buildPendingConfirmation` unless the caller opts in. Precheck failure falls through to the real executor so "note not found" etc. surface normally.
+- [x] **C.1.3** — `AgentEvent.type` gains `"confirmation"`; the route passes it through as an SSE `{ confirmation: … }` frame.
+- [x] **C.1.4** — `POST /ai/tools/confirm` endpoint accepts `{ toolName, toolInput }` (toolName restricted to the destructive enum), re-runs `executeTool` with `autoApprove: true`, and notifies sync.
+- [x] **C.1.5** — `ConfirmationCard` component (desktop + web). Inline in the chat stream. Apply / Discard buttons; applying disables both; status progresses `pending → applying → applied | failed | discarded`.
+- [x] **C.2.1** — `ConfirmationCard` renders a compact diff for `update_note_content` (char delta, % change, Before/After snippets capped at 200 chars each).
+- [x] **C.3.1** — Tool descriptions rewritten (`delete_note` mentions 30-day Trash, `delete_folder` clarifies notes become Unfiled, etc.); system prompt explains the "confirmation requested" pattern so Claude responds naturally.
+- [x] **C.4.1** — Panel's `confirmation` event handler merges consecutive same-toolName pendings into a single card (`ConfirmationState.pendings: PendingConfirmation[]`). Batch header adapts ("Delete 3 notes?"). Apply iterates; per-item results surface partial-success detail ("2 of 3 applied — 1 failed") without masking what succeeded.
+- [x] **C.5.1** — `AiSettings.autoApprove: AutoApproveSettings` added to `useAiSettings` (desktop + web). Five flags: `deleteNote`, `deleteFolder`, `updateNoteContent`, `renameFolder`, `renameTag`. Default all-off (safer). Persisted via localStorage with `loadAutoApprove` validator rejecting malformed payloads.
+- [x] **C.5.2** — Settings UI section added to both packages: appears conditionally under the AI-assistant toggle, with one `ToggleSwitch` per destructive tool + a warning paragraph framing the tradeoff.
+- [x] **Plumbing** — `askQuestion` accepts `autoApprove?: AutoApproveFlags`; backend schema accepts `autoApprove` object; `answerWithTools` consults `shouldAutoApproveTool(toolName, flags)` per-call so destructive tools bypass the gate only when the user has opted in.
+
+## Tests added in this PR
+
+- `assistantTools.test.ts`: 8 tests — default confirmation gate for all 5 destructive tools, autoApprove bypass, fall-through when target missing, preview field correctness for update_note_content / delete_folder / rename_tag, non-destructive tools skip the gate.
+- `aiRoutes.test.ts`: 5 tests — confirm endpoint re-runs with autoApprove=true, rejects tools outside the allowlist, requires auth, validates payload, forwards autoApprove flags to answerWithTools (Phase C.5).
+- `answerWithTools.test.ts`: 3 tests — confirmation fires without autoApprove; autoApprove.deleteNote=true bypasses delete_note; autoApprove for the WRONG tool doesn't cross-bypass (deleteNote=true leaves delete_folder gated).
+- `useAiSettings.test.ts` (web): 3 tests — loadAutoApprove with partial flags; rejects malformed payload; updateSetting persists. Desktop version already had shape test (updated + field count to 14).
+
+Totals: ns-api 482 → 498 (+16); ns-desktop 987 (+4 useAiSettings shape updates absorbed, net 0 count); ns-web 630 → 633 (+3).
 
 ## Test plan
 

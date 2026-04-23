@@ -3368,6 +3368,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   activeSessionId={recordingState?.sessionId}
                   onAudioRetry={handleAudioRetry}
                   onAudioDiscard={handleAudioDiscard}
+                  autoApprove={settings.autoApprove}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel

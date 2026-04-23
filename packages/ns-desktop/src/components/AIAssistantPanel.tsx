@@ -2,13 +2,14 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags } from "../api/ai.ts";
+import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
 import { searchNotes, createNote, updateNote, softDeleteNote, fetchFolders, fetchTags, fetchFavoriteNotes, fetchRecentlyEditedNotes, fetchTrash, restoreNote as dbRestoreNote, renameFolder as dbRenameFolder, renameTag as dbRenameTag, deleteFolder as dbDeleteFolder } from "../lib/db.ts";
 import type { QASource } from "@derekentringer/ns-shared";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
 import { buildHistoryForClaude } from "../lib/chatHistory.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
+import { ConfirmationCard } from "./ConfirmationCard.tsx";
 
 const ASSISTANT_TIPS = [
   // Search & discover
@@ -209,6 +210,23 @@ interface Message {
   sources?: QASource[];
   meetingData?: MeetingSummaryData;
   noteCards?: NoteCard[];
+  // Phase C: when set, this message is really a destructive-action
+  // confirmation card. Rendered inline; resolved via Apply or Discard.
+  confirmation?: ConfirmationState;
+}
+
+/** Phase C.4: a single card can hold multiple same-toolName pendings so
+ *  consecutive destructive calls (e.g. Claude queuing 3 deletes in one
+ *  turn) render as one "Delete 3 notes?" batch instead of three
+ *  separate cards. Apply iterates; Discard drops the whole group. */
+interface ConfirmationState {
+  pendings: PendingConfirmation[];
+  status: "pending" | "applying" | "applied" | "discarded" | "failed";
+  resultText?: string;
+  errorMessage?: string;
+  /** Per-item result after Apply; only populated when pendings.length > 1
+   *  so the card can show partial-success detail. */
+  itemResults?: Array<{ id: string; ok: boolean; text?: string; error?: string }>;
 }
 
 const RECORDING_MODE_LABELS: Record<string, string> = {
@@ -281,9 +299,17 @@ interface AIAssistantPanelProps {
   onAudioRetry?: (sessionId: string) => void;
   /** Remove a failed session's chat card + drop its snapshot. */
   onAudioDiscard?: (sessionId: string) => void;
+  /** Phase C.5: per-tool auto-approve for destructive actions. */
+  autoApprove?: {
+    deleteNote: boolean;
+    deleteFolder: boolean;
+    updateNoteContent: boolean;
+    renameFolder: boolean;
+    renameTag: boolean;
+  };
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -790,7 +816,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     ]);
 
     try {
-      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined, history)) {
+      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined, history, autoApprove)) {
         if (controller.signal.aborted) break;
 
         setMessages((prev) => {
@@ -819,6 +845,40 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             const merged = [...existing, ...event.noteCards.filter((c) => !existing.some((e) => e.id === c.id))];
             last = { ...last, noteCards: merged };
             updated[updated.length - 1] = last;
+          }
+          if (event.confirmation) {
+            // Phase C.4: if the previous card is still pending AND uses
+            // the same toolName, merge into it so consecutive deletes
+            // etc. render as one batch card. Otherwise insert a new
+            // card. Either way, start a fresh empty assistant bubble
+            // so subsequent streamed text doesn't land on the card.
+            const prev = updated[updated.length - 1];
+            const prevPrev = updated[updated.length - 2];
+            const candidate =
+              prev?.confirmation?.status === "pending" ? prev :
+              prev?.role === "assistant" && prev.content === "" && prevPrev?.confirmation?.status === "pending" ? prevPrev :
+              null;
+            if (
+              candidate?.confirmation &&
+              candidate.confirmation.pendings[0]?.toolName === event.confirmation.toolName
+            ) {
+              // Merge into existing card
+              const idx = updated.indexOf(candidate);
+              updated[idx] = {
+                ...candidate,
+                confirmation: {
+                  ...candidate.confirmation,
+                  pendings: [...candidate.confirmation.pendings, event.confirmation],
+                },
+              };
+            } else {
+              updated.push({
+                role: "assistant",
+                content: "",
+                confirmation: { pendings: [event.confirmation], status: "pending" },
+              });
+              updated.push({ role: "assistant", content: "" });
+            }
           }
           return updated;
         });
@@ -853,6 +913,71 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         return updated;
       });
     }
+  }
+
+  // Phase C — apply or discard a pending destructive action. The
+  // caller passes `pendings` directly (may be a singleton or a batch)
+  // so we don't have to round-trip through setMessages just to read.
+  async function handleConfirmApply(idx: number, pendings: PendingConfirmation[]) {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: { ...msg.confirmation, status: "applying" },
+      };
+      return updated;
+    });
+
+    // Apply sequentially; gather per-item results so a partial failure
+    // can surface "2 of 3 applied" rather than masking what succeeded.
+    const itemResults: Array<{ id: string; ok: boolean; text?: string; error?: string }> = [];
+    for (const pending of pendings) {
+      try {
+        const result = await confirmTool(pending.toolName, pending.toolInput);
+        itemResults.push({ id: pending.id, ok: true, text: result.text });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        itemResults.push({ id: pending.id, ok: false, error: message });
+      }
+    }
+
+    const okCount = itemResults.filter((r) => r.ok).length;
+    const allOk = okCount === pendings.length;
+    const noneOk = okCount === 0;
+
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: {
+          ...msg.confirmation,
+          status: allOk ? "applied" : noneOk ? "failed" : "applied", // partial → "applied" with detail
+          resultText: allOk && pendings.length === 1 ? itemResults[0].text :
+            allOk ? `All ${pendings.length} actions applied.` :
+            `${okCount} of ${pendings.length} applied — ${pendings.length - okCount} failed.`,
+          errorMessage: noneOk ? itemResults[0]?.error : undefined,
+          itemResults: pendings.length > 1 ? itemResults : undefined,
+        },
+      };
+      return updated;
+    });
+  }
+
+  function handleConfirmDiscard(idx: number) {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: { ...msg.confirmation, status: "discarded" },
+      };
+      return updated;
+    });
   }
 
   function handleStop() {
@@ -1115,7 +1240,17 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             key={i}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            {msg.role === "meeting-summary" && msg.meetingData ? (
+            {msg.confirmation ? (
+              <ConfirmationCard
+                pendings={msg.confirmation.pendings}
+                status={msg.confirmation.status}
+                resultText={msg.confirmation.resultText}
+                errorMessage={msg.confirmation.errorMessage}
+                itemResults={msg.confirmation.itemResults}
+                onApply={() => handleConfirmApply(i, msg.confirmation!.pendings)}
+                onDiscard={() => handleConfirmDiscard(i)}
+              />
+            ) : msg.role === "meeting-summary" && msg.meetingData ? (
               <div className="w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
                 <div className="flex items-center gap-1.5 mb-2">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
@@ -1359,7 +1494,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
               (async () => {
                 try {
-                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript, undefined, history)) {
+                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript, undefined, history, autoApprove)) {
                     if (controller.signal.aborted) break;
                     setMessages((prev) => {
                       const updated = [...prev];

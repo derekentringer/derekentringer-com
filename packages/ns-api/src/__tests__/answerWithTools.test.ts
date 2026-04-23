@@ -151,3 +151,120 @@ describe("answerWithTools — history prepend (Phase A, verified in Phase B bran
     ]);
   });
 });
+
+describe("answerWithTools — autoApprove plumbing (Phase C.5)", () => {
+  // A Claude tool_use for delete_note. Without autoApprove the backend
+  // gates → emits a `confirmation` event. With autoApprove for that
+  // specific tool the gate is bypassed → executor runs the real
+  // softDeleteNote. We watch the round-2 prompt to distinguish.
+  it("delete_note without autoApprove emits a confirmation event", async () => {
+    const deleteBlock = {
+      type: "tool_use",
+      id: "t1",
+      name: "delete_note",
+      input: { noteTitle: "Draft" },
+    };
+    mockCreate
+      .mockResolvedValueOnce({ content: [deleteBlock] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "done" }] });
+
+    // No note matches → precheck fails → gate falls through to the
+    // real executor (which returns "no note found"). That's not what
+    // we want to assert; what we want is that mockCreate sees no
+    // autoApprove behaviour change. Seed a note via listNotes mock.
+    const { listNotes } = await import("../store/noteStore.js");
+    (listNotes as unknown as { mockResolvedValueOnce: (v: unknown) => void }).mockResolvedValueOnce({
+      notes: [{
+        id: "n1", userId: "u1", title: "Draft", content: "body", folder: null,
+        folderId: null, tags: [], summary: null, favorite: false, sortOrder: 0,
+        favoriteSortOrder: null, isLocalFile: false, audioMode: null,
+        transcript: null, createdAt: new Date(), updatedAt: new Date(),
+        deletedAt: null,
+      }],
+      total: 1,
+    });
+
+    const events = await consume(
+      answerWithTools("delete Draft", "u1"),
+    );
+
+    const confirmationEvents = events.filter((e) => e.type === "confirmation");
+    expect(confirmationEvents.length).toBe(1);
+    expect(confirmationEvents[0].confirmation?.toolName).toBe("delete_note");
+  });
+
+  it("delete_note with autoApprove.deleteNote=true bypasses the gate", async () => {
+    const deleteBlock = {
+      type: "tool_use",
+      id: "t1",
+      name: "delete_note",
+      input: { noteTitle: "Draft" },
+    };
+    mockCreate
+      .mockResolvedValueOnce({ content: [deleteBlock] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "done" }] });
+
+    const { listNotes, softDeleteNote } = await import("../store/noteStore.js");
+    (listNotes as unknown as { mockResolvedValueOnce: (v: unknown) => void }).mockResolvedValueOnce({
+      notes: [{
+        id: "n1", userId: "u1", title: "Draft", content: "body", folder: null,
+        folderId: null, tags: [], summary: null, favorite: false, sortOrder: 0,
+        favoriteSortOrder: null, isLocalFile: false, audioMode: null,
+        transcript: null, createdAt: new Date(), updatedAt: new Date(),
+        deletedAt: null,
+      }],
+      total: 1,
+    });
+    (softDeleteNote as unknown as { mockResolvedValueOnce: (v: unknown) => void })
+      .mockResolvedValueOnce(true);
+
+    const events = await consume(
+      answerWithTools(
+        "delete Draft",
+        "u1",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { deleteNote: true },
+      ),
+    );
+
+    // No confirmation surfaces — tool ran directly.
+    expect(events.filter((e) => e.type === "confirmation").length).toBe(0);
+    // softDeleteNote was invoked on the target.
+    expect(softDeleteNote).toHaveBeenCalledWith("u1", "n1");
+  });
+
+  it("autoApprove.deleteNote=true does NOT bypass delete_folder", async () => {
+    const deleteFolderBlock = {
+      type: "tool_use",
+      id: "t1",
+      name: "delete_folder",
+      input: { folderName: "Work" },
+    };
+    mockCreate
+      .mockResolvedValueOnce({ content: [deleteFolderBlock] })
+      .mockResolvedValueOnce({ content: [{ type: "text", text: "done" }] });
+
+    const { listFolders } = await import("../store/noteStore.js");
+    (listFolders as unknown as { mockResolvedValueOnce: (v: unknown) => void })
+      .mockResolvedValueOnce([
+        { id: "f1", name: "Work", parentId: null, count: 3, children: [] },
+      ]);
+
+    const events = await consume(
+      answerWithTools(
+        "delete the Work folder",
+        "u1",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { deleteNote: true }, // WRONG tool — the gate on delete_folder stays on
+      ),
+    );
+
+    expect(events.filter((e) => e.type === "confirmation").length).toBe(1);
+  });
+});

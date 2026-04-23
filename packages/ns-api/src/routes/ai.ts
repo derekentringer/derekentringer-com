@@ -74,6 +74,19 @@ const askSchema = {
           },
         },
       },
+      // Phase C.5: per-tool auto-approve flags. Omitted or false means
+      // the destructive-action confirmation gate stays on.
+      autoApprove: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          deleteNote: { type: "boolean" },
+          deleteFolder: { type: "boolean" },
+          updateNoteContent: { type: "boolean" },
+          renameFolder: { type: "boolean" },
+          renameTag: { type: "boolean" },
+        },
+      },
     },
   },
 };
@@ -236,6 +249,13 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     transcript?: string;
     activeNote?: { id: string; title: string; content: string };
     history?: Array<{ role: "user" | "assistant"; content: string }>;
+    autoApprove?: {
+      deleteNote?: boolean;
+      deleteFolder?: boolean;
+      updateNoteContent?: boolean;
+      renameFolder?: boolean;
+      renameTag?: boolean;
+    };
   };
   fastify.post<{ Body: AskBody }>(
     "/ask",
@@ -245,7 +265,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
-      const { question, transcript, activeNote, history } = request.body;
+      const { question, transcript, activeNote, history, autoApprove } = request.body;
       const hasMeetingTranscript = transcript && transcript.trim().length > 0;
 
       const abortController = new AbortController();
@@ -271,6 +291,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
             hasMeetingTranscript ? transcript : undefined,
             activeNote,
             history,
+            autoApprove,
           )) {
             if (abortController.signal.aborted) break;
             if (event.type === "text") {
@@ -280,6 +301,10 @@ export default async function aiRoutes(fastify: FastifyInstance) {
             } else if (event.type === "tool_activity") {
               passthrough.write(
                 `data: ${JSON.stringify({ tool: { name: event.toolName, description: event.description } })}\n\n`,
+              );
+            } else if (event.type === "confirmation" && event.confirmation) {
+              passthrough.write(
+                `data: ${JSON.stringify({ confirmation: event.confirmation })}\n\n`,
               );
             } else if (event.type === "note_cards") {
               allNoteCards.push(...(event.noteCards ?? []));
@@ -315,6 +340,65 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         .header("Cache-Control", "no-cache")
         .header("Connection", "keep-alive")
         .send(passthrough);
+    },
+  );
+
+  // POST /ai/tools/confirm — Phase C: commit a deferred destructive
+  // tool action after the user clicks Apply on a confirmation card. We
+  // re-run `executeTool` with `autoApprove: true` so the confirmation
+  // gate is bypassed on this call only. Store-level operations already
+  // scope by userId, so a tampered toolInput can't escape the user's
+  // own data.
+  fastify.post<{ Body: { toolName: string; toolInput: Record<string, unknown> } }>(
+    "/tools/confirm",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["toolName", "toolInput"],
+          additionalProperties: false,
+          properties: {
+            toolName: {
+              type: "string",
+              // Only allow the destructive tools that the confirmation
+              // flow is designed for; anything else would be a no-op
+              // wrapper around a non-gated tool and is rejected.
+              enum: [
+                "delete_note",
+                "delete_folder",
+                "update_note_content",
+                "rename_folder",
+                "rename_tag",
+              ],
+            },
+            toolInput: { type: "object", additionalProperties: true },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { toolName: string; toolInput: Record<string, unknown> } }>,
+      reply: FastifyReply,
+    ) => {
+      const userId = request.user.sub;
+      const { toolName, toolInput } = request.body;
+      const { executeTool } = await import("../services/assistantTools.js");
+      try {
+        const result = await executeTool(toolName, toolInput, userId, { autoApprove: true });
+        // Notify sync so UI refreshes after the mutation lands.
+        fastify.sseHub.notify(userId);
+        return reply.send({
+          text: result.text,
+          noteCards: result.noteCards ?? [],
+        });
+      } catch (error) {
+        request.log.error(error, "AI tool confirmation error");
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: getAiErrorMessage(error),
+        });
+      }
     },
   );
 

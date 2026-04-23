@@ -99,6 +99,18 @@ vi.mock("../store/noteStore.js", async (importOriginal) => {
   };
 });
 
+// Phase C: confirm endpoint dynamically imports this module. Mock
+// `executeTool` so we can assert on autoApprove behaviour without
+// needing store-level integration.
+const mockExecuteTool = vi.fn();
+vi.mock("../services/assistantTools.js", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    executeTool: (...args: unknown[]) => mockExecuteTool(...args),
+  };
+});
+
 import { buildApp } from "../app.js";
 
 describe("AI routes", () => {
@@ -851,6 +863,7 @@ describe("AI routes", () => {
         undefined,
         undefined,
         undefined, // history
+        undefined, // autoApprove (Phase C.5)
       );
     });
 
@@ -885,6 +898,35 @@ describe("AI routes", () => {
         undefined,
         undefined,
         history,
+        undefined, // autoApprove
+      );
+    });
+
+    // Phase C.5: per-tool auto-approve flags forwarded from the client.
+    it("forwards autoApprove flags to answerWithTools", async () => {
+      const token = await getAccessToken();
+      mockAnswerWithTools.mockImplementation(async function* () {
+        yield { type: "done" };
+      });
+
+      const autoApprove = { deleteNote: true };
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/ask",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { question: "delete my Draft note", autoApprove },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockAnswerWithTools).toHaveBeenCalledWith(
+        "delete my Draft note",
+        TEST_USER_ID,
+        expect.any(Object),
+        undefined,
+        undefined,
+        undefined,
+        autoApprove,
       );
     });
 
@@ -946,6 +988,77 @@ describe("AI routes", () => {
       expect(res.body).toContain("noteCards");
       expect(res.body).toContain("Found your notes");
       expect(res.body).toContain("[DONE]");
+    });
+  });
+
+  // Phase C — /ai/tools/confirm commits a deferred destructive action.
+  describe("POST /ai/tools/confirm", () => {
+    it("re-runs the tool with autoApprove=true and returns the result", async () => {
+      const token = await getAccessToken();
+      mockExecuteTool.mockResolvedValue({
+        text: 'Moved "X" to trash.',
+        noteCards: [{ id: "n1", title: "X" }],
+      });
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/tools/confirm",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          toolName: "delete_note",
+          toolInput: { noteTitle: "X" },
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockExecuteTool).toHaveBeenCalledWith(
+        "delete_note",
+        { noteTitle: "X" },
+        TEST_USER_ID,
+        { autoApprove: true },
+      );
+      const body = JSON.parse(res.body);
+      expect(body.text).toMatch(/moved/i);
+      expect(body.noteCards).toEqual([{ id: "n1", title: "X" }]);
+    });
+
+    it("rejects a tool outside the confirmation allowlist", async () => {
+      const token = await getAccessToken();
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/tools/confirm",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          toolName: "search_notes", // not in the destructive enum
+          toolInput: { query: "x" },
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(mockExecuteTool).not.toHaveBeenCalled();
+    });
+
+    it("returns 401 without auth", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/tools/confirm",
+        payload: {
+          toolName: "delete_note",
+          toolInput: { noteTitle: "X" },
+        },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it("rejects missing toolName / toolInput", async () => {
+      const token = await getAccessToken();
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/tools/confirm",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { toolName: "delete_note" }, // no toolInput
+      });
+      expect(res.statusCode).toBe(400);
     });
   });
 });

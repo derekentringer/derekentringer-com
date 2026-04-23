@@ -437,11 +437,14 @@ export async function* answerMeetingQuestion(
 }
 
 export interface AgentEvent {
-  type: "tool_activity" | "note_cards" | "text" | "done";
+  type: "tool_activity" | "note_cards" | "text" | "done" | "confirmation";
   toolName?: string;
   description?: string;
   noteCards?: { id: string; title: string; folder?: string; tags?: string[]; updatedAt?: string }[];
   text?: string;
+  // Phase C: forwarded to the frontend when a destructive tool call is
+  // awaiting user confirmation. The panel renders a ConfirmationCard.
+  confirmation?: import("./assistantTools.js").PendingConfirmation;
 }
 
 export async function* answerWithTools(
@@ -456,6 +459,16 @@ export async function* answerWithTools(
   // persisted message schema doesn't preserve them, and Claude infers
   // fine from text alone for follow-ups like "summarize the second one").
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  // Phase C.5: per-tool auto-approve flags from user settings. When
+  // set, destructive tools bypass the confirmation gate for this
+  // request only. Missing flags default to false (confirmation on).
+  autoApprove?: {
+    deleteNote?: boolean;
+    deleteFolder?: boolean;
+    updateNoteContent?: boolean;
+    renameFolder?: boolean;
+    renameTag?: boolean;
+  },
 ): AsyncGenerator<AgentEvent> {
   const { ASSISTANT_TOOLS, executeTool } = await import("./assistantTools.js");
   const anthropic = getClient();
@@ -493,6 +506,8 @@ export async function* answerWithTools(
       system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. When referencing notes, use their exact titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
 
 When to reach for search_notes: any question that could be answered from the user's broader note library, not just the active note or the live transcript. Examples: "what have I written about X", "do I have any notes on Y", "summarize my thoughts on Z", "how have I described A". Default to mode=hybrid so semantically related notes surface even when exact wording differs. The tool returns content snippets — answer from those directly; only call get_note_content when you need the full text of a specific matched note. If the user's question is clearly scoped to the currently open note or live transcript, answer from that context without searching.
+
+Destructive actions (delete_note, delete_folder, update_note_content, rename_folder, rename_tag) are gated by a user confirmation card that appears in the chat. When you invoke one of these tools, the tool_result will say "User confirmation requested…" — this means your call has NOT yet been executed; it's waiting on the user to click Apply or Discard. Compose your reply as if you've proposed the change rather than completed it (e.g. "I've queued up the deletion — click Apply on the card to confirm"). Don't invoke the same destructive tool a second time; the card is already visible.
 
 The user also has slash commands available as a faster alternative for the same actions (no AI cost). You can mention these as tips when relevant:
 /open, /create, /move, /tag, /delete, /deletefolder, /summarize, /gentags, /favorites, /favorite, /unfavorite, /trash, /restore, /renamefolder, /renametag, /duplicate, /recent, /folders, /tags, /stats, /clear
@@ -540,10 +555,27 @@ ${transcript}` : ""}`,
         const toolDescription = describeToolCall(block.name, block.input as Record<string, unknown>);
         yield { type: "tool_activity", toolName: block.name, description: toolDescription };
 
-        const result = await executeTool(block.name, block.input as Record<string, unknown>, userId);
+        // Phase C.5: consult per-tool auto-approve flags. The tool
+        // name maps into an autoApprove key; missing or false → gate on.
+        const toolAutoApprove = shouldAutoApproveTool(block.name, autoApprove);
+        const result = await executeTool(
+          block.name,
+          block.input as Record<string, unknown>,
+          userId,
+          { autoApprove: toolAutoApprove },
+        );
 
         if (result.noteCards && result.noteCards.length > 0) {
           yield { type: "note_cards", noteCards: result.noteCards };
+        }
+
+        // Phase C: relay the pending confirmation to the frontend
+        // as an SSE event. Claude also sees `result.text` saying
+        // confirmation was requested (so it can phrase its response
+        // naturally), but doesn't see the `needsConfirmation` payload
+        // itself — that's a UI-only concern.
+        if (result.needsConfirmation) {
+          yield { type: "confirmation", confirmation: result.needsConfirmation };
         }
 
         toolUseBlocks.push({ type: "tool_use", id: block.id, name: block.name, input: block.input });
@@ -567,6 +599,28 @@ ${transcript}` : ""}`,
   }
 
   yield { type: "done" };
+}
+
+/** Phase C.5: map tool name → auto-approve flag from the user's settings. */
+function shouldAutoApproveTool(
+  toolName: string,
+  flags?: {
+    deleteNote?: boolean;
+    deleteFolder?: boolean;
+    updateNoteContent?: boolean;
+    renameFolder?: boolean;
+    renameTag?: boolean;
+  },
+): boolean {
+  if (!flags) return false;
+  switch (toolName) {
+    case "delete_note": return flags.deleteNote === true;
+    case "delete_folder": return flags.deleteFolder === true;
+    case "update_note_content": return flags.updateNoteContent === true;
+    case "rename_folder": return flags.renameFolder === true;
+    case "rename_tag": return flags.renameTag === true;
+    default: return false;
+  }
 }
 
 function describeToolCall(name: string, input: Record<string, unknown>): string {

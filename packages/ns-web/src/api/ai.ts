@@ -77,6 +77,51 @@ export interface AskQuestionEvent {
   error?: string;
   tool?: { name: string; description: string };
   noteCards?: NoteCard[];
+  // Phase C: a deferred destructive tool call awaiting user approval.
+  confirmation?: PendingConfirmation;
+}
+
+export type ConfirmationPreview =
+  | { type: "delete_note"; title: string; folder?: string }
+  | { type: "update_note_content"; title: string; oldContent: string; newContent: string; oldLen: number; newLen: number }
+  | { type: "delete_folder"; folderName: string; affectedCount: number }
+  | { type: "rename_folder"; oldName: string; newName: string }
+  | { type: "rename_tag"; oldName: string; newName: string; affectedCount: number };
+
+export interface PendingConfirmation {
+  id: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  preview: ConfirmationPreview;
+}
+
+export interface ConfirmToolResult {
+  text: string;
+  noteCards?: NoteCard[];
+}
+
+export async function confirmTool(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): Promise<ConfirmToolResult> {
+  const response = await apiFetch("/ai/tools/confirm", {
+    method: "POST",
+    body: JSON.stringify({ toolName, toolInput }),
+  });
+  if (!response.ok) {
+    throw new Error(`Confirm failed: ${response.status}`);
+  }
+  return (await response.json()) as ConfirmToolResult;
+}
+
+/** Phase C.5: per-tool auto-approve sent to the backend so destructive
+ *  tools can skip the confirmation gate when the user has opted in. */
+export interface AutoApproveFlags {
+  deleteNote?: boolean;
+  deleteFolder?: boolean;
+  updateNoteContent?: boolean;
+  renameFolder?: boolean;
+  renameTag?: boolean;
 }
 
 export async function* askQuestion(
@@ -85,12 +130,14 @@ export async function* askQuestion(
   transcript?: string,
   activeNote?: { id: string; title: string; content: string },
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  autoApprove?: AutoApproveFlags,
 ): AsyncGenerator<AskQuestionEvent> {
   const body: {
     question: string;
     transcript?: string;
     activeNote?: { id: string; title: string; content: string };
     history?: Array<{ role: "user" | "assistant"; content: string }>;
+    autoApprove?: AutoApproveFlags;
   } = { question };
   if (transcript && transcript.trim().length > 0) {
     body.transcript = transcript;
@@ -100,6 +147,9 @@ export async function* askQuestion(
   }
   if (history && history.length > 0) {
     body.history = history;
+  }
+  if (autoApprove && Object.values(autoApprove).some(Boolean)) {
+    body.autoApprove = autoApprove;
   }
   const response = await apiFetch("/ai/ask", {
     method: "POST",
