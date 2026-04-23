@@ -187,7 +187,17 @@ interface MeetingSummaryData {
   noteId?: string;
   noteTitle?: string;
   keyTopics?: string[];
+  /** Tied to the AudioRecorder session that produced this card. */
+  sessionId?: string;
+  /** Phase 2: explicit lifecycle so the card can render a failed state. */
+  status?: "processing" | "completed" | "failed";
+  errorMessage?: string;
 }
+
+/** Union returned to the panel for a finished session (success or failure). */
+export type AudioSessionResult =
+  | { kind: "success"; sessionId: string; id: string; title: string; content: string; mode: string }
+  | { kind: "fail"; sessionId: string; message: string };
 
 interface Message {
   role: "user" | "assistant" | "meeting-summary";
@@ -255,15 +265,19 @@ interface AIAssistantPanelProps {
   liveTranscript?: string;
   relevantNotes?: MeetingContextNote[];
   recordingMode?: string;
-  /** Populated after audio note is created — enriches the meeting-ended card */
-  completedNote?: { id: string; title: string; content: string; mode: string } | null;
+  /** Phase 2: unified success/failure result. */
+  audioSessionResult?: AudioSessionResult | null;
   /** Currently open note for context */
   activeNote?: { id: string; title: string; content: string } | null;
   /** Incremented when another device updates chat history via SSE */
   chatRefreshKey?: number;
+  /** sessionId of the currently-recording session. */
+  activeSessionId?: string;
+  onAudioRetry?: (sessionId: string) => void;
+  onAudioDiscard?: (sessionId: string) => void;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, completedNote, activeNote, chatRefreshKey }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -281,19 +295,40 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const hasNotes = (relevantNotes?.length ?? 0) > 0;
   const historyLoadedRef = useRef(false);
 
+  // Phase 2 chat-load repaint: snapshots are in-memory only, so a persisted
+  // "processing" card loaded from server history is stale — the run that
+  // would have enriched it is gone. Repaint as "failed" with a helpful
+  // message and no retry (no snapshot to retry from).
+  function repaintStaleProcessingCards(rows: Message[]): Message[] {
+    return rows.map((m) => {
+      if (m.role !== "meeting-summary") return m;
+      const md = m.meetingData;
+      if (!md || md.status !== "processing") return m;
+      return {
+        ...m,
+        meetingData: {
+          ...md,
+          status: "failed" as const,
+          errorMessage: "Recording lost on refresh — the note couldn't be generated.",
+        },
+      };
+    });
+  }
+
   // Load chat history from server on mount
   useEffect(() => {
     if (historyLoadedRef.current) return;
     historyLoadedRef.current = true;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        setMessages(rows.map((r: ChatMessageData) => ({
+        const loaded = rows.map((r: ChatMessageData) => ({
           role: r.role as Message["role"],
           content: r.content,
           sources: (r.sources as QASource[] | undefined) ?? undefined,
           meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
           noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
-        })));
+        }));
+        setMessages(repaintStaleProcessingCards(loaded));
       }
     }).catch(() => {});
   }, []);
@@ -307,13 +342,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (isSavingRef.current) return; // Skip refetch triggered by our own save
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = rows.map((r: ChatMessageData) => ({
+        const loaded = repaintStaleProcessingCards(rows.map((r: ChatMessageData) => ({
           role: r.role as Message["role"],
           content: r.content,
           sources: (r.sources as QASource[] | undefined) ?? undefined,
           meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
           noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
-        }));
+        })));
         setMessages(loaded);
         lastSavedRef.current = JSON.stringify(loaded);
       } else {
@@ -376,17 +411,22 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }
   }, [isRecording]);
 
-  // Insert meeting summary into chat when recording stops
+  // Insert meeting summary into chat when recording stops. We capture the
+  // sessionId of the stopped session so the enrichment effect can match
+  // the correct card when multiple processing tasks are in flight.
   const prevRecordingRef = useRef(isRecording);
   const prevRecordingModeRef = useRef(recordingMode);
+  const prevSessionIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (isRecording) {
       prevRecordingModeRef.current = recordingMode;
+      prevSessionIdRef.current = activeSessionId;
     }
     if (prevRecordingRef.current && !isRecording) {
-      // Recording just stopped — capture the meeting context
+      // Recording just stopped — capture the meeting context.
       const notes = relevantNotes ?? [];
       const transcript = liveTranscript ?? "";
+      const sessionId = prevSessionIdRef.current;
       if (notes.length > 0 || transcript.trim().length > 0) {
         setMessages((prev) => [
           ...prev,
@@ -397,40 +437,89 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               relevantNotes: [...notes],
               transcript,
               mode: prevRecordingModeRef.current,
+              sessionId,
+              status: "processing",
             },
           },
         ]);
       }
     }
     prevRecordingRef.current = isRecording;
-  }, [isRecording, relevantNotes, liveTranscript, recordingMode]);
+  }, [isRecording, relevantNotes, liveTranscript, recordingMode, activeSessionId]);
 
-  // Enrich meeting-ended card when completed note arrives
+  // Apply the session result (success or failure) to the matching card.
   useEffect(() => {
-    if (!completedNote) return;
+    if (!audioSessionResult) return;
     setMessages((prev) => {
-      // Find the last meeting-summary message that hasn't been enriched yet
       let idx = -1;
       for (let i = prev.length - 1; i >= 0; i--) {
-        if (prev[i].role === "meeting-summary" && prev[i].meetingData && !prev[i].meetingData!.noteId) {
+        const md = prev[i].meetingData;
+        if (
+          prev[i].role === "meeting-summary" &&
+          md &&
+          md.status !== "completed" &&
+          md.sessionId === audioSessionResult.sessionId
+        ) {
           idx = i;
           break;
         }
       }
+      // Fallback for pre-upgrade cards (success only — failures always carry sessionId).
+      if (idx === -1 && audioSessionResult.kind === "success") {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          const md = prev[i].meetingData;
+          if (prev[i].role === "meeting-summary" && md && !md.noteId && !md.sessionId) {
+            idx = i;
+            break;
+          }
+        }
+      }
       if (idx === -1) return prev;
       const updated = [...prev];
-      updated[idx] = {
-        ...updated[idx],
-        meetingData: {
-          ...updated[idx].meetingData!,
-          noteId: completedNote.id,
-          noteTitle: completedNote.title,
-          keyTopics: extractKeyTopics(completedNote.content, completedNote.mode),
-        },
-      };
+      const baseMd = updated[idx].meetingData!;
+      if (audioSessionResult.kind === "success") {
+        updated[idx] = {
+          ...updated[idx],
+          meetingData: {
+            ...baseMd,
+            status: "completed",
+            noteId: audioSessionResult.id,
+            noteTitle: audioSessionResult.title,
+            keyTopics: extractKeyTopics(audioSessionResult.content, audioSessionResult.mode),
+            errorMessage: undefined,
+          },
+        };
+      } else {
+        updated[idx] = {
+          ...updated[idx],
+          meetingData: {
+            ...baseMd,
+            status: "failed",
+            errorMessage: audioSessionResult.message,
+          },
+        };
+      }
       return updated;
     });
-  }, [completedNote]);
+  }, [audioSessionResult]);
+
+  // Optimistic retry: flip the failed card back to "processing" immediately
+  // when the user clicks Retry.
+  const handleRetryClick = useCallback((sessionId: string) => {
+    setMessages((prev) => prev.map((m) =>
+      m.role === "meeting-summary" && m.meetingData?.sessionId === sessionId
+        ? { ...m, meetingData: { ...m.meetingData!, status: "processing" as const, errorMessage: undefined } }
+        : m,
+    ));
+    onAudioRetry?.(sessionId);
+  }, [onAudioRetry]);
+
+  const handleDiscardClick = useCallback((sessionId: string) => {
+    setMessages((prev) => prev.filter((m) =>
+      !(m.role === "meeting-summary" && m.meetingData?.sessionId === sessionId),
+    ));
+    onAudioDiscard?.(sessionId);
+  }, [onAudioDiscard]);
 
   // ─── Command Context ──────────────────────────────────
   const commandCtx = useMemo((): CommandContext => ({
@@ -1027,8 +1116,42 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                   </span>
                 </div>
 
-                {/* Note title — clickable card matching Related Notes style */}
-                {msg.meetingData.noteId && msg.meetingData.noteTitle ? (
+                {/* Status-driven body */}
+                {msg.meetingData.status === "failed" ? (
+                  <div className="mb-1.5">
+                    <div className="flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/5 p-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-destructive shrink-0 mt-0.5">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-destructive font-medium">Processing failed</p>
+                        {msg.meetingData.errorMessage && (
+                          <p className="text-[11px] text-muted-foreground mt-0.5">{msg.meetingData.errorMessage}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 mt-1.5">
+                      {msg.meetingData.sessionId && onAudioRetry && (
+                        <button
+                          onClick={() => handleRetryClick(msg.meetingData!.sessionId!)}
+                          className="px-2 py-1 rounded-md border border-border hover:border-primary/50 text-[11px] text-foreground hover:bg-accent transition-colors cursor-pointer"
+                        >
+                          Retry
+                        </button>
+                      )}
+                      {msg.meetingData.sessionId && onAudioDiscard && (
+                        <button
+                          onClick={() => handleDiscardClick(msg.meetingData!.sessionId!)}
+                          className="px-2 py-1 rounded-md border border-border hover:border-destructive/50 text-[11px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+                        >
+                          Discard
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : msg.meetingData.noteId && msg.meetingData.noteTitle ? (
                   <button
                     onClick={() => onSelectNote(msg.meetingData!.noteId!)}
                     className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer mb-1.5 group"
