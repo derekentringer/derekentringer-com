@@ -1,6 +1,6 @@
 # Phase A — Conversation Continuity
 
-**Status**: 🟡 planned
+**Status**: 🟠 in progress (PR pending review + merge)
 **Branch**: `feat/ai-assist-phase-a` (off `develop-ai-assist`)
 **Depends on**: none
 **Blocks**: meaningful use of Phase B (follow-up questions) and Phase C (referring back to prior actions)
@@ -60,14 +60,14 @@ Phase A does NOT change what's saved to the server. The history passed to Claude
 
 ## Sub-tasks
 
-- [ ] **A.1.1** — Add `history` field to `AskRequestBody` type in `packages/shared` (if shared types live there) or inline in `ai.ts` request schema.
-- [ ] **A.1.2** — Update `packages/ns-api/src/routes/ai.ts:216` to accept + forward `history`.
-- [ ] **A.1.3** — Update `packages/ns-api/src/services/aiService.ts:answerWithTools` signature to accept `history` and prepend to `messages` array.
-- [ ] **A.1.4** — Update `packages/ns-desktop/src/components/AIAssistantPanel.tsx:handleAsk` to serialize last 20 turns (filtering `meeting-summary` to a short text summary) and pass in the request body.
-- [ ] **A.1.5** — Same change on `packages/ns-web/src/components/AIAssistantPanel.tsx`.
-- [ ] **A.2.1** — Helper function `trimHistoryToBudget(history, maxChars)` in a shared util (or co-located). Unit test it.
-- [ ] **A.2.2** — Wire trimming into the frontend serializer so the backend always gets pre-trimmed input.
-- [ ] **A.3.1** — Document the text-only decision in code comments where history is serialized.
+- [x] **A.1.1** — `history` accepted in `ai.ts` request schema (inline; strict per-item validation: role enum user/assistant, content ≤ 5000 chars, ≤ 50 items).
+- [x] **A.1.2** — `packages/ns-api/src/routes/ai.ts` accepts + forwards `history`.
+- [x] **A.1.3** — `packages/ns-api/src/services/aiService.ts:answerWithTools` accepts `history` and prepends to `messages[]`.
+- [x] **A.1.4** — `packages/ns-desktop/src/components/AIAssistantPanel.tsx:handleAsk` + "Catch me up" snapshot `messages` via `buildHistoryForClaude` before appending the new user question.
+- [x] **A.1.5** — Same change on `packages/ns-web/src/components/AIAssistantPanel.tsx`.
+- [x] **A.2.1** — `trimHistoryToBudget(history, maxChars)` in `lib/chatHistory.ts` with 12 unit tests per package (desktop + web).
+- [x] **A.2.2** — Trimming wired into the frontend serializer via `buildHistoryForClaude(messages)` wrapper.
+- [x] **A.3.1** — Text-only rehydration decision documented at the top of `lib/chatHistory.ts` and in `answerWithTools`.
 
 ## Test plan
 

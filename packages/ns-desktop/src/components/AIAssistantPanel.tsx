@@ -7,6 +7,7 @@ import { searchNotes, createNote, updateNote, softDeleteNote, fetchFolders, fetc
 import type { QASource } from "@derekentringer/ns-shared";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
+import { buildHistoryForClaude } from "../lib/chatHistory.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
 
 const ASSISTANT_TIPS = [
@@ -769,6 +770,11 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       return;
     }
 
+    // Snapshot history BEFORE appending the new user question; Claude's
+    // server-side handler adds the current question as the final user
+    // turn. Text-only rehydration per Phase A design.
+    const history = buildHistoryForClaude(messages);
+
     setInput("");
     setAutocompleteItems([]);
     setMessages((prev) => [...prev, { role: "user", content: question }]);
@@ -784,7 +790,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     ]);
 
     try {
-      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined)) {
+      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined, history)) {
         if (controller.signal.aborted) break;
 
         setMessages((prev) => {
@@ -1344,6 +1350,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         {isRecording && hasTranscript && !isStreaming && (
           <button
             onClick={() => {
+              const history = buildHistoryForClaude(messages);
               setInput("");
               setMessages((prev) => [...prev, { role: "user", content: "Catch me up on this meeting" }]);
               setIsStreaming(true);
@@ -1352,7 +1359,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
               (async () => {
                 try {
-                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript)) {
+                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript, undefined, history)) {
                     if (controller.signal.aborted) break;
                     setMessages((prev) => {
                       const updated = [...prev];

@@ -57,6 +57,23 @@ const askSchema = {
           content: { type: "string", maxLength: 50000 },
         },
       },
+      // Phase A (docs/ns/ai-assist-arch/phase-a-*): prior user/assistant
+      // turns, already trimmed on the client to a reasonable budget.
+      // Max 50 turns × 5000 chars = 250k chars upper bound (schema-level
+      // defense; client-side typically sends ≤ 40 turns / 20k chars).
+      history: {
+        type: "array",
+        maxItems: 50,
+        items: {
+          type: "object",
+          required: ["role", "content"],
+          additionalProperties: false,
+          properties: {
+            role: { type: "string", enum: ["user", "assistant"] },
+            content: { type: "string", maxLength: 5000 },
+          },
+        },
+      },
     },
   },
 };
@@ -214,15 +231,21 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   );
 
   // POST /ai/ask — SSE streaming Q&A
-  fastify.post<{ Body: { question: string; transcript?: string; activeNote?: { id: string; title: string; content: string } } }>(
+  type AskBody = {
+    question: string;
+    transcript?: string;
+    activeNote?: { id: string; title: string; content: string };
+    history?: Array<{ role: "user" | "assistant"; content: string }>;
+  };
+  fastify.post<{ Body: AskBody }>(
     "/ask",
     { schema: askSchema },
     async (
-      request: FastifyRequest<{ Body: { question: string; transcript?: string; activeNote?: { id: string; title: string; content: string } } }>,
+      request: FastifyRequest<{ Body: AskBody }>,
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
-      const { question, transcript, activeNote } = request.body;
+      const { question, transcript, activeNote, history } = request.body;
       const hasMeetingTranscript = transcript && transcript.trim().length > 0;
 
       const abortController = new AbortController();
@@ -247,6 +270,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
             abortController.signal,
             hasMeetingTranscript ? transcript : undefined,
             activeNote,
+            history,
           )) {
             if (abortController.signal.aborted) break;
             if (event.type === "text") {

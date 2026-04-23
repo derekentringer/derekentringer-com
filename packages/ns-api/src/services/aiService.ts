@@ -450,11 +450,25 @@ export async function* answerWithTools(
   signal?: AbortSignal,
   transcript?: string,
   activeNote?: { id: string; title: string; content: string },
+  // Phase A (docs/ns/ai-assist-arch/phase-a-*): prior user/assistant
+  // turns, already trimmed on the client. Text-only rehydration — we do
+  // not re-send tool_use / tool_result blocks from earlier turns (our
+  // persisted message schema doesn't preserve them, and Claude infers
+  // fine from text alone for follow-ups like "summarize the second one").
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
 ): AsyncGenerator<AgentEvent> {
   const { ASSISTANT_TOOLS, executeTool } = await import("./assistantTools.js");
   const anthropic = getClient();
 
+  // Prepend prior turns so Claude has conversational context. The
+  // current question is always the last user turn. Defensive: filter
+  // any empty-content items the client might have leaked through.
+  const priorTurns: Anthropic.MessageParam[] = (history ?? [])
+    .filter((t) => t.content && t.content.trim().length > 0)
+    .map((t) => ({ role: t.role, content: t.content }));
+
   const messages: Anthropic.MessageParam[] = [
+    ...priorTurns,
     { role: "user", content: question },
   ];
 
