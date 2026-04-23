@@ -133,18 +133,17 @@ struct OpenedFiles(Mutex<Vec<String>>);
 
 /// Tracks whether the JS side has in-flight audio work (active recording,
 /// sync stop half, or detached processing task). Synced from JS via
-/// `set_audio_work_state`. Read during `RunEvent::ExitRequested` so Cmd+Q
-/// on macOS can be halted with a confirmation dialog — window-level
-/// `onCloseRequested` doesn't fire for app terminate.
-#[derive(Default)]
-struct AudioWorkFlag(AtomicBool);
+/// `set_audio_work_state`. Statics (not Tauri managed state) because the
+/// swizzled `applicationShouldTerminate:` on macOS runs as a raw ObjC
+/// method and can't pull from AppHandle.
+static AUDIO_WORK_FLAG: AtomicBool = AtomicBool::new(false);
 
 /// Set by `quit_app` when the user has already confirmed the
-/// close-while-processing dialog. The `ExitRequested` handler checks this
-/// first and bypasses the guard — otherwise `app.exit(0)` inside `quit_app`
-/// re-fires `ExitRequested`, which re-prompts the user in a loop.
-#[derive(Default)]
-struct QuitConfirmed(AtomicBool);
+/// close-while-processing dialog. Both the swizzled macOS terminate
+/// handler and the cross-platform `RunEvent::ExitRequested` handler
+/// check this first so `app.exit(0)` inside `quit_app` doesn't re-enter
+/// the guard and loop.
+static QUIT_CONFIRMED: AtomicBool = AtomicBool::new(false);
 
 fn urls_to_paths(urls: Vec<tauri::Url>) -> Vec<String> {
     urls.into_iter()
@@ -163,17 +162,16 @@ fn get_opened_files(state: tauri::State<'_, OpenedFiles>) -> Vec<String> {
 /// atomic store — OK to invoke on every recording tick / processing task
 /// transition.
 #[tauri::command]
-fn set_audio_work_state(has_work: bool, state: tauri::State<'_, AudioWorkFlag>) {
-    state.0.store(has_work, Ordering::SeqCst);
+fn set_audio_work_state(has_work: bool) {
+    AUDIO_WORK_FLAG.store(has_work, Ordering::SeqCst);
 }
 
 /// Called from JS when the user confirms "Quit anyway?" in the
-/// close-while-processing dialog. Sets the QuitConfirmed flag so
-/// `RunEvent::ExitRequested` (which fires as a side-effect of
-/// `app.exit(0)`) skips its guard and lets the exit proceed.
+/// close-while-processing dialog. Sets QuitConfirmed so the next
+/// terminate attempt bypasses the guards and actually quits.
 #[tauri::command]
-fn quit_app(app: tauri::AppHandle, state: tauri::State<'_, QuitConfirmed>) {
-    state.0.store(true, Ordering::SeqCst);
+fn quit_app(app: tauri::AppHandle) {
+    QUIT_CONFIRMED.store(true, Ordering::SeqCst);
     app.exit(0);
 }
 
@@ -277,6 +275,92 @@ fn get_meeting_audio_chunk() -> Result<Vec<u8>, String> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         Err("Meeting recording is not supported on this platform".into())
+    }
+}
+
+/// macOS-only hook to intercept every app-terminate path (Cmd+Q, Dock →
+/// Quit, NoteSync → Quit, Apple menu → Quit, anything that ends up in
+/// `NSApplication.terminate:`). We swizzle the delegate's
+/// `applicationShouldTerminate:` to run synchronously in the ObjC runtime
+/// — `RunEvent::ExitRequested` alone can't halt Dock Quit reliably because
+/// tao's default handler returns `NSTerminateNow` before our event loop
+/// gets a chance to call `prevent_exit`.
+#[cfg(target_os = "macos")]
+mod macos_terminate_hook {
+    use std::ffi::{c_char, CString};
+    use std::sync::OnceLock;
+    use std::sync::atomic::Ordering;
+    use tauri::{AppHandle, Emitter};
+    use objc2::runtime::{AnyClass, AnyObject, Sel};
+    use objc2::{msg_send, class, sel};
+
+    static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+    // NSApplicationTerminateReply:
+    //   NSTerminateCancel = 0
+    //   NSTerminateNow    = 1
+    //   NSTerminateLater  = 2
+    // Must be `extern "C-unwind"` to match objc2's `Imp` type alias.
+    #[allow(improper_ctypes_definitions)]
+    extern "C-unwind" fn should_terminate(
+        _this: *mut AnyObject,
+        _cmd: Sel,
+        _sender: *mut AnyObject,
+    ) -> usize {
+        if super::QUIT_CONFIRMED.load(Ordering::SeqCst) {
+            return 1; // TerminateNow
+        }
+        if !super::AUDIO_WORK_FLAG.load(Ordering::SeqCst) {
+            return 1; // TerminateNow — nothing to guard
+        }
+        if let Some(app) = APP_HANDLE.get() {
+            let _ = app.emit("app-quit-requested", ());
+        }
+        0 // TerminateCancel — JS dialog will decide; on confirm it calls
+          // `quit_app` which sets QUIT_CONFIRMED and re-enters here.
+    }
+
+    pub fn install(app: AppHandle) {
+        let _ = APP_HANDLE.set(app);
+        unsafe {
+            // Grab the running NSApplication's current delegate and
+            // replace `applicationShouldTerminate:` on its class. Same
+            // delegate tao already installed; we're only overriding the
+            // one method we care about.
+            let shared_app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+            if shared_app.is_null() {
+                return;
+            }
+            let delegate: *mut AnyObject = msg_send![shared_app, delegate];
+            if delegate.is_null() {
+                return;
+            }
+            let delegate_class: *mut AnyClass = msg_send![delegate, class];
+            if delegate_class.is_null() {
+                return;
+            }
+
+            // Objective-C type encoding: NSUInteger(Q) return, id self(@),
+            // SEL cmd(:), id sender(@).
+            let types = CString::new("Q@:@").unwrap();
+            let types_ptr: *const c_char = types.as_ptr();
+
+            // `Imp` in objc2 0.6 is `unsafe extern "C-unwind" fn()` — not
+            // Option-wrapped. Transmute directly.
+            let imp: objc2::runtime::Imp = std::mem::transmute::<
+                extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject) -> usize,
+                unsafe extern "C-unwind" fn(),
+            >(should_terminate);
+
+            let _ = objc2::ffi::class_replaceMethod(
+                delegate_class,
+                sel!(applicationShouldTerminate:),
+                imp,
+                types_ptr,
+            );
+            // CString drop after this is fine — the objc runtime copies
+            // the type-encoding string internally.
+        }
     }
 }
 
@@ -435,8 +519,6 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
-        .manage(AudioWorkFlag::default())
-        .manage(QuitConfirmed::default())
         .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, move_to_trash, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled, set_audio_work_state, quit_app])
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -460,6 +542,13 @@ pub fn run() {
                 app.set_menu(menu)?;
             }
 
+            // Install the macOS applicationShouldTerminate: override so
+            // Dock → Quit (and any other NSApp.terminate: path) hits our
+            // guard. Must run after the Tauri setup has created the NSApp
+            // delegate, which is the case inside `.setup(...)`.
+            #[cfg(target_os = "macos")]
+            macos_terminate_hook::install(app.handle().clone());
+
             // Disable editor and note menu items until a note is open / editor focused
             let handle = app.handle().clone();
             for id in NOTE_MENU_IDS.iter().chain(EDITOR_MENU_IDS.iter()) {
@@ -480,13 +569,12 @@ pub fn run() {
             app.on_menu_event(move |app_handle, event| {
                 let id = event.id().0.as_str();
                 if id == "quit-app" {
-                    let has_work = app_handle
-                        .try_state::<AudioWorkFlag>()
-                        .map(|s| s.0.load(Ordering::SeqCst))
-                        .unwrap_or(false);
-                    if has_work {
+                    if AUDIO_WORK_FLAG.load(Ordering::SeqCst)
+                        && !QUIT_CONFIRMED.load(Ordering::SeqCst)
+                    {
                         let _ = app_handle.emit("app-quit-requested", ());
                     } else {
+                        QUIT_CONFIRMED.store(true, Ordering::SeqCst);
                         app_handle.exit(0);
                     }
                     return;
@@ -535,19 +623,11 @@ pub fn run() {
         // subsequent `ExitRequested` fired by `app.exit(0)` bypasses
         // the guard and lets the app quit.
         if let RunEvent::ExitRequested { api, .. } = &event {
-            let confirmed = _app_handle
-                .try_state::<QuitConfirmed>()
-                .map(|s| s.0.load(Ordering::SeqCst))
-                .unwrap_or(false);
-            if !confirmed {
-                let has_work = _app_handle
-                    .try_state::<AudioWorkFlag>()
-                    .map(|s| s.0.load(Ordering::SeqCst))
-                    .unwrap_or(false);
-                if has_work {
-                    api.prevent_exit();
-                    let _ = _app_handle.emit("app-quit-requested", ());
-                }
+            if !QUIT_CONFIRMED.load(Ordering::SeqCst)
+                && AUDIO_WORK_FLAG.load(Ordering::SeqCst)
+            {
+                api.prevent_exit();
+                let _ = _app_handle.emit("app-quit-requested", ());
             }
         }
 
