@@ -450,6 +450,9 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     return (saved === "assistant" || saved === "history" || saved === "toc") ? saved : "assistant";
   });
   const [qaOpen, setQaOpen] = useState(() => localStorage.getItem("ns-drawer-open") === "true");
+  // Phase E.4: bumped by the Cmd+J command to re-focus the chat input
+  // even when the drawer is already on the assistant tab.
+  const [aiFocusNonce, setAiFocusNonce] = useState(0);
 
   // Persist drawer state to localStorage
   useEffect(() => { localStorage.setItem("ns-drawer-open", String(qaOpen)); }, [qaOpen]);
@@ -1775,6 +1778,15 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     "drawer:assistant": () => handleDrawerTabClick("assistant"),
     "drawer:history": () => handleDrawerTabClick("history"),
     "drawer:toc": () => handleDrawerTabClick("toc"),
+
+    // AI — Phase E.4: Cmd+J opens the drawer on the assistant tab and
+    // focuses the chat input. Unlike drawer:assistant (which toggles),
+    // this always opens + focuses, matching the ChatGPT/Cursor idiom.
+    "ai:focus-chat": () => {
+      setDrawerTab("assistant");
+      setQaOpen(true);
+      setAiFocusNonce((n) => n + 1);
+    },
 
     // Tab Navigation
     "tab:prev": () => cycleTab(-1),
@@ -3369,6 +3381,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   onAudioRetry={handleAudioRetry}
                   onAudioDiscard={handleAudioDiscard}
                   autoApprove={settings.autoApprove}
+                  focusNonce={aiFocusNonce}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel

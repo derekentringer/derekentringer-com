@@ -57,6 +57,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   // AI
   { id: "ai:continue-writing", label: "Continue Writing", category: "AI", scope: "editor", defaultBinding: { key: "Mod-Shift-Space" } },
   { id: "ai:rewrite", label: "AI Rewrite", category: "AI", scope: "editor", defaultBinding: { key: "Mod-Shift-r" } },
+  { id: "ai:focus-chat", label: "Focus AI Assistant", category: "AI", scope: "global", defaultBinding: { key: "Mod-j" } },
 ];
 
 /**
