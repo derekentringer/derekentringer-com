@@ -1,6 +1,6 @@
 # Phase B — Cross-notes Search
 
-**Status**: 🟡 planned (B.1 drafted, stashed as `phase-b-search-notes-draft`)
+**Status**: 🟠 in progress (PR pending review + merge)
 **Branch**: `feat/ai-assist-phase-b` (off `develop-ai-assist`)
 **Depends on**: A (for follow-up-question value; not a hard dependency)
 **Blocks**: nothing downstream — opens up broader capability
@@ -89,16 +89,16 @@ If `MAX_TOOL_CALLS_TOTAL` is hit mid-conversation, Claude gets a final user-turn
 
 ## Sub-tasks
 
-- [ ] **B.1** — Land the stashed `phase-b-search-notes-draft` changes. Verify tests still pass after any merge-in of A changes if B branches off A.
-- [ ] **B.2.1** — Add `find_similar_notes` to `ASSISTANT_TOOLS` in `assistantTools.ts`.
-- [ ] **B.2.2** — Factor `findMeetingContextNotes` in `ai.ts` to accept either a transcript or a pre-computed embedding. Route the new tool through it.
-- [ ] **B.2.3** — Unit test: fixture with 3 notes of known similarity, assert ordering + threshold.
-- [ ] **B.3.1** — Raise `MAX_ROUNDS` to 5.
-- [ ] **B.3.2** — Add `MAX_TOOL_CALLS_TOTAL` counter in `answerWithTools` loop.
-- [ ] **B.3.3** — Test: mock Claude returning 13 tool-use blocks across rounds; assert the 13th is never served.
-- [ ] **B.4.1** — Add `max_chars` parameter to `get_note_content` schema (default 8000, clamped 50–30000).
-- [ ] **B.4.2** — Update executor to honor `max_chars`.
-- [ ] **B.4.3** — Test: pass `max_chars: 100`, assert output is ≤ 100 chars (plus ellipsis).
+- [x] **B.1** — `search_notes` landed with hybrid-default mode, 800-char content snippets, updated tool description, and system-prompt nudge. 6 unit tests (default mode, explicit mode, snippet truncation, empty results, favorites fast-path).
+- [x] **B.2.1** — `find_similar_notes` added to `ASSISTANT_TOOLS`.
+- [x] **B.2.2** — New `findSimilarNotes(userId, title, limit, threshold)` in `noteStore.ts` (sibling to `findMeetingContextNotes`; self-excluded, same pgvector cosine query, threshold 0.5).
+- [x] **B.2.3** — 3 unit tests for the executor (formatting with similarity %, clamp [1, 10], empty result message).
+- [x] **B.3.1** — `MAX_ROUNDS` raised from 3 → 5.
+- [x] **B.3.2** — `MAX_TOOL_CALLS_TOTAL = 12` counter; calls past the cap are rejected with an `is_error` tool_result so Claude can finalize its answer cleanly.
+- [x] **B.3.3** — Dedicated `answerWithTools.test.ts` with Anthropic mocked: 13 tool_use blocks across 2 rounds → 12 execute, 13th+14th get the cap-reached error; separate test for the 5-round ceiling with continuous tool_use.
+- [x] **B.4.1** — `max_chars` param on `get_note_content` schema (default 8000, min 50, max 30000).
+- [x] **B.4.2** — Executor honors `max_chars` with clamping.
+- [x] **B.4.3** — 4 tests (default truncation, honors max_chars, clamps to hard cap, returns full content when short).
 
 ## Test plan
 
