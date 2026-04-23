@@ -8,6 +8,7 @@ import type { QASource } from "@derekentringer/ns-shared";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
 import { buildHistoryForClaude } from "../lib/chatHistory.ts";
+import { serializeChatToMarkdown, defaultChatTitle } from "../lib/chatExport.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { ConfirmationCard } from "./ConfirmationCard.tsx";
 
@@ -98,6 +99,27 @@ function extractCitations(text: string): string[] {
 
 function stripCitations(text: string): string {
   return text.replace(CITE_RE, "").replace(/ {2,}/g, " ").trim();
+}
+
+/** Phase E.5: convert `[Note Title]` markers to numbered superscript
+ *  citation links of the form `[N](cite:Title)`. Numbering matches the
+ *  order of pills rendered below the message (sources filtered by
+ *  cited titles). Citations referencing unknown sources are stripped. */
+function linkifyCitations(text: string, sources?: { id: string; title: string }[]): string {
+  if (!sources || sources.length === 0) return stripCitations(text);
+  const cited = extractCitations(text);
+  const displayed = sources.filter((s) => cited.includes(s.title));
+  if (displayed.length === 0) return stripCitations(text);
+  const titleToIdx = new Map<string, number>();
+  displayed.forEach((s, i) => titleToIdx.set(s.title, i + 1));
+  return text
+    .replace(CITE_RE, (_full, title: string) => {
+      const idx = titleToIdx.get(title);
+      if (!idx) return "";
+      return ` [${idx}](cite:${encodeURIComponent(title)})`;
+    })
+    .replace(/ {2,}/g, " ")
+    .trim();
 }
 
 function relativeTime(dateStr: string): string {
@@ -331,6 +353,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Phase E.3: live mirror of `messages` so the memoized commandCtx
+  // can serialize the current chat without rebuilding on every change.
+  const messagesRef = useRef<Message[]>(messages);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
   const hasNotes = (relevantNotes?.length ?? 0) > 0;
@@ -811,6 +837,22 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       } catch { return null; }
     },
     clearChat: () => handleClear(),
+    saveChat: async (titleArg) => {
+      try {
+        const current = messagesRef.current;
+        const hasContent = current.some(
+          (m) => (m.role === "user" || m.role === "assistant") && m.content.trim().length > 0,
+        );
+        if (!hasContent) return null;
+        const title = titleArg?.trim() || defaultChatTitle();
+        const content = serializeChatToMarkdown(current, {
+          title,
+          timestamp: new Date().toLocaleString(),
+        });
+        const note = await createNote({ title, content });
+        return { id: note.id, title: note.title };
+      } catch { return null; }
+    },
   }), []);
 
   // ─── Slash Command Handler ───────────────────────────
@@ -1476,7 +1518,42 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 {msg.content ? (
                   <>
                     <div className={`text-sm markdown-preview chat-markdown ${msg.failed ? "text-destructive" : "text-foreground"}`}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ pre: CodeBlock }}>{stripCitations(msg.content)}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeHighlight]}
+                        components={{
+                          pre: CodeBlock,
+                          // Phase E.5: render `cite:` URLs as clickable
+                          // numbered superscripts that scroll to the
+                          // matching pill and navigate to the note.
+                          a: ({ href, children, ...rest }) => {
+                            if (typeof href === "string" && href.startsWith("cite:")) {
+                              const title = decodeURIComponent(href.slice(5));
+                              const source = msg.sources?.find((s) => s.title === title);
+                              if (!source) return <>{children}</>;
+                              return (
+                                <sup className="ml-0.5">
+                                  <a
+                                    href="#"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      onSelectNote(source.id);
+                                    }}
+                                    title={title}
+                                    data-testid="citation-marker"
+                                    className="text-primary hover:underline px-0.5 text-[10px] font-medium cursor-pointer no-underline"
+                                  >
+                                    {children}
+                                  </a>
+                                </sup>
+                              );
+                            }
+                            return <a href={href} {...rest}>{children}</a>;
+                          },
+                        }}
+                      >
+                        {linkifyCitations(msg.content, msg.sources)}
+                      </ReactMarkdown>
                     </div>
                     {/* Phase E.2: retry button for failed turns. */}
                     {msg.failed && (

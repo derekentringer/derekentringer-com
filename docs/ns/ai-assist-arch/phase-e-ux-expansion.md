@@ -1,7 +1,10 @@
 # Phase E — UX Expansion
 
-**Status**: 🟢 in progress (E.1, E.2, E.4 landed; E.3 + E.5 deferred to follow-up branches)
-**Branch**: `feat/ai-assist-phase-e` (off `develop-ai-assist`)
+**Status**: 🟢 in progress (E.1/E.2/E.4 merged; E.3/E.5 in `feat/ai-assist-phase-e-extras`)
+**Branches**:
+- `feat/ai-assist-phase-e` — E.1, E.2, E.4 (merged)
+- `feat/ai-assist-phase-e-extras` — E.3, E.5
+
 **Depends on**: A (conversation continuity makes the "retry" action meaningful); B (broader capability makes the "thinking" indicator more informative)
 **Blocks**: nothing
 
@@ -67,13 +70,13 @@ Each sub-item is independently shippable. They don't have to land together.
 - [x] **E.1.2** — Copy: map tool names to user-friendly phrases — backend `tool_activity.description` already emits user-friendly phrases (e.g. "Searching notes…"); the panel uses them verbatim with a "Thinking…" fallback.
 - [x] **E.2.1** — Render Retry button on assistant messages with `failed: true`. (applied to both ns-desktop and ns-web panels.)
 - [x] **E.2.2** — Re-post the original user question + history via the extracted `performAsk(question, history)` helper; `handleRetry(idx)` rebuilds history from messages preceding the retried user turn.
-- [ ] **E.3.1** — Chat → markdown serializer. (**deferred** to follow-up branch.)
-- [ ] **E.3.2** — `/saveChat` slash command implementation. (**deferred**.)
-- [ ] **E.3.3** — Panel menu button alternative entry. (**deferred**.)
+- [x] **E.3.1** — Chat → markdown serializer in `lib/chatExport.ts` (mirrored across desktop + web). Inline `[Title]` citations become `[[Title]]` wiki-links so the exported note stays linked to its sources.
+- [x] **E.3.2** — `/savechat [optional title]` slash command wired through CommandContext.saveChat. Returns a noteCard for the new note so the user gets a one-click open.
+- [ ] **E.3.3** — Panel menu button alternative entry. (**deferred** — slash command + autocomplete is sufficient discoverability for a power-user feature; revisit if the menu becomes load-bearing.)
 - [x] **E.4.1** — Register Cmd+J (`ai:focus-chat`, `Mod-j`, global scope) in both `ns-desktop/src/commands/registry.ts` and `ns-web/src/commands/registry.ts`.
 - [x] **E.4.2** — Wired `focusNonce?: number` prop through AIAssistantPanel → `useEffect` that focuses the chat input on every nonce bump; NotesPage handler opens drawer on assistant tab + bumps the counter.
-- [ ] **E.5.1** — Citation post-processor in the assistant message renderer. (**deferred**.)
-- [ ] **E.5.2** — Style + click behaviour (scroll to source pill). (**deferred**.)
+- [x] **E.5.1** — `linkifyCitations(text, sources)` post-processor transforms `[Title]` markers into numbered `[N](cite:Title)` markdown links before ReactMarkdown renders. Numbering matches the order of pills shown below the message.
+- [x] **E.5.2** — Custom `a` component override on ReactMarkdown renders `cite:` URLs as `<sup>` superscript markers; clicking opens the cited note via the existing `onSelectNote` flow.
 
 ## Test plan
 
@@ -99,8 +102,9 @@ Total ~220 LoC across 5 sub-items, 5 tests. Each can be a separate PR if we want
 
 ## Definition of done
 
-- [x] E.1, E.2, E.4 sub-tasks checked (E.3 + E.5 deferred to follow-up branches)
-- [x] Tests pass (ns-api 500/500, ns-web 633/633, ns-desktop 987/987)
+- [x] E.1, E.2, E.4 sub-tasks checked
+- [x] E.3 (E.3.1, E.3.2) + E.5 sub-tasks checked
+- [x] Tests pass (ns-api 500/500, ns-web 641/641, ns-desktop 995/995)
 - [ ] Manual QA: all items feel good in daily use
 - [ ] PRs merged into `develop-ai-assist`
 - [ ] This doc status updated to ✅
@@ -108,4 +112,4 @@ Total ~220 LoC across 5 sub-items, 5 tests. Each can be a separate PR if we want
 
 ## Deferred
 
-- **E.3** (chat → note export) and **E.5** (inline citation markers) were scoped out of this PR so it stays reviewable. Both are additive, independent of each other, and can land as standalone branches off `develop-ai-assist` without retouching the shipped work.
+- **E.3.3** (header menu button) — `/savechat` slash command + autocomplete already gives discoverable access; a header menu would duplicate the path with no clear win. Revisit if a menu becomes useful for other entries.

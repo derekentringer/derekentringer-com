@@ -27,6 +27,9 @@ export interface CommandContext {
   renameTag: (oldName: string, newName: string) => Promise<string>;
   duplicateNote: (noteTitle: string) => Promise<{ id: string; title: string } | null>;
   clearChat: () => void;
+  /** Phase E.3: serialize the current chat session and create a note
+   *  from it. Returns the new note (or null if nothing to save). */
+  saveChat: (title?: string) => Promise<{ id: string; title: string } | null>;
 }
 
 export interface CommandResult {
@@ -259,6 +262,19 @@ export const CHAT_COMMANDS: ChatCommand[] = [
     execute: async (_args, ctx) => {
       ctx.clearChat();
       return { text: "", silent: true };
+    },
+  },
+  {
+    name: "savechat",
+    description: "Save the current chat as a note",
+    usage: "/savechat [title]",
+    execute: async (args, ctx) => {
+      const note = await ctx.saveChat(args.trim() || undefined);
+      if (!note) return { text: "Nothing to save — chat is empty." };
+      return {
+        text: `Saved chat as "${note.title}".`,
+        noteCards: [{ id: note.id, title: note.title }],
+      };
     },
   },
 ];
