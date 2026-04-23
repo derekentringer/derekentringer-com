@@ -378,36 +378,54 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }).catch(() => {});
   }, [chatRefreshKey]);
 
-  // Persist chat to server when messages change (debounced full replace)
+  // Phase D.4: debounce raised from 1s → 5s so bursts of fast-following
+  // updates coalesce. Stream-end gets a faster flush below.
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>("");
+  const persistChatNow = useCallback(() => {
+    if (!historyLoadedRef.current) return;
+    const json = JSON.stringify(messages);
+    if (json === lastSavedRef.current) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    lastSavedRef.current = json;
+    isSavingRef.current = true;
+    clearServerChatHistory().then(() => {
+      if (messages.length > 0) {
+        return saveChatMessages(messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          sources: m.sources,
+          meetingData: m.meetingData,
+          noteCards: m.noteCards,
+        })));
+      }
+    }).catch(() => {}).finally(() => {
+      setTimeout(() => { isSavingRef.current = false; }, 500);
+    });
+  }, [messages]);
+
   useEffect(() => {
     if (!historyLoadedRef.current) return;
-    // Skip saving during streaming (incomplete messages)
     if (isStreaming) return;
     const json = JSON.stringify(messages);
     if (json === lastSavedRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      lastSavedRef.current = json;
-      isSavingRef.current = true;
-      // Full replace: clear then append all
-      clearServerChatHistory().then(() => {
-        if (messages.length > 0) {
-          return saveChatMessages(messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-            sources: m.sources,
-            meetingData: m.meetingData,
-            noteCards: m.noteCards,
-          })));
-        }
-      }).catch(() => {}).finally(() => {
-        // Delay unsetting to let SSE events from our save pass through
-        setTimeout(() => { isSavingRef.current = false; }, 500);
-      });
-    }, 1000);
-  }, [messages, isStreaming]);
+    saveTimerRef.current = setTimeout(() => persistChatNow(), 5000);
+  }, [messages, isStreaming, persistChatNow]);
+
+  // Phase D.4: flush within 200ms when a stream ends so the assistant
+  // turn persists quickly.
+  const prevStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => persistChatNow(), 200);
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming, persistChatNow]);
 
   useEffect(() => {
     if (isOpen) {

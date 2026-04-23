@@ -1,7 +1,7 @@
 # Phase C — Action Safety
 
-**Status**: 🟠 in progress (all sub-phases implemented on `feat/ai-assist-phase-c`; PR #471 open)
-**Branch**: `feat/ai-assist-phase-c` (off `develop-ai-assist`)
+**Status**: ✅ merged into `develop-ai-assist` (PR #471)
+**Branch**: `feat/ai-assist-phase-c` (deleted post-merge)
 **Depends on**: A (nice-to-have for conversational confirmation flow); D.1 (token logging) recommended to observe cost of confirmation round-trips
 **Blocks**: responsible shipping of any future Claude-driven bulk operations
 

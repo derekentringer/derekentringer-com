@@ -236,6 +236,66 @@ describe("answerWithTools — autoApprove plumbing (Phase C.5)", () => {
     expect(softDeleteNote).toHaveBeenCalledWith("u1", "n1");
   });
 
+  it("logs token usage per round when a logger is provided (Phase D.1)", async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: "text", text: "short answer" }],
+      usage: { input_tokens: 1234, output_tokens: 56, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    });
+
+    const loggedCalls: Array<Record<string, unknown>> = [];
+    const logger = {
+      info: (o: Record<string, unknown>) => loggedCalls.push(o),
+      warn: () => {},
+      error: () => {},
+      debug: () => {},
+      trace: () => {},
+      fatal: () => {},
+      level: "info",
+      child: () => logger,
+      silent: () => {},
+    } as unknown as import("fastify").FastifyBaseLogger;
+
+    await consume(
+      answerWithTools("q", "u1", undefined, undefined, undefined, undefined, undefined, logger),
+    );
+
+    expect(loggedCalls.length).toBe(1);
+    expect(loggedCalls[0]).toMatchObject({
+      event: "claude_call_complete",
+      operation: "answer_with_tools",
+      userId: "u1",
+      round: 0,
+      input_tokens: 1234,
+      output_tokens: 56,
+      cumulativeInputTokens: 1234,
+      cumulativeOutputTokens: 56,
+    });
+  });
+
+  it("halts at MAX_TOKENS_PER_QUESTION with a graceful final message (Phase D.2)", async () => {
+    // Round 0 returns a giant usage that exceeds the ceiling. Round 1
+    // should never fire — the budget check at the top of the loop
+    // emits a graceful text and returns.
+    mockCreate.mockResolvedValueOnce({
+      content: [{
+        type: "tool_use",
+        id: "t0",
+        name: "search_notes",
+        input: { query: "x" },
+      }],
+      usage: { input_tokens: 150_000, output_tokens: 500 },
+    });
+
+    const events = await consume(answerWithTools("expensive question", "u1"));
+
+    // Exactly one create call — round 1 was preempted by the budget.
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    // Graceful finalization text was yielded.
+    const texts = events.filter((e) => e.type === "text").map((e) => e.text ?? "");
+    expect(texts.some((t) => /token ceiling/i.test(t))).toBe(true);
+    expect(events.some((e) => e.type === "done")).toBe(true);
+  });
+
   it("autoApprove.deleteNote=true does NOT bypass delete_folder", async () => {
     const deleteFolderBlock = {
       type: "tool_use",

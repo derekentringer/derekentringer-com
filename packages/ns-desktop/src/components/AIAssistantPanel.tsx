@@ -393,9 +393,40 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }).catch(() => {});
   }, [chatRefreshKey]);
 
-  // Persist chat to server when messages change (debounced full replace)
+  // Persist chat to server when messages change (debounced full replace).
+  // Phase D.4: debounce raised from 1s → 5s so bursts of fast-following
+  // updates (meeting-summary card enrichment + Claude stream completion +
+  // tool-result card updates) coalesce into a single write instead of
+  // hitting the server several times per second. The isStreaming guard
+  // already prevents saves during the stream itself; the 5s delay covers
+  // the tail of post-stream updates.
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>("");
+  const persistChatNow = useCallback(() => {
+    if (!historyLoadedRef.current) return;
+    const json = JSON.stringify(messages);
+    if (json === lastSavedRef.current) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    lastSavedRef.current = json;
+    isSavingRef.current = true;
+    clearServerChatHistory().then(() => {
+      if (messages.length > 0) {
+        return saveChatMessages(messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          sources: m.sources,
+          meetingData: m.meetingData,
+          noteCards: m.noteCards,
+        })));
+      }
+    }).catch(() => {}).finally(() => {
+      setTimeout(() => { isSavingRef.current = false; }, 500);
+    });
+  }, [messages]);
+
   useEffect(() => {
     if (!historyLoadedRef.current) return;
     if (isStreaming) return;
@@ -403,23 +434,22 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (json === lastSavedRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      lastSavedRef.current = json;
-      isSavingRef.current = true;
-      clearServerChatHistory().then(() => {
-        if (messages.length > 0) {
-          return saveChatMessages(messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-            sources: m.sources,
-            meetingData: m.meetingData,
-            noteCards: m.noteCards,
-          })));
-        }
-      }).catch(() => {}).finally(() => {
-        setTimeout(() => { isSavingRef.current = false; }, 500);
-      });
-    }, 1000);
-  }, [messages, isStreaming]);
+      persistChatNow();
+    }, 5000);
+  }, [messages, isStreaming, persistChatNow]);
+
+  // Phase D.4: flush promptly when a streaming turn just completed so
+  // the final assistant message persists quickly instead of waiting on
+  // the 5s debounce. 200ms gives any tail-state updates (note cards,
+  // sources) a tick to land before the write goes out.
+  const prevStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => persistChatNow(), 200);
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming, persistChatNow]);
 
   useEffect(() => {
     if (isOpen) {
