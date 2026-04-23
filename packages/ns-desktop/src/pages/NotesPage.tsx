@@ -403,6 +403,46 @@ export function NotesPage() {
   const hasAudioWorkRef = useRef(false);
   hasAudioWorkRef.current = recordingState !== null || inFlightAudioCount > 0;
 
+  // Sync the work flag to Rust so the native ExitRequested handler (which
+  // fires on macOS Cmd+Q — Cmd+Q bypasses window-level onCloseRequested
+  // entirely) can decide synchronously whether to prevent the exit.
+  useEffect(() => {
+    invoke("set_audio_work_state", { hasWork: hasAudioWorkRef.current }).catch(() => {});
+  }, [recordingState, inFlightAudioCount]);
+
+  // Listen for app-quit-requested event emitted by Rust after it has
+  // called `api.prevent_exit()`. Show the confirmation dialog and, if the
+  // user confirms, invoke `quit_app` which calls `app.exit(0)` on the
+  // Rust side.
+  useEffect(() => {
+    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
+    listen("app-quit-requested", async () => {
+      const confirmed = await ask(
+        "A recording is in progress or still processing. " +
+          "Quitting now will discard it. Quit anyway?",
+        { title: "Recording in progress", kind: "warning" },
+      );
+      if (confirmed) {
+        await invoke("quit_app");
+      }
+    })
+      .then((unlisten) => {
+        if (cancelled) {
+          unlisten();
+        } else {
+          unlistenFn = unlisten;
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to listen for app-quit-requested:", err);
+      });
+    return () => {
+      cancelled = true;
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
+
   useEffect(() => {
     // Web / webview fallback — catches refresh, tab close, in-webview nav.
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {

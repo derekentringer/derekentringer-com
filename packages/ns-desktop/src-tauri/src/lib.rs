@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use keyring::Entry;
 use tauri::{Emitter, Manager, RunEvent};
 use tauri::menu::{MenuBuilder, SubmenuBuilder, MenuItemBuilder, PredefinedMenuItem};
@@ -130,6 +131,14 @@ fn get_migrations() -> Vec<Migration> {
 
 struct OpenedFiles(Mutex<Vec<String>>);
 
+/// Tracks whether the JS side has in-flight audio work (active recording,
+/// sync stop half, or detached processing task). Synced from JS via
+/// `set_audio_work_state`. Read during `RunEvent::ExitRequested` so Cmd+Q
+/// on macOS can be halted with a confirmation dialog — window-level
+/// `onCloseRequested` doesn't fire for app terminate.
+#[derive(Default)]
+struct AudioWorkFlag(AtomicBool);
+
 fn urls_to_paths(urls: Vec<tauri::Url>) -> Vec<String> {
     urls.into_iter()
         .filter_map(|u: tauri::Url| u.to_file_path().ok())
@@ -141,6 +150,22 @@ fn urls_to_paths(urls: Vec<tauri::Url>) -> Vec<String> {
 fn get_opened_files(state: tauri::State<'_, OpenedFiles>) -> Vec<String> {
     let mut buf = state.0.lock().unwrap();
     buf.drain(..).collect()
+}
+
+/// Called from JS whenever the in-flight audio work state changes. Cheap
+/// atomic store — OK to invoke on every recording tick / processing task
+/// transition.
+#[tauri::command]
+fn set_audio_work_state(has_work: bool, state: tauri::State<'_, AudioWorkFlag>) {
+    state.0.store(has_work, Ordering::SeqCst);
+}
+
+/// Called from JS when the user confirms "Quit anyway?" in the
+/// close-while-processing dialog. Unlike `process::exit`, this goes
+/// through Tauri's app exit path and triggers the normal cleanup.
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -395,7 +420,8 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
-        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, move_to_trash, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled])
+        .manage(AudioWorkFlag::default())
+        .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, move_to_trash, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled, set_audio_work_state, quit_app])
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:notesync.db", get_migrations())
@@ -465,9 +491,26 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app_handle, _event| {
+    app.run(|_app_handle, event| {
+        // Close-while-processing guard (macOS Cmd+Q, app-level exit).
+        // Cmd+Q on macOS bypasses the window-level `onCloseRequested`
+        // entirely — it fires this app-level `ExitRequested` instead. If
+        // the JS side has in-flight audio work, halt the exit and emit
+        // an event so the frontend can show a confirmation dialog; on
+        // confirm, JS invokes `quit_app` which calls `app.exit(0)`.
+        if let RunEvent::ExitRequested { api, .. } = &event {
+            let has_work = _app_handle
+                .try_state::<AudioWorkFlag>()
+                .map(|s| s.0.load(Ordering::SeqCst))
+                .unwrap_or(false);
+            if has_work {
+                api.prevent_exit();
+                let _ = _app_handle.emit("app-quit-requested", ());
+            }
+        }
+
         #[cfg(target_os = "macos")]
-        if let RunEvent::Opened { urls } = _event {
+        if let RunEvent::Opened { urls } = event {
             let paths = urls_to_paths(urls);
             if paths.is_empty() {
                 return;
