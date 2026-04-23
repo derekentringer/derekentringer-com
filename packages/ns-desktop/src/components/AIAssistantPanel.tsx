@@ -213,6 +213,10 @@ interface Message {
   // Phase C: when set, this message is really a destructive-action
   // confirmation card. Rendered inline; resolved via Apply or Discard.
   confirmation?: ConfirmationState;
+  // Phase E.2: marks an assistant turn whose Claude call failed. The
+  // chat shows a Retry button that re-fires the preceding user
+  // question with full Phase A history.
+  failed?: boolean;
 }
 
 /** Phase C.4: a single card can hold multiple same-toolName pendings so
@@ -307,9 +311,13 @@ interface AIAssistantPanelProps {
     renameFolder: boolean;
     renameTag: boolean;
   };
+  /** Phase E.4: bump this counter to force-focus the chat input (used
+   *  by the Cmd+J keyboard shortcut to re-focus the input even when
+   *  the drawer is already open on the assistant tab). */
+  focusNonce?: number;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove, focusNonce }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -456,6 +464,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       inputRef.current?.focus();
     }
   }, [isOpen]);
+
+  // Phase E.4: Cmd+J bumps a nonce from the parent; re-focus even when
+  // the drawer was already open (isOpen didn't change).
+  useEffect(() => {
+    if (focusNonce === undefined) return;
+    inputRef.current?.focus();
+  }, [focusNonce]);
 
   const scrollToBottom = useCallback(() => {
     const container = messagesScrollRef.current;
@@ -834,6 +849,33 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     setInput("");
     setAutocompleteItems([]);
     setMessages((prev) => [...prev, { role: "user", content: question }]);
+    await performAsk(question, history);
+  }
+
+  // Phase E.2: retry a failed assistant turn. Removes the failed turn
+  // (and any confirmation cards since the last user message), rebuilds
+  // history from what's left, and re-fires the question.
+  async function handleRetry(failedIdx: number) {
+    if (isStreaming) return;
+    let question = "";
+    let historyBase: Message[] = [];
+    // Find the preceding user message; drop everything after it.
+    setMessages((prev) => {
+      for (let i = failedIdx - 1; i >= 0; i--) {
+        if (prev[i].role === "user") {
+          question = prev[i].content;
+          historyBase = prev.slice(0, i); // history = messages before the user turn
+          return prev.slice(0, failedIdx); // drop failed assistant msg + anything after
+        }
+      }
+      return prev;
+    });
+    if (!question) return;
+    const history = buildHistoryForClaude(historyBase);
+    await performAsk(question, history);
+  }
+
+  async function performAsk(question: string, history: Array<{ role: "user" | "assistant"; content: string }>) {
     setIsStreaming(true);
     setToolActivity(null);
 
@@ -859,7 +901,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             updated[updated.length - 1] = last;
           }
           if (event.error) {
-            last = { ...last, content: event.error };
+            // Phase E.2: mark assistant turn as failed so the UI
+            // renders a Retry button instead of a dead-end error.
+            last = { ...last, content: event.error, failed: true };
             updated[updated.length - 1] = last;
           }
           if (event.text) {
@@ -922,6 +966,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             updated[updated.length - 1] = {
               ...last,
               content: "Something went wrong. Please try again.",
+              failed: true,
             };
           }
           return updated;
@@ -938,6 +983,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           updated[updated.length - 1] = {
             ...last,
             content: "Something went wrong. Please try again.",
+            failed: true,
           };
         }
         return updated;
@@ -1073,13 +1119,25 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           AI Assistant
         </span>
-        {isSearchingContext && (
+        {/* Phase E.1: aggregate "thinking..." indicator. Surfaces the
+            current tool activity (reading a note, searching, etc.) so
+            users see progress during multi-round Claude responses. */}
+        {isStreaming && (
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground" aria-live="polite">
+            <svg className="animate-spin h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+              <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+            </svg>
+            <span className="truncate max-w-[180px]">{toolActivity ?? "Thinking…"}</span>
+          </span>
+        )}
+        {!isStreaming && isSearchingContext && (
           <svg className="animate-spin h-3 w-3 text-muted-foreground shrink-0 ml-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
             <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
           </svg>
         )}
-        {messages.length > 0 && (
+        {messages.length > 0 && !isStreaming && (
           <button
             onClick={handleClear}
             className={`text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer ${isSearchingContext ? "" : "ml-auto"}`}
@@ -1414,12 +1472,24 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 ) : msg.content}
               </div>
             ) : (
-              <div className="max-w-[95%] rounded-lg bg-card border border-border px-2.5 py-1.5">
+              <div className={`max-w-[95%] rounded-lg bg-card border px-2.5 py-1.5 ${msg.failed ? "border-destructive/40" : "border-border"}`}>
                 {msg.content ? (
                   <>
-                    <div className="text-sm text-foreground markdown-preview chat-markdown">
+                    <div className={`text-sm markdown-preview chat-markdown ${msg.failed ? "text-destructive" : "text-foreground"}`}>
                       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ pre: CodeBlock }}>{stripCitations(msg.content)}</ReactMarkdown>
                     </div>
+                    {/* Phase E.2: retry button for failed turns. */}
+                    {msg.failed && (
+                      <div className="flex gap-1.5 mt-1.5">
+                        <button
+                          onClick={() => handleRetry(i)}
+                          disabled={isStreaming}
+                          className="px-2 py-1 rounded-md border border-border hover:border-primary/50 text-[11px] text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
                     {(() => {
                       const cited = extractCitations(msg.content);
                       const sources = msg.sources?.filter((s) => cited.includes(s.title)) ?? [];
