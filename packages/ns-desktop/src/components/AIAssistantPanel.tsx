@@ -2,13 +2,14 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags } from "../api/ai.ts";
+import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
 import { searchNotes, createNote, updateNote, softDeleteNote, fetchFolders, fetchTags, fetchFavoriteNotes, fetchRecentlyEditedNotes, fetchTrash, restoreNote as dbRestoreNote, renameFolder as dbRenameFolder, renameTag as dbRenameTag, deleteFolder as dbDeleteFolder } from "../lib/db.ts";
 import type { QASource } from "@derekentringer/ns-shared";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
 import { buildHistoryForClaude } from "../lib/chatHistory.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
+import { ConfirmationCard } from "./ConfirmationCard.tsx";
 
 const ASSISTANT_TIPS = [
   // Search & discover
@@ -209,6 +210,16 @@ interface Message {
   sources?: QASource[];
   meetingData?: MeetingSummaryData;
   noteCards?: NoteCard[];
+  // Phase C: when set, this message is really a destructive-action
+  // confirmation card. Rendered inline; resolved via Apply or Discard.
+  confirmation?: ConfirmationState;
+}
+
+interface ConfirmationState {
+  pending: PendingConfirmation;
+  status: "pending" | "applying" | "applied" | "discarded" | "failed";
+  resultText?: string;
+  errorMessage?: string;
 }
 
 const RECORDING_MODE_LABELS: Record<string, string> = {
@@ -820,6 +831,17 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             last = { ...last, noteCards: merged };
             updated[updated.length - 1] = last;
           }
+          if (event.confirmation) {
+            // Phase C: insert a dedicated confirmation card, and start
+            // a fresh empty assistant message so any subsequent streamed
+            // text from Claude doesn't get mixed into the card.
+            updated.push({
+              role: "assistant",
+              content: "",
+              confirmation: { pending: event.confirmation, status: "pending" },
+            });
+            updated.push({ role: "assistant", content: "" });
+          }
           return updated;
         });
       }
@@ -853,6 +875,69 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         return updated;
       });
     }
+  }
+
+  // Phase C — apply or discard a pending destructive action. The
+  // caller passes `pending` directly so we don't have to round-trip
+  // through setMessages just to read it.
+  async function handleConfirmApply(idx: number, pending: PendingConfirmation) {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: { ...msg.confirmation, status: "applying" },
+      };
+      return updated;
+    });
+
+    try {
+      const result = await confirmTool(pending.toolName, pending.toolInput);
+      setMessages((prev) => {
+        const updated = [...prev];
+        const msg = updated[idx];
+        if (!msg?.confirmation) return prev;
+        updated[idx] = {
+          ...msg,
+          confirmation: {
+            ...msg.confirmation,
+            status: "applied",
+            resultText: result.text,
+          },
+        };
+        return updated;
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setMessages((prev) => {
+        const updated = [...prev];
+        const msg = updated[idx];
+        if (!msg?.confirmation) return prev;
+        updated[idx] = {
+          ...msg,
+          confirmation: {
+            ...msg.confirmation,
+            status: "failed",
+            errorMessage: message,
+          },
+        };
+        return updated;
+      });
+    }
+  }
+
+  function handleConfirmDiscard(idx: number) {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: { ...msg.confirmation, status: "discarded" },
+      };
+      return updated;
+    });
   }
 
   function handleStop() {
@@ -1115,7 +1200,16 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             key={i}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            {msg.role === "meeting-summary" && msg.meetingData ? (
+            {msg.confirmation ? (
+              <ConfirmationCard
+                pending={msg.confirmation.pending}
+                status={msg.confirmation.status}
+                resultText={msg.confirmation.resultText}
+                errorMessage={msg.confirmation.errorMessage}
+                onApply={() => handleConfirmApply(i, msg.confirmation!.pending)}
+                onDiscard={() => handleConfirmDiscard(i)}
+              />
+            ) : msg.role === "meeting-summary" && msg.meetingData ? (
               <div className="w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
                 <div className="flex items-center gap-1.5 mb-2">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">

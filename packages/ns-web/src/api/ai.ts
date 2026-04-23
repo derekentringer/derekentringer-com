@@ -77,6 +77,41 @@ export interface AskQuestionEvent {
   error?: string;
   tool?: { name: string; description: string };
   noteCards?: NoteCard[];
+  // Phase C: a deferred destructive tool call awaiting user approval.
+  confirmation?: PendingConfirmation;
+}
+
+export type ConfirmationPreview =
+  | { type: "delete_note"; title: string; folder?: string }
+  | { type: "update_note_content"; title: string; oldContent: string; newContent: string; oldLen: number; newLen: number }
+  | { type: "delete_folder"; folderName: string; affectedCount: number }
+  | { type: "rename_folder"; oldName: string; newName: string }
+  | { type: "rename_tag"; oldName: string; newName: string; affectedCount: number };
+
+export interface PendingConfirmation {
+  id: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  preview: ConfirmationPreview;
+}
+
+export interface ConfirmToolResult {
+  text: string;
+  noteCards?: NoteCard[];
+}
+
+export async function confirmTool(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): Promise<ConfirmToolResult> {
+  const response = await apiFetch("/ai/tools/confirm", {
+    method: "POST",
+    body: JSON.stringify({ toolName, toolInput }),
+  });
+  if (!response.ok) {
+    throw new Error(`Confirm failed: ${response.status}`);
+  }
+  return (await response.json()) as ConfirmToolResult;
 }
 
 export async function* askQuestion(

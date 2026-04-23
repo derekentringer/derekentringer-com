@@ -1,6 +1,6 @@
 # Phase C — Action Safety
 
-**Status**: 🟡 planned
+**Status**: 🟠 in progress (C.1 + C.2 + C.3 implemented; C.4 bulk grouping and C.5 per-tool auto-approve settings deferred)
 **Branch**: `feat/ai-assist-phase-c` (off `develop-ai-assist`)
 **Depends on**: A (nice-to-have for conversational confirmation flow); D.1 (token logging) recommended to observe cost of confirmation round-trips
 **Blocks**: responsible shipping of any future Claude-driven bulk operations
@@ -92,16 +92,23 @@ Per-session setting: "Auto-approve reads and favorites; always confirm deletes a
 
 ## Sub-tasks
 
-- [ ] **C.1.1** — Extend `ToolResult` union with `needs_confirmation` variant.
-- [ ] **C.1.2** — In `assistantTools.ts:executeTool`, for destructive cases: instead of calling the real mutator, return a `needs_confirmation` result.
-- [ ] **C.1.3** — Serialize the pending action through the SSE stream as a new event kind.
-- [ ] **C.1.4** — New `POST /ai/tools/confirm` endpoint: takes the `DestructiveAction`, executes it, returns the result.
-- [ ] **C.1.5** — Panel renders `ConfirmationCard` for pending actions (inline in the message stream).
-- [ ] **C.2.1** — Diff-rendering component (reuse `DiffView`).
-- [ ] **C.3.1** — Tool description + confirmation copy updates.
-- [ ] **C.4.1** — Frontend groups N consecutive confirmations of the same type into one card.
-- [ ] **C.5.1** — Per-tool auto-approval settings in `useAiSettings`.
-- [ ] **C.5.2** — Settings UI section (requires Phase E UX helper if not existing).
+- [x] **C.1.1** — `ToolResult` gains a `needsConfirmation?: PendingConfirmation` field + `ConfirmationPreview` union.
+- [x] **C.1.2** — `executeTool(..., { autoApprove })` gates destructive tools through `buildPendingConfirmation` unless the caller opts in. Precheck failure falls through to the real executor so "note not found" etc. surface normally.
+- [x] **C.1.3** — `AgentEvent.type` gains `"confirmation"`; the route passes it through as an SSE `{ confirmation: … }` frame.
+- [x] **C.1.4** — `POST /ai/tools/confirm` endpoint accepts `{ toolName, toolInput }` (toolName restricted to the destructive enum), re-runs `executeTool` with `autoApprove: true`, and notifies sync.
+- [x] **C.1.5** — `ConfirmationCard` component (desktop + web). Inline in the chat stream. Apply / Discard buttons; applying disables both; status progresses `pending → applying → applied | failed | discarded`.
+- [x] **C.2.1** — `ConfirmationCard` renders a compact diff for `update_note_content` (char delta, % change, Before/After snippets capped at 200 chars each).
+- [x] **C.3.1** — Tool descriptions rewritten (`delete_note` mentions 30-day Trash, `delete_folder` clarifies notes become Unfiled, etc.); system prompt explains the "confirmation requested" pattern so Claude responds naturally.
+- [ ] **C.4.1** — Frontend groups N consecutive confirmations of the same type into one card. _Deferred — C.1–C.3 shippable without it; follow-up when bulk operations become common._
+- [ ] **C.5.1** — Per-tool auto-approval settings in `useAiSettings`. _Deferred._
+- [ ] **C.5.2** — Settings UI section. _Deferred._
+
+## Tests added in this PR
+
+- `assistantTools.test.ts`: 8 new tests — default confirmation gate for all 5 destructive tools, autoApprove bypass, fall-through when target missing, preview field correctness for update_note_content / delete_folder / rename_tag, non-destructive tools skip the gate.
+- `aiRoutes.test.ts`: 4 new tests — confirm endpoint re-runs with autoApprove=true, rejects tools outside the allowlist, requires auth, validates payload.
+
+Total: ns-api 482 → 494 (+12); ns-desktop 987, ns-web 630 unchanged (UI component added, no tests yet — follow-up).
 
 ## Test plan
 

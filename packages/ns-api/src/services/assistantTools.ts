@@ -129,7 +129,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "update_note_content",
-    description: "Update the content of an existing note. Use this to fix, rewrite, or modify note content. The user's version history will preserve the previous version. Always provide the complete updated content, not just the changed parts.",
+    description: "Update the content of an existing note. Gated behind a user confirmation card showing a diff (old vs. new content + char delta); the rewrite is only committed if the user clicks Apply. Always provide the COMPLETE updated content, not just the changed parts. The previous version is saved in version history.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -187,7 +187,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "delete_note",
-    description: "Move a note to the trash (soft delete). The user can restore it later.",
+    description: "Move a note to Trash (soft delete — recoverable from Trash for 30 days). Gated behind a user confirmation card; the note is untouched until the user clicks Apply. Describe your intent naturally; the UI shows title + folder.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -198,7 +198,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "delete_folder",
-    description: "Delete a folder. Notes inside become unfiled.",
+    description: "Delete a folder. Notes inside become Unfiled (the notes themselves are NOT deleted). Gated behind a user confirmation card; the folder is untouched until the user clicks Apply.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -241,7 +241,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "rename_folder",
-    description: "Rename a folder.",
+    description: "Rename a folder. Gated behind a user confirmation card showing old → new name.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -253,7 +253,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "rename_tag",
-    description: "Rename a tag across all notes that use it.",
+    description: "Rename a tag across all notes that use it. Gated behind a user confirmation card showing old → new name and the count of affected notes.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -281,13 +281,74 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
 export interface ToolResult {
   text: string;
   noteCards?: { id: string; title: string; folder?: string; tags?: string[]; updatedAt?: string }[];
+  // Phase C (docs/ns/ai-assist-arch/phase-c-action-safety.md): set when a
+  // destructive tool call has been deferred pending user confirmation.
+  // The route forwards this as an SSE `confirmation` event; the frontend
+  // renders a ConfirmationCard and, on Apply, re-invokes the original
+  // tool via POST /ai/tools/confirm with autoApprove=true.
+  needsConfirmation?: PendingConfirmation;
+}
+
+export interface PendingConfirmation {
+  /** UUID assigned by the server; frontend uses it to match card → commit. */
+  id: string;
+  /** Original tool name Claude invoked. */
+  toolName: string;
+  /** Original tool input. The confirm endpoint re-runs executeTool with
+   *  these args + autoApprove=true. Server-side userId scoping protects
+   *  against tampering — we never trust IDs in the payload for authZ. */
+  toolInput: Record<string, unknown>;
+  /** Rendering hint for the ConfirmationCard. */
+  preview: ConfirmationPreview;
+}
+
+export type ConfirmationPreview =
+  | { type: "delete_note"; title: string; folder?: string }
+  | { type: "update_note_content"; title: string; oldContent: string; newContent: string; oldLen: number; newLen: number }
+  | { type: "delete_folder"; folderName: string; affectedCount: number }
+  | { type: "rename_folder"; oldName: string; newName: string }
+  | { type: "rename_tag"; oldName: string; newName: string; affectedCount: number };
+
+/** Tools that require user confirmation unless explicitly auto-approved.
+ *  Phase C.5 will make this per-tool user-configurable; for now the
+ *  defaults are hard-coded and picked conservatively (the ones that
+ *  destroy information or rewrite content in bulk). */
+const DESTRUCTIVE_TOOLS = new Set([
+  "delete_note",
+  "delete_folder",
+  "update_note_content",
+  "rename_folder",
+  "rename_tag",
+]);
+
+export interface ExecuteToolOptions {
+  /** Bypass the confirmation gate and execute the mutation. Set by the
+   *  POST /ai/tools/confirm endpoint after the user clicks Apply. */
+  autoApprove?: boolean;
 }
 
 export async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
   userId: string,
+  options: ExecuteToolOptions = {},
 ): Promise<ToolResult> {
+  // Phase C: gate destructive tools behind a confirmation step unless
+  // the caller is the confirm-endpoint (autoApprove=true) or the tool
+  // isn't on the destructive list.
+  if (!options.autoApprove && DESTRUCTIVE_TOOLS.has(toolName)) {
+    const pending = await buildPendingConfirmation(toolName, input, userId);
+    if (pending) {
+      return {
+        text: `User confirmation requested for: ${describeConfirmation(pending.preview)}. The action has not been executed; waiting for the user to Apply or Discard.`,
+        needsConfirmation: pending,
+      };
+    }
+    // Precheck failed (e.g. target not found). Fall through to the
+    // normal executor so the user gets the existing "no note found"
+    // message instead of a phantom confirmation card.
+  }
+
   switch (toolName) {
     case "search_notes":
       return executeSearchNotes(input, userId);
@@ -773,4 +834,127 @@ async function executeDuplicateNote(input: Record<string, unknown>, userId: stri
     text: `Duplicated "${note.title}" as "${result.title}".`,
     noteCards: [{ id: result.id, title: result.title, folder: result.folder ?? undefined, tags: result.tags }],
   };
+}
+
+// ─── Phase C: confirmation gate ─────────────────────────────────────
+
+/**
+ * Build a PendingConfirmation for a destructive tool call. Returns null
+ * if the precheck fails (target not found) so `executeTool` can fall
+ * through to the real executor, which will surface the "not found"
+ * error to Claude in the usual way.
+ */
+async function buildPendingConfirmation(
+  toolName: string,
+  input: Record<string, unknown>,
+  userId: string,
+): Promise<PendingConfirmation | null> {
+  const id = generateConfirmationId();
+
+  switch (toolName) {
+    case "delete_note": {
+      const note = await findNoteByTitle(userId, String(input.noteTitle));
+      if (!note) return null;
+      return {
+        id,
+        toolName,
+        toolInput: input,
+        preview: { type: "delete_note", title: note.title, folder: note.folder ?? undefined },
+      };
+    }
+
+    case "delete_folder": {
+      const folder = await findFolderByName(userId, String(input.folderName));
+      if (!folder) return null;
+      return {
+        id,
+        toolName,
+        toolInput: input,
+        preview: { type: "delete_folder", folderName: folder.name, affectedCount: folder.count },
+      };
+    }
+
+    case "update_note_content": {
+      const note = await findNoteByTitle(userId, String(input.noteTitle));
+      if (!note) return null;
+      const oldContent = note.content ?? "";
+      const newContent = String(input.content ?? "");
+      return {
+        id,
+        toolName,
+        // Use the resolved exact title in the commit so the confirm
+        // endpoint re-runs against the same note Claude intended.
+        toolInput: { ...input, noteTitle: note.title },
+        preview: {
+          type: "update_note_content",
+          title: note.title,
+          oldContent,
+          newContent,
+          oldLen: oldContent.length,
+          newLen: newContent.length,
+        },
+      };
+    }
+
+    case "rename_folder": {
+      const folder = await findFolderByName(userId, String(input.oldName));
+      if (!folder) return null;
+      return {
+        id,
+        toolName,
+        toolInput: input,
+        preview: {
+          type: "rename_folder",
+          oldName: folder.name,
+          newName: String(input.newName),
+        },
+      };
+    }
+
+    case "rename_tag": {
+      const oldName = String(input.oldName);
+      const newName = String(input.newName);
+      const tags = await listTags(userId);
+      const match = tags.find((t) => t.name.toLowerCase() === oldName.toLowerCase());
+      if (!match) return null;
+      return {
+        id,
+        toolName,
+        toolInput: input,
+        preview: {
+          type: "rename_tag",
+          oldName: match.name,
+          newName,
+          affectedCount: match.count,
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+function describeConfirmation(preview: ConfirmationPreview): string {
+  switch (preview.type) {
+    case "delete_note":
+      return `move "${preview.title}" to trash`;
+    case "delete_folder":
+      return `delete folder "${preview.folderName}" (${preview.affectedCount} note${preview.affectedCount === 1 ? "" : "s"} will become unfiled)`;
+    case "update_note_content": {
+      const delta = preview.newLen - preview.oldLen;
+      const sign = delta >= 0 ? "+" : "";
+      return `rewrite "${preview.title}" (${sign}${delta} chars, ${preview.oldLen} → ${preview.newLen})`;
+    }
+    case "rename_folder":
+      return `rename folder "${preview.oldName}" to "${preview.newName}"`;
+    case "rename_tag":
+      return `rename tag "${preview.oldName}" to "${preview.newName}" across ${preview.affectedCount} note${preview.affectedCount === 1 ? "" : "s"}`;
+  }
+}
+
+function generateConfirmationId(): string {
+  // crypto.randomUUID is available in Node 19+.
+  return typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }

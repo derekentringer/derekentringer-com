@@ -4,21 +4,28 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockListNotes = vi.fn();
 const mockListFavoriteNotes = vi.fn();
 const mockFindSimilarNotes = vi.fn();
+const mockSoftDeleteNote = vi.fn();
+const mockDeleteFolderById = vi.fn();
+const mockUpdateNote = vi.fn();
+const mockRenameFolder = vi.fn();
+const mockRenameTag = vi.fn();
+const mockListFolders = vi.fn();
+const mockListTags = vi.fn();
 
 vi.mock("../store/noteStore.js", () => ({
   listNotes: (...args: unknown[]) => mockListNotes(...args),
-  listFolders: vi.fn(),
-  listTags: vi.fn(),
+  listFolders: (...args: unknown[]) => mockListFolders(...args),
+  listTags: (...args: unknown[]) => mockListTags(...args),
   listFavoriteNotes: (...args: unknown[]) => mockListFavoriteNotes(...args),
   listTrashedNotes: vi.fn(),
   getDashboardData: vi.fn(),
   createNote: vi.fn(),
-  updateNote: vi.fn(),
-  softDeleteNote: vi.fn(),
+  updateNote: (...args: unknown[]) => mockUpdateNote(...args),
+  softDeleteNote: (...args: unknown[]) => mockSoftDeleteNote(...args),
   restoreNote: vi.fn(),
-  deleteFolderById: vi.fn(),
-  renameFolder: vi.fn(),
-  renameTag: vi.fn(),
+  deleteFolderById: (...args: unknown[]) => mockDeleteFolderById(...args),
+  renameFolder: (...args: unknown[]) => mockRenameFolder(...args),
+  renameTag: (...args: unknown[]) => mockRenameTag(...args),
   findSimilarNotes: (...args: unknown[]) => mockFindSimilarNotes(...args),
 }));
 
@@ -243,5 +250,150 @@ describe("assistantTools — find_similar_notes (Phase B.2)", () => {
 
     expect(result.text).toMatch(/no related notes/i);
     expect(result.noteCards).toEqual([]);
+  });
+});
+
+// Phase C — destructive tools gated behind confirmation unless
+// autoApprove is passed. The gate runs a precheck (to populate the
+// card preview); if the target isn't found the gate falls through to
+// the real executor so the user gets the normal "not found" message.
+describe("assistantTools — Phase C confirmation gate", () => {
+  beforeEach(() => {
+    mockSoftDeleteNote.mockReset();
+    mockDeleteFolderById.mockReset();
+    mockUpdateNote.mockReset();
+    mockRenameFolder.mockReset();
+    mockRenameTag.mockReset();
+    mockListFolders.mockReset();
+    mockListTags.mockReset();
+  });
+
+  it("delete_note returns needs_confirmation by default (no mutation)", async () => {
+    mockListNotes.mockResolvedValue({ notes: [makeNote({ id: "n1", title: "My Draft" })], total: 1 });
+
+    const result = await executeTool("delete_note", { noteTitle: "My Draft" }, "u1");
+
+    expect(result.needsConfirmation).toBeTruthy();
+    expect(result.needsConfirmation?.toolName).toBe("delete_note");
+    expect(result.needsConfirmation?.preview).toMatchObject({
+      type: "delete_note",
+      title: "My Draft",
+    });
+    expect(mockSoftDeleteNote).not.toHaveBeenCalled();
+  });
+
+  it("delete_note with autoApprove=true bypasses the gate and deletes", async () => {
+    mockListNotes.mockResolvedValue({ notes: [makeNote({ id: "n1", title: "My Draft" })], total: 1 });
+    mockSoftDeleteNote.mockResolvedValue(true);
+
+    const result = await executeTool(
+      "delete_note",
+      { noteTitle: "My Draft" },
+      "u1",
+      { autoApprove: true },
+    );
+
+    expect(result.needsConfirmation).toBeUndefined();
+    expect(mockSoftDeleteNote).toHaveBeenCalledWith("u1", "n1");
+    expect(result.text).toMatch(/moved.*to trash/i);
+  });
+
+  it("delete_note falls through to the not-found executor when the target is missing", async () => {
+    mockListNotes.mockResolvedValue({ notes: [], total: 0 });
+
+    const result = await executeTool("delete_note", { noteTitle: "ghost" }, "u1");
+
+    expect(result.needsConfirmation).toBeUndefined();
+    expect(result.text).toMatch(/no note found/i);
+    expect(mockSoftDeleteNote).not.toHaveBeenCalled();
+  });
+
+  it("update_note_content preview includes old/new content + lengths", async () => {
+    const oldContent = "old body text";
+    const newContent = "completely new rewritten body";
+    mockListNotes.mockResolvedValue({
+      notes: [makeNote({ id: "n1", title: "Essay", content: oldContent })],
+      total: 1,
+    });
+
+    const result = await executeTool(
+      "update_note_content",
+      { noteTitle: "Essay", content: newContent },
+      "u1",
+    );
+
+    expect(result.needsConfirmation).toBeTruthy();
+    const preview = result.needsConfirmation!.preview;
+    expect(preview).toMatchObject({
+      type: "update_note_content",
+      title: "Essay",
+      oldContent,
+      newContent,
+      oldLen: oldContent.length,
+      newLen: newContent.length,
+    });
+    expect(mockUpdateNote).not.toHaveBeenCalled();
+  });
+
+  it("delete_folder preview includes affectedCount from the folder", async () => {
+    mockListFolders.mockResolvedValue([
+      { id: "f1", name: "Work", parentId: null, count: 5, children: [] },
+    ]);
+
+    const result = await executeTool("delete_folder", { folderName: "Work" }, "u1");
+
+    expect(result.needsConfirmation?.preview).toMatchObject({
+      type: "delete_folder",
+      folderName: "Work",
+      affectedCount: 5,
+    });
+    expect(mockDeleteFolderById).not.toHaveBeenCalled();
+  });
+
+  it("rename_tag preview includes the affected note count from listTags", async () => {
+    mockListTags.mockResolvedValue([
+      { name: "draft", count: 7 },
+      { name: "idea", count: 3 },
+    ]);
+
+    const result = await executeTool(
+      "rename_tag",
+      { oldName: "draft", newName: "drafts" },
+      "u1",
+    );
+
+    expect(result.needsConfirmation?.preview).toMatchObject({
+      type: "rename_tag",
+      oldName: "draft",
+      newName: "drafts",
+      affectedCount: 7,
+    });
+    expect(mockRenameTag).not.toHaveBeenCalled();
+  });
+
+  it("non-destructive move_note bypasses the gate entirely (no confirmation)", async () => {
+    mockListNotes.mockResolvedValue({ notes: [makeNote({ id: "n1", title: "X" })], total: 1 });
+    mockListFolders.mockResolvedValue([
+      { id: "f1", name: "Y", parentId: null, count: 0, children: [] },
+    ]);
+    mockUpdateNote.mockResolvedValue({});
+
+    const moveResult = await executeTool(
+      "move_note",
+      { noteTitle: "X", folderName: "Y" },
+      "u1",
+    );
+    expect(moveResult.needsConfirmation).toBeUndefined();
+    expect(mockUpdateNote).toHaveBeenCalledWith("u1", "n1", { folderId: "f1" });
+  });
+
+  it("non-destructive tag_note does not trigger confirmation", async () => {
+    mockListNotes.mockResolvedValue({ notes: [makeNote({ id: "n1", title: "X", tags: [] })], total: 1 });
+    mockUpdateNote.mockResolvedValue({});
+
+    const result = await executeTool("tag_note", { noteTitle: "X", tags: ["foo"] }, "u1");
+
+    expect(result.needsConfirmation).toBeUndefined();
+    expect(mockUpdateNote).toHaveBeenCalled();
   });
 });

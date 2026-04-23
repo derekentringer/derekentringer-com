@@ -1,7 +1,7 @@
 # Phase B — Cross-notes Search
 
-**Status**: 🟠 in progress (PR pending review + merge)
-**Branch**: `feat/ai-assist-phase-b` (off `develop-ai-assist`)
+**Status**: ✅ merged into `develop-ai-assist` (PR #470)
+**Branch**: `feat/ai-assist-phase-b` (deleted post-merge)
 **Depends on**: A (for follow-up-question value; not a hard dependency)
 **Blocks**: nothing downstream — opens up broader capability
 
