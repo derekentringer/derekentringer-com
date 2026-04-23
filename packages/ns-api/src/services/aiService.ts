@@ -459,6 +459,16 @@ export async function* answerWithTools(
   // persisted message schema doesn't preserve them, and Claude infers
   // fine from text alone for follow-ups like "summarize the second one").
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  // Phase C.5: per-tool auto-approve flags from user settings. When
+  // set, destructive tools bypass the confirmation gate for this
+  // request only. Missing flags default to false (confirmation on).
+  autoApprove?: {
+    deleteNote?: boolean;
+    deleteFolder?: boolean;
+    updateNoteContent?: boolean;
+    renameFolder?: boolean;
+    renameTag?: boolean;
+  },
 ): AsyncGenerator<AgentEvent> {
   const { ASSISTANT_TOOLS, executeTool } = await import("./assistantTools.js");
   const anthropic = getClient();
@@ -545,7 +555,15 @@ ${transcript}` : ""}`,
         const toolDescription = describeToolCall(block.name, block.input as Record<string, unknown>);
         yield { type: "tool_activity", toolName: block.name, description: toolDescription };
 
-        const result = await executeTool(block.name, block.input as Record<string, unknown>, userId);
+        // Phase C.5: consult per-tool auto-approve flags. The tool
+        // name maps into an autoApprove key; missing or false → gate on.
+        const toolAutoApprove = shouldAutoApproveTool(block.name, autoApprove);
+        const result = await executeTool(
+          block.name,
+          block.input as Record<string, unknown>,
+          userId,
+          { autoApprove: toolAutoApprove },
+        );
 
         if (result.noteCards && result.noteCards.length > 0) {
           yield { type: "note_cards", noteCards: result.noteCards };
@@ -581,6 +599,28 @@ ${transcript}` : ""}`,
   }
 
   yield { type: "done" };
+}
+
+/** Phase C.5: map tool name → auto-approve flag from the user's settings. */
+function shouldAutoApproveTool(
+  toolName: string,
+  flags?: {
+    deleteNote?: boolean;
+    deleteFolder?: boolean;
+    updateNoteContent?: boolean;
+    renameFolder?: boolean;
+    renameTag?: boolean;
+  },
+): boolean {
+  if (!flags) return false;
+  switch (toolName) {
+    case "delete_note": return flags.deleteNote === true;
+    case "delete_folder": return flags.deleteFolder === true;
+    case "update_note_content": return flags.updateNoteContent === true;
+    case "rename_folder": return flags.renameFolder === true;
+    case "rename_tag": return flags.renameTag === true;
+    default: return false;
+  }
 }
 
 function describeToolCall(name: string, input: Record<string, unknown>): string {

@@ -74,6 +74,19 @@ const askSchema = {
           },
         },
       },
+      // Phase C.5: per-tool auto-approve flags. Omitted or false means
+      // the destructive-action confirmation gate stays on.
+      autoApprove: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          deleteNote: { type: "boolean" },
+          deleteFolder: { type: "boolean" },
+          updateNoteContent: { type: "boolean" },
+          renameFolder: { type: "boolean" },
+          renameTag: { type: "boolean" },
+        },
+      },
     },
   },
 };
@@ -236,6 +249,13 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     transcript?: string;
     activeNote?: { id: string; title: string; content: string };
     history?: Array<{ role: "user" | "assistant"; content: string }>;
+    autoApprove?: {
+      deleteNote?: boolean;
+      deleteFolder?: boolean;
+      updateNoteContent?: boolean;
+      renameFolder?: boolean;
+      renameTag?: boolean;
+    };
   };
   fastify.post<{ Body: AskBody }>(
     "/ask",
@@ -245,7 +265,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
-      const { question, transcript, activeNote, history } = request.body;
+      const { question, transcript, activeNote, history, autoApprove } = request.body;
       const hasMeetingTranscript = transcript && transcript.trim().length > 0;
 
       const abortController = new AbortController();
@@ -271,6 +291,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
             hasMeetingTranscript ? transcript : undefined,
             activeNote,
             history,
+            autoApprove,
           )) {
             if (abortController.signal.aborted) break;
             if (event.type === "text") {

@@ -215,11 +215,18 @@ interface Message {
   confirmation?: ConfirmationState;
 }
 
+/** Phase C.4: a single card can hold multiple same-toolName pendings so
+ *  consecutive destructive calls (e.g. Claude queuing 3 deletes in one
+ *  turn) render as one "Delete 3 notes?" batch instead of three
+ *  separate cards. Apply iterates; Discard drops the whole group. */
 interface ConfirmationState {
-  pending: PendingConfirmation;
+  pendings: PendingConfirmation[];
   status: "pending" | "applying" | "applied" | "discarded" | "failed";
   resultText?: string;
   errorMessage?: string;
+  /** Per-item result after Apply; only populated when pendings.length > 1
+   *  so the card can show partial-success detail. */
+  itemResults?: Array<{ id: string; ok: boolean; text?: string; error?: string }>;
 }
 
 const RECORDING_MODE_LABELS: Record<string, string> = {
@@ -292,9 +299,17 @@ interface AIAssistantPanelProps {
   onAudioRetry?: (sessionId: string) => void;
   /** Remove a failed session's chat card + drop its snapshot. */
   onAudioDiscard?: (sessionId: string) => void;
+  /** Phase C.5: per-tool auto-approve for destructive actions. */
+  autoApprove?: {
+    deleteNote: boolean;
+    deleteFolder: boolean;
+    updateNoteContent: boolean;
+    renameFolder: boolean;
+    renameTag: boolean;
+  };
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -801,7 +816,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     ]);
 
     try {
-      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined, history)) {
+      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined, history, autoApprove)) {
         if (controller.signal.aborted) break;
 
         setMessages((prev) => {
@@ -832,15 +847,38 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             updated[updated.length - 1] = last;
           }
           if (event.confirmation) {
-            // Phase C: insert a dedicated confirmation card, and start
-            // a fresh empty assistant message so any subsequent streamed
-            // text from Claude doesn't get mixed into the card.
-            updated.push({
-              role: "assistant",
-              content: "",
-              confirmation: { pending: event.confirmation, status: "pending" },
-            });
-            updated.push({ role: "assistant", content: "" });
+            // Phase C.4: if the previous card is still pending AND uses
+            // the same toolName, merge into it so consecutive deletes
+            // etc. render as one batch card. Otherwise insert a new
+            // card. Either way, start a fresh empty assistant bubble
+            // so subsequent streamed text doesn't land on the card.
+            const prev = updated[updated.length - 1];
+            const prevPrev = updated[updated.length - 2];
+            const candidate =
+              prev?.confirmation?.status === "pending" ? prev :
+              prev?.role === "assistant" && prev.content === "" && prevPrev?.confirmation?.status === "pending" ? prevPrev :
+              null;
+            if (
+              candidate?.confirmation &&
+              candidate.confirmation.pendings[0]?.toolName === event.confirmation.toolName
+            ) {
+              // Merge into existing card
+              const idx = updated.indexOf(candidate);
+              updated[idx] = {
+                ...candidate,
+                confirmation: {
+                  ...candidate.confirmation,
+                  pendings: [...candidate.confirmation.pendings, event.confirmation],
+                },
+              };
+            } else {
+              updated.push({
+                role: "assistant",
+                content: "",
+                confirmation: { pendings: [event.confirmation], status: "pending" },
+              });
+              updated.push({ role: "assistant", content: "" });
+            }
           }
           return updated;
         });
@@ -878,9 +916,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   }
 
   // Phase C — apply or discard a pending destructive action. The
-  // caller passes `pending` directly so we don't have to round-trip
-  // through setMessages just to read it.
-  async function handleConfirmApply(idx: number, pending: PendingConfirmation) {
+  // caller passes `pendings` directly (may be a singleton or a batch)
+  // so we don't have to round-trip through setMessages just to read.
+  async function handleConfirmApply(idx: number, pendings: PendingConfirmation[]) {
     setMessages((prev) => {
       const updated = [...prev];
       const msg = updated[idx];
@@ -892,39 +930,41 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       return updated;
     });
 
-    try {
-      const result = await confirmTool(pending.toolName, pending.toolInput);
-      setMessages((prev) => {
-        const updated = [...prev];
-        const msg = updated[idx];
-        if (!msg?.confirmation) return prev;
-        updated[idx] = {
-          ...msg,
-          confirmation: {
-            ...msg.confirmation,
-            status: "applied",
-            resultText: result.text,
-          },
-        };
-        return updated;
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setMessages((prev) => {
-        const updated = [...prev];
-        const msg = updated[idx];
-        if (!msg?.confirmation) return prev;
-        updated[idx] = {
-          ...msg,
-          confirmation: {
-            ...msg.confirmation,
-            status: "failed",
-            errorMessage: message,
-          },
-        };
-        return updated;
-      });
+    // Apply sequentially; gather per-item results so a partial failure
+    // can surface "2 of 3 applied" rather than masking what succeeded.
+    const itemResults: Array<{ id: string; ok: boolean; text?: string; error?: string }> = [];
+    for (const pending of pendings) {
+      try {
+        const result = await confirmTool(pending.toolName, pending.toolInput);
+        itemResults.push({ id: pending.id, ok: true, text: result.text });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        itemResults.push({ id: pending.id, ok: false, error: message });
+      }
     }
+
+    const okCount = itemResults.filter((r) => r.ok).length;
+    const allOk = okCount === pendings.length;
+    const noneOk = okCount === 0;
+
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: {
+          ...msg.confirmation,
+          status: allOk ? "applied" : noneOk ? "failed" : "applied", // partial → "applied" with detail
+          resultText: allOk && pendings.length === 1 ? itemResults[0].text :
+            allOk ? `All ${pendings.length} actions applied.` :
+            `${okCount} of ${pendings.length} applied — ${pendings.length - okCount} failed.`,
+          errorMessage: noneOk ? itemResults[0]?.error : undefined,
+          itemResults: pendings.length > 1 ? itemResults : undefined,
+        },
+      };
+      return updated;
+    });
   }
 
   function handleConfirmDiscard(idx: number) {
@@ -1202,11 +1242,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           >
             {msg.confirmation ? (
               <ConfirmationCard
-                pending={msg.confirmation.pending}
+                pendings={msg.confirmation.pendings}
                 status={msg.confirmation.status}
                 resultText={msg.confirmation.resultText}
                 errorMessage={msg.confirmation.errorMessage}
-                onApply={() => handleConfirmApply(i, msg.confirmation!.pending)}
+                itemResults={msg.confirmation.itemResults}
+                onApply={() => handleConfirmApply(i, msg.confirmation!.pendings)}
                 onDiscard={() => handleConfirmDiscard(i)}
               />
             ) : msg.role === "meeting-summary" && msg.meetingData ? (
@@ -1453,7 +1494,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
               (async () => {
                 try {
-                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript, undefined, history)) {
+                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript, undefined, history, autoApprove)) {
                     if (controller.signal.aborted) break;
                     setMessages((prev) => {
                       const updated = [...prev];

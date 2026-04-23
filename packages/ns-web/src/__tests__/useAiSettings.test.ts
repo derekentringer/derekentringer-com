@@ -7,6 +7,14 @@ beforeEach(() => {
 });
 
 describe("useAiSettings", () => {
+  const DEFAULT_AUTO_APPROVE = {
+    deleteNote: false,
+    deleteFolder: false,
+    updateNoteContent: false,
+    renameFolder: false,
+    renameTag: false,
+  };
+
   it("returns defaults when no localStorage value", () => {
     const { result } = renderHook(() => useAiSettings());
 
@@ -23,6 +31,7 @@ describe("useAiSettings", () => {
       audioNotes: false,
       audioMode: "meeting",
       qaAssistant: false,
+      autoApprove: DEFAULT_AUTO_APPROVE,
     });
   });
 
@@ -59,6 +68,7 @@ describe("useAiSettings", () => {
       audioNotes: true,
       audioMode: "lecture",
       qaAssistant: true,
+      autoApprove: DEFAULT_AUTO_APPROVE,
     });
   });
 
@@ -155,6 +165,7 @@ describe("useAiSettings", () => {
       audioNotes: false,
       audioMode: "memo",
       qaAssistant: false,
+      autoApprove: DEFAULT_AUTO_APPROVE,
     });
   });
 
@@ -176,6 +187,7 @@ describe("useAiSettings", () => {
       audioNotes: false,
       audioMode: "meeting",
       qaAssistant: false,
+      autoApprove: DEFAULT_AUTO_APPROVE,
     });
   });
 
@@ -200,6 +212,7 @@ describe("useAiSettings", () => {
       audioNotes: false,
       audioMode: "meeting",
       qaAssistant: false,
+      autoApprove: DEFAULT_AUTO_APPROVE,
     });
   });
 
@@ -376,5 +389,46 @@ describe("useAiSettings", () => {
 
     const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
     expect(stored.completionDebounceMs).toBe(800);
+  });
+
+  // Phase C.5 — autoApprove sub-settings load with sensible defaults
+  // and persist correctly when individual flags toggle.
+  it("loads autoApprove from localStorage with defaults for missing flags", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({
+        autoApprove: { deleteNote: true }, // partial
+      }),
+    );
+    const { result } = renderHook(() => useAiSettings());
+    expect(result.current.settings.autoApprove).toEqual({
+      deleteNote: true,
+      deleteFolder: false,
+      updateNoteContent: false,
+      renameFolder: false,
+      renameTag: false,
+    });
+  });
+
+  it("rejects malformed autoApprove gracefully", () => {
+    localStorage.setItem(
+      "ns-ai-settings",
+      JSON.stringify({ autoApprove: "not-an-object" }),
+    );
+    const { result } = renderHook(() => useAiSettings());
+    expect(result.current.settings.autoApprove).toEqual(DEFAULT_AUTO_APPROVE);
+  });
+
+  it("updateSetting persists autoApprove changes", () => {
+    const { result } = renderHook(() => useAiSettings());
+    act(() => {
+      result.current.updateSetting("autoApprove", {
+        ...result.current.settings.autoApprove,
+        deleteFolder: true,
+      });
+    });
+    expect(result.current.settings.autoApprove.deleteFolder).toBe(true);
+    const stored = JSON.parse(localStorage.getItem("ns-ai-settings")!);
+    expect(stored.autoApprove.deleteFolder).toBe(true);
   });
 });

@@ -7,10 +7,14 @@
 import type { ConfirmationPreview, PendingConfirmation } from "../api/ai.ts";
 
 export interface ConfirmationCardProps {
-  pending: PendingConfirmation;
+  /** One or more pending actions. Length > 1 is a Phase C.4 batch
+   *  (e.g. Claude queued 3 deletes in one turn). */
+  pendings: PendingConfirmation[];
   status: "pending" | "applying" | "applied" | "discarded" | "failed";
   resultText?: string;
   errorMessage?: string;
+  /** Only populated for batches; per-item status after Apply. */
+  itemResults?: Array<{ id: string; ok: boolean; text?: string; error?: string }>;
   onApply: () => void;
   onDiscard: () => void;
 }
@@ -118,11 +122,50 @@ function PreviewBody({ preview }: { preview: ConfirmationPreview }) {
   }
 }
 
-export function ConfirmationCard({ pending, status, resultText, errorMessage, onApply, onDiscard }: ConfirmationCardProps) {
+function BatchHeadline(toolName: string, count: number): string {
+  switch (toolName) {
+    case "delete_note": return `Move ${count} notes to trash?`;
+    case "delete_folder": return `Delete ${count} folders?`;
+    case "update_note_content": return `Rewrite ${count} notes?`;
+    case "rename_folder": return `Rename ${count} folders?`;
+    case "rename_tag": return `Rename ${count} tags?`;
+    default: return `Apply ${count} actions?`;
+  }
+}
+
+function batchItemSummary(preview: ConfirmationPreview): string {
+  switch (preview.type) {
+    case "delete_note": return preview.title;
+    case "delete_folder": return `${preview.folderName} (${preview.affectedCount} note${preview.affectedCount === 1 ? "" : "s"})`;
+    case "update_note_content": {
+      const delta = preview.newLen - preview.oldLen;
+      const sign = delta >= 0 ? "+" : "";
+      return `${preview.title} (${sign}${delta} chars)`;
+    }
+    case "rename_folder": return `${preview.oldName} → ${preview.newName}`;
+    case "rename_tag": return `#${preview.oldName} → #${preview.newName} (${preview.affectedCount})`;
+  }
+}
+
+export function ConfirmationCard({ pendings, status, resultText, errorMessage, itemResults, onApply, onDiscard }: ConfirmationCardProps) {
+  const isBatch = pendings.length > 1;
+  const first = pendings[0];
+  if (!first) return null;
   if (status === "applied") {
+    // Partial-success case: some items failed but at least one succeeded.
+    const failures = itemResults?.filter((r) => !r.ok) ?? [];
     return (
-      <div className="w-full rounded-lg bg-card border border-emerald-500/30 p-3 animate-fade-in">
-        <p className="text-xs text-emerald-600">✓ {resultText ?? "Applied."}</p>
+      <div className={`w-full rounded-lg bg-card border p-3 animate-fade-in ${failures.length > 0 ? "border-amber-500/40" : "border-emerald-500/30"}`}>
+        <p className={`text-xs ${failures.length > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+          {failures.length > 0 ? "⚠" : "✓"} {resultText ?? "Applied."}
+        </p>
+        {failures.length > 0 && (
+          <ul className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
+            {failures.map((f) => (
+              <li key={f.id}>• {f.error}</li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   }
@@ -165,9 +208,19 @@ export function ConfirmationCard({ pending, status, resultText, errorMessage, on
       <div className="flex items-start gap-1.5 mb-2">
         <DestructiveIcon />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-foreground">{HeadlineForPreview(pending.preview)}</p>
+          <p className="text-xs font-medium text-foreground">
+            {isBatch ? BatchHeadline(first.toolName, pendings.length) : HeadlineForPreview(first.preview)}
+          </p>
           <div className="mt-1">
-            <PreviewBody preview={pending.preview} />
+            {isBatch ? (
+              <ul className="text-[11px] text-foreground/80 space-y-0.5">
+                {pendings.map((p) => (
+                  <li key={p.id} className="truncate">• {batchItemSummary(p.preview)}</li>
+                ))}
+              </ul>
+            ) : (
+              <PreviewBody preview={first.preview} />
+            )}
           </div>
         </div>
       </div>

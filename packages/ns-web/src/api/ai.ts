@@ -114,18 +114,30 @@ export async function confirmTool(
   return (await response.json()) as ConfirmToolResult;
 }
 
+/** Phase C.5: per-tool auto-approve sent to the backend so destructive
+ *  tools can skip the confirmation gate when the user has opted in. */
+export interface AutoApproveFlags {
+  deleteNote?: boolean;
+  deleteFolder?: boolean;
+  updateNoteContent?: boolean;
+  renameFolder?: boolean;
+  renameTag?: boolean;
+}
+
 export async function* askQuestion(
   question: string,
   signal: AbortSignal,
   transcript?: string,
   activeNote?: { id: string; title: string; content: string },
   history?: Array<{ role: "user" | "assistant"; content: string }>,
+  autoApprove?: AutoApproveFlags,
 ): AsyncGenerator<AskQuestionEvent> {
   const body: {
     question: string;
     transcript?: string;
     activeNote?: { id: string; title: string; content: string };
     history?: Array<{ role: "user" | "assistant"; content: string }>;
+    autoApprove?: AutoApproveFlags;
   } = { question };
   if (transcript && transcript.trim().length > 0) {
     body.transcript = transcript;
@@ -135,6 +147,9 @@ export async function* askQuestion(
   }
   if (history && history.length > 0) {
     body.history = history;
+  }
+  if (autoApprove && Object.values(autoApprove).some(Boolean)) {
+    body.autoApprove = autoApprove;
   }
   const response = await apiFetch("/ai/ask", {
     method: "POST",

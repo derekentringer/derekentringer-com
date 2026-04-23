@@ -863,6 +863,7 @@ describe("AI routes", () => {
         undefined,
         undefined,
         undefined, // history
+        undefined, // autoApprove (Phase C.5)
       );
     });
 
@@ -897,6 +898,35 @@ describe("AI routes", () => {
         undefined,
         undefined,
         history,
+        undefined, // autoApprove
+      );
+    });
+
+    // Phase C.5: per-tool auto-approve flags forwarded from the client.
+    it("forwards autoApprove flags to answerWithTools", async () => {
+      const token = await getAccessToken();
+      mockAnswerWithTools.mockImplementation(async function* () {
+        yield { type: "done" };
+      });
+
+      const autoApprove = { deleteNote: true };
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/ask",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { question: "delete my Draft note", autoApprove },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockAnswerWithTools).toHaveBeenCalledWith(
+        "delete my Draft note",
+        TEST_USER_ID,
+        expect.any(Object),
+        undefined,
+        undefined,
+        undefined,
+        autoApprove,
       );
     });
 
