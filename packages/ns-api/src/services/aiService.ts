@@ -472,7 +472,16 @@ export async function* answerWithTools(
     { role: "user", content: question },
   ];
 
-  const MAX_ROUNDS = 3;
+  // Phase B.3 (docs/ns/ai-assist-arch/phase-b-*): raised from 3 → 5.
+  // Legitimate multi-step chains (search → read 2 notes → synthesize with
+  // a backlinks follow-up) hit 3 rounds too easily. 5 is a realistic
+  // upper bound for complex-but-answerable questions.
+  const MAX_ROUNDS = 5;
+  // Belt-and-suspenders: one round could emit many tool_use blocks in
+  // parallel. The cumulative cap halts runaway loops even if the round
+  // counter hasn't tripped yet.
+  const MAX_TOOL_CALLS_TOTAL = 12;
+  let totalToolCalls = 0;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     if (signal?.aborted) return;
@@ -482,6 +491,8 @@ export async function* answerWithTools(
       max_tokens: 1500,
       temperature: 0.3,
       system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. When referencing notes, use their exact titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
+
+When to reach for search_notes: any question that could be answered from the user's broader note library, not just the active note or the live transcript. Examples: "what have I written about X", "do I have any notes on Y", "summarize my thoughts on Z", "how have I described A". Default to mode=hybrid so semantically related notes surface even when exact wording differs. The tool returns content snippets — answer from those directly; only call get_note_content when you need the full text of a specific matched note. If the user's question is clearly scoped to the currently open note or live transcript, answer from that context without searching.
 
 The user also has slash commands available as a faster alternative for the same actions (no AI cost). You can mention these as tips when relevant:
 /open, /create, /move, /tag, /delete, /deletefolder, /summarize, /gentags, /favorites, /favorite, /unfavorite, /trash, /restore, /renamefolder, /renametag, /duplicate, /recent, /folders, /tags, /stats, /clear
@@ -510,6 +521,22 @@ ${transcript}` : ""}`,
         yield { type: "text", text: block.text };
       } else if (block.type === "tool_use") {
         hasToolUse = true;
+
+        // Total-call cap: if already at the limit, refuse the tool and
+        // synthesize an error result so Claude can wrap up with its
+        // remaining output budget instead of just cutting off.
+        if (totalToolCalls >= MAX_TOOL_CALLS_TOTAL) {
+          toolUseBlocks.push({ type: "tool_use", id: block.id, name: block.name, input: block.input });
+          toolResultBlocks.push({
+            type: "tool_result",
+            tool_use_id: block.id,
+            content: "Tool-call limit reached for this question. Please finish answering with the information already gathered, or the user can refine the question and try again.",
+            is_error: true,
+          });
+          continue;
+        }
+        totalToolCalls++;
+
         const toolDescription = describeToolCall(block.name, block.input as Record<string, unknown>);
         yield { type: "tool_activity", toolName: block.name, description: toolDescription };
 
@@ -563,6 +590,8 @@ function describeToolCall(name: string, input: Record<string, unknown>): string 
       return "Finding recently edited notes...";
     case "get_note_content":
       return `Reading "${input.title}"...`;
+    case "find_similar_notes":
+      return `Finding notes similar to "${input.noteTitle}"...`;
     case "get_backlinks":
       return `Finding links to "${input.noteTitle}"...`;
     case "open_note":

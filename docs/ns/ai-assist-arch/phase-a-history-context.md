@@ -1,7 +1,7 @@
 # Phase A — Conversation Continuity
 
-**Status**: 🟠 in progress (PR pending review + merge)
-**Branch**: `feat/ai-assist-phase-a` (off `develop-ai-assist`)
+**Status**: ✅ merged into `develop-ai-assist` (PR #469)
+**Branch**: `feat/ai-assist-phase-a` (deleted post-merge)
 **Depends on**: none
 **Blocks**: meaningful use of Phase B (follow-up questions) and Phase C (referring back to prior actions)
 

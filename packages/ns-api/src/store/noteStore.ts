@@ -1261,6 +1261,66 @@ export interface MeetingContextNote {
   updatedAt: Date;
 }
 
+/**
+ * Given a note (by title), find other notes that are semantically related.
+ * Phase B (docs/ns/ai-assist-arch/phase-b-*): exposed to Claude as the
+ * `find_similar_notes` tool so the assistant can surface connections
+ * outside of a live meeting.
+ *
+ * Threshold 0.5 by default — tuned for "related" rather than "very
+ * similar" (meeting-context uses 0.65, hybrid uses 0.4). Self is always
+ * excluded. Falls back to empty when the source note has no indexable
+ * content.
+ */
+export async function findSimilarNotes(
+  userId: string,
+  sourceNoteTitle: string,
+  limit: number = 5,
+  threshold: number = 0.5,
+): Promise<MeetingContextNote[]> {
+  const prisma = getPrisma();
+
+  const source = await prisma.note.findFirst({
+    where: { userId, deletedAt: null, title: sourceNoteTitle },
+    select: { id: true, content: true },
+  });
+  if (!source) return [];
+  if (!source.content || source.content.trim().length < 20) return [];
+
+  const queryEmbedding = await generateQueryEmbedding(source.content);
+  const vectorStr = `[${queryEmbedding.join(",")}]`;
+
+  const MIN_CONTENT_LEN = 20;
+
+  const notes = await prisma.$queryRawUnsafe<
+    { id: string; title: string; content: string; score: number; updatedAt: Date }[]
+  >(
+    `SELECT "id", "title", "content", (1 - ("embedding" <=> $2::vector)) AS score, "updatedAt"
+     FROM "notes"
+     WHERE "deletedAt" IS NULL
+       AND "userId" = $1
+       AND "id" != $5
+       AND "embedding" IS NOT NULL
+       AND LENGTH("content") >= ${MIN_CONTENT_LEN}
+       AND (1 - ("embedding" <=> $2::vector)) > $3
+     ORDER BY "embedding" <=> $2::vector ASC
+     LIMIT $4`,
+    userId,
+    vectorStr,
+    threshold,
+    limit,
+    source.id,
+  );
+
+  return notes.map((n) => ({
+    id: n.id,
+    title: n.title || "Untitled",
+    snippet: extractSnippet(n.content, 150),
+    score: Math.round(Number(n.score) * 100) / 100,
+    updatedAt: n.updatedAt,
+  }));
+}
+
 export async function findMeetingContextNotes(
   userId: string,
   query: string,

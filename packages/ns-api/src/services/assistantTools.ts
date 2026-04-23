@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { listNotes, listFolders, listTags, listFavoriteNotes, listTrashedNotes, getDashboardData, createNote, updateNote, softDeleteNote, restoreNote, deleteFolderById, renameFolder, renameTag, type ListNotesFilter } from "../store/noteStore.js";
+import { listNotes, listFolders, listTags, listFavoriteNotes, listTrashedNotes, getDashboardData, createNote, updateNote, softDeleteNote, restoreNote, deleteFolderById, renameFolder, renameTag, findSimilarNotes, type ListNotesFilter } from "../store/noteStore.js";
 import { getBacklinks } from "../store/linkStore.js";
 import { toNote } from "../lib/mappers.js";
 import { suggestTags, generateSummary } from "./aiService.js";
@@ -9,11 +9,13 @@ import { suggestTags, generateSummary } from "./aiService.js";
 export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   {
     name: "search_notes",
-    description: "Search and filter the user's notes. Can filter by text query, folder name, tag, favorites, audio mode, and sort order. Returns note titles, folders, tags, dates, and snippets.",
+    description:
+      "Search and filter the user's notes across their whole library. Use this FIRST for any question about the user's notes in general — don't assume the answer is only in the active note. The default 'hybrid' mode combines semantic (meaning-based) + keyword matching, so conceptually related notes surface even when the exact wording differs (e.g. a query for 'leadership' will find a note about 'management style'). Results include a content snippet so you can answer directly without a follow-up lookup for most questions. Use get_note_content only when you need the full text of a specific matched note.",
     input_schema: {
       type: "object" as const,
       properties: {
-        query: { type: "string", description: "Text to search for in note titles and content" },
+        query: { type: "string", description: "Text to search for in note titles and content. Treat this as a natural-language query when mode is 'semantic' or 'hybrid'." },
+        mode: { type: "string", enum: ["keyword", "semantic", "hybrid"], description: "Search strategy. 'hybrid' (default) combines semantic + keyword — best for most questions. 'semantic' is meaning-based only. 'keyword' is exact-phrase only — use when the user asks for an exact string." },
         folder: { type: "string", description: "Filter by folder name" },
         tag: { type: "string", description: "Filter by tag name" },
         favorite: { type: "boolean", description: "If true, only return favorited notes" },
@@ -64,13 +66,26 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_note_content",
-    description: "Get the full content of a specific note by its title. Use this when the user asks about the contents of a particular note.",
+    description: "Get the full content of a specific note by its title. Use this when the user asks about the contents of a particular note, or when `search_notes` snippets aren't enough to answer. Default truncates long notes at 8000 chars; pass `max_chars` up to 30000 if you genuinely need more of the text.",
     input_schema: {
       type: "object" as const,
       properties: {
         title: { type: "string", description: "The exact title of the note to retrieve" },
+        max_chars: { type: "number", description: "Max characters of content to return (default: 8000, hard cap: 30000, minimum: 50). Output is truncated with an ellipsis if the note is longer." },
       },
       required: ["title"],
+    },
+  },
+  {
+    name: "find_similar_notes",
+    description: "Given a note title, find other notes that are semantically related — useful for discovering connections the user may not have explicitly linked (e.g. 'what else have I written related to this note?'). Returns up to `limit` notes with titles, snippets, and similarity scores (0–1). Only works for notes that have been indexed by the embedding processor; recently-created notes may not appear as sources or matches yet.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        noteTitle: { type: "string", description: "The exact title of the source note." },
+        limit: { type: "number", description: "Max results to return (default: 5, max: 10)" },
+      },
+      required: ["noteTitle"],
     },
   },
   {
@@ -286,6 +301,8 @@ export async function executeTool(
       return executeGetRecentNotes(input, userId);
     case "get_note_content":
       return executeGetNoteContent(input, userId);
+    case "find_similar_notes":
+      return executeFindSimilarNotes(input, userId);
     case "get_backlinks":
       return executeGetBacklinks(input, userId);
     case "open_note":
@@ -330,10 +347,16 @@ async function executeSearchNotes(
   userId: string,
 ): Promise<ToolResult> {
   const limit = Math.min(Number(input.limit) || 10, 25);
+  const requestedMode = input.mode as ListNotesFilter["searchMode"] | undefined;
   const filter: ListNotesFilter = {
     pageSize: limit,
     sortBy: (input.sortBy as ListNotesFilter["sortBy"]) ?? "updatedAt",
     sortOrder: "desc",
+    // Default to hybrid when the user provided a query — keyword-only
+    // misses too many conceptually related notes for broad Q&A.
+    // Keyword is still a valid explicit mode when the user asks for an
+    // exact string match.
+    searchMode: requestedMode ?? (input.query ? "hybrid" : "keyword"),
   };
 
   if (input.query) filter.search = String(input.query);
@@ -362,16 +385,28 @@ async function executeSearchNotes(
     return { text: "No notes found matching the criteria.", noteCards: [] };
   }
 
-  const lines = mapped.map((n, i) => {
-    const parts = [`${i + 1}. "${n.title}"`];
-    if (n.folder) parts.push(`(folder: ${n.folder})`);
-    if (n.tags.length > 0) parts.push(`[${n.tags.join(", ")}]`);
-    if (n.audioMode) parts.push(`(${n.audioMode} recording)`);
-    return parts.join(" ");
+  // Include a content snippet per hit so Claude has actual text to reason
+  // over without having to follow up with get_note_content for every match.
+  // 800 chars is enough to answer most broad questions; Claude can still
+  // call get_note_content when it needs the full text.
+  const SNIPPET_CHARS = 800;
+  const snippet = (content: string): string => {
+    const trimmed = content.trim();
+    if (trimmed.length <= SNIPPET_CHARS) return trimmed;
+    return `${trimmed.slice(0, SNIPPET_CHARS)}…`;
+  };
+
+  const blocks = mapped.map((n, i) => {
+    const header: string[] = [`${i + 1}. "${n.title}"`];
+    if (n.folder) header.push(`(folder: ${n.folder})`);
+    if (n.tags.length > 0) header.push(`[${n.tags.join(", ")}]`);
+    if (n.audioMode) header.push(`(${n.audioMode} recording)`);
+    const body = n.content ? snippet(n.content) : "(empty)";
+    return `${header.join(" ")}\n${body}`;
   });
 
   return {
-    text: `Found ${mapped.length} note(s):\n${lines.join("\n")}`,
+    text: `Found ${mapped.length} note(s):\n\n${blocks.join("\n\n")}`,
     noteCards,
   };
 }
@@ -481,10 +516,53 @@ async function executeGetNoteContent(
     return { text: `No note found with title "${title}".` };
   }
 
-  const content = note.content.length > 3000 ? note.content.slice(0, 3000) + "\n...(truncated)" : note.content;
+  // Phase B.4: configurable truncation. Default 8000 (up from 3000 — most
+  // notes fit; prior limit cut off too many). Hard cap 30000 to protect
+  // the context window from a rogue request.
+  const requestedMax = typeof input.max_chars === "number" ? input.max_chars : 8000;
+  const maxChars = Math.max(50, Math.min(30000, requestedMax));
+  const content = note.content.length > maxChars
+    ? note.content.slice(0, maxChars) + "\n...(truncated)"
+    : note.content;
   return {
     text: `Title: ${note.title}\nFolder: ${note.folder ?? "Unfiled"}\nTags: ${note.tags.join(", ") || "none"}\nLast edited: ${new Date(note.updatedAt).toLocaleDateString()}\n\nContent:\n${content}`,
     noteCards: [{ id: note.id, title: note.title, folder: note.folder ?? undefined, tags: note.tags.length > 0 ? note.tags : undefined, updatedAt: note.updatedAt }],
+  };
+}
+
+async function executeFindSimilarNotes(
+  input: Record<string, unknown>,
+  userId: string,
+): Promise<ToolResult> {
+  const noteTitle = String(input.noteTitle);
+  // Distinguish missing (default 5) from supplied-but-out-of-range
+  // (clamp to [1, 10]) — `|| 5` would treat limit=0 as "use default".
+  const rawLimit = typeof input.limit === "number" ? input.limit : 5;
+  const limit = Math.max(1, Math.min(10, rawLimit));
+
+  const similar = await findSimilarNotes(userId, noteTitle, limit);
+
+  if (similar.length === 0) {
+    return {
+      text: `No related notes found for "${noteTitle}". This could mean the note doesn't exist, is too short to match against, or hasn't been indexed yet.`,
+      noteCards: [],
+    };
+  }
+
+  const noteCards = similar.map((n) => ({
+    id: n.id,
+    title: n.title,
+    updatedAt: n.updatedAt.toISOString(),
+  }));
+
+  const lines = similar.map((n, i) => {
+    const pct = Math.round(n.score * 100);
+    return `${i + 1}. "${n.title}" (${pct}% similar)\n   ${n.snippet}`;
+  });
+
+  return {
+    text: `Found ${similar.length} note(s) related to "${noteTitle}":\n\n${lines.join("\n\n")}`,
+    noteCards,
   };
 }
 
