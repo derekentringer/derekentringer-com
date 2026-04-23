@@ -398,7 +398,13 @@ fn build_menu(app: &tauri::App) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn
         .item(&PredefinedMenuItem::hide_others(handle, None)?)
         .item(&PredefinedMenuItem::show_all(handle, None)?)
         .separator()
-        .item(&PredefinedMenuItem::quit(handle, None)?)
+        // Custom Quit item (not PredefinedMenuItem::quit) so we can
+        // intercept it. PredefinedMenuItem::quit maps directly to
+        // NSApp.terminate() on macOS, bypassing both our window-level
+        // onCloseRequested and the RunEvent::ExitRequested handlers.
+        // Owning the menu item lets us check the audio-work flag first
+        // and show a confirmation dialog if needed.
+        .item(&MenuItemBuilder::with_id("quit-app", "Quit NoteSync").accelerator("CmdOrCtrl+Q").build(handle)?)
         .build()?;
 
     #[cfg(target_os = "macos")]
@@ -454,9 +460,28 @@ pub fn run() {
                 }
             }
 
-            // Handle menu events — emit to frontend for command registry dispatch
+            // Handle menu events — emit to frontend for command registry dispatch.
+            // "quit-app" is intercepted here: if audio work is in flight we
+            // emit an app-quit-requested event for the frontend to confirm
+            // (and then call `quit_app` to actually exit); otherwise we
+            // exit immediately. This replaces PredefinedMenuItem::quit,
+            // which on macOS went directly to NSApp.terminate and could
+            // not be intercepted.
             app.on_menu_event(move |app_handle, event| {
-                let _ = app_handle.emit("menu-event", event.id().0.as_str());
+                let id = event.id().0.as_str();
+                if id == "quit-app" {
+                    let has_work = app_handle
+                        .try_state::<AudioWorkFlag>()
+                        .map(|s| s.0.load(Ordering::SeqCst))
+                        .unwrap_or(false);
+                    if has_work {
+                        let _ = app_handle.emit("app-quit-requested", ());
+                    } else {
+                        app_handle.exit(0);
+                    }
+                    return;
+                }
+                let _ = app_handle.emit("menu-event", id);
             });
 
             // Windows file association: files opened via double-click are passed as CLI args
