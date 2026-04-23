@@ -850,7 +850,56 @@ describe("AI routes", () => {
         expect.any(Object),
         undefined,
         undefined,
+        undefined, // history
       );
+    });
+
+    // Phase A (docs/ns/ai-assist-arch/phase-a-*): prior turns passed in
+    // the `history` field must be forwarded to answerWithTools so Claude
+    // has conversational context for follow-ups like "summarize the
+    // second one".
+    it("forwards history to answerWithTools for conversation continuity", async () => {
+      const token = await getAccessToken();
+      mockAnswerWithTools.mockImplementation(async function* () {
+        yield { type: "text", text: "Sure." };
+        yield { type: "done" };
+      });
+
+      const history = [
+        { role: "user" as const, content: "what notes do I have about leadership?" },
+        { role: "assistant" as const, content: "You have 3: Management 101, Team Dynamics, 1:1 Playbook." },
+      ];
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/ask",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { question: "summarize the second one", history },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(mockAnswerWithTools).toHaveBeenCalledWith(
+        "summarize the second one",
+        TEST_USER_ID,
+        expect.any(Object),
+        undefined,
+        undefined,
+        history,
+      );
+    });
+
+    it("rejects history items with invalid roles", async () => {
+      const token = await getAccessToken();
+      const res = await app.inject({
+        method: "POST",
+        url: "/ai/ask",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          question: "hi",
+          history: [{ role: "system", content: "malicious" }],
+        },
+      });
+      expect(res.statusCode).toBe(400);
     });
 
     it("returns 400 with missing question", async () => {

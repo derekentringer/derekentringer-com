@@ -84,13 +84,22 @@ export async function* askQuestion(
   signal: AbortSignal,
   transcript?: string,
   activeNote?: { id: string; title: string; content: string },
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
 ): AsyncGenerator<AskQuestionEvent> {
-  const body: { question: string; transcript?: string; activeNote?: { id: string; title: string; content: string } } = { question };
+  const body: {
+    question: string;
+    transcript?: string;
+    activeNote?: { id: string; title: string; content: string };
+    history?: Array<{ role: "user" | "assistant"; content: string }>;
+  } = { question };
   if (transcript && transcript.trim().length > 0) {
     body.transcript = transcript;
   }
   if (activeNote) {
     body.activeNote = activeNote;
+  }
+  if (history && history.length > 0) {
+    body.history = history;
   }
   const response = await apiFetch("/ai/ask", {
     method: "POST",

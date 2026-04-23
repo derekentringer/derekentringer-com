@@ -32,7 +32,7 @@ When all phases are complete (or we call it done mid-stream), `develop-ai-assist
 
 | Phase | Title | Status | Branch | Doc |
 |-------|-------|--------|--------|-----|
-| A | Conversation continuity | 🟡 planned | `feat/ai-assist-phase-a` | [phase-a-history-context.md](./phase-a-history-context.md) |
+| A | Conversation continuity | 🟠 in progress | `feat/ai-assist-phase-a` | [phase-a-history-context.md](./phase-a-history-context.md) |
 | B | Cross-notes search | 🟡 planned (B.1 drafted, stashed) | `feat/ai-assist-phase-b` | [phase-b-cross-notes-search.md](./phase-b-cross-notes-search.md) |
 | C | Action safety | 🟡 planned | `feat/ai-assist-phase-c` | [phase-c-action-safety.md](./phase-c-action-safety.md) |
 | D | Cost + observability | 🟡 planned | `feat/ai-assist-phase-d` | [phase-d-cost-observability.md](./phase-d-cost-observability.md) |
