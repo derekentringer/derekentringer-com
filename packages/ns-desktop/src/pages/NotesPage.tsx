@@ -403,6 +403,12 @@ export function NotesPage() {
   const hasAudioWorkRef = useRef(false);
   hasAudioWorkRef.current = recordingState !== null || inFlightAudioCount > 0;
 
+  // Set once the user has confirmed a quit-in-progress dialog. Any
+  // subsequent close-path event (onCloseRequested fired during Tauri's
+  // per-window cleanup after app.exit(0), beforeunload, etc.) must bail
+  // so the user isn't re-prompted for the same quit.
+  const quitApprovedRef = useRef(false);
+
   // Sync the work flag to Rust so the native ExitRequested handler (which
   // fires on macOS Cmd+Q — Cmd+Q bypasses window-level onCloseRequested
   // entirely) can decide synchronously whether to prevent the exit.
@@ -418,12 +424,14 @@ export function NotesPage() {
     let unlistenFn: (() => void) | null = null;
     let cancelled = false;
     listen("app-quit-requested", async () => {
+      if (quitApprovedRef.current) return; // already approved; avoid re-prompt
       const confirmed = await ask(
         "A recording is in progress or still processing. " +
           "Quitting now will discard it. Quit anyway?",
         { title: "Recording in progress", kind: "warning" },
       );
       if (confirmed) {
+        quitApprovedRef.current = true;
         await invoke("quit_app");
       }
     })
@@ -446,30 +454,31 @@ export function NotesPage() {
   useEffect(() => {
     // Web / webview fallback — catches refresh, tab close, in-webview nav.
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (quitApprovedRef.current) return;
       if (!hasAudioWorkRef.current) return;
       e.preventDefault();
       e.returnValue = ""; // Chrome/Edge require returnValue to be set.
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
 
-    // Tauri native window close — catches the red-dot / Cmd+Q on macOS
-    // and [X] on Windows.
+    // Tauri native window close — red X on all platforms + anything else
+    // that triggers a WM_CLOSE-style window close.
     //
     // Pattern: call preventDefault() SYNCHRONOUSLY before any await. Tauri
-    // does wait for the handler promise, but the native macOS Cmd+Q path
+    // does wait for the handler promise, but on some platforms the close
     // races the dialog — preventing default first is the only reliable
     // way to guarantee the close is halted. After the user confirms, we
     // manually call win.close() (needs `core:window:allow-close` in
-    // capabilities), gated by allowCloseRef to stop the re-entered close
-    // event from re-opening the dialog.
+    // capabilities). quitApprovedRef prevents a re-prompt if
+    // onCloseRequested fires again during Tauri's per-window cleanup
+    // after an app.exit(0) initiated by the app-quit-requested flow.
     let unlistenFn: (() => void) | null = null;
     let cancelled = false;
-    const allowCloseRef = { current: false };
     (async () => {
       try {
         const win = getCurrentWindow();
         const unlisten = await win.onCloseRequested(async (event) => {
-          if (allowCloseRef.current) return; // already confirmed, let close proceed
+          if (quitApprovedRef.current) return;
           if (!hasAudioWorkRef.current) return;
           event.preventDefault();
           const confirmed = await ask(
@@ -478,7 +487,7 @@ export function NotesPage() {
             { title: "Recording in progress", kind: "warning" },
           );
           if (confirmed) {
-            allowCloseRef.current = true;
+            quitApprovedRef.current = true;
             await win.close();
           }
         });

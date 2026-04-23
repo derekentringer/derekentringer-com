@@ -419,6 +419,18 @@ fn build_menu(app: &tauri::App) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn
             .separator()
             .item(&MenuItemBuilder::with_id("settings", "Settings").accelerator("CmdOrCtrl+,").build(handle)?);
     }
+    // Windows/Linux: File → Exit routes through the same "quit-app"
+    // handler as macOS Cmd+Q. No accelerator because Alt+F4 is handled
+    // by the OS (sends WM_CLOSE → onCloseRequested in JS) and binding
+    // it here would double-fire. This is purely a discoverable menu
+    // entry; the X button / Alt+F4 keyboard shortcut still works via
+    // the onCloseRequested path.
+    #[cfg(not(target_os = "macos"))]
+    {
+        file_builder = file_builder
+            .separator()
+            .item(&MenuItemBuilder::with_id("quit-app", "Exit").build(handle)?);
+    }
     let file_menu = file_builder.build()?;
 
     // --- Edit menu ---
