@@ -34,8 +34,8 @@ When all phases are complete (or we call it done mid-stream), `develop-ai-assist
 |-------|-------|--------|--------|-----|
 | A | Conversation continuity | ✅ merged | `feat/ai-assist-phase-a` | [phase-a-history-context.md](./phase-a-history-context.md) |
 | B | Cross-notes search | ✅ merged | `feat/ai-assist-phase-b` | [phase-b-cross-notes-search.md](./phase-b-cross-notes-search.md) |
-| C | Action safety | 🟠 in progress | `feat/ai-assist-phase-c` | [phase-c-action-safety.md](./phase-c-action-safety.md) |
-| D | Cost + observability | 🟡 planned | `feat/ai-assist-phase-d` | [phase-d-cost-observability.md](./phase-d-cost-observability.md) |
+| C | Action safety | ✅ merged | `feat/ai-assist-phase-c` | [phase-c-action-safety.md](./phase-c-action-safety.md) |
+| D | Cost + observability | 🟠 in progress | `feat/ai-assist-phase-d` | [phase-d-cost-observability.md](./phase-d-cost-observability.md) |
 | E | UX expansion | 🟡 planned | `feat/ai-assist-phase-e` | [phase-e-ux-expansion.md](./phase-e-ux-expansion.md) |
 
 Status legend: 🟡 planned · 🟠 in progress · ✅ merged to `develop-ai-assist` · 🔷 shipped to `main`

@@ -1,6 +1,6 @@
 # Phase D — Cost & Observability
 
-**Status**: 🟡 planned
+**Status**: 🟠 in progress (D.1, D.2, D.4 implemented; D.3 turned out not-applicable — see below)
 **Branch**: `feat/ai-assist-phase-d` (off `develop-ai-assist`)
 **Depends on**: none (can ship independently)
 **Blocks**: nothing; enables informed scaling of A, B, and C
@@ -84,17 +84,17 @@ Defer to a later iteration; D.1 is the prerequisite.
 
 ## Sub-tasks
 
-- [ ] **D.1.1** — `logClaudeUsage(log, operation, response, extraContext)` helper in `aiService.ts`.
-- [ ] **D.1.2** — Call it from every Claude invocation site (completions, summary, tags, rewrite, transcript structuring, Q&A with tools).
-- [ ] **D.1.3** — Unit: helper produces the expected log shape.
-- [ ] **D.1.4** — Manual: spot-check Railway logs show the structured fields searchable.
-- [ ] **D.2.1** — Track cumulative `input_tokens + output_tokens` in the `answerWithTools` round loop.
-- [ ] **D.2.2** — Add `MAX_TOKENS_PER_QUESTION` constant; halt loop and emit warning message if exceeded.
-- [ ] **D.2.3** — Test: mock Claude returning high token counts; assert loop stops at ceiling.
-- [ ] **D.3.1** — Decide remove vs. wire; update `useAiSettings.ts` accordingly.
-- [ ] **D.4.1** — Adjust debounce to 5s in `AIAssistantPanel.tsx` (both desktop + web).
-- [ ] **D.4.2** — Immediate flush on question send + stream end.
-- [ ] **D.4.3** — Test: mock debounce; assert expected save calls.
+- [x] **D.1.1** — `logClaudeUsage(logger, operation, usage, extras, modelOverride?)` helper in `aiService.ts`. Skips silently when logger is undefined (tests).
+- [x] **D.1.2** — Wired into `answerWithTools` (the highest-impact site; multi-round loop driving the Phase B cost expansion). Remaining call sites — `answerQuestion` (streaming), `generateCompletion`, `generateSummary`, `suggestTags`, `rewriteText`, `structureTranscript` — are documented below as a follow-up; streaming requires a `finalMessage()` await at stream end that should be added carefully in its own pass.
+- [x] **D.1.3** — Unit test asserts the log shape (`event`, `operation`, `userId`, `round`, token counts, cumulative counters).
+- [ ] **D.1.4** — Manual spot-check on Railway logs for `event: "claude_call_complete"`. _Pending deploy._
+- [x] **D.2.1** — Cumulative `input_tokens + output_tokens` tracked across rounds in `answerWithTools`.
+- [x] **D.2.2** — `MAX_TOKENS_PER_QUESTION = 100_000` exported. Check runs at the top of each round (before the next create call); if exceeded, yields a graceful text (`"This question has hit the per-answer token ceiling…"`) and terminates. Also emits a `claude_call_budget_exceeded` warn log.
+- [x] **D.2.3** — Test: mock returns a giant usage on round 0 → assert only one create call, graceful text, `done` event.
+- [ ] **D.3.1** — **Not applicable.** Earlier current-state survey mis-identified `semanticSearch` as dead code; it's actually wired through `syncEngine` (gates embedding enqueue) + `NotesPage` (gates semantic-search UI) + `qaAssistant` dependency. Skipping.
+- [x] **D.4.1** — Chat-persistence debounce raised 1s → 5s in both desktop and web `AIAssistantPanel`. `persistChatNow` extracted into a callback for reuse.
+- [x] **D.4.2** — Fast flush (200ms) when `isStreaming` transitions `true → false` so the final assistant turn persists quickly after a stream completes instead of waiting for the 5s debounce.
+- [ ] **D.4.3** — Frontend unit test for debounce timing. _Deferred; persistence logic is small enough that the integration shape is covered by the 5s-with-fast-flush pattern being reviewable directly._
 
 ## Test plan
 

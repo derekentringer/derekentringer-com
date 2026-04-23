@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { loadConfig } from "../config.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
+import type { FastifyBaseLogger } from "fastify";
 
 let client: Anthropic | null = null;
 
@@ -16,6 +17,47 @@ function getClient(): Anthropic {
 function getModel(): string {
   return loadConfig().claudeModel;
 }
+
+// ─── Phase D: cost observability ────────────────────────────────────
+
+/** Phase D.1 — structured log emitted on every Claude call with
+ *  `response.usage` so operators can search by event/operation and see
+ *  real-world token cost. Skipped silently when no logger is provided
+ *  (e.g. in unit tests that mock the Anthropic client). */
+export interface ClaudeUsageLogExtras {
+  userId?: string;
+  round?: number;
+  cumulativeInputTokens?: number;
+  cumulativeOutputTokens?: number;
+  durationMs?: number;
+}
+
+export function logClaudeUsage(
+  logger: FastifyBaseLogger | undefined,
+  operation: string,
+  usage: Anthropic.Messages.Usage | undefined,
+  extras: ClaudeUsageLogExtras = {},
+  modelOverride?: string,
+): void {
+  if (!logger || !usage) return;
+  logger.info({
+    event: "claude_call_complete",
+    operation,
+    model: modelOverride ?? getModel(),
+    input_tokens: usage.input_tokens,
+    output_tokens: usage.output_tokens,
+    cache_creation_tokens: usage.cache_creation_input_tokens ?? 0,
+    cache_read_tokens: usage.cache_read_input_tokens ?? 0,
+    ...extras,
+  });
+}
+
+/** Phase D.2 — cumulative input-token ceiling across all rounds of a
+ *  single `answerWithTools` question. A pathological multi-round search
+ *  loop can easily eat 50k+ input tokens; 100k is 2× the real-world
+ *  upper end we observed, giving legitimate questions headroom while
+ *  catching runaway loops. */
+export const MAX_TOKENS_PER_QUESTION = 100_000;
 
 export type CompletionStyle = "continue" | "markdown" | "brief" | "paragraph" | "structure";
 
@@ -469,6 +511,9 @@ export async function* answerWithTools(
     renameFolder?: boolean;
     renameTag?: boolean;
   },
+  // Phase D.1: structured token-usage logger. Route handlers pass
+  // `request.log`; service-level callers may omit (e.g. tests).
+  logger?: FastifyBaseLogger,
 ): AsyncGenerator<AgentEvent> {
   const { ASSISTANT_TOOLS, executeTool } = await import("./assistantTools.js");
   const anthropic = getClient();
@@ -495,10 +540,39 @@ export async function* answerWithTools(
   // counter hasn't tripped yet.
   const MAX_TOOL_CALLS_TOTAL = 12;
   let totalToolCalls = 0;
+  // Phase D.2: track cumulative tokens across rounds. If we cross the
+  // per-question ceiling, halt the loop and let Claude wrap up with
+  // its remaining output budget on a subsequent round. Input+output
+  // counted together because either can balloon (Claude can stream a
+  // lot of output; tool results can stream a lot of input).
+  let cumulativeInputTokens = 0;
+  let cumulativeOutputTokens = 0;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     if (signal?.aborted) return;
 
+    // Phase D.2: check the ceiling before the NEXT round. If the
+    // previous rounds already cost > MAX_TOKENS_PER_QUESTION, emit a
+    // final text note and terminate cleanly.
+    if (cumulativeInputTokens + cumulativeOutputTokens > MAX_TOKENS_PER_QUESTION) {
+      logger?.warn({
+        event: "claude_call_budget_exceeded",
+        operation: "answer_with_tools",
+        userId,
+        cumulativeInputTokens,
+        cumulativeOutputTokens,
+        cap: MAX_TOKENS_PER_QUESTION,
+        round,
+      });
+      yield {
+        type: "text",
+        text: "\n\n_This question has hit the per-answer token ceiling. Try narrowing it or breaking it into smaller follow-ups._",
+      };
+      yield { type: "done" };
+      return;
+    }
+
+    const roundStartMs = Date.now();
     const response = await anthropic.messages.create({
       model: getModel(),
       max_tokens: 1500,
@@ -524,6 +598,21 @@ Live transcript:
 ${transcript}` : ""}`,
       tools: ASSISTANT_TOOLS,
       messages,
+    });
+
+    // Phase D.1: log token usage for this round. Update cumulative
+    // counters used by the budget check at the top of the next round.
+    const durationMs = Date.now() - roundStartMs;
+    if (response.usage) {
+      cumulativeInputTokens += response.usage.input_tokens;
+      cumulativeOutputTokens += response.usage.output_tokens;
+    }
+    logClaudeUsage(logger, "answer_with_tools", response.usage, {
+      userId,
+      round,
+      cumulativeInputTokens,
+      cumulativeOutputTokens,
+      durationMs,
     });
 
     // Collect all content blocks

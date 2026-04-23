@@ -292,6 +292,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
             activeNote,
             history,
             autoApprove,
+            request.log,
           )) {
             if (abortController.signal.aborted) break;
             if (event.type === "text") {

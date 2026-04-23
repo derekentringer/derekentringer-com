@@ -864,6 +864,7 @@ describe("AI routes", () => {
         undefined,
         undefined, // history
         undefined, // autoApprove (Phase C.5)
+        expect.any(Object), // logger (Phase D.1)
       );
     });
 
@@ -899,6 +900,7 @@ describe("AI routes", () => {
         undefined,
         history,
         undefined, // autoApprove
+        expect.any(Object), // logger
       );
     });
 
@@ -927,6 +929,7 @@ describe("AI routes", () => {
         undefined,
         undefined,
         autoApprove,
+        expect.any(Object), // logger
       );
     });
 
