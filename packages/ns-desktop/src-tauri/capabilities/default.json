@@ -25,6 +25,7 @@
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
+    "core:window:allow-close",
     {
       "identifier": "fs:scope",
       "allow": ["**"]

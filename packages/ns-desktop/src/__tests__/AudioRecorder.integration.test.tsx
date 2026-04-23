@@ -159,7 +159,7 @@ describe("AudioRecorder — mic-only happy path", () => {
     });
 
     await waitFor(() => {
-      expect(onNoteCreated).toHaveBeenCalledWith(note);
+      expect(onNoteCreated).toHaveBeenCalledWith(note, expect.any(String), expect.any(String));
     });
 
     expect(onError).not.toHaveBeenCalled();
@@ -399,7 +399,11 @@ describe("AudioRecorder — mic-only happy path", () => {
 
     // Even though the chunk failed, the note was created from the
     // full-audio transcribe. No onError bubbled from the chunk failure.
-    expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-chunk-fail" }));
+    expect(onNoteCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "note-chunk-fail" }),
+      expect.any(String),
+      expect.any(String),
+    );
     expect(onError).not.toHaveBeenCalled();
   });
 
@@ -1193,7 +1197,11 @@ describe("AudioRecorder — meeting-mode transcription", () => {
     expect(mockTranscribeAudio).toHaveBeenCalledTimes(1);
     // No live transcript → skip dedup path → no structureAndCreateNote call.
     expect(mockStructureAndCreateNote).not.toHaveBeenCalled();
-    expect(onNoteCreated).toHaveBeenCalledWith(expect.objectContaining({ id: "note-fallback" }));
+    expect(onNoteCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "note-fallback" }),
+      expect.any(String),
+      expect.any(String),
+    );
   });
 
   // Regression: NotesPage shows Settings via an early-return, so the parent's
@@ -1236,5 +1244,436 @@ describe("AudioRecorder — meeting-mode transcription", () => {
 
     expect(mediaDevices.getUserMediaSpy).not.toHaveBeenCalled();
     expect(mediaRecorder.recorders.length).toBe(0);
+  });
+
+  // Phase 1 (detached processing): after Stop, the recorder goes back to idle
+  // *immediately*. Transcription runs as a detached task. A fresh trigger
+  // fires a new recording even while the prior session's processing is still
+  // in flight, and each session's onNoteCreated carries its own sessionId.
+  it("starts a new recording while prior session is still processing", async () => {
+    const onNoteCreated = vi.fn();
+    const onError = vi.fn();
+
+    // Session A: stall transcribeAudio so processing never completes during
+    // the test. Session B: resolve immediately.
+    let resolveA: ((v: { note: { id: string; title: string; content: string } }) => void) | null = null;
+    const stalledA = new Promise<{ note: { id: string; title: string; content: string } }>((r) => {
+      resolveA = r;
+    });
+    mockTranscribeAudio
+      .mockReset()
+      .mockReturnValueOnce(stalledA)
+      .mockResolvedValue({ note: { id: "note-B", title: "B", content: "b" } });
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onError={onError}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    // Trigger A
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+    const recorderA = mediaRecorder.recorders[0];
+
+    // Stop A — transcribeAudio stalls, so processing hangs but the recorder
+    // must return to idle immediately (Phase 1 contract).
+    await act(async () => {
+      recorderA.emitData(new Blob(["a"], { type: "audio/webm" }));
+      recorderA.stop();
+    });
+
+    // The detached task is mid-flight; transcribeAudio got called once for A.
+    await waitFor(() => {
+      expect(mockTranscribeAudio).toHaveBeenCalledTimes(1);
+    });
+    expect(onNoteCreated).not.toHaveBeenCalled();
+
+    // Trigger B — ribbon must be unlocked even though A is still processing.
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onError={onError}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={2}
+        />,
+      );
+    });
+
+    // A second MediaRecorder must have been constructed — proving the ribbon
+    // accepted a new trigger.
+    await waitFor(() => {
+      expect(mediaDevices.getUserMediaSpy).toHaveBeenCalledTimes(2);
+    });
+    const recorderB = mediaRecorder.recorders.find((r) => r !== recorderA && r.state === "recording");
+    expect(recorderB).toBeTruthy();
+
+    // Stop B. This should process immediately (second mockResolved).
+    await act(async () => {
+      recorderB!.emitData(new Blob(["b"], { type: "audio/webm" }));
+      recorderB!.stop();
+    });
+
+    await waitFor(() => {
+      expect(mockTranscribeAudio).toHaveBeenCalledTimes(2);
+      expect(onNoteCreated).toHaveBeenCalledTimes(1);
+    });
+
+    // B completes first even though A is still stalled. sessionIds differ.
+    const bCall = onNoteCreated.mock.calls[0];
+    expect(bCall[0]).toMatchObject({ id: "note-B" });
+    const bSessionId = bCall[1];
+
+    // Now resolve A. Both sessions should eventually have fired with
+    // *different* sessionIds.
+    await act(async () => {
+      resolveA!({ note: { id: "note-A", title: "A", content: "a" } });
+    });
+
+    await waitFor(() => {
+      expect(onNoteCreated).toHaveBeenCalledTimes(2);
+    });
+
+    const aCall = onNoteCreated.mock.calls[1];
+    expect(aCall[0]).toMatchObject({ id: "note-A" });
+    const aSessionId = aCall[1];
+    expect(aSessionId).not.toBe(bSessionId);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  // Phase 2: processing failure fires onNoteFailed with the session's id.
+  it("fires onNoteFailed with sessionId when processing fails", async () => {
+    const onNoteCreated = vi.fn();
+    const onNoteFailed = vi.fn();
+    const onError = vi.fn();
+
+    mockTranscribeAudio.mockReset().mockRejectedValueOnce(new Error("Whisper 500"));
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onNoteFailed={onNoteFailed}
+        onError={onError}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={0}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onNoteFailed={onNoteFailed}
+          onError={onError}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={1}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+    const recorder = mediaRecorder.recorders[0];
+
+    await act(async () => {
+      recorder.emitData(new Blob(["a"], { type: "audio/webm" }));
+      recorder.stop();
+    });
+
+    await waitFor(() => {
+      expect(onNoteFailed).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onNoteCreated).not.toHaveBeenCalled();
+    // When onNoteFailed is wired, onError is NOT called (no double-toast).
+    expect(onError).not.toHaveBeenCalled();
+    // First arg = sessionId, second arg = message
+    const [sessionId, message] = onNoteFailed.mock.calls[0];
+    expect(typeof sessionId).toBe("string");
+    expect(sessionId.length).toBeGreaterThan(0);
+    expect(message).toContain("Whisper 500");
+  });
+
+  // Phase 2: retry via controlRef re-runs processing for a failed session.
+  it("controlRef.retry re-runs processing for a failed session", async () => {
+    const onNoteCreated = vi.fn();
+    const onNoteFailed = vi.fn();
+    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void } | null> = { current: null };
+
+    // Fail first, succeed on retry.
+    mockTranscribeAudio
+      .mockReset()
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce({ note: { id: "note-retry", title: "R", content: "r" } });
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onNoteFailed={onNoteFailed}
+        onError={vi.fn()}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={0}
+        controlRef={controlRef}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onNoteFailed={onNoteFailed}
+          onError={vi.fn()}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={1}
+          controlRef={controlRef}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+    const recorder = mediaRecorder.recorders[0];
+
+    await act(async () => {
+      recorder.emitData(new Blob(["a"], { type: "audio/webm" }));
+      recorder.stop();
+    });
+
+    await waitFor(() => {
+      expect(onNoteFailed).toHaveBeenCalledTimes(1);
+    });
+    const [failedSessionId] = onNoteFailed.mock.calls[0];
+
+    expect(controlRef.current).toBeTruthy();
+    await act(async () => {
+      controlRef.current!.retry(failedSessionId);
+    });
+
+    await waitFor(() => {
+      expect(onNoteCreated).toHaveBeenCalledTimes(1);
+    });
+    expect(onNoteCreated.mock.calls[0][0]).toMatchObject({ id: "note-retry" });
+    expect(onNoteCreated.mock.calls[0][1]).toBe(failedSessionId);
+    expect(mockTranscribeAudio).toHaveBeenCalledTimes(2);
+  });
+
+  // Phase 2: discard purges the snapshot so a subsequent retry is a no-op.
+  it("controlRef.discard drops snapshot so retry is a no-op afterwards", async () => {
+    const onNoteCreated = vi.fn();
+    const onNoteFailed = vi.fn();
+    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void } | null> = { current: null };
+
+    mockTranscribeAudio.mockReset().mockRejectedValueOnce(new Error("oops"));
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={onNoteCreated}
+        onNoteFailed={onNoteFailed}
+        onError={vi.fn()}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={0}
+        controlRef={controlRef}
+      />,
+    );
+
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={onNoteCreated}
+          onNoteFailed={onNoteFailed}
+          onError={vi.fn()}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={1}
+          controlRef={controlRef}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mediaRecorder.recorders.length).toBeGreaterThan(0);
+    });
+    const recorder = mediaRecorder.recorders[0];
+
+    await act(async () => {
+      recorder.emitData(new Blob(["a"], { type: "audio/webm" }));
+      recorder.stop();
+    });
+
+    await waitFor(() => {
+      expect(onNoteFailed).toHaveBeenCalledTimes(1);
+    });
+    const [failedSessionId] = onNoteFailed.mock.calls[0];
+
+    await act(async () => {
+      controlRef.current!.discard(failedSessionId);
+    });
+
+    // Retry after discard should be a no-op — snapshot is gone.
+    await act(async () => {
+      controlRef.current!.retry(failedSessionId);
+    });
+
+    // Give async any chance to fire.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    expect(mockTranscribeAudio).toHaveBeenCalledTimes(1); // only the original fail
+    expect(onNoteCreated).not.toHaveBeenCalled();
+  });
+
+  // Phase 3: onInFlightCountChange tracks detached task population.
+  it("onInFlightCountChange reports start → settle → discard transitions", async () => {
+    const onInFlightCountChange = vi.fn();
+    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void } | null> = { current: null };
+
+    // First session succeeds; second session fails.
+    mockTranscribeAudio
+      .mockReset()
+      .mockResolvedValueOnce({ note: { id: "ok", title: "", content: "" } })
+      .mockRejectedValueOnce(new Error("oops"));
+
+    const { rerender } = render(
+      <AudioRecorder
+        defaultMode="memo"
+        recordingSource="microphone"
+        onRecordingSourceChange={vi.fn()}
+        onNoteCreated={vi.fn()}
+        onNoteFailed={vi.fn()}
+        onError={vi.fn()}
+        onRecordingStateChange={vi.fn()}
+        triggerMode="memo"
+        triggerKey={0}
+        controlRef={controlRef}
+        onInFlightCountChange={onInFlightCountChange}
+      />,
+    );
+
+    // Kick off session A
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={vi.fn()}
+          onNoteFailed={vi.fn()}
+          onError={vi.fn()}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={1}
+          controlRef={controlRef}
+          onInFlightCountChange={onInFlightCountChange}
+        />,
+      );
+    });
+
+    await waitFor(() => expect(mediaRecorder.recorders.length).toBeGreaterThan(0));
+    const recorderA = mediaRecorder.recorders[0];
+    await act(async () => {
+      recorderA.emitData(new Blob(["a"], { type: "audio/webm" }));
+      recorderA.stop();
+    });
+
+    // Session A completes → count goes 0 → 1 → 0.
+    await waitFor(() => {
+      const vals = onInFlightCountChange.mock.calls.map((c) => c[0] as number);
+      expect(vals).toContain(1);
+      expect(vals[vals.length - 1]).toBe(0);
+    });
+    onInFlightCountChange.mockClear();
+
+    // Kick off session B (which will fail, leaving count at 0 after settle).
+    const onNoteFailed = vi.fn();
+    await act(async () => {
+      rerender(
+        <AudioRecorder
+          defaultMode="memo"
+          recordingSource="microphone"
+          onRecordingSourceChange={vi.fn()}
+          onNoteCreated={vi.fn()}
+          onNoteFailed={onNoteFailed}
+          onError={vi.fn()}
+          onRecordingStateChange={vi.fn()}
+          triggerMode="memo"
+          triggerKey={2}
+          controlRef={controlRef}
+          onInFlightCountChange={onInFlightCountChange}
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      const recs = mediaRecorder.recorders.filter((r) => r.state === "recording");
+      expect(recs.length).toBeGreaterThan(0);
+    });
+    const recorderB = mediaRecorder.recorders.find((r) => r.state === "recording" && r !== recorderA)!;
+
+    await act(async () => {
+      recorderB.emitData(new Blob(["b"], { type: "audio/webm" }));
+      recorderB.stop();
+    });
+
+    await waitFor(() => {
+      expect(onNoteFailed).toHaveBeenCalledTimes(1);
+      const vals = onInFlightCountChange.mock.calls.map((c) => c[0] as number);
+      // Saw count=1 during flight, then count=0 on settle.
+      expect(vals).toContain(1);
+      expect(vals[vals.length - 1]).toBe(0);
+    });
   });
 });

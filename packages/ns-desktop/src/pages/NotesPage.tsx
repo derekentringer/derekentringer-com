@@ -181,9 +181,12 @@ import {
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
-import { AudioRecorder, type AudioRecordingState } from "../components/AudioRecorder.tsx";
+import { AudioRecorder, type AudioRecordingState, type AudioRecorderControl } from "../components/AudioRecorder.tsx";
+import type { AudioSessionResult } from "../components/AIAssistantPanel.tsx";
 import { RecordingBar } from "../components/RecordingBar.tsx";
 import { FolderPicker } from "../components/FolderPicker.tsx";
 import { SyncSwarmGame } from "../components/SyncSwarmGame.tsx";
@@ -383,7 +386,127 @@ export function NotesPage() {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
-  const [completedAudioNote, setCompletedAudioNote] = useState<{ id: string; title: string; content: string; mode: string } | null>(null);
+  // Phase 2: unified success/failure result for the AI assistant panel to
+  // match against a meeting-summary card by sessionId. Each new result
+  // increments the identity of the prop so the panel's effect re-fires for
+  // every outcome — even if an earlier fail lands on the same sessionId
+  // as a later retry success.
+  const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
+  const audioControlRef = useRef<AudioRecorderControl | null>(null);
+  // Phase 3: count of in-flight detached processing tasks. Drives the
+  // close-while-processing warning.
+  const [inFlightAudioCount, setInFlightAudioCount] = useState(0);
+  // Any audio work that would be lost on quit: active recording, the brief
+  // sync stop half (drain/flush/native release for meeting mode), or a
+  // detached processing task. Kept in a ref so the close-warning effect
+  // installs once on mount and reads the live value without tearing down.
+  const hasAudioWorkRef = useRef(false);
+  hasAudioWorkRef.current = recordingState !== null || inFlightAudioCount > 0;
+
+  // Set once the user has confirmed a quit-in-progress dialog. Any
+  // subsequent close-path event (onCloseRequested fired during Tauri's
+  // per-window cleanup after app.exit(0), beforeunload, etc.) must bail
+  // so the user isn't re-prompted for the same quit.
+  const quitApprovedRef = useRef(false);
+
+  // Sync the work flag to Rust so the native ExitRequested handler (which
+  // fires on macOS Cmd+Q — Cmd+Q bypasses window-level onCloseRequested
+  // entirely) can decide synchronously whether to prevent the exit.
+  useEffect(() => {
+    invoke("set_audio_work_state", { hasWork: hasAudioWorkRef.current }).catch(() => {});
+  }, [recordingState, inFlightAudioCount]);
+
+  // Listen for app-quit-requested event emitted by Rust after it has
+  // called `api.prevent_exit()`. Show the confirmation dialog and, if the
+  // user confirms, invoke `quit_app` which calls `app.exit(0)` on the
+  // Rust side.
+  useEffect(() => {
+    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
+    listen("app-quit-requested", async () => {
+      if (quitApprovedRef.current) return; // already approved; avoid re-prompt
+      const confirmed = await ask(
+        "A recording is in progress or still processing. " +
+          "Quitting now will discard it. Quit anyway?",
+        { title: "Recording in progress", kind: "warning" },
+      );
+      if (confirmed) {
+        quitApprovedRef.current = true;
+        await invoke("quit_app");
+      }
+    })
+      .then((unlisten) => {
+        if (cancelled) {
+          unlisten();
+        } else {
+          unlistenFn = unlisten;
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to listen for app-quit-requested:", err);
+      });
+    return () => {
+      cancelled = true;
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
+
+  useEffect(() => {
+    // Web / webview fallback — catches refresh, tab close, in-webview nav.
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (quitApprovedRef.current) return;
+      if (!hasAudioWorkRef.current) return;
+      e.preventDefault();
+      e.returnValue = ""; // Chrome/Edge require returnValue to be set.
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    // Tauri native window close — red X on all platforms + anything else
+    // that triggers a WM_CLOSE-style window close.
+    //
+    // Pattern: call preventDefault() SYNCHRONOUSLY before any await. Tauri
+    // does wait for the handler promise, but on some platforms the close
+    // races the dialog — preventing default first is the only reliable
+    // way to guarantee the close is halted. After the user confirms, we
+    // manually call win.close() (needs `core:window:allow-close` in
+    // capabilities). quitApprovedRef prevents a re-prompt if
+    // onCloseRequested fires again during Tauri's per-window cleanup
+    // after an app.exit(0) initiated by the app-quit-requested flow.
+    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const win = getCurrentWindow();
+        const unlisten = await win.onCloseRequested(async (event) => {
+          if (quitApprovedRef.current) return;
+          if (!hasAudioWorkRef.current) return;
+          event.preventDefault();
+          const confirmed = await ask(
+            "A recording is in progress or still processing. " +
+              "Quitting now will discard it. Quit anyway?",
+            { title: "Recording in progress", kind: "warning" },
+          );
+          if (confirmed) {
+            quitApprovedRef.current = true;
+            await win.close();
+          }
+        });
+        if (cancelled) {
+          unlisten();
+        } else {
+          unlistenFn = unlisten;
+        }
+      } catch (err) {
+        console.error("Failed to install Tauri close-requested guard:", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      if (unlistenFn) unlistenFn();
+    };
+  }, []);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const [showGame, setShowGame] = useState(false);
 
@@ -407,26 +530,37 @@ export function NotesPage() {
     recordingState?.liveTranscript ?? "",
   );
 
-  // Capture liveTranscript in a ref so it survives the recording state reset
-  const lastLiveTranscriptRef = useRef("");
-  useEffect(() => {
-    const t = recordingState?.liveTranscript ?? "";
-    if (t.length > 0) lastLiveTranscriptRef.current = t;
-  }, [recordingState?.liveTranscript]);
+  // Per-session context captured during recording. Keyed by sessionId so
+  // multiple in-flight processing tasks don't clobber each other's context
+  // when handleAudioNoteCreated fires for each session.
+  const sessionContextsRef = useRef<Map<string, {
+    liveTranscript: string;
+    relevantNotes: typeof meetingContext.relevantNotes;
+    mode: string;
+  }>>(new Map());
 
-  // Capture relevant notes in a ref so they survive the recording state reset
-  const lastRelevantNotesRef = useRef<typeof meetingContext.relevantNotes>([]);
+  // Update the active session's context whenever the recording state emits
+  // new values. On recording start the entry is created; on recording stop
+  // the entry is read-only until handleAudioNoteCreated consumes + deletes it.
   useEffect(() => {
-    if (meetingContext.relevantNotes.length > 0) {
-      lastRelevantNotesRef.current = meetingContext.relevantNotes;
-    }
-  }, [meetingContext.relevantNotes]);
+    if (!recordingState?.sessionId) return;
+    const sid = recordingState.sessionId;
+    const existing = sessionContextsRef.current.get(sid);
+    const entry = existing ?? { liveTranscript: "", relevantNotes: [], mode: recordingState.mode };
+    const t = recordingState.liveTranscript ?? "";
+    if (t.length > 0) entry.liveTranscript = t;
+    entry.mode = recordingState.mode;
+    sessionContextsRef.current.set(sid, entry);
+  }, [recordingState?.sessionId, recordingState?.liveTranscript, recordingState?.mode]);
 
-  // Capture recording mode in a ref so it survives the recording state reset
-  const lastRecordingModeRef = useRef<string>("meeting");
+  // Route meeting-context updates to the currently-recording session only.
   useEffect(() => {
-    if (recordingState?.mode) lastRecordingModeRef.current = recordingState.mode;
-  }, [recordingState?.mode]);
+    const sid = recordingState?.sessionId;
+    if (!sid) return;
+    if (meetingContext.relevantNotes.length === 0) return;
+    const entry = sessionContextsRef.current.get(sid);
+    if (entry) entry.relevantNotes = meetingContext.relevantNotes;
+  }, [meetingContext.relevantNotes, recordingState?.sessionId]);
 
   // AI state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -1495,11 +1629,20 @@ export function NotesPage() {
     }
   }
 
-  async function handleAudioNoteCreated(serverNote: Note, capturedTranscript?: string) {
+  async function handleAudioNoteCreated(serverNote: Note, sessionId: string, capturedTranscript?: string) {
     try {
+      // Pull this session's context from the session-keyed map. May be absent
+      // if the session predated the recording-state subscription (test paths)
+      // — default to empty.
+      const ctx = sessionContextsRef.current.get(sessionId) ?? {
+        liveTranscript: "",
+        relevantNotes: [],
+        mode: "meeting",
+      };
+
       let finalNote = serverNote;
-      const surfacedNotes = lastRelevantNotesRef.current;
-      const liveText = capturedTranscript ?? lastLiveTranscriptRef.current;
+      const surfacedNotes = ctx.relevantNotes;
+      const liveText = capturedTranscript ?? ctx.liveTranscript;
       const hasRefs = surfacedNotes.length > 0;
       const hasLiveTranscript = liveText.trim().length > 0;
 
@@ -1540,18 +1683,37 @@ export function NotesPage() {
       loadNoteTitles();
       setDashboardKey((k) => k + 1);
       notifyLocalChange();
-      setCompletedAudioNote({
+      setAudioSessionResult({
+        kind: "success",
         id: finalNote.id,
         title: finalNote.title,
         content: finalNote.content,
-        mode: lastRecordingModeRef.current,
+        mode: ctx.mode,
+        sessionId,
       });
-      lastLiveTranscriptRef.current = "";
-      lastRelevantNotesRef.current = [];
     } catch (err) {
       console.error("Failed to save audio note:", err);
       showError(`Failed to save audio note: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      // Drop the session context once we're done with it — success or error.
+      sessionContextsRef.current.delete(sessionId);
     }
+  }
+
+  // Phase 2: route failures into the chat card as a failed state with
+  // Retry/Discard affordances. Session context stays alive so Retry can
+  // still access its liveTranscript + relevantNotes.
+  function handleAudioNoteFailed(sessionId: string, message: string) {
+    setAudioSessionResult({ kind: "fail", sessionId, message });
+  }
+
+  function handleAudioRetry(sessionId: string) {
+    audioControlRef.current?.retry(sessionId);
+  }
+
+  function handleAudioDiscard(sessionId: string) {
+    audioControlRef.current?.discard(sessionId);
+    sessionContextsRef.current.delete(sessionId);
   }
 
   async function handleDelete() {
@@ -4670,9 +4832,12 @@ export function NotesPage() {
                   liveTranscript={recordingState?.liveTranscript ?? ""}
                   relevantNotes={meetingContext.relevantNotes}
                   recordingMode={recordingState?.mode}
-                  completedNote={completedAudioNote}
+                  audioSessionResult={audioSessionResult}
                   activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                   chatRefreshKey={chatRefreshKey}
+                  activeSessionId={recordingState?.sessionId}
+                  onAudioRetry={handleAudioRetry}
+                  onAudioDiscard={handleAudioDiscard}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
@@ -4857,8 +5022,11 @@ export function NotesPage() {
         recordingSource={aiSettings.recordingSource}
         onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
         onNoteCreated={handleAudioNoteCreated}
+        onNoteFailed={handleAudioNoteFailed}
         onError={showError}
         onRecordingStateChange={setRecordingState}
+        controlRef={audioControlRef}
+        onInFlightCountChange={setInFlightAudioCount}
         onModeChange={(m) => updateAiSetting("audioMode", m)}
         triggerMode={recordTrigger?.mode}
         triggerKey={recordTrigger?.key}
