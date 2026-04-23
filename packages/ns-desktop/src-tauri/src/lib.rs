@@ -139,6 +139,13 @@ struct OpenedFiles(Mutex<Vec<String>>);
 #[derive(Default)]
 struct AudioWorkFlag(AtomicBool);
 
+/// Set by `quit_app` when the user has already confirmed the
+/// close-while-processing dialog. The `ExitRequested` handler checks this
+/// first and bypasses the guard — otherwise `app.exit(0)` inside `quit_app`
+/// re-fires `ExitRequested`, which re-prompts the user in a loop.
+#[derive(Default)]
+struct QuitConfirmed(AtomicBool);
+
 fn urls_to_paths(urls: Vec<tauri::Url>) -> Vec<String> {
     urls.into_iter()
         .filter_map(|u: tauri::Url| u.to_file_path().ok())
@@ -161,10 +168,12 @@ fn set_audio_work_state(has_work: bool, state: tauri::State<'_, AudioWorkFlag>) 
 }
 
 /// Called from JS when the user confirms "Quit anyway?" in the
-/// close-while-processing dialog. Unlike `process::exit`, this goes
-/// through Tauri's app exit path and triggers the normal cleanup.
+/// close-while-processing dialog. Sets the QuitConfirmed flag so
+/// `RunEvent::ExitRequested` (which fires as a side-effect of
+/// `app.exit(0)`) skips its guard and lets the exit proceed.
 #[tauri::command]
-fn quit_app(app: tauri::AppHandle) {
+fn quit_app(app: tauri::AppHandle, state: tauri::State<'_, QuitConfirmed>) {
+    state.0.store(true, Ordering::SeqCst);
     app.exit(0);
 }
 
@@ -427,6 +436,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(Vec::new())))
         .manage(AudioWorkFlag::default())
+        .manage(QuitConfirmed::default())
         .invoke_handler(tauri::generate_handler![get_opened_files, get_secure_item, set_secure_item, remove_secure_item, download_file, move_to_trash, check_meeting_recording_support, start_meeting_recording, stop_meeting_recording, get_meeting_audio_chunk, set_menu_items_enabled, set_audio_work_state, quit_app])
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -517,20 +527,27 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|_app_handle, event| {
-        // Close-while-processing guard (macOS Cmd+Q, app-level exit).
-        // Cmd+Q on macOS bypasses the window-level `onCloseRequested`
-        // entirely — it fires this app-level `ExitRequested` instead. If
-        // the JS side has in-flight audio work, halt the exit and emit
-        // an event so the frontend can show a confirmation dialog; on
-        // confirm, JS invokes `quit_app` which calls `app.exit(0)`.
+        // Close-while-processing guard (app-level exit — Dock Quit, and
+        // any quit path that goes through NSApp.terminate rather than our
+        // custom menu). If JS has in-flight audio work, halt the exit
+        // and ask the frontend to confirm. `QuitConfirmed` is set by
+        // `quit_app` when the user has already confirmed, so the
+        // subsequent `ExitRequested` fired by `app.exit(0)` bypasses
+        // the guard and lets the app quit.
         if let RunEvent::ExitRequested { api, .. } = &event {
-            let has_work = _app_handle
-                .try_state::<AudioWorkFlag>()
+            let confirmed = _app_handle
+                .try_state::<QuitConfirmed>()
                 .map(|s| s.0.load(Ordering::SeqCst))
                 .unwrap_or(false);
-            if has_work {
-                api.prevent_exit();
-                let _ = _app_handle.emit("app-quit-requested", ());
+            if !confirmed {
+                let has_work = _app_handle
+                    .try_state::<AudioWorkFlag>()
+                    .map(|s| s.0.load(Ordering::SeqCst))
+                    .unwrap_or(false);
+                if has_work {
+                    api.prevent_exit();
+                    let _ = _app_handle.emit("app-quit-requested", ());
+                }
             }
         }
 
