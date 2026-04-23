@@ -181,6 +181,8 @@ import {
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AudioRecorder, type AudioRecordingState, type AudioRecorderControl } from "../components/AudioRecorder.tsx";
@@ -411,32 +413,42 @@ export function NotesPage() {
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     // Tauri native window close — catches the red-dot / Cmd+Q on macOS
-    // and [X] on Windows. Wrapped in a dynamic import so this file still
-    // runs cleanly in jsdom tests that don't have @tauri-apps/api/window.
+    // and [X] on Windows.
+    //
+    // Pattern: call preventDefault() SYNCHRONOUSLY before any await. Tauri
+    // does wait for the handler promise, but the native macOS Cmd+Q path
+    // races the dialog — preventing default first is the only reliable
+    // way to guarantee the close is halted. After the user confirms, we
+    // manually call win.close() (needs `core:window:allow-close` in
+    // capabilities), gated by allowCloseRef to stop the re-entered close
+    // event from re-opening the dialog.
     let unlistenFn: (() => void) | null = null;
     let cancelled = false;
+    const allowCloseRef = { current: false };
     (async () => {
       try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const { ask } = await import("@tauri-apps/plugin-dialog");
-        if (cancelled) return;
         const win = getCurrentWindow();
         const unlisten = await win.onCloseRequested(async (event) => {
+          if (allowCloseRef.current) return; // already confirmed, let close proceed
           if (!hasAudioWorkRef.current) return;
+          event.preventDefault();
           const confirmed = await ask(
             "A recording is in progress or still processing. " +
               "Quitting now will discard it. Quit anyway?",
             { title: "Recording in progress", kind: "warning" },
           );
-          if (!confirmed) event.preventDefault();
+          if (confirmed) {
+            allowCloseRef.current = true;
+            await win.close();
+          }
         });
         if (cancelled) {
           unlisten();
         } else {
           unlistenFn = unlisten;
         }
-      } catch {
-        // Not running under Tauri — beforeunload is enough.
+      } catch (err) {
+        console.error("Failed to install Tauri close-requested guard:", err);
       }
     })();
 
