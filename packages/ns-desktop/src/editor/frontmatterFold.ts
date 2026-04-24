@@ -7,7 +7,7 @@ import {
   gutter,
   GutterMarker,
 } from "@codemirror/view";
-import { type Range, type Extension, StateField } from "@codemirror/state";
+import { EditorSelection, EditorState, type Range, type Extension, StateField } from "@codemirror/state";
 
 const FRONTMATTER_REGEX = /^---[ \t]*\n[\s\S]*?\n?---[ \t]*\n?/;
 
@@ -125,6 +125,64 @@ const frontmatterFoldPlugin = ViewPlugin.fromClass(
 );
 
 /**
+ * Find the end position (exclusive) of the frontmatter block in a
+ * document, or 0 if there is no frontmatter. Used by the edit guard.
+ */
+function findFrontmatterEnd(doc: { sliceString: (from: number, to: number) => string; length: number }): number {
+  const text = doc.sliceString(0, Math.min(doc.length, 5000));
+  const match = text.match(FRONTMATTER_REGEX);
+  return match ? match[0].length : 0;
+}
+
+/**
+ * Transaction filter that blocks edits to the hidden frontmatter
+ * region and snaps selections that land inside it to the first
+ * visible position.
+ *
+ * Without this, backspacing from line 1 of the visible body moves
+ * the cursor into the (CSS-hidden) frontmatter and keeps deleting —
+ * the user can silently wipe their own frontmatter by pressing a key
+ * they can't see the effect of.
+ *
+ * Active only when the extension is loaded (i.e. when
+ * `hideFrontmatter()` is in the compartment). Visible-frontmatter
+ * mode lets the user edit freely.
+ */
+const frontmatterEditGuard = EditorState.transactionFilter.of((tr) => {
+  const fmEnd = findFrontmatterEnd(tr.startState.doc);
+  if (fmEnd === 0) return tr;
+
+  // Block any change that touches the frontmatter range. We drop the
+  // whole transaction rather than trying to trim the change set —
+  // the only realistic way a change can overlap is a backspace at
+  // the boundary, and dropping the transaction keeps state simple.
+  let touchesFrontmatter = false;
+  tr.changes.iterChanges((fromA) => {
+    if (fromA < fmEnd) touchesFrontmatter = true;
+  });
+  if (touchesFrontmatter) return [];
+
+  // Snap any selection that lands inside the hidden frontmatter to
+  // the first visible position. Covers Up arrow from line 1 of the
+  // body, clicks on the collapsed region, mouse-drag selection, etc.
+  if (tr.selection) {
+    const sel = tr.selection;
+    const needsAdjust = sel.ranges.some((r) => r.from < fmEnd || r.to < fmEnd);
+    if (needsAdjust) {
+      const safeRanges = sel.ranges.map((r) =>
+        EditorSelection.range(Math.max(r.anchor, fmEnd), Math.max(r.head, fmEnd)),
+      );
+      return [
+        tr,
+        { selection: EditorSelection.create(safeRanges, sel.mainIndex), sequential: true },
+      ];
+    }
+  }
+
+  return tr;
+});
+
+/**
  * Extension that hides the frontmatter block from the editor.
  * Uses CSS to collapse lines to zero height (safe, no RangeError).
  *
@@ -137,6 +195,7 @@ export function hideFrontmatter(): Extension[] {
   return [
     frontmatterFoldPlugin,
     frontmatterTheme,
+    frontmatterEditGuard,
   ];
 }
 
