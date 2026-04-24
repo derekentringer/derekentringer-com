@@ -100,6 +100,39 @@ function DiffLineRow({ line }: { line: DiffLine }) {
   );
 }
 
+/** Pair removed/added lines into side-by-side rows. Mirrors the
+ *  algorithm in DiffView.tsx so the two experiences stay consistent. */
+function pairSplitRows(diff: DiffLine[]): { left: (DiffLine | null)[]; right: (DiffLine | null)[] } {
+  const left: (DiffLine | null)[] = [];
+  const right: (DiffLine | null)[] = [];
+  let i = 0;
+  while (i < diff.length) {
+    const line = diff[i];
+    if (line.type === "same") {
+      left.push(line);
+      right.push(line);
+      i++;
+    } else if (line.type === "removed") {
+      const removedStart = i;
+      while (i < diff.length && diff[i].type === "removed") i++;
+      const addedStart = i;
+      while (i < diff.length && diff[i].type === "added") i++;
+      const removedCount = addedStart - removedStart;
+      const addedCount = i - addedStart;
+      const maxCount = Math.max(removedCount, addedCount);
+      for (let k = 0; k < maxCount; k++) {
+        left.push(k < removedCount ? diff[removedStart + k] : null);
+        right.push(k < addedCount ? diff[addedStart + k] : null);
+      }
+    } else {
+      left.push(null);
+      right.push(line);
+      i++;
+    }
+  }
+  return { left, right };
+}
+
 function DiffPreviewModal({
   title,
   oldContent,
@@ -111,9 +144,11 @@ function DiffPreviewModal({
   newContent: string;
   onClose: () => void;
 }) {
+  const [viewMode, setViewMode] = useState<"unified" | "split">("unified");
   const diff = diffLines(oldContent, newContent);
   const added = diff.filter((l) => l.type === "added").length;
   const removed = diff.filter((l) => l.type === "removed").length;
+  const split = viewMode === "split" ? pairSplitRows(diff) : null;
 
   // Escape-to-close.
   useEffect(() => {
@@ -123,6 +158,11 @@ function DiffPreviewModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const modes: { value: "unified" | "split"; label: string }[] = [
+    { value: "unified", label: "Unified" },
+    { value: "split", label: "Split" },
+  ];
 
   return (
     <div
@@ -141,6 +181,22 @@ function DiffPreviewModal({
               <span className="text-green-500">+{added}</span> / <span className="text-red-500">−{removed}</span> lines · {oldContent.length} → {newContent.length} chars
             </p>
           </div>
+          <div className="flex rounded-md border border-border overflow-hidden">
+            {modes.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setViewMode(m.value)}
+                className={`px-2.5 py-0.5 text-xs transition-colors cursor-pointer ${
+                  viewMode === m.value
+                    ? "bg-primary text-primary-contrast font-medium"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+                data-testid={`diff-preview-mode-${m.value}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
           <button
             onClick={onClose}
             className="px-3 py-1 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -148,11 +204,40 @@ function DiffPreviewModal({
             Close
           </button>
         </div>
-        <div className="flex-1 overflow-auto">
-          {diff.map((line, i) => (
-            <DiffLineRow key={i} line={line} />
-          ))}
-        </div>
+        {split ? (
+          <div className="flex-1 overflow-auto flex">
+            <div className="flex-1 border-r border-border min-w-0">
+              <div className="sticky top-0 px-3 py-1 bg-card border-b border-border text-xs font-medium text-muted-foreground z-10">
+                Before
+              </div>
+              {split.left.map((line, idx) =>
+                line ? (
+                  <DiffLineRow key={idx} line={line} />
+                ) : (
+                  <div key={idx} className="px-3 py-0.5 font-mono text-xs">&nbsp;</div>
+                ),
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="sticky top-0 px-3 py-1 bg-card border-b border-border text-xs font-medium text-muted-foreground z-10">
+                After
+              </div>
+              {split.right.map((line, idx) =>
+                line ? (
+                  <DiffLineRow key={idx} line={line} />
+                ) : (
+                  <div key={idx} className="px-3 py-0.5 font-mono text-xs">&nbsp;</div>
+                ),
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-auto">
+            {diff.map((line, i) => (
+              <DiffLineRow key={i} line={line} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
