@@ -1018,15 +1018,38 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       setIsStreaming(false);
       setToolActivity(null);
       abortRef.current = null;
+      // Clean up trailing empty assistant placeholders left behind
+      // after a confirmation card (the streaming handler pre-allocates
+      // one in case more text follows; if it doesn't, the empty bubble
+      // renders as a stray card). Only add the "something went wrong"
+      // fallback when the stream produced literally nothing at all —
+      // i.e. after popping empties the last message is the user's
+      // question.
       setMessages((prev) => {
         const updated = [...prev];
+        while (updated.length > 0) {
+          const last = updated[updated.length - 1];
+          if (
+            last.role === "assistant" &&
+            !last.content &&
+            !last.confirmation &&
+            !last.noteCards?.length &&
+            !last.meetingData &&
+            !last.sources?.length &&
+            !last.failed
+          ) {
+            updated.pop();
+          } else {
+            break;
+          }
+        }
         const last = updated[updated.length - 1];
-        if (last?.role === "assistant" && !last.content) {
-          updated[updated.length - 1] = {
-            ...last,
+        if (last?.role === "user") {
+          updated.push({
+            role: "assistant",
             content: "Something went wrong. Please try again.",
             failed: true,
-          };
+          });
         }
         return updated;
       });

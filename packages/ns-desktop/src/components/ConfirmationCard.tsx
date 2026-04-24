@@ -4,7 +4,9 @@
 // for rewrites), plus Apply / Discard buttons. Apply re-invokes the
 // same tool via POST /ai/tools/confirm (server-side: autoApprove=true).
 
+import { useState, useEffect } from "react";
 import type { ConfirmationPreview, PendingConfirmation } from "../api/ai.ts";
+import { diffLines, type DiffLine } from "../lib/diff.ts";
 
 export interface ConfirmationCardProps {
   /** One or more pending actions. Length > 1 is a Phase C.4 batch
@@ -74,6 +76,83 @@ function UpdateDiffPreview({ preview }: { preview: Extract<ConfirmationPreview, 
         <p className="text-[11px] font-mono whitespace-pre-wrap break-words text-foreground/80">
           {newSnippet}{preview.newContent.length > 200 ? "…" : ""}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/** Phase E-followup: full-diff modal opened from the "Preview" button
+ *  on an update_note_content card. Reuses diffLines() from lib/diff.ts
+ *  (same engine VersionHistoryPanel uses for its diff view). Kept
+ *  inline here because it's tightly coupled to the card UX. */
+function DiffLineRow({ line }: { line: DiffLine }) {
+  const bgClass =
+    line.type === "added" ? "bg-green-900/30" :
+    line.type === "removed" ? "bg-red-900/30" : "";
+  const textClass =
+    line.type === "added" ? "text-green-400" :
+    line.type === "removed" ? "text-red-400" : "text-muted-foreground";
+  const prefix = line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
+  return (
+    <div className={`px-3 py-0.5 font-mono text-xs whitespace-pre-wrap ${bgClass}`}>
+      <span className={textClass}>{prefix} {line.text}</span>
+    </div>
+  );
+}
+
+function DiffPreviewModal({
+  title,
+  oldContent,
+  newContent,
+  onClose,
+}: {
+  title: string;
+  oldContent: string;
+  newContent: string;
+  onClose: () => void;
+}) {
+  const diff = diffLines(oldContent, newContent);
+  const added = diff.filter((l) => l.type === "added").length;
+  const removed = diff.filter((l) => l.type === "removed").length;
+
+  // Escape-to-close.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-fade-in"
+      onClick={onClose}
+      data-testid="diff-preview-modal"
+    >
+      <div
+        className="w-[90vw] max-w-5xl h-[85vh] flex flex-col bg-card border border-border rounded-lg shadow-xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border shrink-0">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">Preview rewrite — {title}</p>
+            <p className="text-[11px] text-muted-foreground">
+              <span className="text-green-500">+{added}</span> / <span className="text-red-500">−{removed}</span> lines · {oldContent.length} → {newContent.length} chars
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="px-3 py-1 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto">
+          {diff.map((line, i) => (
+            <DiffLineRow key={i} line={line} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -150,6 +229,7 @@ function batchItemSummary(preview: ConfirmationPreview): string {
 export function ConfirmationCard({ pendings, status, resultText, errorMessage, itemResults, onApply, onDiscard }: ConfirmationCardProps) {
   const isBatch = pendings.length > 1;
   const first = pendings[0];
+  const [showDiffPreview, setShowDiffPreview] = useState(false);
   if (!first) return null;
   if (status === "applied") {
     // Partial-success case: some items failed but at least one succeeded.
@@ -225,6 +305,19 @@ export function ConfirmationCard({ pendings, status, resultText, errorMessage, i
         </div>
       </div>
       <div className="flex gap-1.5 mt-2">
+        {/* Preview button — only meaningful for update_note_content.
+            Opens a full-diff modal so the user can see more than the
+            200-char old/new snippets in the card. Not rendered for
+            batches since each item would need its own modal. */}
+        {!isBatch && first.preview.type === "update_note_content" && (
+          <button
+            onClick={() => setShowDiffPreview(true)}
+            disabled={applying}
+            className="px-2.5 py-1 rounded-md border border-border hover:border-primary/50 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            Preview
+          </button>
+        )}
         <button
           onClick={onApply}
           disabled={applying}
@@ -240,6 +333,14 @@ export function ConfirmationCard({ pendings, status, resultText, errorMessage, i
           Discard
         </button>
       </div>
+      {showDiffPreview && first.preview.type === "update_note_content" && (
+        <DiffPreviewModal
+          title={first.preview.title}
+          oldContent={first.preview.oldContent}
+          newContent={first.preview.newContent}
+          onClose={() => setShowDiffPreview(false)}
+        />
+      )}
     </div>
   );
 }
