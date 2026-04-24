@@ -137,7 +137,11 @@ function linkifyCitations(
     .replace(CITE_RE, (_full, title: string) => {
       const idx = titleToIdx.get(title);
       if (!idx) return "";
-      return ` [${idx}](cite:${encodeURIComponent(title)})`;
+      // No leading space — Claude sometimes wraps citations in bold
+      // (`**[Title]**`), and a leading space in the replacement
+      // breaks markdown's `**x**` adjacency rule, causing literal
+      // asterisks to render around the citation number.
+      return `[${idx}](cite:${encodeURIComponent(title)})`;
     })
     .replace(/ {2,}/g, " ")
     .trim();
