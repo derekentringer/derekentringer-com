@@ -402,25 +402,24 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   // before the empty-placeholder cleanup fix can contain stray empty
   // bubbles next to completed confirmation cards — this strips them on
   // load so the restored UI matches the post-fix state.
-  function stripTrailingEmpties(list: Message[]): Message[] {
-    const out = [...list];
-    while (out.length > 0) {
-      const last = out[out.length - 1];
-      if (
-        last.role === "assistant" &&
-        !last.content &&
-        !last.confirmation &&
-        !last.noteCards?.length &&
-        !last.meetingData &&
-        !last.sources?.length &&
-        !last.failed
-      ) {
-        out.pop();
-      } else {
-        break;
-      }
-    }
-    return out;
+  //
+  // Empties can sit ANYWHERE in the array, not just trailing: when
+  // Claude emits a tool_use (delete, rename, etc.) without any
+  // preceding text, the placeholder that was allocated for that
+  // text before streaming started never gets filled — but then a
+  // confirmation card gets appended AFTER it, leaving an empty
+  // bubble between the user question and the card.
+  function stripEmptyPlaceholders(list: Message[]): Message[] {
+    return list.filter((m) => {
+      if (m.role !== "assistant") return true;
+      if (m.content) return true;
+      if (m.confirmation) return true;
+      if (m.noteCards?.length) return true;
+      if (m.meetingData) return true;
+      if (m.sources?.length) return true;
+      if (m.failed) return true;
+      return false;
+    });
   }
 
   // Load chat history from server on mount
@@ -429,7 +428,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     historyLoadedRef.current = true;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = stripTrailingEmpties(rows.map(rowToMessage));
+        const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
         setMessages(repaintStaleProcessingCards(loaded));
       }
     }).catch(() => {});
@@ -444,7 +443,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (isSavingRef.current) return;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = repaintStaleProcessingCards(stripTrailingEmpties(rows.map(rowToMessage)));
+        const loaded = repaintStaleProcessingCards(stripEmptyPlaceholders(rows.map(rowToMessage)));
         setMessages(loaded);
         lastSavedRef.current = JSON.stringify(loaded);
       } else {
@@ -1053,31 +1052,18 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       setIsStreaming(false);
       setToolActivity(null);
       abortRef.current = null;
-      // Clean up trailing empty assistant placeholders left behind
-      // after a confirmation card (the streaming handler pre-allocates
-      // one in case more text follows; if it doesn't, the empty bubble
-      // renders as a stray card). Only add the "something went wrong"
-      // fallback when the stream produced literally nothing at all —
-      // i.e. after popping empties the last message is the user's
-      // question.
+      // Clean up empty assistant placeholders anywhere in the list.
+      // The streaming handler pre-allocates placeholders in case
+      // subsequent text follows; when Claude goes straight to a tool
+      // call (e.g. delete_note) with no preceding prose, those
+      // placeholders stay empty and render as stray bubbles in the
+      // chat. After the stream ends, any placeholder with no useful
+      // content is noise — filter all of them, not just trailing.
+      // If, after filtering, the last message is the user's question
+      // (the stream produced literally nothing), surface the real
+      // "something went wrong" fallback.
       setMessages((prev) => {
-        const updated = [...prev];
-        while (updated.length > 0) {
-          const last = updated[updated.length - 1];
-          if (
-            last.role === "assistant" &&
-            !last.content &&
-            !last.confirmation &&
-            !last.noteCards?.length &&
-            !last.meetingData &&
-            !last.sources?.length &&
-            !last.failed
-          ) {
-            updated.pop();
-          } else {
-            break;
-          }
-        }
+        const updated = stripEmptyPlaceholders(prev);
         const last = updated[updated.length - 1];
         if (last?.role === "user") {
           updated.push({
