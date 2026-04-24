@@ -3382,6 +3382,17 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   onAudioDiscard={handleAudioDiscard}
                   autoApprove={settings.autoApprove}
                   focusNonce={aiFocusNonce}
+                  onNoteContentRewritten={({ noteId, newContent }) => {
+                    // Assistant just rewrote a note via update_note_content.
+                    // If it's the one currently open in the editor, push
+                    // the new content in so the UI matches what's now
+                    // committed server-side rather than sitting stale.
+                    if (selectedId === noteId) {
+                      setContent(newContent);
+                    }
+                    // Refresh the sidebar blurb so the preview updates.
+                    loadNotesRef.current();
+                  }}
                 />
               ) : drawerTab === "history" && selectedId ? (
                 <VersionHistoryPanel
