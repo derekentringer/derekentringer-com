@@ -899,9 +899,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (!cmd) return false;
     setInput("");
     setAutocompleteItems([]);
-    // Keep focus so the user can immediately type another command
-    // without clicking back into the input.
-    inputRef.current?.focus();
+    // Keep focus so the user can immediately type another command.
+    // See handleAsk below for why this is deferred past the render.
+    requestAnimationFrame(() => inputRef.current?.focus());
     setMessages((prev) => [...prev, { role: "user", content: `${cmd.command.usage.split(" ")[0]} ${cmd.args}`.trim() }]);
     try {
       const result: CommandResult = await cmd.command.execute(cmd.args, commandCtx);
@@ -932,11 +932,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
     setInput("");
     setAutocompleteItems([]);
-    // Keep focus so the user can type the next message without
-    // reaching for the mouse. Matches the ChatGPT / Claude.app
-    // default where Enter submits and focus stays put.
-    inputRef.current?.focus();
     setMessages((prev) => [...prev, { role: "user", content: question }]);
+    // Keep focus on the input so the user can type the next message
+    // without reaching for the mouse. Deferred past the current
+    // render cycle because `performAsk` immediately flips
+    // `isStreaming` true, which re-renders the Ask button as Stop —
+    // a synchronous focus() call here gets clobbered by that render.
+    requestAnimationFrame(() => inputRef.current?.focus());
     await performAsk(question, history);
   }
 
