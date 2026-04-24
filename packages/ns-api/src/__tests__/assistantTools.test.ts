@@ -335,6 +335,47 @@ describe("assistantTools — Phase C confirmation gate", () => {
     expect(mockUpdateNote).not.toHaveBeenCalled();
   });
 
+  // Phase E follow-up: data-loss guard. Without these checks, Claude
+  // calling update_note_content without a content field caused the
+  // executor to write String(undefined) === "undefined" into the note,
+  // silently destroying the user's data.
+  it("update_note_content refuses to render a confirmation card when content is missing", async () => {
+    mockListNotes.mockResolvedValue({
+      notes: [makeNote({ id: "n1", title: "Essay", content: "real body" })],
+      total: 1,
+    });
+
+    const result = await executeTool(
+      "update_note_content",
+      { noteTitle: "Essay" }, // no content field
+      "u1",
+    );
+
+    expect(result.needsConfirmation).toBeUndefined();
+    expect(result.text).toMatch(/requires.*content/i);
+    expect(result.text).toMatch(/not a patch/i);
+    expect(mockUpdateNote).not.toHaveBeenCalled();
+  });
+
+  it("update_note_content refuses null/empty/non-string content variants", async () => {
+    mockListNotes.mockResolvedValue({
+      notes: [makeNote({ id: "n1", title: "Essay", content: "real body" })],
+      total: 1,
+    });
+
+    for (const badInput of [
+      { noteTitle: "Essay", content: null },
+      { noteTitle: "Essay", content: "" },
+      { noteTitle: "Essay", content: 42 },
+      { noteTitle: "Essay", content: { foo: "bar" } },
+    ]) {
+      const result = await executeTool("update_note_content", badInput, "u1");
+      expect(result.needsConfirmation).toBeUndefined();
+      expect(result.text).toMatch(/requires.*content/i);
+    }
+    expect(mockUpdateNote).not.toHaveBeenCalled();
+  });
+
   it("delete_folder preview includes affectedCount from the folder", async () => {
     mockListFolders.mockResolvedValue([
       { id: "f1", name: "Work", parentId: null, count: 5, children: [] },

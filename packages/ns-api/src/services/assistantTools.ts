@@ -129,12 +129,12 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "update_note_content",
-    description: "Update the content of an existing note. Gated behind a user confirmation card showing a diff (old vs. new content + char delta); the rewrite is only committed if the user clicks Apply. Always provide the COMPLETE updated content, not just the changed parts. The previous version is saved in version history.",
+    description: "REWRITE an existing note's full content. This is NOT a patch/diff/edit tool — you must always send the COMPLETE new note body in the `content` field. Workflow: (1) call get_note_content first to read the current text, (2) compute the full new text in your head, (3) call update_note_content with the entire new body. Calling this tool without a valid `content` string is an error and will be refused. Gated behind a user confirmation card; the rewrite only commits if the user clicks Apply. The previous version is saved in version history.",
     input_schema: {
       type: "object" as const,
       properties: {
         noteTitle: { type: "string", description: "Title of the note to update" },
-        content: { type: "string", description: "The full updated markdown content for the note" },
+        content: { type: "string", description: "The COMPLETE new markdown body for the note. Required. Must be a non-empty string. Never omit this — sending only noteTitle is an error." },
       },
       required: ["noteTitle", "content"],
     },
@@ -716,9 +716,17 @@ async function executeCreateNote(
 }
 
 async function executeUpdateNoteContent(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  // Reject malformed calls loudly. Without this guard, Claude calling
+  // update_note_content with a missing/null content field would write
+  // String(undefined) === "undefined" into the note, silently destroying
+  // the user's data. The schema marks content as required, but Claude
+  // doesn't always honour that — defend at the executor.
+  if (typeof input.content !== "string" || input.content.length === 0) {
+    return { text: "Error: update_note_content requires a non-empty `content` string with the COMPLETE new note body. This tool replaces the entire note — it is not a patch/diff tool. Call get_note_content first if you need to read the current text, then call update_note_content again with the full new body." };
+  }
   const note = await findNoteByTitle(userId, String(input.noteTitle));
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
-  await updateNote(userId, note.id, { content: String(input.content) });
+  await updateNote(userId, note.id, { content: input.content });
   return { text: `Updated content of "${note.title}". The previous version is saved in version history.`, noteCards: [{ id: note.id, title: note.title }] };
 }
 
@@ -875,10 +883,17 @@ async function buildPendingConfirmation(
     }
 
     case "update_note_content": {
+      // Skip the confirmation card entirely for malformed calls — the
+      // executor will return an error to Claude so it can retry. A card
+      // showing "rewrite to empty" with no real new content is a footgun
+      // (looks subtle but represents total data loss on Apply).
+      if (typeof input.content !== "string" || input.content.length === 0) {
+        return null;
+      }
       const note = await findNoteByTitle(userId, String(input.noteTitle));
       if (!note) return null;
       const oldContent = note.content ?? "";
-      const newContent = String(input.content ?? "");
+      const newContent = input.content;
       return {
         id,
         toolName,
