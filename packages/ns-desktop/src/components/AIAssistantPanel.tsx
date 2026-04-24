@@ -384,19 +384,52 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     });
   }
 
+  // Hydrate a server row back into an in-memory Message. Phase E
+  // follow-up: confirmation state is persisted for terminal statuses
+  // (applied/discarded/failed) so those cards survive a refresh.
+  function rowToMessage(r: ChatMessageData): Message {
+    return {
+      role: r.role as Message["role"],
+      content: r.content,
+      sources: (r.sources as QASource[] | undefined) ?? undefined,
+      meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+      noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
+      confirmation: (r.confirmation as ConfirmationState | undefined) ?? undefined,
+    };
+  }
+
+  // Pop trailing empty assistant placeholders on hydration. Chats saved
+  // before the empty-placeholder cleanup fix can contain stray empty
+  // bubbles next to completed confirmation cards — this strips them on
+  // load so the restored UI matches the post-fix state.
+  function stripTrailingEmpties(list: Message[]): Message[] {
+    const out = [...list];
+    while (out.length > 0) {
+      const last = out[out.length - 1];
+      if (
+        last.role === "assistant" &&
+        !last.content &&
+        !last.confirmation &&
+        !last.noteCards?.length &&
+        !last.meetingData &&
+        !last.sources?.length &&
+        !last.failed
+      ) {
+        out.pop();
+      } else {
+        break;
+      }
+    }
+    return out;
+  }
+
   // Load chat history from server on mount
   useEffect(() => {
     if (historyLoadedRef.current) return;
     historyLoadedRef.current = true;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = rows.map((r: ChatMessageData) => ({
-          role: r.role as Message["role"],
-          content: r.content,
-          sources: (r.sources as QASource[] | undefined) ?? undefined,
-          meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
-          noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
-        }));
+        const loaded = stripTrailingEmpties(rows.map(rowToMessage));
         setMessages(repaintStaleProcessingCards(loaded));
       }
     }).catch(() => {});
@@ -411,13 +444,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (isSavingRef.current) return;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = repaintStaleProcessingCards(rows.map((r: ChatMessageData) => ({
-          role: r.role as Message["role"],
-          content: r.content,
-          sources: (r.sources as QASource[] | undefined) ?? undefined,
-          meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
-          noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
-        })));
+        const loaded = repaintStaleProcessingCards(stripTrailingEmpties(rows.map(rowToMessage)));
         setMessages(loaded);
         lastSavedRef.current = JSON.stringify(loaded);
       } else {
@@ -454,6 +481,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           sources: m.sources,
           meetingData: m.meetingData,
           noteCards: m.noteCards,
+          // Phase E follow-up: only persist confirmation state once the
+          // action has resolved. In-flight pending/applying cards are
+          // dropped on save — if the user refreshes mid-action, the
+          // card disappears and they can re-ask.
+          confirmation:
+            m.confirmation && (m.confirmation.status === "applied" || m.confirmation.status === "discarded" || m.confirmation.status === "failed")
+              ? m.confirmation
+              : undefined,
         })));
       }
     }).catch(() => {}).finally(() => {

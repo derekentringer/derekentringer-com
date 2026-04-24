@@ -929,7 +929,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   // POST /ai/chat-history — append chat messages
   fastify.post<{
     Body: {
-      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown }[];
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[];
     };
   }>(
     "/chat-history",
@@ -954,6 +954,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                   sources: {},
                   meetingData: {},
                   noteCards: {},
+                  confirmation: {},
                 },
               },
             },
