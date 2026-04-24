@@ -135,7 +135,6 @@ const frontmatterFoldPlugin = ViewPlugin.fromClass(
  */
 export function hideFrontmatter(): Extension[] {
   return [
-    frontmatterLineCount,
     frontmatterFoldPlugin,
     frontmatterTheme,
   ];
@@ -147,7 +146,15 @@ export function hideFrontmatter(): Extension[] {
  * frontmatter lines get no marker. Only useful when
  * hideFrontmatter() is also active — otherwise use the stock
  * `lineNumbers()` extension from @codemirror/view.
+ *
+ * Bundles the `frontmatterLineCount` StateField its gutter reads
+ * from, so the extension is self-sufficient and can be toggled on
+ * / off independently of `hideFrontmatter()`. Without this the
+ * gutter would silently fail to render when its StateField
+ * dependency wasn't registered (e.g. during the brief window
+ * between two reconfigure dispatches when the user toggles the
+ * frontmatter panel mode back and forth).
  */
-export function offsetLineNumbersExt(): Extension {
-  return offsetLineNumbers;
+export function offsetLineNumbersExt(): Extension[] {
+  return [frontmatterLineCount, offsetLineNumbers];
 }
