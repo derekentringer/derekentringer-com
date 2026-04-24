@@ -113,6 +113,23 @@ describe("answerWithTools — tool-call cap (Phase B.3)", () => {
   });
 });
 
+describe("answerWithTools — system prompt", () => {
+  // Regression: without an explicit instruction to wrap referenced
+  // note titles in square brackets, Claude writes plain prose
+  // ("your Meeting Notes") and Phase E.5's inline citation
+  // markers never fire. The system prompt has to teach Claude the
+  // [Exact Title] convention for the UI transform to have
+  // anything to work with.
+  it("system prompt instructs Claude to wrap note titles in [brackets] for citations", async () => {
+    mockCreate.mockResolvedValueOnce({ content: [{ type: "text", text: "ok" }] });
+    await consume(answerWithTools("q", "u1"));
+    const call = mockCreate.mock.calls[0][0];
+    const system = call.system as string;
+    expect(system).toMatch(/\[Exact Note Title\]/);
+    expect(system).toMatch(/inline citation/i);
+  });
+});
+
 describe("answerWithTools — history prepend (Phase A, verified in Phase B branch)", () => {
   it("prepends prior user/assistant turns to the Claude messages array", async () => {
     mockCreate.mockResolvedValueOnce({ content: [{ type: "text", text: "ok" }] });
