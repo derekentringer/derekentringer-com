@@ -1766,27 +1766,30 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                               // preventDefault(), and all citation
                               // hrefs would be literally identical,
                               // which is confusing in dev tools.
+                              // Superscript styling lives directly on
+                              // the <button> — a <sup> wrapper loses
+                              // its font-size scaling because <button>
+                              // resets font-size to the browser
+                              // default, and vertical-align only
+                              // works when applied to the same element
+                              // that has the shrunken font.
                               return (
-                                <sup
-                                  className="ml-0.5"
-                                  style={{ verticalAlign: "super", fontSize: "0.75em", lineHeight: 0 }}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    onSelectNote(source.id);
+                                  }}
+                                  title={title}
+                                  aria-label={`Open note ${title}`}
+                                  data-testid="citation-marker"
+                                  data-cite-title={title}
+                                  className="text-primary hover:underline ml-0.5 px-0.5 font-medium cursor-pointer bg-transparent border-0 p-0"
+                                  style={{ verticalAlign: "super", fontSize: "0.7em", lineHeight: 1 }}
                                 >
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      onSelectNote(source.id);
-                                    }}
-                                    title={title}
-                                    aria-label={`Open note ${title}`}
-                                    data-testid="citation-marker"
-                                    data-cite-title={title}
-                                    className="text-primary hover:underline px-0.5 font-medium cursor-pointer bg-transparent border-0 p-0"
-                                  >
-                                    {children}
-                                  </button>
-                                </sup>
+                                  {children}
+                                </button>
                               );
                             }
                             return <a href={href} {...rest}>{children}</a>;
