@@ -107,10 +107,29 @@ function stripCitations(text: string): string {
  *  citation links of the form `[N](cite:Title)`. Numbering matches the
  *  order of pills rendered below the message (sources filtered by
  *  cited titles). Citations referencing unknown sources are stripped. */
-function linkifyCitations(text: string, sources?: { id: string; title: string }[]): string {
-  if (!sources || sources.length === 0) return stripCitations(text);
+function linkifyCitations(
+  text: string,
+  sources?: { id: string; title: string }[],
+  noteCards?: { id: string; title: string }[],
+): string {
+  // Merge sources (Q&A citations) + noteCards (pills from search /
+  // recent / favorites / etc.). Either is a legitimate target for an
+  // inline citation; before this merge only Q&A `sources` counted, so
+  // a /recent-style response that relies on noteCards fell through to
+  // stripCitations and the user saw all their [Title] brackets silently
+  // vanish. Dedup by title so the same note linked via both paths
+  // gets a single superscript.
+  const pool: { id: string; title: string }[] = [];
+  const seen = new Set<string>();
+  for (const c of [...(sources ?? []), ...(noteCards ?? [])]) {
+    if (c.title && !seen.has(c.title)) {
+      seen.add(c.title);
+      pool.push(c);
+    }
+  }
+  if (pool.length === 0) return stripCitations(text);
   const cited = extractCitations(text);
-  const displayed = sources.filter((s) => cited.includes(s.title));
+  const displayed = pool.filter((s) => cited.includes(s.title));
   if (displayed.length === 0) return stripCitations(text);
   const titleToIdx = new Map<string, number>();
   displayed.forEach((s, i) => titleToIdx.set(s.title, i + 1));
@@ -118,7 +137,11 @@ function linkifyCitations(text: string, sources?: { id: string; title: string }[
     .replace(CITE_RE, (_full, title: string) => {
       const idx = titleToIdx.get(title);
       if (!idx) return "";
-      return ` [${idx}](cite:${encodeURIComponent(title)})`;
+      // No leading space — Claude sometimes wraps citations in bold
+      // (`**[Title]**`), and a leading space in the replacement
+      // breaks markdown's `**x**` adjacency rule, causing literal
+      // asterisks to render around the citation number.
+      return `[${idx}](cite:${encodeURIComponent(title)})`;
     })
     .replace(/ {2,}/g, " ")
     .trim();
@@ -1612,22 +1635,35 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                           a: ({ href, children, ...rest }) => {
                             if (typeof href === "string" && href.startsWith("cite:")) {
                               const title = decodeURIComponent(href.slice(5));
-                              const source = msg.sources?.find((s) => s.title === title);
+                              // Look in both sources and noteCards —
+                              // either is a valid citation target.
+                              const source =
+                                msg.sources?.find((s) => s.title === title) ??
+                                msg.noteCards?.find((c) => c.title === title);
                               if (!source) return <>{children}</>;
+                              // Button, not <a href="#"> — clicking a
+                              // "#" link can navigate / reload in some
+                              // webview contexts even with
+                              // preventDefault(), and all citation
+                              // hrefs would be literally identical,
+                              // which is confusing in dev tools.
                               return (
                                 <sup className="ml-0.5">
-                                  <a
-                                    href="#"
+                                  <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.preventDefault();
+                                      e.stopPropagation();
                                       onSelectNote(source.id);
                                     }}
                                     title={title}
+                                    aria-label={`Open note ${title}`}
                                     data-testid="citation-marker"
-                                    className="text-primary hover:underline px-0.5 text-[10px] font-medium cursor-pointer no-underline"
+                                    data-cite-title={title}
+                                    className="text-primary hover:underline px-0.5 text-[10px] font-medium cursor-pointer bg-transparent border-0 p-0"
                                   >
                                     {children}
-                                  </a>
+                                  </button>
                                 </sup>
                               );
                             }
@@ -1635,7 +1671,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                           },
                         }}
                       >
-                        {linkifyCitations(msg.content, msg.sources)}
+                        {linkifyCitations(msg.content, msg.sources, msg.noteCards)}
                       </ReactMarkdown>
                     </div>
                     {/* Phase E.2: retry button for failed turns. */}
