@@ -575,7 +575,16 @@ export async function* answerWithTools(
     const roundStartMs = Date.now();
     const response = await anthropic.messages.create({
       model: getModel(),
-      max_tokens: 1500,
+      // 1500 was too low — when Claude needs to emit a full
+      // update_note_content tool call (potentially several thousand
+      // characters of JSON-encoded note body), the response was
+      // truncated mid-tool_use. Truncated tool_use blocks parse with
+      // missing fields, which is what caused the original "undefined"
+      // data-loss bug AND the "Claude loops without ever finishing"
+      // bug. 8192 is the safe default for Claude sonnet-4-6 and gives
+      // ample room for large rewrites; the per-question budget
+      // (MAX_TOKENS_PER_QUESTION = 100_000) still bounds total cost.
+      max_tokens: 8192,
       temperature: 0.3,
       system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. When referencing notes, use their exact titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
 
@@ -614,6 +623,34 @@ ${transcript}` : ""}`,
       cumulativeOutputTokens,
       durationMs,
     });
+
+    // If Claude hit the per-round output ceiling, the last tool_use
+    // block in the response is likely truncated (malformed JSON =
+    // missing required fields). Surface this as a graceful failure
+    // rather than letting the request loop on bad calls until
+    // MAX_ROUNDS exhausts. Hitting max_tokens during normal text
+    // streaming is fine — Claude just gets cut off mid-sentence and
+    // the user sees a partial answer; we only abort when it happened
+    // alongside an attempted tool call.
+    if (response.stop_reason === "max_tokens") {
+      const truncatedToolUse = response.content.some((b) => b.type === "tool_use");
+      logger?.warn?.({
+        event: "claude_response_truncated",
+        operation: "answer_with_tools",
+        userId,
+        round,
+        stop_reason: response.stop_reason,
+        had_tool_use: truncatedToolUse,
+      });
+      if (truncatedToolUse) {
+        yield {
+          type: "text",
+          text: "\n\n_(My response was too long to fit in one turn — the tool call was cut off. Try asking me to do this in smaller pieces, or ask for a shorter answer.)_",
+        };
+        yield { type: "done" };
+        return;
+      }
+    }
 
     // Collect all content blocks
     const toolUseBlocks: Anthropic.ContentBlockParam[] = [];
