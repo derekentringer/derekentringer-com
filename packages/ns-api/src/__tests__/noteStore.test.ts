@@ -446,6 +446,70 @@ describe("noteStore", () => {
       expect(call.data.tags).toEqual(["x"]);
       expect(call.data.content).toBe("---\ntitle: Derived\ntags:\n  - x\n---\nbody");
     });
+
+    // Regression: AI update_note_content rewrites trust Claude's new
+    // content verbatim. If Claude's frontmatter drops the title (it
+    // often does because the prompt doesn't remind it to preserve
+    // every key), the embedded title vanishes while the DB title
+    // column stays intact — leaving the two inconsistent. Preserve
+    // missing fields from the current DB row so the stored content
+    // stays self-describing.
+    it("fills in missing frontmatter fields from DB when content-only update drops them", async () => {
+      const row = makeMockNoteRow({ title: "Keep Me" });
+      mockPrisma.note.findUnique.mockResolvedValue({
+        title: "Keep Me",
+        tags: ["old"],
+        summary: null,
+        favorite: false,
+      });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        // Claude-style rewrite: frontmatter has tags + description but no title
+        content: "---\ntags:\n  - fresh\ndescription: New summary\n---\nbody here",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      // title was missing in new content → pulled from DB and injected
+      expect(call.data.content).toContain("title: Keep Me");
+      // explicit tags in new content win over DB tags
+      expect(call.data.content).toContain("- fresh");
+      expect(call.data.content).not.toContain("- old");
+      // cache columns reflect the final merged state
+      expect(call.data.title).toBe("Keep Me");
+      expect(call.data.tags).toEqual(["fresh"]);
+      expect(call.data.summary).toBe("New summary");
+    });
+
+    it("content-only update with no frontmatter at all still preserves DB metadata in new frontmatter", async () => {
+      const row = makeMockNoteRow({ title: "Preserved" });
+      mockPrisma.note.findUnique.mockResolvedValue({
+        title: "Preserved",
+        tags: [],
+        summary: null,
+        favorite: false,
+      });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        content: "plain body with no frontmatter",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      expect(call.data.content).toContain("title: Preserved");
+      expect(call.data.title).toBe("Preserved");
+    });
+
+    it("does not fetch DB when new content's frontmatter already has every known field", async () => {
+      const row = makeMockNoteRow();
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        content: "---\ntitle: Full\ntags:\n  - a\ndescription: done\nfavorite: true\n---\nbody",
+      });
+
+      expect(mockPrisma.note.findUnique).not.toHaveBeenCalled();
+    });
   });
 
   describe("softDeleteNote", () => {
