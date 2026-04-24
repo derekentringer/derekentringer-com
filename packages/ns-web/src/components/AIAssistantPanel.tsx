@@ -853,8 +853,16 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     saveChat: async (titleArg) => {
       try {
         const current = messagesRef.current;
+        // Anything worth saving: prose content, clickable noteCards,
+        // or Q&A sources. Previously only prose counted, so a chat
+        // composed entirely of /recent or search results refused to
+        // save.
         const hasContent = current.some(
-          (m) => (m.role === "user" || m.role === "assistant") && m.content.trim().length > 0,
+          (m) =>
+            (m.role === "user" || m.role === "assistant") &&
+            (m.content.trim().length > 0 ||
+              (m.noteCards?.length ?? 0) > 0 ||
+              (m.sources?.length ?? 0) > 0),
         );
         if (!hasContent) return null;
         const title = titleArg?.trim() || defaultChatTitle();

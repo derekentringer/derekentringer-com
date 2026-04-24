@@ -88,6 +88,79 @@ describe("chatExport — serializeChatToMarkdown", () => {
     expect(md.endsWith("\n")).toBe(true);
     expect(md.endsWith("\n\n")).toBe(false);
   });
+
+  // Regression: `/saveChat` previously only scanned prose for
+  // `[Title]` brackets and lost the clickable note pills the chat
+  // UI shows (attached as noteCards / sources on assistant turns).
+  // The saved note came out devoid of the references the user was
+  // looking at.
+  it("serializes assistant noteCards as a Referenced notes list of wiki-links", () => {
+    const md = serializeChatToMarkdown(
+      [
+        { role: "user", content: "find meeting notes" },
+        {
+          role: "assistant",
+          content: "Here are a few recent meetings:",
+          noteCards: [
+            { id: "n1", title: "Daily Stand-up Meeting" },
+            { id: "n2", title: "Brief Meeting Conclusion" },
+          ],
+        },
+      ],
+      { title: "T" },
+    );
+    expect(md).toContain("**Referenced notes:**");
+    expect(md).toContain("- [[Daily Stand-up Meeting]]");
+    expect(md).toContain("- [[Brief Meeting Conclusion]]");
+  });
+
+  it("serializes Q&A sources as wiki-links", () => {
+    const md = serializeChatToMarkdown(
+      [
+        { role: "user", content: "what notes about X" },
+        {
+          role: "assistant",
+          content: "Based on your notes, X is …",
+          sources: [
+            { id: "n1", title: "X Reference Note" },
+            { id: "n2", title: "Related X Follow-up" },
+          ],
+        },
+      ],
+      { title: "T" },
+    );
+    expect(md).toContain("- [[X Reference Note]]");
+    expect(md).toContain("- [[Related X Follow-up]]");
+  });
+
+  it("dedupes when the same title appears in both noteCards and sources", () => {
+    const md = serializeChatToMarkdown(
+      [
+        {
+          role: "assistant",
+          content: "about [[Foo]]",
+          noteCards: [{ id: "n1", title: "Foo Note" }],
+          sources: [{ id: "n1", title: "Foo Note" }],
+        },
+      ],
+      { title: "T" },
+    );
+    const matches = md.match(/- \[\[Foo Note\]\]/g) ?? [];
+    expect(matches.length).toBe(1);
+  });
+
+  it("keeps an assistant turn with only noteCards (no prose content)", () => {
+    const md = serializeChatToMarkdown(
+      [
+        // A /recent command returns a turn with a short label and
+        // the real value is in noteCards — used to be skipped.
+        { role: "assistant", content: "", noteCards: [{ id: "n1", title: "Weekly Notes" }] },
+      ],
+      { title: "T" },
+    );
+    expect(md).toContain("## Assistant");
+    expect(md).toContain("- [[Weekly Notes]]");
+  });
 });
 
 describe("chatExport — defaultChatTitle", () => {
