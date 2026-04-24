@@ -899,6 +899,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (!cmd) return false;
     setInput("");
     setAutocompleteItems([]);
+    // Keep focus so the user can immediately type another command
+    // without clicking back into the input.
+    inputRef.current?.focus();
     setMessages((prev) => [...prev, { role: "user", content: `${cmd.command.usage.split(" ")[0]} ${cmd.args}`.trim() }]);
     try {
       const result: CommandResult = await cmd.command.execute(cmd.args, commandCtx);
@@ -929,6 +932,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
     setInput("");
     setAutocompleteItems([]);
+    // Keep focus so the user can type the next message without
+    // reaching for the mouse. Matches the ChatGPT / Claude.app
+    // default where Enter submits and focus stays put.
+    inputRef.current?.focus();
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     await performAsk(question, history);
   }
