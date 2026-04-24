@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, replaceChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
@@ -1746,6 +1746,17 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         rehypePlugins={[rehypeHighlight]}
+                        // react-markdown's default urlTransform strips
+                        // any scheme not in its safe-protocol allowlist
+                        // (http/https/mailto/xmpp/ircs). `cite:` is our
+                        // internal scheme and was being wiped to an
+                        // empty href, which collapsed the custom <a>
+                        // renderer into a plain underlined anchor.
+                        // Preserve `cite:` URLs and fall back to the
+                        // default behavior for everything else.
+                        urlTransform={(url) =>
+                          url.startsWith("cite:") ? url : defaultUrlTransform(url)
+                        }
                         components={{
                           pre: CodeBlock,
                           // Phase E.5: render `cite:` URLs as clickable
