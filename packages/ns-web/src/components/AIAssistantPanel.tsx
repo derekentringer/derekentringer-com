@@ -411,9 +411,14 @@ interface AIAssistantPanelProps {
    *  by the Cmd+J keyboard shortcut to re-focus the input even when
    *  the drawer is already open on the assistant tab). */
   focusNonce?: number;
+  /** Fires after the user applies an `update_note_content`
+   *  confirmation and the server responded OK. The parent wires this
+   *  so the open editor reloads the new content instead of sitting on
+   *  its stale in-memory copy. */
+  onNoteContentRewritten?: (opts: { noteId: string; newContent: string }) => void;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove, focusNonce }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove, focusNonce, onNoteContentRewritten }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -1187,6 +1192,21 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       try {
         const result = await confirmTool(pending.toolName, pending.toolInput);
         itemResults.push({ id: pending.id, ok: true, text: result.text });
+        // Notify the parent that a note's content was rewritten so
+        // the open editor can reload. The confirm response's
+        // noteCards carries the authoritative note id.
+        if (
+          pending.toolName === "update_note_content" &&
+          pending.preview.type === "update_note_content"
+        ) {
+          const noteId = result.noteCards?.[0]?.id;
+          if (noteId) {
+            onNoteContentRewritten?.({
+              noteId,
+              newContent: pending.preview.newContent,
+            });
+          }
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         itemResults.push({ id: pending.id, ok: false, error: message });
