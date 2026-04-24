@@ -817,8 +817,12 @@ async function executeRestoreNote(input: Record<string, unknown>, userId: string
 async function executeRenameFolder(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const folder = await findFolderByName(userId, String(input.oldName));
   if (!folder) return { text: `No folder found with name "${input.oldName}".` };
-  await renameFolder(userId, folder.id, String(input.newName));
-  return { text: `Renamed folder "${input.oldName}" to "${input.newName}".` };
+  // renameFolder's second arg is the folder's *name*, not its id. Pass
+  // the resolved name — not `input.oldName` — in case Claude supplied
+  // a case-variant that findFolderByName matched via its
+  // case-insensitive lookup but the SQL WHERE clause would miss.
+  await renameFolder(userId, folder.name, String(input.newName));
+  return { text: `Renamed folder "${folder.name}" to "${input.newName}".` };
 }
 
 async function executeRenameTag(input: Record<string, unknown>, userId: string): Promise<ToolResult> {

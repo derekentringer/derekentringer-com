@@ -391,6 +391,50 @@ describe("assistantTools — Phase C confirmation gate", () => {
     expect(mockDeleteFolderById).not.toHaveBeenCalled();
   });
 
+  // Regression: executeRenameFolder was passing folder.id as the
+  // second arg to renameFolder(), but that function expects the
+  // folder's NAME. The UUID silently matched no rows, so Apply
+  // visually succeeded but nothing was renamed.
+  it("rename_folder passes the resolved folder NAME (not id) to the store", async () => {
+    mockListFolders.mockResolvedValue([
+      { id: "f1", name: "managed", parentId: null, count: 3, children: [] },
+    ]);
+    mockRenameFolder.mockResolvedValue(2);
+
+    const result = await executeTool(
+      "rename_folder",
+      { oldName: "managed", newName: "managed-new" },
+      "u1",
+      { autoApprove: true },
+    );
+
+    expect(result.needsConfirmation).toBeUndefined();
+    expect(mockRenameFolder).toHaveBeenCalledTimes(1);
+    const [userIdArg, oldNameArg, newNameArg] = mockRenameFolder.mock.calls[0];
+    expect(userIdArg).toBe("u1");
+    expect(oldNameArg).toBe("managed"); // ← the name, NOT "f1"
+    expect(newNameArg).toBe("managed-new");
+  });
+
+  it("rename_folder resolves case-insensitive oldName to the exact stored name", async () => {
+    mockListFolders.mockResolvedValue([
+      { id: "f1", name: "Managed", parentId: null, count: 0, children: [] },
+    ]);
+    mockRenameFolder.mockResolvedValue(0);
+
+    await executeTool(
+      "rename_folder",
+      { oldName: "managed", newName: "Managed2" }, // lowercase input
+      "u1",
+      { autoApprove: true },
+    );
+
+    // Store receives the canonical "Managed" (from the folder row),
+    // not Claude's lowercase input, so the SQL WHERE match finds
+    // legacy notes with the folder string column set.
+    expect(mockRenameFolder).toHaveBeenCalledWith("u1", "Managed", "Managed2");
+  });
+
   it("rename_tag preview includes the affected note count from listTags", async () => {
     mockListTags.mockResolvedValue([
       { name: "draft", count: 7 },
