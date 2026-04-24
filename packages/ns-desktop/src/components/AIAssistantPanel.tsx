@@ -346,6 +346,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [toolActivity, setToolActivity] = useState<string | null>(null);
   const [autocompleteItems, setAutocompleteItems] = useState<ChatCommand[]>([]);
   const [autocompleteIdx, setAutocompleteIdx] = useState(0);
+  // Shell-style prompt history. null = live draft (what the user
+  // was typing); 0 = most recent prior prompt; increasing index =
+  // older. Cap at 10 entries matches the casual-use pattern without
+  // letting a long chat turn into a runaway-scroll hunt.
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const historyDraftRef = useRef<string>("");
   const inputWrapRef = useRef<HTMLDivElement>(null);
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
@@ -899,6 +905,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (!cmd) return false;
     setInput("");
     setAutocompleteItems([]);
+    setHistoryIndex(null);
     // Keep focus so the user can immediately type another command.
     // See handleAsk below for why this is deferred past the render.
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -932,6 +939,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
     setInput("");
     setAutocompleteItems([]);
+    setHistoryIndex(null);
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     // Keep focus on the input so the user can type the next message
     // without reaching for the mouse. Deferred past the current
@@ -1169,6 +1177,43 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     clearServerChatHistory().catch(() => {});
   }
 
+  // Up / Down arrow cycling through prior user prompts. Up steps
+  // further into the past; Down returns toward the live draft
+  // (which is preserved the moment the user starts navigating, so
+  // a half-typed message isn't lost).
+  function navigateHistory(direction: "up" | "down") {
+    const prompts = messages
+      .filter((m) => m.role === "user" && m.content.trim().length > 0)
+      .map((m) => m.content)
+      .slice(-10)
+      .reverse(); // index 0 = most recent
+    if (prompts.length === 0) return;
+
+    if (direction === "up") {
+      setHistoryIndex((idx) => {
+        if (idx === null) {
+          historyDraftRef.current = input;
+          setInput(prompts[0]);
+          return 0;
+        }
+        const next = Math.min(idx + 1, prompts.length - 1);
+        setInput(prompts[next]);
+        return next;
+      });
+    } else {
+      setHistoryIndex((idx) => {
+        if (idx === null) return null;
+        if (idx === 0) {
+          setInput(historyDraftRef.current);
+          return null;
+        }
+        const next = idx - 1;
+        setInput(prompts[next]);
+        return next;
+      });
+    }
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (autocompleteItems.length > 0) {
       if (e.key === "ArrowDown") {
@@ -1195,6 +1240,18 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         return;
       }
     }
+    // Prompt history — only when the autocomplete dropdown is closed
+    // (which owns Up/Down for its own navigation while open).
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      navigateHistory("up");
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      navigateHistory("down");
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleAsk();
@@ -1204,6 +1261,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
     setInput(val);
+    // Any typing exits history navigation — the user is editing a
+    // new prompt. navigateHistory calls setInput directly (no
+    // change event), so this only fires for real keystrokes.
+    setHistoryIndex(null);
     const items = filterCommands(val);
     setAutocompleteItems(val.startsWith("/") && !val.includes(" ") ? items : []);
     setAutocompleteIdx(0);
