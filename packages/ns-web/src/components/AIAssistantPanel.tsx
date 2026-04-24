@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, replaceChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
@@ -103,48 +103,111 @@ function stripCitations(text: string): string {
   return text.replace(CITE_RE, "").replace(/ {2,}/g, " ").trim();
 }
 
-/** Phase E.5: convert `[Note Title]` markers to numbered superscript
- *  citation links of the form `[N](cite:Title)`. Numbering matches the
- *  order of pills rendered below the message (sources filtered by
- *  cited titles). Citations referencing unknown sources are stripped. */
-function linkifyCitations(
+/** Phase E.5: attach numbered superscript citation markers to note
+ *  references in the assistant text. References are detected two ways,
+ *  whichever Claude happened to emit:
+ *    - explicit `[Note Title]` brackets (the convention we ask for in
+ *      the system prompt)
+ *    - a bare/bold-wrapped exact title match against the sources +
+ *      noteCards pool (Claude doesn't always follow the bracket
+ *      instruction — it frequently renders titles as `**Title**` in
+ *      listicle responses like /recent)
+ *
+ *  Each referenced title gets ONE citation marker at its first
+ *  appearance; subsequent mentions are left as-is. Numbering follows
+ *  the order of first appearance in the text, which is also the order
+ *  the pills render underneath the message.
+ */
+export function linkifyCitations(
   text: string,
   sources?: { id: string; title: string }[],
   noteCards?: { id: string; title: string }[],
 ): string {
-  // Merge sources (Q&A citations) + noteCards (pills from search /
-  // recent / favorites / etc.). Either is a legitimate target for an
-  // inline citation; before this merge only Q&A `sources` counted, so
-  // a /recent-style response that relies on noteCards fell through to
-  // stripCitations and the user saw all their [Title] brackets silently
-  // vanish. Dedup by title so the same note linked via both paths
-  // gets a single superscript.
-  const pool: { id: string; title: string }[] = [];
+  // Dedup titles across sources (Q&A citations) + noteCards (pills from
+  // search / recent / favorites / etc.) — both are legitimate citation
+  // targets.
+  const titles: string[] = [];
   const seen = new Set<string>();
   for (const c of [...(sources ?? []), ...(noteCards ?? [])]) {
     if (c.title && !seen.has(c.title)) {
       seen.add(c.title);
-      pool.push(c);
+      titles.push(c.title);
     }
   }
-  if (pool.length === 0) return stripCitations(text);
-  const cited = extractCitations(text);
-  const displayed = pool.filter((s) => cited.includes(s.title));
-  if (displayed.length === 0) return stripCitations(text);
+  if (titles.length === 0) return stripCitations(text);
+
+  type Ref = { start: number; end: number; title: string; kind: "bracket" | "bare" };
+  const refs: Ref[] = [];
+  const titleSet = new Set(titles);
+
+  // Pass 1: explicit `[Title]` markers.
+  {
+    CITE_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = CITE_RE.exec(text)) !== null) {
+      if (titleSet.has(m[1])) {
+        refs.push({ start: m.index, end: m.index + m[0].length, title: m[1], kind: "bracket" });
+      }
+    }
+  }
+
+  // Pass 2: bare exact-title matches. Mask existing `[...]` sections
+  // first so we don't double-count bracketed hits or match inside the
+  // label of a regular markdown link `[label](url)`. Masking with
+  // same-length spaces keeps positional indexes valid against `text`.
+  const masked = text.replace(/\[[^\]]*\]/g, (m) => " ".repeat(m.length));
+  // Longest-first so a title like "Meeting Notes — 04/13" wins over
+  // "Meeting Notes" when both are in the pool.
+  const sortedTitles = [...titles].sort((a, b) => b.length - a.length);
+  const escaped = sortedTitles.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const bareRe = new RegExp(`(?<!\\w)(${escaped.join("|")})(?!\\w)`, "g");
+  {
+    let m: RegExpExecArray | null;
+    while ((m = bareRe.exec(masked)) !== null) {
+      refs.push({ start: m.index, end: m.index + m[0].length, title: m[1], kind: "bare" });
+    }
+  }
+
+  refs.sort((a, b) => a.start - b.start);
+
   const titleToIdx = new Map<string, number>();
-  displayed.forEach((s, i) => titleToIdx.set(s.title, i + 1));
-  return text
-    .replace(CITE_RE, (_full, title: string) => {
-      const idx = titleToIdx.get(title);
-      if (!idx) return "";
-      // No leading space — Claude sometimes wraps citations in bold
-      // (`**[Title]**`), and a leading space in the replacement
-      // breaks markdown's `**x**` adjacency rule, causing literal
-      // asterisks to render around the citation number.
-      return `[${idx}](cite:${encodeURIComponent(title)})`;
-    })
-    .replace(/ {2,}/g, " ")
-    .trim();
+  let nextIdx = 1;
+  for (const r of refs) {
+    if (!titleToIdx.has(r.title)) titleToIdx.set(r.title, nextIdx++);
+  }
+  if (titleToIdx.size === 0) return stripCitations(text);
+
+  // Walk once, writing out the rewritten text. First reference per
+  // title gets the citation marker; later references stay bare.
+  const citedOnce = new Set<string>();
+  let out = "";
+  let cursor = 0;
+  for (const r of refs) {
+    out += text.slice(cursor, r.start);
+    const idx = titleToIdx.get(r.title)!;
+    const isFirst = !citedOnce.has(r.title);
+    citedOnce.add(r.title);
+    const marker = `[${idx}](cite:${encodeURIComponent(r.title)})`;
+    if (r.kind === "bracket") {
+      // Brackets were Claude's citation marker — drop them and keep
+      // just the numbered link at first reference.
+      out += isFirst ? marker : "";
+    } else {
+      // Bare match — keep the title visible, append the marker. No
+      // leading space so bold wrappers (`**Title**`) stay intact.
+      out += isFirst ? `${r.title}${marker}` : r.title;
+    }
+    cursor = r.end;
+  }
+  out += text.slice(cursor);
+
+  // Strip any remaining `[...]` brackets that don't point at a real
+  // markdown link (those would be followed by `(`). These are almost
+  // always hallucinated citations pointing at titles not in the pool,
+  // and shouldn't render as literal brackets in the UI.
+  out = out.replace(/\[[^\]]+\](?!\()/g, "");
+
+  return out.replace(/ {2,}/g, " ").trim();
 }
 
 function relativeTime(dateStr: string): string {
@@ -1627,6 +1690,17 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         rehypePlugins={[rehypeHighlight]}
+                        // react-markdown's default urlTransform strips
+                        // any scheme not in its safe-protocol allowlist
+                        // (http/https/mailto/xmpp/ircs). `cite:` is our
+                        // internal scheme and was being wiped to an
+                        // empty href, which collapsed the custom <a>
+                        // renderer into a plain underlined anchor.
+                        // Preserve `cite:` URLs and fall back to the
+                        // default behavior for everything else.
+                        urlTransform={(url) =>
+                          url.startsWith("cite:") ? url : defaultUrlTransform(url)
+                        }
                         components={{
                           pre: CodeBlock,
                           // Phase E.5: render `cite:` URLs as clickable
@@ -1647,24 +1721,30 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                               // preventDefault(), and all citation
                               // hrefs would be literally identical,
                               // which is confusing in dev tools.
+                              // Superscript styling lives directly on
+                              // the <button> — a <sup> wrapper loses
+                              // its font-size scaling because <button>
+                              // resets font-size to the browser
+                              // default, and vertical-align only
+                              // works when applied to the same element
+                              // that has the shrunken font.
                               return (
-                                <sup className="ml-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      onSelectNote(source.id);
-                                    }}
-                                    title={title}
-                                    aria-label={`Open note ${title}`}
-                                    data-testid="citation-marker"
-                                    data-cite-title={title}
-                                    className="text-primary hover:underline px-0.5 text-[10px] font-medium cursor-pointer bg-transparent border-0 p-0"
-                                  >
-                                    {children}
-                                  </button>
-                                </sup>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    onSelectNote(source.id);
+                                  }}
+                                  title={title}
+                                  aria-label={`Open note ${title}`}
+                                  data-testid="citation-marker"
+                                  data-cite-title={title}
+                                  className="text-primary hover:underline ml-0.5 px-0.5 font-medium cursor-pointer bg-transparent border-0 p-0"
+                                  style={{ verticalAlign: "super", fontSize: "0.7em", lineHeight: 1 }}
+                                >
+                                  {children}
+                                </button>
                               );
                             }
                             return <a href={href} {...rest}>{children}</a>;
