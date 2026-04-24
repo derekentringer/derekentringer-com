@@ -662,10 +662,31 @@ async function executeGetBacklinks(
 
 // ─── Action Tool Implementations ─────────────────────────
 
-async function findNoteByTitle(userId: string, title: string) {
+/**
+ * Look up a note by title.
+ *
+ * By default, if no note matches the title exactly (case-insensitive),
+ * the function falls back to the first search result — useful for
+ * non-destructive tools like open_note / summarize where the user
+ * asked open-endedly ("open my sprint note" → "Sprint Planning Notes").
+ *
+ * For destructive tools (delete, rewrite) pass `{ strict: true }` to
+ * disable the fuzzy fallback. When Claude is told to "delete Delete #4"
+ * and Delete #4 doesn't exist, we must NOT silently substitute the
+ * next best search result — the user explicitly named a target that
+ * doesn't exist and the right answer is "not found".
+ */
+async function findNoteByTitle(
+  userId: string,
+  title: string,
+  options?: { strict?: boolean },
+) {
   const result = await listNotes(userId, { search: title, pageSize: 5 });
   const mapped = result.notes.map((n) => toNote(n));
-  return mapped.find((n) => n.title.toLowerCase() === title.toLowerCase()) ?? mapped[0] ?? null;
+  const exact = mapped.find((n) => n.title.toLowerCase() === title.toLowerCase());
+  if (exact) return exact;
+  if (options?.strict) return null;
+  return mapped[0] ?? null;
 }
 
 async function findFolderByName(userId: string, name: string) {
@@ -724,7 +745,9 @@ async function executeUpdateNoteContent(input: Record<string, unknown>, userId: 
   if (typeof input.content !== "string" || input.content.length === 0) {
     return { text: "Error: update_note_content requires a non-empty `content` string with the COMPLETE new note body. This tool replaces the entire note — it is not a patch/diff tool. Call get_note_content first if you need to read the current text, then call update_note_content again with the full new body." };
   }
-  const note = await findNoteByTitle(userId, String(input.noteTitle));
+  // Strict match — never fuzzy-rewrite. Overwriting the wrong note is
+  // catastrophic (even with version history to recover).
+  const note = await findNoteByTitle(userId, String(input.noteTitle), { strict: true });
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
   await updateNote(userId, note.id, { content: input.content });
   return { text: `Updated content of "${note.title}". The previous version is saved in version history.`, noteCards: [{ id: note.id, title: note.title }] };
@@ -764,7 +787,10 @@ async function executeGenerateSummary(input: Record<string, unknown>, userId: st
 }
 
 async function executeDeleteNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
-  const note = await findNoteByTitle(userId, String(input.noteTitle));
+  // Strict match — never fuzzy-delete. If the exact title isn't
+  // found, return a clear "not found" to Claude rather than silently
+  // substituting a similarly-titled note.
+  const note = await findNoteByTitle(userId, String(input.noteTitle), { strict: true });
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
   const deleted = await softDeleteNote(userId, note.id);
   if (!deleted) return { text: `Failed to delete "${note.title}".` };
@@ -865,7 +891,13 @@ async function buildPendingConfirmation(
 
   switch (toolName) {
     case "delete_note": {
-      const note = await findNoteByTitle(userId, String(input.noteTitle));
+      // Strict match: when Claude proposes deleting a title the user
+      // named, we must NOT fall back to the first search result if
+      // that exact title doesn't exist. Falling back surfaces a
+      // confirmation card for a note the user didn't mean to delete;
+      // the C.4 batching then bundles the mistaken match alongside
+      // valid deletes in one Apply button.
+      const note = await findNoteByTitle(userId, String(input.noteTitle), { strict: true });
       if (!note) return null;
       return {
         id,
@@ -894,7 +926,8 @@ async function buildPendingConfirmation(
       if (typeof input.content !== "string" || input.content.length === 0) {
         return null;
       }
-      const note = await findNoteByTitle(userId, String(input.noteTitle));
+      // Strict match — see delete_note case above.
+      const note = await findNoteByTitle(userId, String(input.noteTitle), { strict: true });
       if (!note) return null;
       const oldContent = note.content ?? "";
       const newContent = input.content;

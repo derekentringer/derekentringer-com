@@ -308,6 +308,62 @@ describe("assistantTools — Phase C confirmation gate", () => {
     expect(mockSoftDeleteNote).not.toHaveBeenCalled();
   });
 
+  // Regression: search for "Delete #4" returned "Table of Contents" as
+  // the first fuzzy match. The old findNoteByTitle fell back to
+  // search result [0], bundling an unrelated note into Claude's
+  // delete queue. Strict mode should return null for no-exact-match.
+  it("delete_note does not fuzzy-fall-back to an unrelated search result", async () => {
+    // Simulate a search that returns OTHER notes (keyword overlap)
+    // but no exact title match for the requested delete target.
+    mockListNotes.mockResolvedValue({
+      notes: [
+        makeNote({ id: "toc", title: "Table of Contents" }),
+        makeNote({ id: "other", title: "Something else" }),
+      ],
+      total: 2,
+    });
+
+    const result = await executeTool("delete_note", { noteTitle: "Delete #4" }, "u1");
+
+    // No confirmation card; clear not-found message instead.
+    expect(result.needsConfirmation).toBeUndefined();
+    expect(result.text).toMatch(/no note found.*delete #4/i);
+    expect(mockSoftDeleteNote).not.toHaveBeenCalled();
+  });
+
+  it("update_note_content does not fuzzy-fall-back to an unrelated search result", async () => {
+    mockListNotes.mockResolvedValue({
+      notes: [makeNote({ id: "toc", title: "Table of Contents", content: "TOC body" })],
+      total: 1,
+    });
+
+    const result = await executeTool(
+      "update_note_content",
+      { noteTitle: "Delete #4", content: "whole new body" },
+      "u1",
+    );
+
+    expect(result.needsConfirmation).toBeUndefined();
+    expect(result.text).toMatch(/no note found/i);
+    expect(mockUpdateNote).not.toHaveBeenCalled();
+  });
+
+  it("delete_note still accepts case-insensitive exact matches", async () => {
+    mockListNotes.mockResolvedValue({
+      notes: [makeNote({ id: "n1", title: "Delete #1" })],
+      total: 1,
+    });
+
+    const result = await executeTool("delete_note", { noteTitle: "DELETE #1" }, "u1");
+
+    // Case differs but the title matches — accepted.
+    expect(result.needsConfirmation).toBeTruthy();
+    expect(result.needsConfirmation?.preview).toMatchObject({
+      type: "delete_note",
+      title: "Delete #1",
+    });
+  });
+
   it("update_note_content preview includes old/new content + lengths", async () => {
     const oldContent = "old body text";
     const newContent = "completely new rewritten body";
