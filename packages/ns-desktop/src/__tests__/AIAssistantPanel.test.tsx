@@ -11,6 +11,7 @@ vi.mock("../api/ai.ts", () => ({
   askQuestion: (...args: unknown[]) => mockAskQuestion(...args),
   fetchChatHistory: () => Promise.resolve([]),
   saveChatMessages: () => Promise.resolve(),
+  replaceChatMessages: () => Promise.resolve(),
   clearServerChatHistory: () => Promise.resolve(),
 }));
 

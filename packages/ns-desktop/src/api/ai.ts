@@ -348,6 +348,21 @@ export async function saveChatMessages(
   });
 }
 
+/**
+ * Atomic replace of the user's chat history — transactional on the
+ * server. Use this instead of a clear-then-save pair; the race
+ * between the two calls could leave the DB empty if the user
+ * refreshed (or the network blipped) at exactly the wrong moment.
+ */
+export async function replaceChatMessages(
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[],
+): Promise<void> {
+  await apiFetch("/ai/chat-history", {
+    method: "PUT",
+    body: JSON.stringify({ messages }),
+  });
+}
+
 export async function clearServerChatHistory(): Promise<void> {
   await apiFetch("/ai/chat-history", { method: "DELETE" });
 }
