@@ -1767,7 +1767,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                               // hrefs would be literally identical,
                               // which is confusing in dev tools.
                               return (
-                                <sup className="ml-0.5">
+                                <sup
+                                  className="ml-0.5"
+                                  style={{ verticalAlign: "super", fontSize: "0.75em", lineHeight: 0 }}
+                                >
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -1779,7 +1782,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                                     aria-label={`Open note ${title}`}
                                     data-testid="citation-marker"
                                     data-cite-title={title}
-                                    className="text-primary hover:underline px-0.5 text-[10px] font-medium cursor-pointer bg-transparent border-0 p-0"
+                                    className="text-primary hover:underline px-0.5 font-medium cursor-pointer bg-transparent border-0 p-0"
                                   >
                                     {children}
                                   </button>
