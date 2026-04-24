@@ -1129,17 +1129,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           AI Assistant
         </span>
-        {/* Phase E.1: aggregate "thinking..." indicator. */}
-        {isStreaming && (
-          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground" aria-live="polite">
-            <svg className="animate-spin h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-              <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-            </svg>
-            <span className="truncate max-w-[180px]">{toolActivity ?? "Thinking…"}</span>
-          </span>
-        )}
-        {!isStreaming && isSearchingContext && (
+        {/* Phase E.1 was a header indicator; moved inline at the
+            bottom of the conversation (see ThinkingBubble below). */}
+        {isSearchingContext && (
           <svg className="animate-spin h-3 w-3 text-muted-foreground shrink-0 ml-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
             <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
@@ -1603,6 +1595,27 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             )}
           </div>
         ))}
+        {/* Inline "thinking" bubble — replaces the previous header
+            indicator so the live tool activity sits at the bottom of
+            the conversation where the user's eyes already are. Skipped
+            when the last message is an empty assistant placeholder
+            (its existing bounce dots already convey the state). */}
+        {(() => {
+          if (!isStreaming) return null;
+          const last = messages[messages.length - 1];
+          if (last?.role === "assistant" && !last.content && !last.confirmation) return null;
+          return (
+            <div className="flex justify-start mb-2" data-testid="thinking-bubble">
+              <div className="rounded-lg bg-card border border-border px-2.5 py-1.5 flex items-center gap-1.5" aria-live="polite">
+                <svg className="animate-spin h-3 w-3 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                </svg>
+                <span className="text-[11px] text-muted-foreground truncate max-w-[280px]">{toolActivity ?? "Thinking…"}</span>
+              </div>
+            </div>
+          );
+        })()}
         <div ref={messagesEndRef} />
       </div>
 
