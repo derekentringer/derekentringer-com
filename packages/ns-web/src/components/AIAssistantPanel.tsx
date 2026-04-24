@@ -1619,20 +1619,29 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                                 msg.sources?.find((s) => s.title === title) ??
                                 msg.noteCards?.find((c) => c.title === title);
                               if (!source) return <>{children}</>;
+                              // Button, not <a href="#"> — clicking a
+                              // "#" link can navigate / reload in some
+                              // webview contexts even with
+                              // preventDefault(), and all citation
+                              // hrefs would be literally identical,
+                              // which is confusing in dev tools.
                               return (
                                 <sup className="ml-0.5">
-                                  <a
-                                    href="#"
+                                  <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.preventDefault();
+                                      e.stopPropagation();
                                       onSelectNote(source.id);
                                     }}
                                     title={title}
+                                    aria-label={`Open note ${title}`}
                                     data-testid="citation-marker"
-                                    className="text-primary hover:underline px-0.5 text-[10px] font-medium cursor-pointer no-underline"
+                                    data-cite-title={title}
+                                    className="text-primary hover:underline px-0.5 text-[10px] font-medium cursor-pointer bg-transparent border-0 p-0"
                                   >
                                     {children}
-                                  </a>
+                                  </button>
                                 </sup>
                               );
                             }
