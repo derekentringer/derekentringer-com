@@ -127,13 +127,27 @@ const frontmatterFoldPlugin = ViewPlugin.fromClass(
 /**
  * Extension that hides the frontmatter block from the editor.
  * Uses CSS to collapse lines to zero height (safe, no RangeError).
- * Includes an offset line number gutter so numbering starts at 1.
+ *
+ * Note: this does NOT include a line number gutter. If the caller
+ * wants numbered lines alongside the hidden frontmatter, compose
+ * `offsetLineNumbersExt()` separately so the "show line numbers"
+ * toggle in the editor stays independent.
  */
 export function hideFrontmatter(): Extension[] {
   return [
     frontmatterLineCount,
     frontmatterFoldPlugin,
     frontmatterTheme,
-    offsetLineNumbers,
   ];
+}
+
+/**
+ * Line number gutter for use alongside hideFrontmatter(). Numbers
+ * start at 1 on the first visible (post-frontmatter) line; the
+ * frontmatter lines get no marker. Only useful when
+ * hideFrontmatter() is also active — otherwise use the stock
+ * `lineNumbers()` extension from @codemirror/view.
+ */
+export function offsetLineNumbersExt(): Extension {
+  return offsetLineNumbers;
 }

@@ -8,7 +8,7 @@ import {
 import { EditorView, keymap, placeholder, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { imageUploadExtension } from "../editor/imageUpload.ts";
-import { hideFrontmatter as hideFrontmatterExt } from "../editor/frontmatterFold.ts";
+import { hideFrontmatter as hideFrontmatterExt, offsetLineNumbersExt } from "../editor/frontmatterFold.ts";
 import { highlightFrontmatter as highlightFrontmatterExt } from "../editor/frontmatterHighlight.ts";
 import { livePreview } from "../editor/livePreview.ts";
 import { tableAutoFormat } from "../editor/tableAutoFormat.ts";
@@ -495,7 +495,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             syntaxHighlighting(isDark ? createDarkHighlightStyle(accent) : createLightHighlightStyle(accent)),
           ]),
           lineNumberCompartment.current.of(
-            showLineNumbers && !hideFm ? lineNumbers() : [],
+            showLineNumbers ? (hideFm ? offsetLineNumbersExt() : lineNumbers()) : [],
           ),
           frontmatterCompartment.current.of(
             hideFm ? hideFrontmatterExt() : [],
@@ -645,7 +645,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     // duplicate/conflicting gutters.
     view.dispatch({
       effects: lineNumberCompartment.current.reconfigure(
-        showLineNumbers && !hideFm ? lineNumbers() : [],
+        showLineNumbers ? (hideFm ? offsetLineNumbersExt() : lineNumbers()) : [],
       ),
     });
   }, [showLineNumbers, hideFm]);
@@ -665,7 +665,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         // Swap line numbers gutter: offset gutter is in the fold extension,
         // standard lineNumbers() is used in source mode
         lineNumberCompartment.current.reconfigure(
-          showLineNumbers && !hideFm ? lineNumbers() : [],
+          showLineNumbers ? (hideFm ? offsetLineNumbersExt() : lineNumbers()) : [],
         ),
       ],
     });
