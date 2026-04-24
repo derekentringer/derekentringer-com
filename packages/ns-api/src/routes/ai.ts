@@ -14,7 +14,7 @@ import { transcribeAudio, transcribeAudioChunked } from "../services/whisperServ
 import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
-import { getChatHistory, appendChatMessages, clearChatHistory } from "../store/chatStore.js";
+import { getChatHistory, appendChatMessages, clearChatHistory, replaceChatMessages } from "../store/chatStore.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
 import { getImagesByNoteIds } from "../store/imageStore.js";
 import {
@@ -965,6 +965,55 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const userId = request.user.sub;
       const created = await appendChatMessages(userId, request.body.messages);
+      fastify.sseHub.notifyChat(userId);
+      return reply.send({ messages: created });
+    },
+  );
+
+  // PUT /ai/chat-history — atomic replace of the user's chat history.
+  // The frontend persists a debounced snapshot of the full messages
+  // array; pre-PUT this was a non-atomic DELETE-then-POST dance that
+  // could wipe history if the user refreshed between the two calls.
+  fastify.put<{
+    Body: {
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[];
+    };
+  }>(
+    "/chat-history",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["messages"],
+          additionalProperties: false,
+          properties: {
+            messages: {
+              type: "array",
+              // Empty list is legitimate — "clear everything" becomes
+              // PUT with messages: []. No upper bound beyond what the
+              // full-replace write can handle.
+              minItems: 0,
+              items: {
+                type: "object",
+                required: ["role", "content"],
+                additionalProperties: false,
+                properties: {
+                  role: { type: "string", enum: ["user", "assistant", "meeting-summary"] },
+                  content: { type: "string" },
+                  sources: {},
+                  meetingData: {},
+                  noteCards: {},
+                  confirmation: {},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const created = await replaceChatMessages(userId, request.body.messages);
       fastify.sseHub.notifyChat(userId);
       return reply.send({ messages: created });
     },

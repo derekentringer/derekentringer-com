@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
+import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, replaceChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
 import { createNote, updateNote, deleteNote, fetchNotes, fetchFolders, fetchTags, fetchFavoriteNotes, fetchDashboardData, fetchTrash, restoreNote as apiRestoreNote, deleteFolderApi, renameFolderApi, renameTagApi } from "../api/notes.ts";
 import type { QASource } from "@derekentringer/shared/ns";
 import type { MeetingContextNote } from "../api/ai.ts";
@@ -445,24 +445,23 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }
     lastSavedRef.current = json;
     isSavingRef.current = true;
-    clearServerChatHistory().then(() => {
-      if (messages.length > 0) {
-        return saveChatMessages(messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          sources: m.sources,
-          meetingData: m.meetingData,
-          noteCards: m.noteCards,
-          // Phase E follow-up: only persist terminal confirmation
-          // states. Pending/applying cards are in-flight — if the user
-          // refreshes mid-action, the card is dropped.
-          confirmation:
-            m.confirmation && (m.confirmation.status === "applied" || m.confirmation.status === "discarded" || m.confirmation.status === "failed")
-              ? m.confirmation
-              : undefined,
-        })));
-      }
-    }).catch(() => {}).finally(() => {
+    // Single transactional PUT replaces all chat messages. Used to be
+    // DELETE-then-POST, which had a narrow race: if the user refreshed
+    // between the two calls the server ended up empty.
+    replaceChatMessages(messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      sources: m.sources,
+      meetingData: m.meetingData,
+      noteCards: m.noteCards,
+      // Phase E follow-up: only persist terminal confirmation
+      // states. Pending/applying cards are in-flight — if the user
+      // refreshes mid-action, the card is dropped.
+      confirmation:
+        m.confirmation && (m.confirmation.status === "applied" || m.confirmation.status === "discarded" || m.confirmation.status === "failed")
+          ? m.confirmation
+          : undefined,
+    }))).catch(() => {}).finally(() => {
       setTimeout(() => { isSavingRef.current = false; }, 500);
     });
   }, [messages]);

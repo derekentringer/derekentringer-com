@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
+import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, replaceChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
 import { searchNotes, createNote, updateNote, softDeleteNote, fetchFolders, fetchTags, fetchFavoriteNotes, fetchRecentlyEditedNotes, fetchTrash, restoreNote as dbRestoreNote, renameFolder as dbRenameFolder, renameTag as dbRenameTag, deleteFolder as dbDeleteFolder } from "../lib/db.ts";
 import type { QASource } from "@derekentringer/ns-shared";
 import type { MeetingContextNote } from "../api/ai.ts";
@@ -472,25 +472,24 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }
     lastSavedRef.current = json;
     isSavingRef.current = true;
-    clearServerChatHistory().then(() => {
-      if (messages.length > 0) {
-        return saveChatMessages(messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          sources: m.sources,
-          meetingData: m.meetingData,
-          noteCards: m.noteCards,
-          // Phase E follow-up: only persist confirmation state once the
-          // action has resolved. In-flight pending/applying cards are
-          // dropped on save — if the user refreshes mid-action, the
-          // card disappears and they can re-ask.
-          confirmation:
-            m.confirmation && (m.confirmation.status === "applied" || m.confirmation.status === "discarded" || m.confirmation.status === "failed")
-              ? m.confirmation
-              : undefined,
-        })));
-      }
-    }).catch(() => {}).finally(() => {
+    // Single transactional PUT replaces all chat messages. Used to be
+    // DELETE-then-POST, which had a narrow race: if the user refreshed
+    // between the two calls the server ended up empty.
+    replaceChatMessages(messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      sources: m.sources,
+      meetingData: m.meetingData,
+      noteCards: m.noteCards,
+      // Phase E follow-up: only persist confirmation state once the
+      // action has resolved. In-flight pending/applying cards are
+      // dropped on save — if the user refreshes mid-action, the
+      // card disappears and they can re-ask.
+      confirmation:
+        m.confirmation && (m.confirmation.status === "applied" || m.confirmation.status === "discarded" || m.confirmation.status === "failed")
+          ? m.confirmation
+          : undefined,
+    }))).catch(() => {}).finally(() => {
       setTimeout(() => { isSavingRef.current = false; }, 500);
     });
   }, [messages]);
