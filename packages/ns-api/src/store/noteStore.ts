@@ -474,7 +474,50 @@ export async function updateNote(
 
     if (data.content !== undefined && !hasExplicitMetadata) {
       // Case A — derive cache from frontmatter.
+      //
+      // Preserve fields the new content DROPPED vs. the DB. When the AI
+      // rewrite path (update_note_content) sends fresh content whose
+      // frontmatter happens to omit the title, we don't want to lose
+      // the title from the stored content. Fill in missing fields from
+      // the current DB row so the stored frontmatter stays complete
+      // and self-describing.
       const { metadata } = parseFrontmatter(data.content);
+      const missingAny =
+        metadata.title === undefined ||
+        metadata.tags === undefined ||
+        metadata.description === undefined ||
+        metadata.favorite === undefined;
+      let content = data.content;
+      if (missingAny) {
+        const existing = await prisma.note.findUnique({
+          where: { id, userId, deletedAt: null },
+          select: { title: true, tags: true, summary: true, favorite: true },
+        });
+        if (existing) {
+          // tags is stored as Json in the schema — narrow to string[]
+          // before using.
+          const existingTags = Array.isArray(existing.tags)
+            ? existing.tags.filter((t): t is string => typeof t === "string")
+            : [];
+          if (metadata.title === undefined && existing.title) {
+            content = updateFrontmatterField(content, "title", existing.title);
+            metadata.title = existing.title;
+          }
+          if (metadata.tags === undefined && existingTags.length > 0) {
+            content = updateFrontmatterField(content, "tags", existingTags);
+            metadata.tags = existingTags;
+          }
+          if (metadata.description === undefined && existing.summary) {
+            content = updateFrontmatterField(content, "description", existing.summary);
+            metadata.description = existing.summary;
+          }
+          if (metadata.favorite === undefined && existing.favorite) {
+            content = updateFrontmatterField(content, "favorite", true);
+            metadata.favorite = true;
+          }
+        }
+        if (content !== data.content) updateData.content = content;
+      }
       if (metadata.title !== undefined) updateData.title = metadata.title;
       if (metadata.tags !== undefined) updateData.tags = metadata.tags;
       if (metadata.description !== undefined) updateData.summary = metadata.description;
