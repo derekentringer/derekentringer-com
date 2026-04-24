@@ -378,6 +378,74 @@ describe("noteStore", () => {
         data: { summary: null, content: "---\n---\nSome content" },
       });
     });
+
+    // Regression: the editor saves title + content together on every
+    // save. The old implementation only derived cache columns from the
+    // content's existing frontmatter in this path — the embedded
+    // title: stayed stale forever. Explicit title should win and
+    // rewrite the frontmatter.
+    it("rewrites frontmatter when title and content are provided together", async () => {
+      const row = makeMockNoteRow({ title: "New Title" });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        title: "New Title",
+        content: "---\ntitle: Old Title\n---\nbody here",
+      });
+
+      expect(mockPrisma.note.update).toHaveBeenCalledWith({
+        where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
+        data: {
+          title: "New Title",
+          content: "---\ntitle: New Title\n---\nbody here",
+        },
+      });
+      // Should NOT have to fetch existing content — it came in the request
+      expect(mockPrisma.note.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("rewrites frontmatter for tags + content together (tags win)", async () => {
+      const row = makeMockNoteRow({ tags: ["a", "b"] });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        tags: ["a", "b"],
+        content: "---\ntags:\n  - old\n---\nbody",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      expect(call.data.tags).toEqual(["a", "b"]);
+      expect(call.data.content).toContain("- a");
+      expect(call.data.content).toContain("- b");
+      expect(call.data.content).not.toContain("- old");
+    });
+
+    it("creates a frontmatter block when content has none and metadata is provided", async () => {
+      const row = makeMockNoteRow({ title: "Fresh" });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        title: "Fresh",
+        content: "just a body with no frontmatter",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      expect(call.data.content).toBe("---\ntitle: Fresh\n---\njust a body with no frontmatter");
+    });
+
+    it("content-only update derives cache columns from new frontmatter", async () => {
+      const row = makeMockNoteRow();
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        content: "---\ntitle: Derived\ntags:\n  - x\n---\nbody",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      expect(call.data.title).toBe("Derived");
+      expect(call.data.tags).toEqual(["x"]);
+      expect(call.data.content).toBe("---\ntitle: Derived\ntags:\n  - x\n---\nbody");
+    });
   });
 
   describe("softDeleteNote", () => {

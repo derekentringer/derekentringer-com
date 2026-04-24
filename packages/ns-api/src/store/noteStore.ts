@@ -451,66 +451,69 @@ export async function updateNote(
     }
 
     // Sync frontmatter ↔ database cache.
-    // When content changes: derive cache columns from frontmatter in content.
-    // When metadata fields change without content: update frontmatter in content.
-    if (data.content !== undefined) {
-      // Content changed — parse frontmatter and derive cache columns
-      const { metadata } = parseFrontmatter(data.content);
-      if (metadata.title !== undefined && data.title === undefined) {
-        updateData.title = metadata.title;
-      }
-      if (metadata.tags !== undefined && data.tags === undefined) {
-        updateData.tags = metadata.tags;
-      }
-      if (metadata.description !== undefined && data.summary === undefined) {
-        updateData.summary = metadata.description;
-      }
-      if (metadata.favorite !== undefined && data.favorite === undefined) {
-        updateData.favorite = metadata.favorite;
-      }
-    } else {
-      // Metadata changed without content — update frontmatter in content.
-      // Need to fetch current content to update frontmatter in it.
-      const metadataChanged =
-        data.title !== undefined ||
-        data.tags !== undefined ||
-        data.summary !== undefined ||
-        data.favorite !== undefined;
+    //
+    // Three cases to handle; the prior implementation only covered the
+    // first two, which left the embedded frontmatter going stale
+    // whenever the editor saved {title, content} together (the common
+    // case — every save sends both).
+    //
+    //   A. Only content provided          → derive cache columns FROM the
+    //                                        frontmatter inside the new
+    //                                        content.
+    //   B. Only metadata provided         → fetch current content and
+    //                                        rewrite its frontmatter.
+    //   C. BOTH provided                  → metadata wins: rewrite the
+    //                                        frontmatter in the new
+    //                                        content with the explicit
+    //                                        metadata values.
+    const hasExplicitMetadata =
+      data.title !== undefined ||
+      data.tags !== undefined ||
+      data.summary !== undefined ||
+      data.favorite !== undefined;
 
-      if (metadataChanged) {
+    if (data.content !== undefined && !hasExplicitMetadata) {
+      // Case A — derive cache from frontmatter.
+      const { metadata } = parseFrontmatter(data.content);
+      if (metadata.title !== undefined) updateData.title = metadata.title;
+      if (metadata.tags !== undefined) updateData.tags = metadata.tags;
+      if (metadata.description !== undefined) updateData.summary = metadata.description;
+      if (metadata.favorite !== undefined) updateData.favorite = metadata.favorite;
+    } else if (hasExplicitMetadata) {
+      // Cases B + C — explicit metadata wins; rewrite frontmatter.
+      let content = data.content;
+      if (content === undefined) {
         const existing = await prisma.note.findUnique({
           where: { id, userId, deletedAt: null },
           select: { content: true },
         });
-        if (existing?.content !== undefined) {
-          let content = existing.content;
-          if (data.title !== undefined) {
-            content = updateFrontmatterField(content, "title", data.title);
-          }
-          if (data.tags !== undefined) {
-            content = updateFrontmatterField(
-              content,
-              "tags",
-              data.tags.length > 0 ? data.tags : undefined,
-            );
-          }
-          if (data.summary !== undefined) {
-            content = updateFrontmatterField(
-              content,
-              "description",
-              data.summary || undefined,
-            );
-          }
-          if (data.favorite !== undefined) {
-            content = updateFrontmatterField(
-              content,
-              "favorite",
-              data.favorite || undefined,
-            );
-          }
-          updateData.content = content;
-        }
+        content = existing?.content ?? "";
       }
+      if (data.title !== undefined) {
+        content = updateFrontmatterField(content, "title", data.title);
+      }
+      if (data.tags !== undefined) {
+        content = updateFrontmatterField(
+          content,
+          "tags",
+          data.tags.length > 0 ? data.tags : undefined,
+        );
+      }
+      if (data.summary !== undefined) {
+        content = updateFrontmatterField(
+          content,
+          "description",
+          data.summary || undefined,
+        );
+      }
+      if (data.favorite !== undefined) {
+        content = updateFrontmatterField(
+          content,
+          "favorite",
+          data.favorite || undefined,
+        );
+      }
+      updateData.content = content;
     }
 
     const updated = await prisma.note.update({
