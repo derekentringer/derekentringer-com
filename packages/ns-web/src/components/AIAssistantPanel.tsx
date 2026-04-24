@@ -369,19 +369,50 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     });
   }
 
+  // Phase E follow-up: confirmation state is persisted for terminal
+  // statuses (applied/discarded/failed) so those cards survive refresh.
+  function rowToMessage(r: ChatMessageData): Message {
+    return {
+      role: r.role as Message["role"],
+      content: r.content,
+      sources: (r.sources as QASource[] | undefined) ?? undefined,
+      meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+      noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
+      confirmation: (r.confirmation as ConfirmationState | undefined) ?? undefined,
+    };
+  }
+
+  // Pop trailing empty assistant placeholders on hydration. Chats
+  // saved before the empty-placeholder cleanup fix can contain stray
+  // empties next to completed confirmation cards.
+  function stripTrailingEmpties(list: Message[]): Message[] {
+    const out = [...list];
+    while (out.length > 0) {
+      const last = out[out.length - 1];
+      if (
+        last.role === "assistant" &&
+        !last.content &&
+        !last.confirmation &&
+        !last.noteCards?.length &&
+        !last.meetingData &&
+        !last.sources?.length &&
+        !last.failed
+      ) {
+        out.pop();
+      } else {
+        break;
+      }
+    }
+    return out;
+  }
+
   // Load chat history from server on mount
   useEffect(() => {
     if (historyLoadedRef.current) return;
     historyLoadedRef.current = true;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = rows.map((r: ChatMessageData) => ({
-          role: r.role as Message["role"],
-          content: r.content,
-          sources: (r.sources as QASource[] | undefined) ?? undefined,
-          meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
-          noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
-        }));
+        const loaded = stripTrailingEmpties(rows.map(rowToMessage));
         setMessages(repaintStaleProcessingCards(loaded));
       }
     }).catch(() => {});
@@ -396,13 +427,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (isSavingRef.current) return; // Skip refetch triggered by our own save
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = repaintStaleProcessingCards(rows.map((r: ChatMessageData) => ({
-          role: r.role as Message["role"],
-          content: r.content,
-          sources: (r.sources as QASource[] | undefined) ?? undefined,
-          meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
-          noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
-        })));
+        const loaded = repaintStaleProcessingCards(stripTrailingEmpties(rows.map(rowToMessage)));
         setMessages(loaded);
         lastSavedRef.current = JSON.stringify(loaded);
       } else {
@@ -434,6 +459,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           sources: m.sources,
           meetingData: m.meetingData,
           noteCards: m.noteCards,
+          // Phase E follow-up: only persist terminal confirmation
+          // states. Pending/applying cards are in-flight — if the user
+          // refreshes mid-action, the card is dropped.
+          confirmation:
+            m.confirmation && (m.confirmation.status === "applied" || m.confirmation.status === "discarded" || m.confirmation.status === "failed")
+              ? m.confirmation
+              : undefined,
         })));
       }
     }).catch(() => {}).finally(() => {

@@ -326,6 +326,9 @@ export interface ChatMessageData {
   sources?: QASource[] | null;
   meetingData?: Record<string, unknown> | null;
   noteCards?: NoteCard[] | null;
+  /** Phase E follow-up: only terminal statuses (applied/discarded/failed)
+   *  are persisted — in-flight pending/applying cards are dropped on save. */
+  confirmation?: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -337,7 +340,7 @@ export async function fetchChatHistory(): Promise<ChatMessageData[]> {
 }
 
 export async function saveChatMessages(
-  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown }[],
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[],
 ): Promise<void> {
   await apiFetch("/ai/chat-history", {
     method: "POST",
