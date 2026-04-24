@@ -454,11 +454,18 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       sources: m.sources,
       meetingData: m.meetingData,
       noteCards: m.noteCards,
-      // Phase E follow-up: only persist terminal confirmation
-      // states. Pending/applying cards are in-flight — if the user
-      // refreshes mid-action, the card is dropped.
+      // Persist every confirmation status, including pending. The
+      // panel unmounts on drawer-tab switch (history/toc), so
+      // dropping pending cards meant a mid-task tab flip wiped the
+      // card the user was about to Apply. Pending cards carry
+      // `toolName` + `toolInput`; Apply re-runs the tool server-side
+      // against fresh state, so resuming a stale pending is safe —
+      // the worst case is a graceful "no note found" if the target
+      // was deleted in the meantime. The `applying` status is the
+      // only one we still drop (it's transient, replaced by applied
+      // or failed within the same tick).
       confirmation:
-        m.confirmation && (m.confirmation.status === "applied" || m.confirmation.status === "discarded" || m.confirmation.status === "failed")
+        m.confirmation && m.confirmation.status !== "applying"
           ? m.confirmation
           : undefined,
     }))).catch(() => {}).finally(() => {
