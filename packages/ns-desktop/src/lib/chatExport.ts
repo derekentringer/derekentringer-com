@@ -3,9 +3,16 @@
 // inline as `[Note Title]` are converted to `[[Note Title]]` wiki-links
 // so the resulting note stays connected to the cited sources.
 //
+// Besides inline `[Title]` prose citations, two other ways the chat
+// links to notes are also preserved:
+// - `noteCards`: clickable pills attached to assistant turns (from
+//   search_notes, /recent, /favorites, etc.)
+// - `sources`: Q&A citation pills (from the Q&A flow)
+// Both are serialized as a "Referenced notes:" bullet list of
+// [[wiki-links]] at the end of their assistant turn.
+//
 // The serializer is panel-agnostic: callers pass the messages array
-// they're already keeping in component state plus an optional source
-// index so meeting-summary cards can be flattened to a single line.
+// they're already keeping in component state.
 
 export interface ExportMessage {
   role: string;
@@ -15,6 +22,13 @@ export interface ExportMessage {
     noteTitle?: string;
     status?: string;
   };
+  /** Clickable note pills attached to an assistant turn (search
+   *  results, /recent, /favorites, etc.). Each becomes a wiki-link
+   *  under the turn in the exported markdown. */
+  noteCards?: { id: string; title: string }[];
+  /** Q&A citation sources — the "related notes" pills that appear
+   *  below answered questions. Also become wiki-links in the export. */
+  sources?: { id: string; title: string }[];
 }
 
 export interface ExportOptions {
@@ -30,6 +44,26 @@ const CITE_RE = /\[([^\]]+)\]/g;
  *  exported note stays linked to the cited sources in the editor. */
 function citationsToWikiLinks(text: string): string {
   return text.replace(CITE_RE, (_full, title) => `[[${title}]]`);
+}
+
+/** Deduplicate pills by title (case-sensitive exact match — these
+ *  come from the UI where titles are canonical). */
+function collectReferencedTitles(m: ExportMessage): string[] {
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const c of m.noteCards ?? []) {
+    if (c.title && !seen.has(c.title)) {
+      seen.add(c.title);
+      titles.push(c.title);
+    }
+  }
+  for (const s of m.sources ?? []) {
+    if (s.title && !seen.has(s.title)) {
+      seen.add(s.title);
+      titles.push(s.title);
+    }
+  }
+  return titles;
 }
 
 /** Serialize a panel chat session to Markdown. Skips empty turns and
@@ -57,11 +91,23 @@ export function serializeChatToMarkdown(
       lines.push("");
     } else if (m.role === "assistant") {
       const content = m.content.trim();
-      if (!content) continue;
+      const refs = collectReferencedTitles(m);
+      // An assistant turn is worth including if it has ANY of:
+      // prose content, clickable note cards, or Q&A sources.
+      if (!content && refs.length === 0) continue;
       lines.push(`## Assistant`);
       lines.push("");
-      lines.push(citationsToWikiLinks(content));
-      lines.push("");
+      if (content) {
+        lines.push(citationsToWikiLinks(content));
+        lines.push("");
+      }
+      if (refs.length > 0) {
+        lines.push(`**Referenced notes:**`);
+        for (const title of refs) {
+          lines.push(`- [[${title}]]`);
+        }
+        lines.push("");
+      }
     } else if (m.role === "meeting-summary" && m.meetingData) {
       const mode = m.meetingData.mode ?? "recording";
       const noteTitle = m.meetingData.noteTitle;
