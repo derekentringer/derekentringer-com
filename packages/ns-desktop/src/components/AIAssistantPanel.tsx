@@ -350,8 +350,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   // was typing); 0 = most recent prior prompt; increasing index =
   // older. Cap at 10 entries matches the casual-use pattern without
   // letting a long chat turn into a runaway-scroll hunt.
+  //
+  // History lives in its own ref rather than being derived from the
+  // messages array — so /clear wipes the visible chat but keeps the
+  // typing convenience intact.
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const historyDraftRef = useRef<string>("");
+  const promptHistoryRef = useRef<string[]>([]);
   const inputWrapRef = useRef<HTMLDivElement>(null);
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
@@ -436,6 +441,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       if (rows.length > 0) {
         const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
         setMessages(repaintStaleProcessingCards(loaded));
+        // Seed prompt history from the hydrated chat so Up-arrow
+        // navigation works immediately after a page refresh.
+        promptHistoryRef.current = loaded
+          .filter((m) => m.role === "user" && m.content.trim().length > 0)
+          .map((m) => m.content)
+          .slice(-10);
       }
     }).catch(() => {});
   }, []);
@@ -929,9 +940,21 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     return true;
   }
 
+  /** Append a prompt to the Up/Down history ring. Dedup against the
+   *  most-recent entry and cap at 10. Called from both handleAsk
+   *  (regular question) and handleSlashCommand so slash commands
+   *  show up in history too. */
+  function recordPrompt(question: string) {
+    const ring = promptHistoryRef.current;
+    if (ring[ring.length - 1] === question) return;
+    promptHistoryRef.current = [...ring, question].slice(-10);
+  }
+
   async function handleAsk() {
     const question = input.trim();
     if (!question || isStreaming) return;
+
+    recordPrompt(question);
 
     // Check for slash command
     const cmd = parseCommand(question);
@@ -1190,11 +1213,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   // (which is preserved the moment the user starts navigating, so
   // a half-typed message isn't lost).
   function navigateHistory(direction: "up" | "down") {
-    const prompts = messages
-      .filter((m) => m.role === "user" && m.content.trim().length > 0)
-      .map((m) => m.content)
-      .slice(-10)
-      .reverse(); // index 0 = most recent
+    // Read from the standalone ring, not from messages[], so history
+    // survives /clear.
+    const prompts = [...promptHistoryRef.current].reverse(); // index 0 = most recent
     if (prompts.length === 0) return;
 
     if (direction === "up") {
