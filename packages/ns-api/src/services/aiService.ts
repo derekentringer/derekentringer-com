@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { loadConfig } from "../config.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
+import type { FastifyBaseLogger } from "fastify";
 
 let client: Anthropic | null = null;
 
@@ -16,6 +17,47 @@ function getClient(): Anthropic {
 function getModel(): string {
   return loadConfig().claudeModel;
 }
+
+// ─── Phase D: cost observability ────────────────────────────────────
+
+/** Phase D.1 — structured log emitted on every Claude call with
+ *  `response.usage` so operators can search by event/operation and see
+ *  real-world token cost. Skipped silently when no logger is provided
+ *  (e.g. in unit tests that mock the Anthropic client). */
+export interface ClaudeUsageLogExtras {
+  userId?: string;
+  round?: number;
+  cumulativeInputTokens?: number;
+  cumulativeOutputTokens?: number;
+  durationMs?: number;
+}
+
+export function logClaudeUsage(
+  logger: FastifyBaseLogger | undefined,
+  operation: string,
+  usage: Anthropic.Messages.Usage | undefined,
+  extras: ClaudeUsageLogExtras = {},
+  modelOverride?: string,
+): void {
+  if (!logger || !usage) return;
+  logger.info({
+    event: "claude_call_complete",
+    operation,
+    model: modelOverride ?? getModel(),
+    input_tokens: usage.input_tokens,
+    output_tokens: usage.output_tokens,
+    cache_creation_tokens: usage.cache_creation_input_tokens ?? 0,
+    cache_read_tokens: usage.cache_read_input_tokens ?? 0,
+    ...extras,
+  });
+}
+
+/** Phase D.2 — cumulative input-token ceiling across all rounds of a
+ *  single `answerWithTools` question. A pathological multi-round search
+ *  loop can easily eat 50k+ input tokens; 100k is 2× the real-world
+ *  upper end we observed, giving legitimate questions headroom while
+ *  catching runaway loops. */
+export const MAX_TOKENS_PER_QUESTION = 100_000;
 
 export type CompletionStyle = "continue" | "markdown" | "brief" | "paragraph" | "structure";
 
@@ -94,7 +136,7 @@ export async function* generateCompletion(
       event.type === "content_block_delta" &&
       event.delta.type === "text_delta"
     ) {
-      yield event.delta.text;
+      yield stripEmojis(event.delta.text);
     }
   }
 }
@@ -121,7 +163,7 @@ export async function generateSummary(
 
   const block = response.content[0];
   if (block.type === "text") {
-    return block.text.trim();
+    return stripEmojis(block.text).trim();
   }
   return "";
 }
@@ -161,7 +203,10 @@ export async function suggestTags(
         try {
           const parsed = JSON.parse(cleaned);
           if (Array.isArray(parsed)) {
-            return parsed.filter((t): t is string => typeof t === "string");
+            return parsed
+              .filter((t): t is string => typeof t === "string")
+              .map((t) => stripEmojis(t).trim())
+              .filter((t) => t.length > 0);
           }
         } catch {
           // If parsing fails, return empty array
@@ -197,7 +242,7 @@ export async function rewriteText(
 
   const block = response.content[0];
   if (block.type === "text") {
-    return block.text.trim();
+    return stripEmojis(block.text).trim();
   }
   return "";
 }
@@ -288,10 +333,13 @@ export async function structureTranscript(
           }
           const parsed = JSON.parse(jsonText);
           return {
-            title: typeof parsed.title === "string" ? parsed.title : "Audio Note",
-            content: typeof parsed.content === "string" ? parsed.content : transcript,
+            title: typeof parsed.title === "string" ? stripEmojis(parsed.title).trim() : "Audio Note",
+            content: typeof parsed.content === "string" ? stripEmojis(parsed.content) : transcript,
             tags: Array.isArray(parsed.tags)
-              ? parsed.tags.filter((t: unknown): t is string => typeof t === "string")
+              ? parsed.tags
+                  .filter((t: unknown): t is string => typeof t === "string")
+                  .map((t: string) => stripEmojis(t).trim())
+                  .filter((t: string) => t.length > 0)
               : [],
           };
         } catch {
@@ -367,7 +415,7 @@ export async function* answerQuestion(
           event.type === "content_block_delta" &&
           event.delta.type === "text_delta"
         ) {
-          yield event.delta.text;
+          yield stripEmojis(event.delta.text);
         }
       }
       return; // Stream completed successfully
@@ -419,7 +467,7 @@ export async function* answerMeetingQuestion(
           event.type === "content_block_delta" &&
           event.delta.type === "text_delta"
         ) {
-          yield event.delta.text;
+          yield stripEmojis(event.delta.text);
         }
       }
       return;
@@ -436,12 +484,39 @@ export async function* answerMeetingQuestion(
   throw lastError;
 }
 
+/** Strip every emoji / pictograph from a text chunk. Defense-in-depth
+ *  on top of the system-prompt directive — even if Claude slips and
+ *  emits a 🎉 or ✅, the user never sees it. Covers Extended_Pictographic
+ *  (the canonical Unicode property for emoji symbols), ZWJ sequence
+ *  joiners, variation selectors (FE0F), and any orphan surrogates
+ *  left after stripping. Plain text characters pass through. */
+export function stripEmojis(text: string): string {
+  return text
+    // Extended_Pictographic catches the actual emoji glyphs (✅ 🎉 📖 …).
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    // VARIATION SELECTOR-16 (️) and zero-width joiners (‍)
+    // tag emoji presentation. Once the pictograph is stripped, these
+    // are orphan invisible characters — clean them up.
+    .replace(/[‍️]/g, "")
+    // Coalesce double spaces that emoji removal may leave behind.
+    .replace(/ {2,}/g, " ");
+}
+
 export interface AgentEvent {
-  type: "tool_activity" | "note_cards" | "text" | "done";
+  type: "tool_activity" | "note_cards" | "text" | "done" | "confirmation" | "open_note";
   toolName?: string;
   description?: string;
   noteCards?: { id: string; title: string; folder?: string; tags?: string[]; updatedAt?: string }[];
   text?: string;
+  // Phase C: forwarded to the frontend when a destructive tool call is
+  // awaiting user confirmation. The panel renders a ConfirmationCard.
+  confirmation?: import("./assistantTools.js").PendingConfirmation;
+  // Side-channel for the `open_note` tool. The tool itself returns a
+  // noteCard pill, but Claude phrases its reply as if the note has
+  // already been opened ("Done! X is now open"). Without this event
+  // the user sees the claim but no tab opens — broken trust. The
+  // frontend reacts by calling its select-note handler.
+  openNote?: { id: string; title: string };
 }
 
 export async function* answerWithTools(
@@ -450,24 +525,105 @@ export async function* answerWithTools(
   signal?: AbortSignal,
   transcript?: string,
   activeNote?: { id: string; title: string; content: string },
+  // Phase A (docs/ns/ai-assist-arch/phase-a-*): prior user/assistant
+  // turns, already trimmed on the client. Text-only rehydration — we do
+  // not re-send tool_use / tool_result blocks from earlier turns (our
+  // persisted message schema doesn't preserve them, and Claude infers
+  // fine from text alone for follow-ups like "summarize the second one").
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+  // Phase C.5: per-tool auto-approve flags from user settings. When
+  // set, destructive tools bypass the confirmation gate for this
+  // request only. Missing flags default to false (confirmation on).
+  autoApprove?: {
+    deleteNote?: boolean;
+    deleteFolder?: boolean;
+    updateNoteContent?: boolean;
+    renameNote?: boolean;
+    renameFolder?: boolean;
+    renameTag?: boolean;
+  },
+  // Phase D.1: structured token-usage logger. Route handlers pass
+  // `request.log`; service-level callers may omit (e.g. tests).
+  logger?: FastifyBaseLogger,
 ): AsyncGenerator<AgentEvent> {
   const { ASSISTANT_TOOLS, executeTool } = await import("./assistantTools.js");
   const anthropic = getClient();
 
+  // Prepend prior turns so Claude has conversational context. The
+  // current question is always the last user turn. Defensive: filter
+  // any empty-content items the client might have leaked through.
+  const priorTurns: Anthropic.MessageParam[] = (history ?? [])
+    .filter((t) => t.content && t.content.trim().length > 0)
+    .map((t) => ({ role: t.role, content: t.content }));
+
   const messages: Anthropic.MessageParam[] = [
+    ...priorTurns,
     { role: "user", content: question },
   ];
 
-  const MAX_ROUNDS = 3;
+  // Phase B.3 (docs/ns/ai-assist-arch/phase-b-*): raised from 3 → 5.
+  // Legitimate multi-step chains (search → read 2 notes → synthesize with
+  // a backlinks follow-up) hit 3 rounds too easily. 5 is a realistic
+  // upper bound for complex-but-answerable questions.
+  const MAX_ROUNDS = 5;
+  // Belt-and-suspenders: one round could emit many tool_use blocks in
+  // parallel. The cumulative cap halts runaway loops even if the round
+  // counter hasn't tripped yet.
+  const MAX_TOOL_CALLS_TOTAL = 12;
+  let totalToolCalls = 0;
+  // Phase D.2: track cumulative tokens across rounds. If we cross the
+  // per-question ceiling, halt the loop and let Claude wrap up with
+  // its remaining output budget on a subsequent round. Input+output
+  // counted together because either can balloon (Claude can stream a
+  // lot of output; tool results can stream a lot of input).
+  let cumulativeInputTokens = 0;
+  let cumulativeOutputTokens = 0;
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     if (signal?.aborted) return;
 
+    // Phase D.2: check the ceiling before the NEXT round. If the
+    // previous rounds already cost > MAX_TOKENS_PER_QUESTION, emit a
+    // final text note and terminate cleanly.
+    if (cumulativeInputTokens + cumulativeOutputTokens > MAX_TOKENS_PER_QUESTION) {
+      logger?.warn({
+        event: "claude_call_budget_exceeded",
+        operation: "answer_with_tools",
+        userId,
+        cumulativeInputTokens,
+        cumulativeOutputTokens,
+        cap: MAX_TOKENS_PER_QUESTION,
+        round,
+      });
+      yield {
+        type: "text",
+        text: "\n\n_This question has hit the per-answer token ceiling. Try narrowing it or breaking it into smaller follow-ups._",
+      };
+      yield { type: "done" };
+      return;
+    }
+
+    const roundStartMs = Date.now();
     const response = await anthropic.messages.create({
       model: getModel(),
-      max_tokens: 1500,
+      // 1500 was too low — when Claude needs to emit a full
+      // update_note_content tool call (potentially several thousand
+      // characters of JSON-encoded note body), the response was
+      // truncated mid-tool_use. Truncated tool_use blocks parse with
+      // missing fields, which is what caused the original "undefined"
+      // data-loss bug AND the "Claude loops without ever finishing"
+      // bug. 8192 is the safe default for Claude sonnet-4-6 and gives
+      // ample room for large rewrites; the per-question budget
+      // (MAX_TOKENS_PER_QUESTION = 100_000) still bounds total cost.
+      max_tokens: 8192,
       temperature: 0.3,
-      system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. When referencing notes, use their exact titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
+      system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. Do NOT use emojis in any reply — write in plain prose only. This includes status emojis like ✅ ❌ 📖 🎉 🗑️ ⚠️, sparkle/pointer emojis like ✨ 👉, and any other Unicode emoji or pictograph. If you'd normally use one for emphasis, just use plain words instead. When referencing a specific note in your answer, wrap its exact title in square brackets on first mention — like [Exact Note Title] — so the UI can render an inline citation marker linking back to the source. Subsequent references to the same note don't need the brackets. Do NOT use brackets for generic phrases that aren't note titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
+
+When to reach for search_notes: any question that could be answered from the user's broader note library, not just the active note or the live transcript. Examples: "what have I written about X", "do I have any notes on Y", "summarize my thoughts on Z", "how have I described A". Default to mode=hybrid so semantically related notes surface even when exact wording differs. The tool returns content snippets — answer from those directly; only call get_note_content when you need the full text of a specific matched note. If the user's question is clearly scoped to the currently open note or live transcript, answer from that context without searching.
+
+Destructive actions (delete_note, delete_folder, update_note_content, rename_note, rename_folder, rename_tag) MAY be gated by a user confirmation card. CHECK THE TOOL RESULT to know which case you're in:
+- If the tool_result starts with "User confirmation requested…" the action has NOT executed; phrase your reply as a proposal (e.g. "I've queued up the deletion — click Apply on the card to confirm"). Don't invoke the same destructive tool a second time; the card is already visible.
+- If the tool_result describes the action in past tense (e.g. "Renamed X to Y", "Moved X to trash", "Updated content of X") the user has auto-approve enabled for that tool and the change has already been committed; phrase your reply as completed (e.g. "Done — renamed X to Y"). Do NOT say "I've proposed" or "click Apply" in this case; there is no card.
 
 The user also has slash commands available as a faster alternative for the same actions (no AI cost). You can mention these as tips when relevant:
 /open, /create, /move, /tag, /delete, /deletefolder, /summarize, /gentags, /favorites, /favorite, /unfavorite, /trash, /restore, /renamefolder, /renametag, /duplicate, /recent, /folders, /tags, /stats, /clear
@@ -486,6 +642,49 @@ ${transcript}` : ""}`,
       messages,
     });
 
+    // Phase D.1: log token usage for this round. Update cumulative
+    // counters used by the budget check at the top of the next round.
+    const durationMs = Date.now() - roundStartMs;
+    if (response.usage) {
+      cumulativeInputTokens += response.usage.input_tokens;
+      cumulativeOutputTokens += response.usage.output_tokens;
+    }
+    logClaudeUsage(logger, "answer_with_tools", response.usage, {
+      userId,
+      round,
+      cumulativeInputTokens,
+      cumulativeOutputTokens,
+      durationMs,
+    });
+
+    // If Claude hit the per-round output ceiling, the last tool_use
+    // block in the response is likely truncated (malformed JSON =
+    // missing required fields). Surface this as a graceful failure
+    // rather than letting the request loop on bad calls until
+    // MAX_ROUNDS exhausts. Hitting max_tokens during normal text
+    // streaming is fine — Claude just gets cut off mid-sentence and
+    // the user sees a partial answer; we only abort when it happened
+    // alongside an attempted tool call.
+    if (response.stop_reason === "max_tokens") {
+      const truncatedToolUse = response.content.some((b) => b.type === "tool_use");
+      logger?.warn?.({
+        event: "claude_response_truncated",
+        operation: "answer_with_tools",
+        userId,
+        round,
+        stop_reason: response.stop_reason,
+        had_tool_use: truncatedToolUse,
+      });
+      if (truncatedToolUse) {
+        yield {
+          type: "text",
+          text: "\n\n_(My response was too long to fit in one turn — the tool call was cut off. Try asking me to do this in smaller pieces, or ask for a shorter answer.)_",
+        };
+        yield { type: "done" };
+        return;
+      }
+    }
+
     // Collect all content blocks
     const toolUseBlocks: Anthropic.ContentBlockParam[] = [];
     const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
@@ -493,16 +692,58 @@ ${transcript}` : ""}`,
 
     for (const block of response.content) {
       if (block.type === "text" && block.text) {
-        yield { type: "text", text: block.text };
+        yield { type: "text", text: stripEmojis(block.text) };
       } else if (block.type === "tool_use") {
         hasToolUse = true;
+
+        // Total-call cap: if already at the limit, refuse the tool and
+        // synthesize an error result so Claude can wrap up with its
+        // remaining output budget instead of just cutting off.
+        if (totalToolCalls >= MAX_TOOL_CALLS_TOTAL) {
+          toolUseBlocks.push({ type: "tool_use", id: block.id, name: block.name, input: block.input });
+          toolResultBlocks.push({
+            type: "tool_result",
+            tool_use_id: block.id,
+            content: "Tool-call limit reached for this question. Please finish answering with the information already gathered, or the user can refine the question and try again.",
+            is_error: true,
+          });
+          continue;
+        }
+        totalToolCalls++;
+
         const toolDescription = describeToolCall(block.name, block.input as Record<string, unknown>);
         yield { type: "tool_activity", toolName: block.name, description: toolDescription };
 
-        const result = await executeTool(block.name, block.input as Record<string, unknown>, userId);
+        // Phase C.5: consult per-tool auto-approve flags. The tool
+        // name maps into an autoApprove key; missing or false → gate on.
+        const toolAutoApprove = shouldAutoApproveTool(block.name, autoApprove);
+        const result = await executeTool(
+          block.name,
+          block.input as Record<string, unknown>,
+          userId,
+          { autoApprove: toolAutoApprove },
+        );
 
         if (result.noteCards && result.noteCards.length > 0) {
           yield { type: "note_cards", noteCards: result.noteCards };
+        }
+
+        // open_note's contract: actually open the note in the
+        // frontend, not just hand back a clickable card. Emit a
+        // side-channel event that the panel routes into its
+        // select-note callback so the editor opens the right tab.
+        if (block.name === "open_note" && result.noteCards && result.noteCards.length > 0) {
+          const card = result.noteCards[0];
+          yield { type: "open_note", openNote: { id: card.id, title: card.title } };
+        }
+
+        // Phase C: relay the pending confirmation to the frontend
+        // as an SSE event. Claude also sees `result.text` saying
+        // confirmation was requested (so it can phrase its response
+        // naturally), but doesn't see the `needsConfirmation` payload
+        // itself — that's a UI-only concern.
+        if (result.needsConfirmation) {
+          yield { type: "confirmation", confirmation: result.needsConfirmation };
         }
 
         toolUseBlocks.push({ type: "tool_use", id: block.id, name: block.name, input: block.input });
@@ -528,6 +769,30 @@ ${transcript}` : ""}`,
   yield { type: "done" };
 }
 
+/** Phase C.5: map tool name → auto-approve flag from the user's settings. */
+function shouldAutoApproveTool(
+  toolName: string,
+  flags?: {
+    deleteNote?: boolean;
+    deleteFolder?: boolean;
+    updateNoteContent?: boolean;
+    renameNote?: boolean;
+    renameFolder?: boolean;
+    renameTag?: boolean;
+  },
+): boolean {
+  if (!flags) return false;
+  switch (toolName) {
+    case "delete_note": return flags.deleteNote === true;
+    case "delete_folder": return flags.deleteFolder === true;
+    case "update_note_content": return flags.updateNoteContent === true;
+    case "rename_note": return flags.renameNote === true;
+    case "rename_folder": return flags.renameFolder === true;
+    case "rename_tag": return flags.renameTag === true;
+    default: return false;
+  }
+}
+
 function describeToolCall(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case "search_notes": {
@@ -549,6 +814,8 @@ function describeToolCall(name: string, input: Record<string, unknown>): string 
       return "Finding recently edited notes...";
     case "get_note_content":
       return `Reading "${input.title}"...`;
+    case "find_similar_notes":
+      return `Finding notes similar to "${input.noteTitle}"...`;
     case "get_backlinks":
       return `Finding links to "${input.noteTitle}"...`;
     case "open_note":
@@ -566,7 +833,7 @@ function describeToolCall(name: string, input: Record<string, unknown>): string 
     case "generate_summary":
       return `Summarizing "${input.noteTitle}"...`;
     case "delete_note":
-      return `Deleting "${input.noteTitle}"...`;
+      return `Moving "${input.noteTitle}" to Trash...`;
     case "delete_folder":
       return `Deleting folder "${input.folderName}"...`;
     case "toggle_favorite":
@@ -575,6 +842,8 @@ function describeToolCall(name: string, input: Record<string, unknown>): string 
       return "Checking trash...";
     case "restore_note":
       return `Restoring "${input.noteTitle}" from trash...`;
+    case "rename_note":
+      return `Renaming "${input.oldTitle}" to "${input.newTitle}"...`;
     case "rename_folder":
       return `Renaming folder "${input.oldName}" to "${input.newName}"...`;
     case "rename_tag":
@@ -625,7 +894,7 @@ export async function analyzeImage(
 
       const block = response.content[0];
       if (block.type === "text") {
-        return block.text.trim();
+        return stripEmojis(block.text).trim();
       }
       return "";
     } catch (err: unknown) {

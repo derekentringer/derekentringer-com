@@ -134,8 +134,8 @@ const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] =
 ];
 
 const RECORDING_SOURCE_OPTIONS: { value: RecordingSource; label: string; info: string }[] = [
-  { value: "microphone", label: "Microphone only", info: "Records from your microphone. Standard recording mode." },
   { value: "meeting", label: "Meeting mode", info: "Captures system audio (meeting participants) + microphone (your voice). Requires macOS screen recording permission." },
+  { value: "microphone", label: "Microphone only", info: "Records from your microphone. Standard recording mode." },
 ];
 
 // Keyboard shortcuts are now driven by the command registry.
@@ -499,7 +499,8 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                 <select
                   value={editorSettings.editorFontSize}
                   onChange={(e) => updateEditorSetting("editorFontSize", Number(e.target.value))}
-                  className="bg-input border border-border rounded-md px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="appearance-none bg-input border border-border rounded-md pl-3 pr-7 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer bg-[length:10px_10px] bg-[right_8px_center] bg-no-repeat"
+                  style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
                   aria-label="Editor font size"
                 >
                   {Array.from({ length: 15 }, (_, i) => i + 10).map((size) => (
@@ -914,6 +915,23 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                 )}
               </div>
               <ToggleSwitch label="AI assistant chat" checked={aiSettings.qaAssistant} onChange={(v) => updateAiSetting("qaAssistant", v)} info="Ask natural language questions about your notes. Requires semantic search to be enabled." disabled={!aiSettings.masterAiEnabled || !aiSettings.semanticSearch} />
+
+              {/* Phase C.5 — per-tool auto-approval for destructive
+                  Claude actions. Defaults are all-off (confirmation
+                  always required). Turning one on lets Claude execute
+                  that action immediately without showing a card.  */}
+              {aiSettings.qaAssistant && aiSettings.masterAiEnabled && (
+                <div className="pt-2 px-3 space-y-1 border-t border-border/50">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Auto-approve destructive actions</span>
+                  <p className="text-[11px] text-muted-foreground">When off, Claude must wait for your confirmation before each of these. Enable sparingly.</p>
+                  <ToggleSwitch label="Move notes to Trash" checked={aiSettings.autoApprove.deleteNote} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, deleteNote: v })} info="Auto-approve `delete_note` calls. Notes go to Trash and can be restored until the trash auto-delete timer purges them." />
+                  <ToggleSwitch label="Delete folders" checked={aiSettings.autoApprove.deleteFolder} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, deleteFolder: v })} info="Auto-approve `delete_folder`. Notes inside become Unfiled; the notes themselves aren't deleted." />
+                  <ToggleSwitch label="Rewrite note content" checked={aiSettings.autoApprove.updateNoteContent} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, updateNoteContent: v })} info="Auto-approve `update_note_content`. Previous version stays in version history." />
+                  <ToggleSwitch label="Rename notes" checked={aiSettings.autoApprove.renameNote} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameNote: v })} info="Auto-approve `rename_note`. Updates the note title only; content, folder, tags, and id are unchanged." />
+                  <ToggleSwitch label="Rename folders" checked={aiSettings.autoApprove.renameFolder} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameFolder: v })} info="Auto-approve `rename_folder`." />
+                  <ToggleSwitch label="Rename tags" checked={aiSettings.autoApprove.renameTag} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameTag: v })} info="Auto-approve `rename_tag`. Affects every note using that tag." />
+                </div>
+              )}
             </SettingsGroup>
 
             {/* Audio */}

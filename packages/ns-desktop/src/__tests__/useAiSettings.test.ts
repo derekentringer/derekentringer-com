@@ -7,6 +7,15 @@ beforeEach(() => {
 });
 
 describe("useAiSettings", () => {
+  const DEFAULT_AUTO_APPROVE = {
+    deleteNote: false,
+    deleteFolder: false,
+    updateNoteContent: false,
+    renameNote: false,
+    renameFolder: false,
+    renameTag: false,
+  };
+
   it("returns defaults when no localStorage value", () => {
     const { result } = renderHook(() => useAiSettings());
 
@@ -24,6 +33,7 @@ describe("useAiSettings", () => {
       audioMode: "meeting",
       recordingSource: "meeting",
       qaAssistant: false,
+      autoApprove: DEFAULT_AUTO_APPROVE,
     });
   });
 
@@ -62,6 +72,7 @@ describe("useAiSettings", () => {
       audioMode: "lecture",
       recordingSource: "meeting",
       qaAssistant: true,
+      autoApprove: DEFAULT_AUTO_APPROVE,
     });
   });
 
@@ -84,6 +95,7 @@ describe("useAiSettings", () => {
       audioMode: "meeting",
       recordingSource: "meeting",
       qaAssistant: false,
+      autoApprove: DEFAULT_AUTO_APPROVE,
     });
   });
 
@@ -210,7 +222,7 @@ describe("useAiSettings", () => {
     expect(result.current.settings.completionDebounceMs).toBe(1500);
   });
 
-  it("all 13 fields are present in defaults", () => {
+  it("all 14 fields are present in defaults", () => {
     const { result } = renderHook(() => useAiSettings());
 
     const keys = Object.keys(result.current.settings);
@@ -227,7 +239,8 @@ describe("useAiSettings", () => {
     expect(keys).toContain("audioMode");
     expect(keys).toContain("recordingSource");
     expect(keys).toContain("qaAssistant");
-    expect(keys.length).toBe(13);
+    expect(keys).toContain("autoApprove");
+    expect(keys.length).toBe(14);
   });
 
   it("persists recordingSource changes", () => {

@@ -8,6 +8,22 @@ const VALID_COMPLETION_STYLES: CompletionStyle[] = ["continue", "markdown", "bri
 const VALID_AUDIO_MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 const VALID_RECORDING_SOURCES: RecordingSource[] = ["microphone", "meeting"];
 
+/**
+ * Per-tool auto-approval for destructive tools Claude can invoke. When
+ * a flag is true, the tool runs immediately instead of surfacing a
+ * confirmation card in the chat. Phase C.5.
+ * See docs/ns/ai-assist-arch/phase-c-action-safety.md for the safety
+ * rationale — defaults are conservative (all off).
+ */
+export interface AutoApproveSettings {
+  deleteNote: boolean;
+  deleteFolder: boolean;
+  updateNoteContent: boolean;
+  renameNote: boolean;
+  renameFolder: boolean;
+  renameTag: boolean;
+}
+
 export interface AiSettings {
   masterAiEnabled: boolean;
   completions: boolean;
@@ -22,9 +38,19 @@ export interface AiSettings {
   audioMode: AudioMode;
   recordingSource: RecordingSource;
   qaAssistant: boolean;
+  autoApprove: AutoApproveSettings;
 }
 
 const STORAGE_KEY = "ns-ai-settings";
+
+const DEFAULT_AUTO_APPROVE: AutoApproveSettings = {
+  deleteNote: false,
+  deleteFolder: false,
+  updateNoteContent: false,
+  renameNote: false,
+  renameFolder: false,
+  renameTag: false,
+};
 
 const DEFAULT_SETTINGS: AiSettings = {
   masterAiEnabled: true,
@@ -40,7 +66,21 @@ const DEFAULT_SETTINGS: AiSettings = {
   audioMode: "meeting",
   recordingSource: "meeting",
   qaAssistant: false,
+  autoApprove: DEFAULT_AUTO_APPROVE,
 };
+
+function loadAutoApprove(raw: unknown): AutoApproveSettings {
+  if (!raw || typeof raw !== "object") return DEFAULT_AUTO_APPROVE;
+  const r = raw as Record<string, unknown>;
+  return {
+    deleteNote: typeof r.deleteNote === "boolean" ? r.deleteNote : false,
+    deleteFolder: typeof r.deleteFolder === "boolean" ? r.deleteFolder : false,
+    updateNoteContent: typeof r.updateNoteContent === "boolean" ? r.updateNoteContent : false,
+    renameNote: typeof r.renameNote === "boolean" ? r.renameNote : false,
+    renameFolder: typeof r.renameFolder === "boolean" ? r.renameFolder : false,
+    renameTag: typeof r.renameTag === "boolean" ? r.renameTag : false,
+  };
+}
 
 function loadSettings(): AiSettings {
   try {
@@ -65,6 +105,7 @@ function loadSettings(): AiSettings {
       audioMode: VALID_AUDIO_MODES.includes(parsed.audioMode) ? parsed.audioMode : "memo",
       recordingSource: VALID_RECORDING_SOURCES.includes(parsed.recordingSource) ? parsed.recordingSource : "meeting",
       qaAssistant: typeof parsed.qaAssistant === "boolean" ? parsed.qaAssistant : false,
+      autoApprove: loadAutoApprove(parsed.autoApprove),
     };
   } catch {
     return DEFAULT_SETTINGS;

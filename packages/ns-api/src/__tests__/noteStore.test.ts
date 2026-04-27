@@ -378,6 +378,138 @@ describe("noteStore", () => {
         data: { summary: null, content: "---\n---\nSome content" },
       });
     });
+
+    // Regression: the editor saves title + content together on every
+    // save. The old implementation only derived cache columns from the
+    // content's existing frontmatter in this path — the embedded
+    // title: stayed stale forever. Explicit title should win and
+    // rewrite the frontmatter.
+    it("rewrites frontmatter when title and content are provided together", async () => {
+      const row = makeMockNoteRow({ title: "New Title" });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        title: "New Title",
+        content: "---\ntitle: Old Title\n---\nbody here",
+      });
+
+      expect(mockPrisma.note.update).toHaveBeenCalledWith({
+        where: { id: "note-1", userId: TEST_USER_ID, deletedAt: null },
+        data: {
+          title: "New Title",
+          content: "---\ntitle: New Title\n---\nbody here",
+        },
+      });
+      // Should NOT have to fetch existing content — it came in the request
+      expect(mockPrisma.note.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("rewrites frontmatter for tags + content together (tags win)", async () => {
+      const row = makeMockNoteRow({ tags: ["a", "b"] });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        tags: ["a", "b"],
+        content: "---\ntags:\n  - old\n---\nbody",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      expect(call.data.tags).toEqual(["a", "b"]);
+      expect(call.data.content).toContain("- a");
+      expect(call.data.content).toContain("- b");
+      expect(call.data.content).not.toContain("- old");
+    });
+
+    it("creates a frontmatter block when content has none and metadata is provided", async () => {
+      const row = makeMockNoteRow({ title: "Fresh" });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        title: "Fresh",
+        content: "just a body with no frontmatter",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      expect(call.data.content).toBe("---\ntitle: Fresh\n---\njust a body with no frontmatter");
+    });
+
+    it("content-only update derives cache columns from new frontmatter", async () => {
+      const row = makeMockNoteRow();
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        content: "---\ntitle: Derived\ntags:\n  - x\n---\nbody",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      expect(call.data.title).toBe("Derived");
+      expect(call.data.tags).toEqual(["x"]);
+      expect(call.data.content).toBe("---\ntitle: Derived\ntags:\n  - x\n---\nbody");
+    });
+
+    // Regression: AI update_note_content rewrites trust Claude's new
+    // content verbatim. If Claude's frontmatter drops the title (it
+    // often does because the prompt doesn't remind it to preserve
+    // every key), the embedded title vanishes while the DB title
+    // column stays intact — leaving the two inconsistent. Preserve
+    // missing fields from the current DB row so the stored content
+    // stays self-describing.
+    it("fills in missing frontmatter fields from DB when content-only update drops them", async () => {
+      const row = makeMockNoteRow({ title: "Keep Me" });
+      mockPrisma.note.findUnique.mockResolvedValue({
+        title: "Keep Me",
+        tags: ["old"],
+        summary: null,
+        favorite: false,
+      });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        // Claude-style rewrite: frontmatter has tags + description but no title
+        content: "---\ntags:\n  - fresh\ndescription: New summary\n---\nbody here",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      // title was missing in new content → pulled from DB and injected
+      expect(call.data.content).toContain("title: Keep Me");
+      // explicit tags in new content win over DB tags
+      expect(call.data.content).toContain("- fresh");
+      expect(call.data.content).not.toContain("- old");
+      // cache columns reflect the final merged state
+      expect(call.data.title).toBe("Keep Me");
+      expect(call.data.tags).toEqual(["fresh"]);
+      expect(call.data.summary).toBe("New summary");
+    });
+
+    it("content-only update with no frontmatter at all still preserves DB metadata in new frontmatter", async () => {
+      const row = makeMockNoteRow({ title: "Preserved" });
+      mockPrisma.note.findUnique.mockResolvedValue({
+        title: "Preserved",
+        tags: [],
+        summary: null,
+        favorite: false,
+      });
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        content: "plain body with no frontmatter",
+      });
+
+      const call = mockPrisma.note.update.mock.calls[0][0];
+      expect(call.data.content).toContain("title: Preserved");
+      expect(call.data.title).toBe("Preserved");
+    });
+
+    it("does not fetch DB when new content's frontmatter already has every known field", async () => {
+      const row = makeMockNoteRow();
+      mockPrisma.note.update.mockResolvedValue(row);
+
+      await updateNote(TEST_USER_ID, "note-1", {
+        content: "---\ntitle: Full\ntags:\n  - a\ndescription: done\nfavorite: true\n---\nbody",
+      });
+
+      expect(mockPrisma.note.findUnique).not.toHaveBeenCalled();
+    });
   });
 
   describe("softDeleteNote", () => {
@@ -439,14 +571,22 @@ describe("noteStore", () => {
   });
 
   describe("permanentDeleteNote", () => {
-    it("returns true when permanently deleted", async () => {
+    it("returns true when permanently deleted and writes a tombstone", async () => {
       mockPrisma.note.delete.mockResolvedValue({});
+      mockPrisma.entityTombstone.upsert.mockResolvedValue({});
 
       const result = await permanentDeleteNote(TEST_USER_ID, "note-1");
       expect(result).toBe(true);
       expect(mockPrisma.note.delete).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID },
       });
+      // Tombstone written so offline clients learn about the deletion.
+      expect(mockPrisma.entityTombstone.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId_entityId: { userId: TEST_USER_ID, entityId: "note-1" } },
+          create: expect.objectContaining({ entityType: "note", entityId: "note-1" }),
+        }),
+      );
     });
 
     it("returns false when not found (P2025)", async () => {
@@ -466,36 +606,43 @@ describe("noteStore", () => {
   });
 
   describe("purgeOldTrash", () => {
-    it("deletes notes older than 30 days by default", async () => {
+    it("deletes notes older than 30 days by default and writes tombstones", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1", userId: TEST_USER_ID },
+        { id: "n2", userId: TEST_USER_ID },
+        { id: "n3", userId: TEST_USER_ID },
+      ]);
       mockPrisma.note.deleteMany.mockResolvedValue({ count: 3 });
+      mockPrisma.entityTombstone.upsert.mockResolvedValue({});
 
       const result = await purgeOldTrash();
 
       expect(result).toBe(3);
       expect(mockPrisma.note.deleteMany).toHaveBeenCalledWith({
-        where: {
-          deletedAt: { lt: expect.any(Date) },
-        },
+        where: { id: { in: ["n1", "n2", "n3"] } },
       });
+      // One tombstone per purged note.
+      expect(mockPrisma.entityTombstone.upsert).toHaveBeenCalledTimes(3);
     });
 
     it("uses custom days parameter", async () => {
-      mockPrisma.note.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrisma.note.findMany.mockResolvedValue([]);
 
       await purgeOldTrash(7);
 
-      expect(mockPrisma.note.deleteMany).toHaveBeenCalledWith({
-        where: {
-          deletedAt: { lt: expect.any(Date) },
-        },
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith({
+        where: { deletedAt: { lt: expect.any(Date) } },
+        select: { id: true, userId: true },
       });
     });
 
     it("returns 0 when no notes to purge", async () => {
-      mockPrisma.note.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrisma.note.findMany.mockResolvedValue([]);
 
       const result = await purgeOldTrash();
       expect(result).toBe(0);
+      expect(mockPrisma.note.deleteMany).not.toHaveBeenCalled();
+      expect(mockPrisma.entityTombstone.upsert).not.toHaveBeenCalled();
     });
   });
 

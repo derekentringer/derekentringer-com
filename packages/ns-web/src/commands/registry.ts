@@ -9,7 +9,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   // Note
   { id: "note:new", label: "New Note", category: "Note", scope: "global", defaultBinding: { key: "Alt-n" } },
   { id: "note:save", label: "Save Note", category: "Note", scope: "global", defaultBinding: { key: "Mod-s" } },
-  { id: "note:delete", label: "Delete Note", category: "Note", scope: "global", defaultBinding: null },
+  { id: "note:delete", label: "Move Note to Trash", category: "Note", scope: "global", defaultBinding: null },
   { id: "note:export-md", label: "Export as Markdown", category: "Note", scope: "global", defaultBinding: null },
 
   // View & Navigation
@@ -48,6 +48,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   // AI
   { id: "ai:continue-writing", label: "Continue Writing", category: "AI", scope: "editor", defaultBinding: { key: "Mod-Shift-Space" } },
   { id: "ai:rewrite", label: "AI Rewrite", category: "AI", scope: "editor", defaultBinding: { key: "Mod-Shift-r" } },
+  { id: "ai:focus-chat", label: "Focus AI Assistant", category: "AI", scope: "global", defaultBinding: { key: "Mod-j" } },
 ];
 
 /**
@@ -111,10 +112,25 @@ export class CommandRegistry {
   /** Convert a KeyboardEvent to a normalized key string. */
   private eventToKey(e: KeyboardEvent): string {
     const parts: string[] = [];
+    const hasModifier = e.metaKey || e.ctrlKey || e.altKey;
     if (e.metaKey || e.ctrlKey) parts.push("mod");
     if (e.shiftKey) parts.push("shift");
     if (e.altKey) parts.push("alt");
-    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    // On macOS holding Option remaps the resulting character via the
+    // dead-key layer (a→å, s→ß, h→˙, t→†, etc.), so e.key would not
+    // match the binding registered as "Mod-Alt-a". Whenever a modifier
+    // is held and the physical key is a letter or digit, derive the
+    // logical character from e.code (always KeyA..KeyZ / Digit0..Digit9
+    // regardless of layout) instead of e.key. Non-letter/digit keys
+    // and unmodified events fall back to e.key.
+    let key: string;
+    if (hasModifier && /^Key[A-Z]$/.test(e.code)) {
+      key = e.code.slice(3).toLowerCase();
+    } else if (hasModifier && /^Digit\d$/.test(e.code)) {
+      key = e.code.slice(5);
+    } else {
+      key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    }
     parts.push(key);
     return parts.join("-");
   }

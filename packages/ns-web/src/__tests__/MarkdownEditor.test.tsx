@@ -69,6 +69,11 @@ vi.mock("@codemirror/state", () => {
       }),
       readOnly: { of: () => [] },
       tabSize: { of: () => [] },
+      transactionFilter: { of: () => [] },
+    },
+    EditorSelection: {
+      range: () => ({}),
+      create: () => ({}),
     },
     Compartment: MockCompartment,
     StateField: { define: () => ({}) },

@@ -14,7 +14,7 @@ import { transcribeAudio, transcribeAudioChunked } from "../services/whisperServ
 import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
-import { getChatHistory, appendChatMessages, clearChatHistory } from "../store/chatStore.js";
+import { getChatHistory, appendChatMessages, clearChatHistory, replaceChatMessages } from "../store/chatStore.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
 import { getImagesByNoteIds } from "../store/imageStore.js";
 import {
@@ -55,6 +55,37 @@ const askSchema = {
           id: { type: "string" },
           title: { type: "string" },
           content: { type: "string", maxLength: 50000 },
+        },
+      },
+      // Phase A (docs/ns/ai-assist-arch/phase-a-*): prior user/assistant
+      // turns, already trimmed on the client to a reasonable budget.
+      // Max 50 turns × 5000 chars = 250k chars upper bound (schema-level
+      // defense; client-side typically sends ≤ 40 turns / 20k chars).
+      history: {
+        type: "array",
+        maxItems: 50,
+        items: {
+          type: "object",
+          required: ["role", "content"],
+          additionalProperties: false,
+          properties: {
+            role: { type: "string", enum: ["user", "assistant"] },
+            content: { type: "string", maxLength: 5000 },
+          },
+        },
+      },
+      // Phase C.5: per-tool auto-approve flags. Omitted or false means
+      // the destructive-action confirmation gate stays on.
+      autoApprove: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          deleteNote: { type: "boolean" },
+          deleteFolder: { type: "boolean" },
+          updateNoteContent: { type: "boolean" },
+          renameNote: { type: "boolean" },
+          renameFolder: { type: "boolean" },
+          renameTag: { type: "boolean" },
         },
       },
     },
@@ -214,15 +245,29 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   );
 
   // POST /ai/ask — SSE streaming Q&A
-  fastify.post<{ Body: { question: string; transcript?: string; activeNote?: { id: string; title: string; content: string } } }>(
+  type AskBody = {
+    question: string;
+    transcript?: string;
+    activeNote?: { id: string; title: string; content: string };
+    history?: Array<{ role: "user" | "assistant"; content: string }>;
+    autoApprove?: {
+      deleteNote?: boolean;
+      deleteFolder?: boolean;
+      updateNoteContent?: boolean;
+      renameNote?: boolean;
+      renameFolder?: boolean;
+      renameTag?: boolean;
+    };
+  };
+  fastify.post<{ Body: AskBody }>(
     "/ask",
     { schema: askSchema },
     async (
-      request: FastifyRequest<{ Body: { question: string; transcript?: string; activeNote?: { id: string; title: string; content: string } } }>,
+      request: FastifyRequest<{ Body: AskBody }>,
       reply: FastifyReply,
     ) => {
       const userId = request.user.sub;
-      const { question, transcript, activeNote } = request.body;
+      const { question, transcript, activeNote, history, autoApprove } = request.body;
       const hasMeetingTranscript = transcript && transcript.trim().length > 0;
 
       const abortController = new AbortController();
@@ -247,6 +292,9 @@ export default async function aiRoutes(fastify: FastifyInstance) {
             abortController.signal,
             hasMeetingTranscript ? transcript : undefined,
             activeNote,
+            history,
+            autoApprove,
+            request.log,
           )) {
             if (abortController.signal.aborted) break;
             if (event.type === "text") {
@@ -257,10 +305,18 @@ export default async function aiRoutes(fastify: FastifyInstance) {
               passthrough.write(
                 `data: ${JSON.stringify({ tool: { name: event.toolName, description: event.description } })}\n\n`,
               );
+            } else if (event.type === "confirmation" && event.confirmation) {
+              passthrough.write(
+                `data: ${JSON.stringify({ confirmation: event.confirmation })}\n\n`,
+              );
             } else if (event.type === "note_cards") {
               allNoteCards.push(...(event.noteCards ?? []));
               passthrough.write(
                 `data: ${JSON.stringify({ noteCards: event.noteCards })}\n\n`,
+              );
+            } else if (event.type === "open_note" && event.openNote) {
+              passthrough.write(
+                `data: ${JSON.stringify({ openNote: event.openNote })}\n\n`,
               );
             }
           }
@@ -291,6 +347,77 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         .header("Cache-Control", "no-cache")
         .header("Connection", "keep-alive")
         .send(passthrough);
+    },
+  );
+
+  // POST /ai/tools/confirm — Phase C: commit a deferred destructive
+  // tool action after the user clicks Apply on a confirmation card. We
+  // re-run `executeTool` with `autoApprove: true` so the confirmation
+  // gate is bypassed on this call only. Store-level operations already
+  // scope by userId, so a tampered toolInput can't escape the user's
+  // own data.
+  fastify.post<{ Body: { toolName: string; toolInput: Record<string, unknown> } }>(
+    "/tools/confirm",
+    {
+      schema: {
+        body: {
+          type: "object" as const,
+          required: ["toolName", "toolInput"],
+          additionalProperties: false,
+          properties: {
+            toolName: {
+              type: "string",
+              // Only allow the destructive tools that the confirmation
+              // flow is designed for; anything else would be a no-op
+              // wrapper around a non-gated tool and is rejected.
+              enum: [
+                "delete_note",
+                "delete_folder",
+                "update_note_content",
+                "rename_note",
+                "rename_folder",
+                "rename_tag",
+              ],
+            },
+            toolInput: { type: "object", additionalProperties: true },
+          },
+        },
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: { toolName: string; toolInput: Record<string, unknown> } }>,
+      reply: FastifyReply,
+    ) => {
+      const userId = request.user.sub;
+      const { toolName, toolInput } = request.body;
+      const { executeTool } = await import("../services/assistantTools.js");
+      try {
+        const result = await executeTool(toolName, toolInput, userId, { autoApprove: true });
+        // Notify sync so UI refreshes after the mutation lands.
+        fastify.sseHub.notify(userId);
+        return reply.send({
+          text: result.text,
+          noteCards: result.noteCards ?? [],
+        });
+      } catch (error) {
+        request.log.error(error, "AI tool confirmation error");
+        // Convert known Prisma constraint violations into a 200 with
+        // human-readable text so the UI can render the actual problem
+        // (e.g. "A folder named X already exists") instead of a generic
+        // "Confirm failed: 500" red banner the user can't act on.
+        const code = (error as { code?: string }).code;
+        if (code === "P2002") {
+          return reply.send({
+            text: "That change conflicts with an existing item (a name collision or unique-key violation). Pick a different name and try again.",
+            noteCards: [],
+          });
+        }
+        return reply.status(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: getAiErrorMessage(error),
+        });
+      }
     },
   );
 
@@ -820,7 +947,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   // POST /ai/chat-history — append chat messages
   fastify.post<{
     Body: {
-      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown }[];
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[];
     };
   }>(
     "/chat-history",
@@ -845,6 +972,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                   sources: {},
                   meetingData: {},
                   noteCards: {},
+                  confirmation: {},
                 },
               },
             },
@@ -855,6 +983,55 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const userId = request.user.sub;
       const created = await appendChatMessages(userId, request.body.messages);
+      fastify.sseHub.notifyChat(userId);
+      return reply.send({ messages: created });
+    },
+  );
+
+  // PUT /ai/chat-history — atomic replace of the user's chat history.
+  // The frontend persists a debounced snapshot of the full messages
+  // array; pre-PUT this was a non-atomic DELETE-then-POST dance that
+  // could wipe history if the user refreshed between the two calls.
+  fastify.put<{
+    Body: {
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[];
+    };
+  }>(
+    "/chat-history",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["messages"],
+          additionalProperties: false,
+          properties: {
+            messages: {
+              type: "array",
+              // Empty list is legitimate — "clear everything" becomes
+              // PUT with messages: []. No upper bound beyond what the
+              // full-replace write can handle.
+              minItems: 0,
+              items: {
+                type: "object",
+                required: ["role", "content"],
+                additionalProperties: false,
+                properties: {
+                  role: { type: "string", enum: ["user", "assistant", "meeting-summary"] },
+                  content: { type: "string" },
+                  sources: {},
+                  meetingData: {},
+                  noteCards: {},
+                  confirmation: {},
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const created = await replaceChatMessages(userId, request.body.messages);
       fastify.sseHub.notifyChat(userId);
       return reply.send({ messages: created });
     },

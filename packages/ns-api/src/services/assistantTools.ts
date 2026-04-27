@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { listNotes, listFolders, listTags, listFavoriteNotes, listTrashedNotes, getDashboardData, createNote, updateNote, softDeleteNote, restoreNote, deleteFolderById, renameFolder, renameTag, type ListNotesFilter } from "../store/noteStore.js";
+import { listNotes, listFolders, listTags, listFavoriteNotes, listTrashedNotes, getDashboardData, createNote, updateNote, softDeleteNote, restoreNote, deleteFolderById, renameFolder, renameTag, findSimilarNotes, type ListNotesFilter } from "../store/noteStore.js";
 import { getBacklinks } from "../store/linkStore.js";
 import { toNote } from "../lib/mappers.js";
 import { suggestTags, generateSummary } from "./aiService.js";
@@ -9,11 +9,13 @@ import { suggestTags, generateSummary } from "./aiService.js";
 export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   {
     name: "search_notes",
-    description: "Search and filter the user's notes. Can filter by text query, folder name, tag, favorites, audio mode, and sort order. Returns note titles, folders, tags, dates, and snippets.",
+    description:
+      "Search and filter the user's notes across their whole library. Use this FIRST for any question about the user's notes in general — don't assume the answer is only in the active note. The default 'hybrid' mode combines semantic (meaning-based) + keyword matching, so conceptually related notes surface even when the exact wording differs (e.g. a query for 'leadership' will find a note about 'management style'). Results include a content snippet so you can answer directly without a follow-up lookup for most questions. Use get_note_content only when you need the full text of a specific matched note.",
     input_schema: {
       type: "object" as const,
       properties: {
-        query: { type: "string", description: "Text to search for in note titles and content" },
+        query: { type: "string", description: "Text to search for in note titles and content. Treat this as a natural-language query when mode is 'semantic' or 'hybrid'." },
+        mode: { type: "string", enum: ["keyword", "semantic", "hybrid"], description: "Search strategy. 'hybrid' (default) combines semantic + keyword — best for most questions. 'semantic' is meaning-based only. 'keyword' is exact-phrase only — use when the user asks for an exact string." },
         folder: { type: "string", description: "Filter by folder name" },
         tag: { type: "string", description: "Filter by tag name" },
         favorite: { type: "boolean", description: "If true, only return favorited notes" },
@@ -64,13 +66,26 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_note_content",
-    description: "Get the full content of a specific note by its title. Use this when the user asks about the contents of a particular note.",
+    description: "Get the full content of a specific note by its title. Use this when the user asks about the contents of a particular note, or when `search_notes` snippets aren't enough to answer. Default truncates long notes at 8000 chars; pass `max_chars` up to 30000 if you genuinely need more of the text.",
     input_schema: {
       type: "object" as const,
       properties: {
         title: { type: "string", description: "The exact title of the note to retrieve" },
+        max_chars: { type: "number", description: "Max characters of content to return (default: 8000, hard cap: 30000, minimum: 50). Output is truncated with an ellipsis if the note is longer." },
       },
       required: ["title"],
+    },
+  },
+  {
+    name: "find_similar_notes",
+    description: "Given a note title, find other notes that are semantically related — useful for discovering connections the user may not have explicitly linked (e.g. 'what else have I written related to this note?'). Returns up to `limit` notes with titles, snippets, and similarity scores (0–1). Only works for notes that have been indexed by the embedding processor; recently-created notes may not appear as sources or matches yet.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        noteTitle: { type: "string", description: "The exact title of the source note." },
+        limit: { type: "number", description: "Max results to return (default: 5, max: 10)" },
+      },
+      required: ["noteTitle"],
     },
   },
   {
@@ -114,12 +129,12 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "update_note_content",
-    description: "Update the content of an existing note. Use this to fix, rewrite, or modify note content. The user's version history will preserve the previous version. Always provide the complete updated content, not just the changed parts.",
+    description: "REWRITE an existing note's full content. This is NOT a patch/diff/edit tool — you must always send the COMPLETE new note body in the `content` field. Workflow: (1) call get_note_content first to read the current text, (2) compute the full new text in your head, (3) call update_note_content with the entire new body. Calling this tool without a valid `content` string is an error and will be refused. Gated behind a user confirmation card; the rewrite only commits if the user clicks Apply. The previous version is saved in version history.",
     input_schema: {
       type: "object" as const,
       properties: {
         noteTitle: { type: "string", description: "Title of the note to update" },
-        content: { type: "string", description: "The full updated markdown content for the note" },
+        content: { type: "string", description: "The COMPLETE new markdown body for the note. Required. Must be a non-empty string. Never omit this — sending only noteTitle is an error." },
       },
       required: ["noteTitle", "content"],
     },
@@ -172,7 +187,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "delete_note",
-    description: "Move a note to the trash (soft delete). The user can restore it later.",
+    description: "Move a note to Trash (soft delete — recoverable from Trash until the user's auto-delete timer purges it). Gated behind a user confirmation card; the note is untouched until the user clicks Apply. Describe your intent naturally; the UI shows title + folder.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -183,7 +198,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "delete_folder",
-    description: "Delete a folder. Notes inside become unfiled.",
+    description: "Delete a folder. Notes inside become Unfiled (the notes themselves are NOT deleted). Gated behind a user confirmation card; the folder is untouched until the user clicks Apply.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -225,8 +240,20 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "rename_note",
+    description: "Rename a note's title. Gated behind a user confirmation card showing old → new title. The note's content, folder, tags, and id are unchanged — only the title is updated. Use the exact existing title for `oldTitle` (call get_recent_notes / search_notes first if you're unsure of the precise spelling).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        oldTitle: { type: "string", description: "Current note title" },
+        newTitle: { type: "string", description: "New note title" },
+      },
+      required: ["oldTitle", "newTitle"],
+    },
+  },
+  {
     name: "rename_folder",
-    description: "Rename a folder.",
+    description: "Rename a folder. Gated behind a user confirmation card showing old → new name.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -238,7 +265,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "rename_tag",
-    description: "Rename a tag across all notes that use it.",
+    description: "Rename a tag across all notes that use it. Gated behind a user confirmation card showing old → new name and the count of affected notes.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -266,13 +293,76 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
 export interface ToolResult {
   text: string;
   noteCards?: { id: string; title: string; folder?: string; tags?: string[]; updatedAt?: string }[];
+  // Phase C (docs/ns/ai-assist-arch/phase-c-action-safety.md): set when a
+  // destructive tool call has been deferred pending user confirmation.
+  // The route forwards this as an SSE `confirmation` event; the frontend
+  // renders a ConfirmationCard and, on Apply, re-invokes the original
+  // tool via POST /ai/tools/confirm with autoApprove=true.
+  needsConfirmation?: PendingConfirmation;
+}
+
+export interface PendingConfirmation {
+  /** UUID assigned by the server; frontend uses it to match card → commit. */
+  id: string;
+  /** Original tool name Claude invoked. */
+  toolName: string;
+  /** Original tool input. The confirm endpoint re-runs executeTool with
+   *  these args + autoApprove=true. Server-side userId scoping protects
+   *  against tampering — we never trust IDs in the payload for authZ. */
+  toolInput: Record<string, unknown>;
+  /** Rendering hint for the ConfirmationCard. */
+  preview: ConfirmationPreview;
+}
+
+export type ConfirmationPreview =
+  | { type: "delete_note"; title: string; folder?: string }
+  | { type: "update_note_content"; title: string; oldContent: string; newContent: string; oldLen: number; newLen: number }
+  | { type: "rename_note"; oldTitle: string; newTitle: string; folder?: string }
+  | { type: "delete_folder"; folderName: string; affectedCount: number }
+  | { type: "rename_folder"; oldName: string; newName: string }
+  | { type: "rename_tag"; oldName: string; newName: string; affectedCount: number };
+
+/** Tools that require user confirmation unless explicitly auto-approved.
+ *  Phase C.5 will make this per-tool user-configurable; for now the
+ *  defaults are hard-coded and picked conservatively (the ones that
+ *  destroy information or rewrite content in bulk). */
+const DESTRUCTIVE_TOOLS = new Set([
+  "delete_note",
+  "delete_folder",
+  "update_note_content",
+  "rename_note",
+  "rename_folder",
+  "rename_tag",
+]);
+
+export interface ExecuteToolOptions {
+  /** Bypass the confirmation gate and execute the mutation. Set by the
+   *  POST /ai/tools/confirm endpoint after the user clicks Apply. */
+  autoApprove?: boolean;
 }
 
 export async function executeTool(
   toolName: string,
   input: Record<string, unknown>,
   userId: string,
+  options: ExecuteToolOptions = {},
 ): Promise<ToolResult> {
+  // Phase C: gate destructive tools behind a confirmation step unless
+  // the caller is the confirm-endpoint (autoApprove=true) or the tool
+  // isn't on the destructive list.
+  if (!options.autoApprove && DESTRUCTIVE_TOOLS.has(toolName)) {
+    const pending = await buildPendingConfirmation(toolName, input, userId);
+    if (pending) {
+      return {
+        text: `User confirmation requested for: ${describeConfirmation(pending.preview)}. The action has not been executed; waiting for the user to Apply or Discard.`,
+        needsConfirmation: pending,
+      };
+    }
+    // Precheck failed (e.g. target not found). Fall through to the
+    // normal executor so the user gets the existing "no note found"
+    // message instead of a phantom confirmation card.
+  }
+
   switch (toolName) {
     case "search_notes":
       return executeSearchNotes(input, userId);
@@ -286,6 +376,8 @@ export async function executeTool(
       return executeGetRecentNotes(input, userId);
     case "get_note_content":
       return executeGetNoteContent(input, userId);
+    case "find_similar_notes":
+      return executeFindSimilarNotes(input, userId);
     case "get_backlinks":
       return executeGetBacklinks(input, userId);
     case "open_note":
@@ -312,6 +404,8 @@ export async function executeTool(
       return executeListTrash(userId);
     case "restore_note":
       return executeRestoreNote(input, userId);
+    case "rename_note":
+      return executeRenameNote(input, userId);
     case "rename_folder":
       return executeRenameFolder(input, userId);
     case "rename_tag":
@@ -330,10 +424,16 @@ async function executeSearchNotes(
   userId: string,
 ): Promise<ToolResult> {
   const limit = Math.min(Number(input.limit) || 10, 25);
+  const requestedMode = input.mode as ListNotesFilter["searchMode"] | undefined;
   const filter: ListNotesFilter = {
     pageSize: limit,
     sortBy: (input.sortBy as ListNotesFilter["sortBy"]) ?? "updatedAt",
     sortOrder: "desc",
+    // Default to hybrid when the user provided a query — keyword-only
+    // misses too many conceptually related notes for broad Q&A.
+    // Keyword is still a valid explicit mode when the user asks for an
+    // exact string match.
+    searchMode: requestedMode ?? (input.query ? "hybrid" : "keyword"),
   };
 
   if (input.query) filter.search = String(input.query);
@@ -362,16 +462,28 @@ async function executeSearchNotes(
     return { text: "No notes found matching the criteria.", noteCards: [] };
   }
 
-  const lines = mapped.map((n, i) => {
-    const parts = [`${i + 1}. "${n.title}"`];
-    if (n.folder) parts.push(`(folder: ${n.folder})`);
-    if (n.tags.length > 0) parts.push(`[${n.tags.join(", ")}]`);
-    if (n.audioMode) parts.push(`(${n.audioMode} recording)`);
-    return parts.join(" ");
+  // Include a content snippet per hit so Claude has actual text to reason
+  // over without having to follow up with get_note_content for every match.
+  // 800 chars is enough to answer most broad questions; Claude can still
+  // call get_note_content when it needs the full text.
+  const SNIPPET_CHARS = 800;
+  const snippet = (content: string): string => {
+    const trimmed = content.trim();
+    if (trimmed.length <= SNIPPET_CHARS) return trimmed;
+    return `${trimmed.slice(0, SNIPPET_CHARS)}…`;
+  };
+
+  const blocks = mapped.map((n, i) => {
+    const header: string[] = [`${i + 1}. "${n.title}"`];
+    if (n.folder) header.push(`(folder: ${n.folder})`);
+    if (n.tags.length > 0) header.push(`[${n.tags.join(", ")}]`);
+    if (n.audioMode) header.push(`(${n.audioMode} recording)`);
+    const body = n.content ? snippet(n.content) : "(empty)";
+    return `${header.join(" ")}\n${body}`;
   });
 
   return {
-    text: `Found ${mapped.length} note(s):\n${lines.join("\n")}`,
+    text: `Found ${mapped.length} note(s):\n\n${blocks.join("\n\n")}`,
     noteCards,
   };
 }
@@ -481,10 +593,53 @@ async function executeGetNoteContent(
     return { text: `No note found with title "${title}".` };
   }
 
-  const content = note.content.length > 3000 ? note.content.slice(0, 3000) + "\n...(truncated)" : note.content;
+  // Phase B.4: configurable truncation. Default 8000 (up from 3000 — most
+  // notes fit; prior limit cut off too many). Hard cap 30000 to protect
+  // the context window from a rogue request.
+  const requestedMax = typeof input.max_chars === "number" ? input.max_chars : 8000;
+  const maxChars = Math.max(50, Math.min(30000, requestedMax));
+  const content = note.content.length > maxChars
+    ? note.content.slice(0, maxChars) + "\n...(truncated)"
+    : note.content;
   return {
     text: `Title: ${note.title}\nFolder: ${note.folder ?? "Unfiled"}\nTags: ${note.tags.join(", ") || "none"}\nLast edited: ${new Date(note.updatedAt).toLocaleDateString()}\n\nContent:\n${content}`,
     noteCards: [{ id: note.id, title: note.title, folder: note.folder ?? undefined, tags: note.tags.length > 0 ? note.tags : undefined, updatedAt: note.updatedAt }],
+  };
+}
+
+async function executeFindSimilarNotes(
+  input: Record<string, unknown>,
+  userId: string,
+): Promise<ToolResult> {
+  const noteTitle = String(input.noteTitle);
+  // Distinguish missing (default 5) from supplied-but-out-of-range
+  // (clamp to [1, 10]) — `|| 5` would treat limit=0 as "use default".
+  const rawLimit = typeof input.limit === "number" ? input.limit : 5;
+  const limit = Math.max(1, Math.min(10, rawLimit));
+
+  const similar = await findSimilarNotes(userId, noteTitle, limit);
+
+  if (similar.length === 0) {
+    return {
+      text: `No related notes found for "${noteTitle}". This could mean the note doesn't exist, is too short to match against, or hasn't been indexed yet.`,
+      noteCards: [],
+    };
+  }
+
+  const noteCards = similar.map((n) => ({
+    id: n.id,
+    title: n.title,
+    updatedAt: n.updatedAt.toISOString(),
+  }));
+
+  const lines = similar.map((n, i) => {
+    const pct = Math.round(n.score * 100);
+    return `${i + 1}. "${n.title}" (${pct}% similar)\n   ${n.snippet}`;
+  });
+
+  return {
+    text: `Found ${similar.length} note(s) related to "${noteTitle}":\n\n${lines.join("\n\n")}`,
+    noteCards,
   };
 }
 
@@ -523,10 +678,31 @@ async function executeGetBacklinks(
 
 // ─── Action Tool Implementations ─────────────────────────
 
-async function findNoteByTitle(userId: string, title: string) {
+/**
+ * Look up a note by title.
+ *
+ * By default, if no note matches the title exactly (case-insensitive),
+ * the function falls back to the first search result — useful for
+ * non-destructive tools like open_note / summarize where the user
+ * asked open-endedly ("open my sprint note" → "Sprint Planning Notes").
+ *
+ * For destructive tools (delete, rewrite) pass `{ strict: true }` to
+ * disable the fuzzy fallback. When Claude is told to "delete Delete #4"
+ * and Delete #4 doesn't exist, we must NOT silently substitute the
+ * next best search result — the user explicitly named a target that
+ * doesn't exist and the right answer is "not found".
+ */
+async function findNoteByTitle(
+  userId: string,
+  title: string,
+  options?: { strict?: boolean },
+) {
   const result = await listNotes(userId, { search: title, pageSize: 5 });
   const mapped = result.notes.map((n) => toNote(n));
-  return mapped.find((n) => n.title.toLowerCase() === title.toLowerCase()) ?? mapped[0] ?? null;
+  const exact = mapped.find((n) => n.title.toLowerCase() === title.toLowerCase());
+  if (exact) return exact;
+  if (options?.strict) return null;
+  return mapped[0] ?? null;
 }
 
 async function findFolderByName(userId: string, name: string) {
@@ -577,9 +753,19 @@ async function executeCreateNote(
 }
 
 async function executeUpdateNoteContent(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
-  const note = await findNoteByTitle(userId, String(input.noteTitle));
+  // Reject malformed calls loudly. Without this guard, Claude calling
+  // update_note_content with a missing/null content field would write
+  // String(undefined) === "undefined" into the note, silently destroying
+  // the user's data. The schema marks content as required, but Claude
+  // doesn't always honour that — defend at the executor.
+  if (typeof input.content !== "string" || input.content.length === 0) {
+    return { text: "Error: update_note_content requires a non-empty `content` string with the COMPLETE new note body. This tool replaces the entire note — it is not a patch/diff tool. Call get_note_content first if you need to read the current text, then call update_note_content again with the full new body." };
+  }
+  // Strict match — never fuzzy-rewrite. Overwriting the wrong note is
+  // catastrophic (even with version history to recover).
+  const note = await findNoteByTitle(userId, String(input.noteTitle), { strict: true });
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
-  await updateNote(userId, note.id, { content: String(input.content) });
+  await updateNote(userId, note.id, { content: input.content });
   return { text: `Updated content of "${note.title}". The previous version is saved in version history.`, noteCards: [{ id: note.id, title: note.title }] };
 }
 
@@ -617,7 +803,10 @@ async function executeGenerateSummary(input: Record<string, unknown>, userId: st
 }
 
 async function executeDeleteNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
-  const note = await findNoteByTitle(userId, String(input.noteTitle));
+  // Strict match — never fuzzy-delete. If the exact title isn't
+  // found, return a clear "not found" to Claude rather than silently
+  // substituting a similarly-titled note.
+  const note = await findNoteByTitle(userId, String(input.noteTitle), { strict: true });
   if (!note) return { text: `No note found with title "${input.noteTitle}".` };
   const deleted = await softDeleteNote(userId, note.id);
   if (!deleted) return { text: `Failed to delete "${note.title}".` };
@@ -667,18 +856,70 @@ async function executeRestoreNote(input: Record<string, unknown>, userId: string
   };
 }
 
+async function executeRenameNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  // Strict match — never fuzzy-rename. Renaming the wrong note silently
+  // is just as bad as deleting the wrong one (the user's wiki-links and
+  // mental model break).
+  const note = await findNoteByTitle(userId, String(input.oldTitle), { strict: true });
+  if (!note) return { text: `No note found with title "${input.oldTitle}".` };
+  const newTitle = String(input.newTitle).trim();
+  if (newTitle.length === 0) {
+    return { text: "Error: rename_note requires a non-empty `newTitle`." };
+  }
+  await updateNote(userId, note.id, { title: newTitle });
+  return {
+    text: `Renamed "${note.title}" to "${newTitle}".`,
+    noteCards: [{ id: note.id, title: newTitle, folder: note.folder ?? undefined, tags: note.tags.length > 0 ? note.tags : undefined, updatedAt: note.updatedAt }],
+  };
+}
+
 async function executeRenameFolder(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const folder = await findFolderByName(userId, String(input.oldName));
   if (!folder) return { text: `No folder found with name "${input.oldName}".` };
-  await renameFolder(userId, folder.id, String(input.newName));
-  return { text: `Renamed folder "${input.oldName}" to "${input.newName}".` };
+  const newName = String(input.newName).trim();
+  if (newName.length === 0) {
+    return { text: "Error: rename_folder requires a non-empty `newName`." };
+  }
+  // Precheck for a name collision — root folders have a (userId, name)
+  // unique constraint, so renaming onto an existing folder name fails
+  // with a Postgres P2002 that the route bubbles up as a 500. Catch
+  // it here and return a friendly result so Claude/the user see why.
+  const collision = await findFolderByName(userId, newName);
+  if (collision && collision.id !== folder.id) {
+    return { text: `A folder named "${newName}" already exists. Pick a different name (or move/merge the conflicting folder first).` };
+  }
+  try {
+    // renameFolder's second arg is the folder's *name*, not its id. Pass
+    // the resolved name — not `input.oldName` — in case Claude supplied
+    // a case-variant that findFolderByName matched via its
+    // case-insensitive lookup but the SQL WHERE clause would miss.
+    await renameFolder(userId, folder.name, newName);
+    return { text: `Renamed folder "${folder.name}" to "${newName}".` };
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "P2002") {
+      return { text: `A folder named "${newName}" already exists. Pick a different name.` };
+    }
+    return { text: `Failed to rename folder "${folder.name}". ${err instanceof Error ? err.message : ""}`.trim() };
+  }
 }
 
 async function executeRenameTag(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const oldName = String(input.oldName);
-  const newName = String(input.newName);
-  await renameTag(userId, oldName, newName);
-  return { text: `Renamed tag "${oldName}" to "${newName}".` };
+  const newName = String(input.newName).trim();
+  if (newName.length === 0) {
+    return { text: "Error: rename_tag requires a non-empty `newName`." };
+  }
+  try {
+    await renameTag(userId, oldName, newName);
+    return { text: `Renamed tag "${oldName}" to "${newName}".` };
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "P2002") {
+      return { text: `A tag named "${newName}" already exists. Pick a different name (or use that tag's existing notes instead).` };
+    }
+    return { text: `Failed to rename tag "${oldName}". ${err instanceof Error ? err.message : ""}`.trim() };
+  }
 }
 
 async function executeDuplicateNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
@@ -695,4 +936,171 @@ async function executeDuplicateNote(input: Record<string, unknown>, userId: stri
     text: `Duplicated "${note.title}" as "${result.title}".`,
     noteCards: [{ id: result.id, title: result.title, folder: result.folder ?? undefined, tags: result.tags }],
   };
+}
+
+// ─── Phase C: confirmation gate ─────────────────────────────────────
+
+/**
+ * Build a PendingConfirmation for a destructive tool call. Returns null
+ * if the precheck fails (target not found) so `executeTool` can fall
+ * through to the real executor, which will surface the "not found"
+ * error to Claude in the usual way.
+ */
+async function buildPendingConfirmation(
+  toolName: string,
+  input: Record<string, unknown>,
+  userId: string,
+): Promise<PendingConfirmation | null> {
+  const id = generateConfirmationId();
+
+  switch (toolName) {
+    case "delete_note": {
+      // Strict match: when Claude proposes deleting a title the user
+      // named, we must NOT fall back to the first search result if
+      // that exact title doesn't exist. Falling back surfaces a
+      // confirmation card for a note the user didn't mean to delete;
+      // the C.4 batching then bundles the mistaken match alongside
+      // valid deletes in one Apply button.
+      const note = await findNoteByTitle(userId, String(input.noteTitle), { strict: true });
+      if (!note) return null;
+      return {
+        id,
+        toolName,
+        toolInput: input,
+        preview: { type: "delete_note", title: note.title, folder: note.folder ?? undefined },
+      };
+    }
+
+    case "delete_folder": {
+      const folder = await findFolderByName(userId, String(input.folderName));
+      if (!folder) return null;
+      return {
+        id,
+        toolName,
+        toolInput: input,
+        preview: { type: "delete_folder", folderName: folder.name, affectedCount: folder.count },
+      };
+    }
+
+    case "update_note_content": {
+      // Skip the confirmation card entirely for malformed calls — the
+      // executor will return an error to Claude so it can retry. A card
+      // showing "rewrite to empty" with no real new content is a footgun
+      // (looks subtle but represents total data loss on Apply).
+      if (typeof input.content !== "string" || input.content.length === 0) {
+        return null;
+      }
+      // Strict match — see delete_note case above.
+      const note = await findNoteByTitle(userId, String(input.noteTitle), { strict: true });
+      if (!note) return null;
+      const oldContent = note.content ?? "";
+      const newContent = input.content;
+      return {
+        id,
+        toolName,
+        // Use the resolved exact title in the commit so the confirm
+        // endpoint re-runs against the same note Claude intended.
+        toolInput: { ...input, noteTitle: note.title },
+        preview: {
+          type: "update_note_content",
+          title: note.title,
+          oldContent,
+          newContent,
+          oldLen: oldContent.length,
+          newLen: newContent.length,
+        },
+      };
+    }
+
+    case "rename_note": {
+      const note = await findNoteByTitle(userId, String(input.oldTitle), { strict: true });
+      if (!note) return null;
+      const newTitle = String(input.newTitle).trim();
+      if (newTitle.length === 0) return null;
+      return {
+        id,
+        toolName,
+        // Use the resolved exact title in the commit so the confirm
+        // endpoint re-runs against the same note Claude intended.
+        toolInput: { ...input, oldTitle: note.title, newTitle },
+        preview: {
+          type: "rename_note",
+          oldTitle: note.title,
+          newTitle,
+          folder: note.folder ?? undefined,
+        },
+      };
+    }
+
+    case "rename_folder": {
+      const folder = await findFolderByName(userId, String(input.oldName));
+      if (!folder) return null;
+      const newName = String(input.newName).trim();
+      if (newName.length === 0) return null;
+      // Skip the confirmation card if the new name collides with an
+      // existing folder. The executor returns a friendly explanation;
+      // surfacing a confirmation card with no resolution path would
+      // be a footgun (the user would click Apply only to see a 500).
+      const collision = await findFolderByName(userId, newName);
+      if (collision && collision.id !== folder.id) return null;
+      return {
+        id,
+        toolName,
+        toolInput: input,
+        preview: {
+          type: "rename_folder",
+          oldName: folder.name,
+          newName,
+        },
+      };
+    }
+
+    case "rename_tag": {
+      const oldName = String(input.oldName);
+      const newName = String(input.newName);
+      const tags = await listTags(userId);
+      const match = tags.find((t) => t.name.toLowerCase() === oldName.toLowerCase());
+      if (!match) return null;
+      return {
+        id,
+        toolName,
+        toolInput: input,
+        preview: {
+          type: "rename_tag",
+          oldName: match.name,
+          newName,
+          affectedCount: match.count,
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+function describeConfirmation(preview: ConfirmationPreview): string {
+  switch (preview.type) {
+    case "delete_note":
+      return `move "${preview.title}" to trash`;
+    case "delete_folder":
+      return `delete folder "${preview.folderName}" (${preview.affectedCount} note${preview.affectedCount === 1 ? "" : "s"} will become unfiled)`;
+    case "update_note_content": {
+      const delta = preview.newLen - preview.oldLen;
+      const sign = delta >= 0 ? "+" : "";
+      return `rewrite "${preview.title}" (${sign}${delta} chars, ${preview.oldLen} → ${preview.newLen})`;
+    }
+    case "rename_note":
+      return `rename "${preview.oldTitle}" to "${preview.newTitle}"`;
+    case "rename_folder":
+      return `rename folder "${preview.oldName}" to "${preview.newName}"`;
+    case "rename_tag":
+      return `rename tag "${preview.oldName}" to "${preview.newName}" across ${preview.affectedCount} note${preview.affectedCount === 1 ? "" : "s"}`;
+  }
+}
+
+function generateConfirmationId(): string {
+  // crypto.randomUUID is available in Node 19+.
+  return typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }

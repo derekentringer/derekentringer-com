@@ -29,6 +29,7 @@ import {
   structureTranscript,
   resetClient,
   getAiErrorMessage,
+  stripEmojis,
 } from "../services/aiService.js";
 
 beforeEach(() => {
@@ -717,6 +718,45 @@ describe("aiService", () => {
       expect(getAiErrorMessage(new Error("network error"))).toBe("Something went wrong. Please try again.");
       expect(getAiErrorMessage(null)).toBe("Something went wrong. Please try again.");
       expect(getAiErrorMessage(undefined)).toBe("Something went wrong. Please try again.");
+    });
+  });
+
+  describe("stripEmojis", () => {
+    it("removes status emojis", () => {
+      // Inline: pictograph + immediately adjacent whitespace stays
+      // for the caller to .trim(). What matters is the pictograph
+      // codepoint is gone.
+      expect(stripEmojis("Done! Renamed.").trim()).toBe("Done! Renamed.");
+      expect(stripEmojis("Result: pending").trim()).toBe("Result: pending");
+      expect(stripEmojis("All set ").trim()).toBe("All set");
+    });
+
+    it("removes inline emojis from prose, collapsing surrounding spaces", () => {
+      // " ✅ " around the emoji collapses to a single space via the
+      // helper's `/  +/` pass; trailing-edge space is left for the
+      // caller's optional .trim().
+      expect(stripEmojis("Tagged the note with #ai and #notes ").trim()).toBe("Tagged the note with #ai and #notes");
+      expect(stripEmojis("foo bar baz")).toBe("foo bar baz");
+    });
+
+    it("removes pictograph + variation selector pairs cleanly", () => {
+      // ️ = U+FE0F variation selector, ‍ = U+200D ZWJ. Without
+      // explicit cleanup these would remain after the pictograph
+      // strip.
+      expect(stripEmojis("Open ️ now").trim()).toBe("Open now");
+    });
+
+    it("collapses double spaces left by stripped emojis", () => {
+      expect(stripEmojis("Wow  amazing")).toBe("Wow amazing");
+    });
+
+    it("preserves plain text untouched", () => {
+      const input = "The quick brown fox — and a [Note Title] reference. Numbers: 1, 2, 3.";
+      expect(stripEmojis(input)).toBe(input);
+    });
+
+    it("handles empty string", () => {
+      expect(stripEmojis("")).toBe("");
     });
   });
 });

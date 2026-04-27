@@ -750,6 +750,21 @@ export function SettingsPage() {
                 )}
               </div>
               <ToggleSwitch label="AI assistant chat" checked={aiSettings.qaAssistant} onChange={(v) => updateAiSetting("qaAssistant", v)} info="Ask natural language questions about your notes. Requires semantic search to be enabled." disabled={aiDisabled || !aiSettings.semanticSearch} />
+
+              {/* Phase C.5 — per-tool auto-approval for destructive
+                  Claude actions. All-off by default; enable sparingly. */}
+              {aiSettings.qaAssistant && !aiDisabled && (
+                <div className="pt-2 px-3 space-y-1 border-t border-border/50">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Auto-approve destructive actions</span>
+                  <p className="text-[11px] text-muted-foreground">When off, Claude must wait for your confirmation before each of these. Enable sparingly.</p>
+                  <ToggleSwitch label="Move notes to Trash" checked={aiSettings.autoApprove.deleteNote} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, deleteNote: v })} info="Auto-approve `delete_note` calls. Notes go to Trash and can be restored until the trash auto-delete timer purges them." />
+                  <ToggleSwitch label="Delete folders" checked={aiSettings.autoApprove.deleteFolder} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, deleteFolder: v })} info="Auto-approve `delete_folder`. Notes inside become Unfiled; the notes themselves aren't deleted." />
+                  <ToggleSwitch label="Rewrite note content" checked={aiSettings.autoApprove.updateNoteContent} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, updateNoteContent: v })} info="Auto-approve `update_note_content`. Previous version stays in version history." />
+                  <ToggleSwitch label="Rename notes" checked={aiSettings.autoApprove.renameNote} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameNote: v })} info="Auto-approve `rename_note`. Updates the note title only; content, folder, tags, and id are unchanged." />
+                  <ToggleSwitch label="Rename folders" checked={aiSettings.autoApprove.renameFolder} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameFolder: v })} info="Auto-approve `rename_folder`." />
+                  <ToggleSwitch label="Rename tags" checked={aiSettings.autoApprove.renameTag} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameTag: v })} info="Auto-approve `rename_tag`. Affects every note using that tag." />
+                </div>
+              )}
             </SettingsGroup>
 
             {/* Audio */}

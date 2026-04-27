@@ -451,66 +451,112 @@ export async function updateNote(
     }
 
     // Sync frontmatter ↔ database cache.
-    // When content changes: derive cache columns from frontmatter in content.
-    // When metadata fields change without content: update frontmatter in content.
-    if (data.content !== undefined) {
-      // Content changed — parse frontmatter and derive cache columns
-      const { metadata } = parseFrontmatter(data.content);
-      if (metadata.title !== undefined && data.title === undefined) {
-        updateData.title = metadata.title;
-      }
-      if (metadata.tags !== undefined && data.tags === undefined) {
-        updateData.tags = metadata.tags;
-      }
-      if (metadata.description !== undefined && data.summary === undefined) {
-        updateData.summary = metadata.description;
-      }
-      if (metadata.favorite !== undefined && data.favorite === undefined) {
-        updateData.favorite = metadata.favorite;
-      }
-    } else {
-      // Metadata changed without content — update frontmatter in content.
-      // Need to fetch current content to update frontmatter in it.
-      const metadataChanged =
-        data.title !== undefined ||
-        data.tags !== undefined ||
-        data.summary !== undefined ||
-        data.favorite !== undefined;
+    //
+    // Three cases to handle; the prior implementation only covered the
+    // first two, which left the embedded frontmatter going stale
+    // whenever the editor saved {title, content} together (the common
+    // case — every save sends both).
+    //
+    //   A. Only content provided          → derive cache columns FROM the
+    //                                        frontmatter inside the new
+    //                                        content.
+    //   B. Only metadata provided         → fetch current content and
+    //                                        rewrite its frontmatter.
+    //   C. BOTH provided                  → metadata wins: rewrite the
+    //                                        frontmatter in the new
+    //                                        content with the explicit
+    //                                        metadata values.
+    const hasExplicitMetadata =
+      data.title !== undefined ||
+      data.tags !== undefined ||
+      data.summary !== undefined ||
+      data.favorite !== undefined;
 
-      if (metadataChanged) {
+    if (data.content !== undefined && !hasExplicitMetadata) {
+      // Case A — derive cache from frontmatter.
+      //
+      // Preserve fields the new content DROPPED vs. the DB. When the AI
+      // rewrite path (update_note_content) sends fresh content whose
+      // frontmatter happens to omit the title, we don't want to lose
+      // the title from the stored content. Fill in missing fields from
+      // the current DB row so the stored frontmatter stays complete
+      // and self-describing.
+      const { metadata } = parseFrontmatter(data.content);
+      const missingAny =
+        metadata.title === undefined ||
+        metadata.tags === undefined ||
+        metadata.description === undefined ||
+        metadata.favorite === undefined;
+      let content = data.content;
+      if (missingAny) {
+        const existing = await prisma.note.findUnique({
+          where: { id, userId, deletedAt: null },
+          select: { title: true, tags: true, summary: true, favorite: true },
+        });
+        if (existing) {
+          // tags is stored as Json in the schema — narrow to string[]
+          // before using.
+          const existingTags = Array.isArray(existing.tags)
+            ? existing.tags.filter((t): t is string => typeof t === "string")
+            : [];
+          if (metadata.title === undefined && existing.title) {
+            content = updateFrontmatterField(content, "title", existing.title);
+            metadata.title = existing.title;
+          }
+          if (metadata.tags === undefined && existingTags.length > 0) {
+            content = updateFrontmatterField(content, "tags", existingTags);
+            metadata.tags = existingTags;
+          }
+          if (metadata.description === undefined && existing.summary) {
+            content = updateFrontmatterField(content, "description", existing.summary);
+            metadata.description = existing.summary;
+          }
+          if (metadata.favorite === undefined && existing.favorite) {
+            content = updateFrontmatterField(content, "favorite", true);
+            metadata.favorite = true;
+          }
+        }
+        if (content !== data.content) updateData.content = content;
+      }
+      if (metadata.title !== undefined) updateData.title = metadata.title;
+      if (metadata.tags !== undefined) updateData.tags = metadata.tags;
+      if (metadata.description !== undefined) updateData.summary = metadata.description;
+      if (metadata.favorite !== undefined) updateData.favorite = metadata.favorite;
+    } else if (hasExplicitMetadata) {
+      // Cases B + C — explicit metadata wins; rewrite frontmatter.
+      let content = data.content;
+      if (content === undefined) {
         const existing = await prisma.note.findUnique({
           where: { id, userId, deletedAt: null },
           select: { content: true },
         });
-        if (existing?.content !== undefined) {
-          let content = existing.content;
-          if (data.title !== undefined) {
-            content = updateFrontmatterField(content, "title", data.title);
-          }
-          if (data.tags !== undefined) {
-            content = updateFrontmatterField(
-              content,
-              "tags",
-              data.tags.length > 0 ? data.tags : undefined,
-            );
-          }
-          if (data.summary !== undefined) {
-            content = updateFrontmatterField(
-              content,
-              "description",
-              data.summary || undefined,
-            );
-          }
-          if (data.favorite !== undefined) {
-            content = updateFrontmatterField(
-              content,
-              "favorite",
-              data.favorite || undefined,
-            );
-          }
-          updateData.content = content;
-        }
+        content = existing?.content ?? "";
       }
+      if (data.title !== undefined) {
+        content = updateFrontmatterField(content, "title", data.title);
+      }
+      if (data.tags !== undefined) {
+        content = updateFrontmatterField(
+          content,
+          "tags",
+          data.tags.length > 0 ? data.tags : undefined,
+        );
+      }
+      if (data.summary !== undefined) {
+        content = updateFrontmatterField(
+          content,
+          "description",
+          data.summary || undefined,
+        );
+      }
+      if (data.favorite !== undefined) {
+        content = updateFrontmatterField(
+          content,
+          "favorite",
+          data.favorite || undefined,
+        );
+      }
+      updateData.content = content;
     }
 
     const updated = await prisma.note.update({
@@ -583,8 +629,14 @@ export async function restoreNote(userId: string, id: string): Promise<PrismaNot
 export async function permanentDeleteNote(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
-    await prisma.note.delete({
-      where: { id, userId },
+    // Tombstone-first hard-delete so other devices learn about the
+    // deletion on their next /sync/pull. Without the tombstone the row
+    // is silently gone from the server but remains in every offline
+    // client's SQLite forever — the bug that surfaced as "I emptied
+    // trash on web but desktop still shows the notes".
+    await prisma.$transaction(async (tx) => {
+      await tx.note.delete({ where: { id, userId } });
+      await writeTombstone(tx, userId, "note", id);
     });
     return true;
   } catch (error) {
@@ -599,8 +651,25 @@ export async function permanentDeleteTrash(userId: string, ids?: string[]): Prom
   if (ids && ids.length > 0) {
     where.id = { in: ids };
   }
-  const result = await prisma.note.deleteMany({ where });
-  return result.count;
+  // Capture ids before the bulk delete so we can write a tombstone for
+  // each one. Same rationale as permanentDeleteNote — without these
+  // tombstones, offline clients (desktop, mobile) can't reconcile an
+  // "Empty Trash" performed on another device.
+  return await prisma.$transaction(async (tx) => {
+    const targets = await tx.note.findMany({
+      where: where as Record<string, unknown>,
+      select: { id: true },
+    });
+    if (targets.length === 0) return 0;
+    const targetIds = targets.map((t) => t.id);
+    const result = await tx.note.deleteMany({
+      where: { userId, id: { in: targetIds } },
+    });
+    for (const targetId of targetIds) {
+      await writeTombstone(tx, userId, "note", targetId);
+    }
+    return result.count;
+  });
 }
 
 export async function purgeOldTrash(days = 30): Promise<number> {
@@ -608,13 +677,23 @@ export async function purgeOldTrash(days = 30): Promise<number> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
 
-  const result = await prisma.note.deleteMany({
-    where: {
-      deletedAt: { lt: cutoff },
-    },
+  // Same tombstone-first contract as permanentDeleteTrash so the
+  // background purge propagates to offline clients.
+  return await prisma.$transaction(async (tx) => {
+    const targets = await tx.note.findMany({
+      where: { deletedAt: { lt: cutoff } },
+      select: { id: true, userId: true },
+    });
+    if (targets.length === 0) return 0;
+    const targetIds = targets.map((t) => t.id);
+    const result = await tx.note.deleteMany({
+      where: { id: { in: targetIds } },
+    });
+    for (const t of targets) {
+      await writeTombstone(tx, t.userId, "note", t.id);
+    }
+    return result.count;
   });
-
-  return result.count;
 }
 
 /**
@@ -1259,6 +1338,66 @@ export interface MeetingContextNote {
   snippet: string;
   score: number;
   updatedAt: Date;
+}
+
+/**
+ * Given a note (by title), find other notes that are semantically related.
+ * Phase B (docs/ns/ai-assist-arch/phase-b-*): exposed to Claude as the
+ * `find_similar_notes` tool so the assistant can surface connections
+ * outside of a live meeting.
+ *
+ * Threshold 0.5 by default — tuned for "related" rather than "very
+ * similar" (meeting-context uses 0.65, hybrid uses 0.4). Self is always
+ * excluded. Falls back to empty when the source note has no indexable
+ * content.
+ */
+export async function findSimilarNotes(
+  userId: string,
+  sourceNoteTitle: string,
+  limit: number = 5,
+  threshold: number = 0.5,
+): Promise<MeetingContextNote[]> {
+  const prisma = getPrisma();
+
+  const source = await prisma.note.findFirst({
+    where: { userId, deletedAt: null, title: sourceNoteTitle },
+    select: { id: true, content: true },
+  });
+  if (!source) return [];
+  if (!source.content || source.content.trim().length < 20) return [];
+
+  const queryEmbedding = await generateQueryEmbedding(source.content);
+  const vectorStr = `[${queryEmbedding.join(",")}]`;
+
+  const MIN_CONTENT_LEN = 20;
+
+  const notes = await prisma.$queryRawUnsafe<
+    { id: string; title: string; content: string; score: number; updatedAt: Date }[]
+  >(
+    `SELECT "id", "title", "content", (1 - ("embedding" <=> $2::vector)) AS score, "updatedAt"
+     FROM "notes"
+     WHERE "deletedAt" IS NULL
+       AND "userId" = $1
+       AND "id" != $5
+       AND "embedding" IS NOT NULL
+       AND LENGTH("content") >= ${MIN_CONTENT_LEN}
+       AND (1 - ("embedding" <=> $2::vector)) > $3
+     ORDER BY "embedding" <=> $2::vector ASC
+     LIMIT $4`,
+    userId,
+    vectorStr,
+    threshold,
+    limit,
+    source.id,
+  );
+
+  return notes.map((n) => ({
+    id: n.id,
+    title: n.title || "Untitled",
+    snippet: extractSnippet(n.content, 150),
+    score: Math.round(Number(n.score) * 100) / 100,
+    updatedAt: n.updatedAt,
+  }));
 }
 
 export async function findMeetingContextNotes(
