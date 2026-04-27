@@ -136,7 +136,7 @@ export async function* generateCompletion(
       event.type === "content_block_delta" &&
       event.delta.type === "text_delta"
     ) {
-      yield event.delta.text;
+      yield stripEmojis(event.delta.text);
     }
   }
 }
@@ -163,7 +163,7 @@ export async function generateSummary(
 
   const block = response.content[0];
   if (block.type === "text") {
-    return block.text.trim();
+    return stripEmojis(block.text).trim();
   }
   return "";
 }
@@ -203,7 +203,10 @@ export async function suggestTags(
         try {
           const parsed = JSON.parse(cleaned);
           if (Array.isArray(parsed)) {
-            return parsed.filter((t): t is string => typeof t === "string");
+            return parsed
+              .filter((t): t is string => typeof t === "string")
+              .map((t) => stripEmojis(t).trim())
+              .filter((t) => t.length > 0);
           }
         } catch {
           // If parsing fails, return empty array
@@ -239,7 +242,7 @@ export async function rewriteText(
 
   const block = response.content[0];
   if (block.type === "text") {
-    return block.text.trim();
+    return stripEmojis(block.text).trim();
   }
   return "";
 }
@@ -330,10 +333,13 @@ export async function structureTranscript(
           }
           const parsed = JSON.parse(jsonText);
           return {
-            title: typeof parsed.title === "string" ? parsed.title : "Audio Note",
-            content: typeof parsed.content === "string" ? parsed.content : transcript,
+            title: typeof parsed.title === "string" ? stripEmojis(parsed.title).trim() : "Audio Note",
+            content: typeof parsed.content === "string" ? stripEmojis(parsed.content) : transcript,
             tags: Array.isArray(parsed.tags)
-              ? parsed.tags.filter((t: unknown): t is string => typeof t === "string")
+              ? parsed.tags
+                  .filter((t: unknown): t is string => typeof t === "string")
+                  .map((t: string) => stripEmojis(t).trim())
+                  .filter((t: string) => t.length > 0)
               : [],
           };
         } catch {
@@ -409,7 +415,7 @@ export async function* answerQuestion(
           event.type === "content_block_delta" &&
           event.delta.type === "text_delta"
         ) {
-          yield event.delta.text;
+          yield stripEmojis(event.delta.text);
         }
       }
       return; // Stream completed successfully
@@ -461,7 +467,7 @@ export async function* answerMeetingQuestion(
           event.type === "content_block_delta" &&
           event.delta.type === "text_delta"
         ) {
-          yield event.delta.text;
+          yield stripEmojis(event.delta.text);
         }
       }
       return;
@@ -476,6 +482,24 @@ export async function* answerMeetingQuestion(
   }
 
   throw lastError;
+}
+
+/** Strip every emoji / pictograph from a text chunk. Defense-in-depth
+ *  on top of the system-prompt directive — even if Claude slips and
+ *  emits a 🎉 or ✅, the user never sees it. Covers Extended_Pictographic
+ *  (the canonical Unicode property for emoji symbols), ZWJ sequence
+ *  joiners, variation selectors (FE0F), and any orphan surrogates
+ *  left after stripping. Plain text characters pass through. */
+export function stripEmojis(text: string): string {
+  return text
+    // Extended_Pictographic catches the actual emoji glyphs (✅ 🎉 📖 …).
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    // VARIATION SELECTOR-16 (️) and zero-width joiners (‍)
+    // tag emoji presentation. Once the pictograph is stripped, these
+    // are orphan invisible characters — clean them up.
+    .replace(/[‍️]/g, "")
+    // Coalesce double spaces that emoji removal may leave behind.
+    .replace(/ {2,}/g, " ");
 }
 
 export interface AgentEvent {
@@ -593,7 +617,7 @@ export async function* answerWithTools(
       // (MAX_TOKENS_PER_QUESTION = 100_000) still bounds total cost.
       max_tokens: 8192,
       temperature: 0.3,
-      system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. When referencing a specific note in your answer, wrap its exact title in square brackets on first mention — like [Exact Note Title] — so the UI can render an inline citation marker linking back to the source. Subsequent references to the same note don't need the brackets. Do NOT use brackets for generic phrases that aren't note titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
+      system: `You are a helpful note-taking assistant. Use the provided tools to search, create, move, tag, summarize, and delete the user's notes and folders. Be concise and helpful. Do NOT use emojis in any reply — write in plain prose only. This includes status emojis like ✅ ❌ 📖 🎉 🗑️ ⚠️, sparkle/pointer emojis like ✨ 👉, and any other Unicode emoji or pictograph. If you'd normally use one for emphasis, just use plain words instead. When referencing a specific note in your answer, wrap its exact title in square brackets on first mention — like [Exact Note Title] — so the UI can render an inline citation marker linking back to the source. Subsequent references to the same note don't need the brackets. Do NOT use brackets for generic phrases that aren't note titles. If a tool returns note cards, the UI will display them as interactive elements — you don't need to repeat every detail, just summarize naturally. When creating notes, generate useful structured content based on the user's request. For destructive actions like deleting, confirm what you did clearly.
 
 When to reach for search_notes: any question that could be answered from the user's broader note library, not just the active note or the live transcript. Examples: "what have I written about X", "do I have any notes on Y", "summarize my thoughts on Z", "how have I described A". Default to mode=hybrid so semantically related notes surface even when exact wording differs. The tool returns content snippets — answer from those directly; only call get_note_content when you need the full text of a specific matched note. If the user's question is clearly scoped to the currently open note or live transcript, answer from that context without searching.
 
@@ -668,7 +692,7 @@ ${transcript}` : ""}`,
 
     for (const block of response.content) {
       if (block.type === "text" && block.text) {
-        yield { type: "text", text: block.text };
+        yield { type: "text", text: stripEmojis(block.text) };
       } else if (block.type === "tool_use") {
         hasToolUse = true;
 
@@ -870,7 +894,7 @@ export async function analyzeImage(
 
       const block = response.content[0];
       if (block.type === "text") {
-        return block.text.trim();
+        return stripEmojis(block.text).trim();
       }
       return "";
     } catch (err: unknown) {
