@@ -7,14 +7,17 @@ describe("linkifyCitations", () => {
     { id: "n2", title: "Daily Stand-up Meeting" },
   ];
 
-  it("numbers explicit [Title] brackets", () => {
+  it("numbers explicit [Title] brackets and keeps the title visible", () => {
+    // Stripping the title from bracket form (`[Title]` → ` ¹`) used
+    // to leave the user with a floating superscript and no anchor.
+    // Now the title stays visible with the marker appended.
     const out = linkifyCitations(
       "See [Claude Code Use Cases] and also [Daily Stand-up Meeting].",
       undefined,
       pool,
     );
-    expect(out).toContain("[1](cite:Claude%20Code%20Use%20Cases)");
-    expect(out).toContain("[2](cite:Daily%20Stand-up%20Meeting)");
+    expect(out).toContain("Claude Code Use Cases[1](cite:Claude%20Code%20Use%20Cases)");
+    expect(out).toContain("Daily Stand-up Meeting[2](cite:Daily%20Stand-up%20Meeting)");
   });
 
   it("attaches a marker to bare title matches (the real /recent-style case)", () => {

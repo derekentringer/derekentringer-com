@@ -186,15 +186,14 @@ export function linkifyCitations(
     const isFirst = !citedOnce.has(r.title);
     citedOnce.add(r.title);
     const marker = `[${idx}](cite:${encodeURIComponent(r.title)})`;
-    if (r.kind === "bracket") {
-      // Brackets were Claude's citation marker — drop them and keep
-      // just the numbered link at first reference.
-      out += isFirst ? marker : "";
-    } else {
-      // Bare match — keep the title visible, append the marker. No
-      // leading space so bold wrappers (`**Title**`) stay intact.
-      out += isFirst ? `${r.title}${marker}` : r.title;
-    }
+    // Both bracket and bare references render the same way: keep the
+    // title visible and append the superscript marker after it.
+    // Stripping the title from bracket form (`[Title]` → ` ¹`) leaves
+    // the user with floating numbers and no idea which note `¹` refers
+    // to ("That would be ¹ — ..."), defeating the purpose of an inline
+    // citation. Subsequent references to the same title still stay
+    // bare so we don't double-cite.
+    out += isFirst ? `${r.title}${marker}` : r.title;
     cursor = r.end;
   }
   out += text.slice(cursor);
