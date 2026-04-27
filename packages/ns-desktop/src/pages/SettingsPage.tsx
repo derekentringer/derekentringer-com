@@ -134,8 +134,8 @@ const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] =
 ];
 
 const RECORDING_SOURCE_OPTIONS: { value: RecordingSource; label: string; info: string }[] = [
-  { value: "microphone", label: "Microphone only", info: "Records from your microphone. Standard recording mode." },
   { value: "meeting", label: "Meeting mode", info: "Captures system audio (meeting participants) + microphone (your voice). Requires macOS screen recording permission." },
+  { value: "microphone", label: "Microphone only", info: "Records from your microphone. Standard recording mode." },
 ];
 
 // Keyboard shortcuts are now driven by the command registry.
@@ -499,7 +499,8 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                 <select
                   value={editorSettings.editorFontSize}
                   onChange={(e) => updateEditorSetting("editorFontSize", Number(e.target.value))}
-                  className="bg-input border border-border rounded-md px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="appearance-none bg-input border border-border rounded-md pl-3 pr-7 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer bg-[length:10px_10px] bg-[right_8px_center] bg-no-repeat"
+                  style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
                   aria-label="Editor font size"
                 >
                   {Array.from({ length: 15 }, (_, i) => i + 10).map((size) => (
