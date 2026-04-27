@@ -876,19 +876,50 @@ async function executeRenameNote(input: Record<string, unknown>, userId: string)
 async function executeRenameFolder(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const folder = await findFolderByName(userId, String(input.oldName));
   if (!folder) return { text: `No folder found with name "${input.oldName}".` };
-  // renameFolder's second arg is the folder's *name*, not its id. Pass
-  // the resolved name — not `input.oldName` — in case Claude supplied
-  // a case-variant that findFolderByName matched via its
-  // case-insensitive lookup but the SQL WHERE clause would miss.
-  await renameFolder(userId, folder.name, String(input.newName));
-  return { text: `Renamed folder "${folder.name}" to "${input.newName}".` };
+  const newName = String(input.newName).trim();
+  if (newName.length === 0) {
+    return { text: "Error: rename_folder requires a non-empty `newName`." };
+  }
+  // Precheck for a name collision — root folders have a (userId, name)
+  // unique constraint, so renaming onto an existing folder name fails
+  // with a Postgres P2002 that the route bubbles up as a 500. Catch
+  // it here and return a friendly result so Claude/the user see why.
+  const collision = await findFolderByName(userId, newName);
+  if (collision && collision.id !== folder.id) {
+    return { text: `A folder named "${newName}" already exists. Pick a different name (or move/merge the conflicting folder first).` };
+  }
+  try {
+    // renameFolder's second arg is the folder's *name*, not its id. Pass
+    // the resolved name — not `input.oldName` — in case Claude supplied
+    // a case-variant that findFolderByName matched via its
+    // case-insensitive lookup but the SQL WHERE clause would miss.
+    await renameFolder(userId, folder.name, newName);
+    return { text: `Renamed folder "${folder.name}" to "${newName}".` };
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "P2002") {
+      return { text: `A folder named "${newName}" already exists. Pick a different name.` };
+    }
+    return { text: `Failed to rename folder "${folder.name}". ${err instanceof Error ? err.message : ""}`.trim() };
+  }
 }
 
 async function executeRenameTag(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const oldName = String(input.oldName);
-  const newName = String(input.newName);
-  await renameTag(userId, oldName, newName);
-  return { text: `Renamed tag "${oldName}" to "${newName}".` };
+  const newName = String(input.newName).trim();
+  if (newName.length === 0) {
+    return { text: "Error: rename_tag requires a non-empty `newName`." };
+  }
+  try {
+    await renameTag(userId, oldName, newName);
+    return { text: `Renamed tag "${oldName}" to "${newName}".` };
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "P2002") {
+      return { text: `A tag named "${newName}" already exists. Pick a different name (or use that tag's existing notes instead).` };
+    }
+    return { text: `Failed to rename tag "${oldName}". ${err instanceof Error ? err.message : ""}`.trim() };
+  }
 }
 
 async function executeDuplicateNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
@@ -1004,6 +1035,14 @@ async function buildPendingConfirmation(
     case "rename_folder": {
       const folder = await findFolderByName(userId, String(input.oldName));
       if (!folder) return null;
+      const newName = String(input.newName).trim();
+      if (newName.length === 0) return null;
+      // Skip the confirmation card if the new name collides with an
+      // existing folder. The executor returns a friendly explanation;
+      // surfacing a confirmation card with no resolution path would
+      // be a footgun (the user would click Apply only to see a 500).
+      const collision = await findFolderByName(userId, newName);
+      if (collision && collision.id !== folder.id) return null;
       return {
         id,
         toolName,
@@ -1011,7 +1050,7 @@ async function buildPendingConfirmation(
         preview: {
           type: "rename_folder",
           oldName: folder.name,
-          newName: String(input.newName),
+          newName,
         },
       };
     }

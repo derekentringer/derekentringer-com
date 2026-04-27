@@ -401,6 +401,17 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         });
       } catch (error) {
         request.log.error(error, "AI tool confirmation error");
+        // Convert known Prisma constraint violations into a 200 with
+        // human-readable text so the UI can render the actual problem
+        // (e.g. "A folder named X already exists") instead of a generic
+        // "Confirm failed: 500" red banner the user can't act on.
+        const code = (error as { code?: string }).code;
+        if (code === "P2002") {
+          return reply.send({
+            text: "That change conflicts with an existing item (a name collision or unique-key violation). Pick a different name and try again.",
+            noteCards: [],
+          });
+        }
         return reply.status(500).send({
           statusCode: 500,
           error: "Internal Server Error",
