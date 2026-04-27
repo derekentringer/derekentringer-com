@@ -240,6 +240,18 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "rename_note",
+    description: "Rename a note's title. Gated behind a user confirmation card showing old → new title. The note's content, folder, tags, and id are unchanged — only the title is updated. Use the exact existing title for `oldTitle` (call get_recent_notes / search_notes first if you're unsure of the precise spelling).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        oldTitle: { type: "string", description: "Current note title" },
+        newTitle: { type: "string", description: "New note title" },
+      },
+      required: ["oldTitle", "newTitle"],
+    },
+  },
+  {
     name: "rename_folder",
     description: "Rename a folder. Gated behind a user confirmation card showing old → new name.",
     input_schema: {
@@ -305,6 +317,7 @@ export interface PendingConfirmation {
 export type ConfirmationPreview =
   | { type: "delete_note"; title: string; folder?: string }
   | { type: "update_note_content"; title: string; oldContent: string; newContent: string; oldLen: number; newLen: number }
+  | { type: "rename_note"; oldTitle: string; newTitle: string; folder?: string }
   | { type: "delete_folder"; folderName: string; affectedCount: number }
   | { type: "rename_folder"; oldName: string; newName: string }
   | { type: "rename_tag"; oldName: string; newName: string; affectedCount: number };
@@ -317,6 +330,7 @@ const DESTRUCTIVE_TOOLS = new Set([
   "delete_note",
   "delete_folder",
   "update_note_content",
+  "rename_note",
   "rename_folder",
   "rename_tag",
 ]);
@@ -390,6 +404,8 @@ export async function executeTool(
       return executeListTrash(userId);
     case "restore_note":
       return executeRestoreNote(input, userId);
+    case "rename_note":
+      return executeRenameNote(input, userId);
     case "rename_folder":
       return executeRenameFolder(input, userId);
     case "rename_tag":
@@ -840,6 +856,23 @@ async function executeRestoreNote(input: Record<string, unknown>, userId: string
   };
 }
 
+async function executeRenameNote(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
+  // Strict match — never fuzzy-rename. Renaming the wrong note silently
+  // is just as bad as deleting the wrong one (the user's wiki-links and
+  // mental model break).
+  const note = await findNoteByTitle(userId, String(input.oldTitle), { strict: true });
+  if (!note) return { text: `No note found with title "${input.oldTitle}".` };
+  const newTitle = String(input.newTitle).trim();
+  if (newTitle.length === 0) {
+    return { text: "Error: rename_note requires a non-empty `newTitle`." };
+  }
+  await updateNote(userId, note.id, { title: newTitle });
+  return {
+    text: `Renamed "${note.title}" to "${newTitle}".`,
+    noteCards: [{ id: note.id, title: newTitle, folder: note.folder ?? undefined, tags: note.tags.length > 0 ? note.tags : undefined, updatedAt: note.updatedAt }],
+  };
+}
+
 async function executeRenameFolder(input: Record<string, unknown>, userId: string): Promise<ToolResult> {
   const folder = await findFolderByName(userId, String(input.oldName));
   if (!folder) return { text: `No folder found with name "${input.oldName}".` };
@@ -948,6 +981,26 @@ async function buildPendingConfirmation(
       };
     }
 
+    case "rename_note": {
+      const note = await findNoteByTitle(userId, String(input.oldTitle), { strict: true });
+      if (!note) return null;
+      const newTitle = String(input.newTitle).trim();
+      if (newTitle.length === 0) return null;
+      return {
+        id,
+        toolName,
+        // Use the resolved exact title in the commit so the confirm
+        // endpoint re-runs against the same note Claude intended.
+        toolInput: { ...input, oldTitle: note.title, newTitle },
+        preview: {
+          type: "rename_note",
+          oldTitle: note.title,
+          newTitle,
+          folder: note.folder ?? undefined,
+        },
+      };
+    }
+
     case "rename_folder": {
       const folder = await findFolderByName(userId, String(input.oldName));
       if (!folder) return null;
@@ -997,6 +1050,8 @@ function describeConfirmation(preview: ConfirmationPreview): string {
       const sign = delta >= 0 ? "+" : "";
       return `rewrite "${preview.title}" (${sign}${delta} chars, ${preview.oldLen} → ${preview.newLen})`;
     }
+    case "rename_note":
+      return `rename "${preview.oldTitle}" to "${preview.newTitle}"`;
     case "rename_folder":
       return `rename folder "${preview.oldName}" to "${preview.newName}"`;
     case "rename_tag":

@@ -39,6 +39,8 @@ function HeadlineForPreview(preview: ConfirmationPreview): string {
       return "Delete folder?";
     case "update_note_content":
       return "Rewrite note content?";
+    case "rename_note":
+      return "Rename note?";
     case "rename_folder":
       return "Rename folder?";
     case "rename_tag":
@@ -270,6 +272,13 @@ function PreviewBody({ preview }: { preview: ConfirmationPreview }) {
           <UpdateDiffPreview preview={preview} />
         </>
       );
+    case "rename_note":
+      return (
+        <p className="text-xs text-foreground/80">
+          Rename note <span className="font-medium">&quot;{preview.oldTitle}&quot;</span> → <span className="font-medium">&quot;{preview.newTitle}&quot;</span>
+          {preview.folder && <span className="text-muted-foreground"> in {preview.folder}</span>}.
+        </p>
+      );
     case "rename_folder":
       return (
         <p className="text-xs text-foreground/80">
@@ -290,6 +299,7 @@ function BatchHeadline(toolName: string, count: number): string {
     case "delete_note": return `Move ${count} notes to trash?`;
     case "delete_folder": return `Delete ${count} folders?`;
     case "update_note_content": return `Rewrite ${count} notes?`;
+    case "rename_note": return `Rename ${count} notes?`;
     case "rename_folder": return `Rename ${count} folders?`;
     case "rename_tag": return `Rename ${count} tags?`;
     default: return `Apply ${count} actions?`;
@@ -305,6 +315,7 @@ function batchItemSummary(preview: ConfirmationPreview): string {
       const sign = delta >= 0 ? "+" : "";
       return `${preview.title} (${sign}${delta} chars)`;
     }
+    case "rename_note": return `${preview.oldTitle} → ${preview.newTitle}`;
     case "rename_folder": return `${preview.oldName} → ${preview.newName}`;
     case "rename_tag": return `#${preview.oldName} → #${preview.newName} (${preview.affectedCount})`;
   }

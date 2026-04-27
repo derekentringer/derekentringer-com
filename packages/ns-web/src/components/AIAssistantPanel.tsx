@@ -406,6 +406,7 @@ interface AIAssistantPanelProps {
     deleteNote: boolean;
     deleteFolder: boolean;
     updateNoteContent: boolean;
+    renameNote: boolean;
     renameFolder: boolean;
     renameTag: boolean;
   };
@@ -918,6 +919,15 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         await apiRestoreNote(note.id);
         return `Restored "${note.title}" from trash.`;
       } catch { return "Failed to restore note."; }
+    },
+    renameNote: async (oldTitle, newTitle) => {
+      try {
+        const result = await fetchNotes({ search: oldTitle, pageSize: 5 });
+        const note = result.notes.find((n) => n.title === oldTitle) ?? result.notes.find((n) => n.title.toLowerCase() === oldTitle.toLowerCase());
+        if (!note) return `Note "${oldTitle}" not found.`;
+        await updateNote(note.id, { title: newTitle });
+        return `Renamed "${oldTitle}" to "${newTitle}".`;
+      } catch { return "Failed to rename note."; }
     },
     renameFolder: async (oldName, newName) => {
       try {

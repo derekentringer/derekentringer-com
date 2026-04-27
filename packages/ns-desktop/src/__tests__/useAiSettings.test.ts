@@ -11,6 +11,7 @@ describe("useAiSettings", () => {
     deleteNote: false,
     deleteFolder: false,
     updateNoteContent: false,
+    renameNote: false,
     renameFolder: false,
     renameTag: false,
   };

@@ -15,6 +15,7 @@ export interface AutoApproveSettings {
   deleteNote: boolean;
   deleteFolder: boolean;
   updateNoteContent: boolean;
+  renameNote: boolean;
   renameFolder: boolean;
   renameTag: boolean;
 }
@@ -41,6 +42,7 @@ const DEFAULT_AUTO_APPROVE: AutoApproveSettings = {
   deleteNote: false,
   deleteFolder: false,
   updateNoteContent: false,
+  renameNote: false,
   renameFolder: false,
   renameTag: false,
 };
@@ -68,6 +70,7 @@ function loadAutoApprove(raw: unknown): AutoApproveSettings {
     deleteNote: typeof r.deleteNote === "boolean" ? r.deleteNote : false,
     deleteFolder: typeof r.deleteFolder === "boolean" ? r.deleteFolder : false,
     updateNoteContent: typeof r.updateNoteContent === "boolean" ? r.updateNoteContent : false,
+    renameNote: typeof r.renameNote === "boolean" ? r.renameNote : false,
     renameFolder: typeof r.renameFolder === "boolean" ? r.renameFolder : false,
     renameTag: typeof r.renameTag === "boolean" ? r.renameTag : false,
   };
