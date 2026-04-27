@@ -450,6 +450,9 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     return (saved === "assistant" || saved === "history" || saved === "toc") ? saved : "assistant";
   });
   const [qaOpen, setQaOpen] = useState(() => localStorage.getItem("ns-drawer-open") === "true");
+  // Phase E.4: bumped by the Cmd+J command to re-focus the chat input
+  // even when the drawer is already on the assistant tab.
+  const [aiFocusNonce, setAiFocusNonce] = useState(0);
 
   // Persist drawer state to localStorage
   useEffect(() => { localStorage.setItem("ns-drawer-open", String(qaOpen)); }, [qaOpen]);
@@ -1776,6 +1779,15 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     "drawer:history": () => handleDrawerTabClick("history"),
     "drawer:toc": () => handleDrawerTabClick("toc"),
 
+    // AI — Phase E.4: Cmd+J opens the drawer on the assistant tab and
+    // focuses the chat input. Unlike drawer:assistant (which toggles),
+    // this always opens + focuses, matching the ChatGPT/Cursor idiom.
+    "ai:focus-chat": () => {
+      setDrawerTab("assistant");
+      setQaOpen(true);
+      setAiFocusNonce((n) => n + 1);
+    },
+
     // Tab Navigation
     "tab:prev": () => cycleTab(-1),
     "tab:next": () => cycleTab(1),
@@ -2873,7 +2885,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               </button>
               {confirmDelete ? (
                 <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-destructive">Delete?</span>
+                  <span className="text-[11px] text-destructive">Move to Trash?</span>
                   <button
                     onClick={handleDelete}
                     className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors cursor-pointer"
@@ -2891,8 +2903,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                 <button
                   onClick={handleDelete}
                   className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
-                  title="Delete"
-                  aria-label="Delete"
+                  title="Move to Trash"
+                  aria-label="Move to Trash"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 </button>
@@ -3352,33 +3364,58 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               isDragging={qaResize.isDragging}
               onPointerDown={qaResize.onPointerDown}
             />
-            <div key={drawerTab} className="flex-1 min-w-0 h-full animate-fade-in">
-              {drawerTab === "assistant" && settings.masterAiEnabled && settings.qaAssistant ? (
-                <AIAssistantPanel
-                  onSelectNote={handleQaSelectNote}
-                  isOpen={qaOpen}
-                  isRecording={isRecording ?? false}
-                  isSearchingContext={meetingContext.isSearching}
-                  liveTranscript={recordingState?.liveTranscript ?? ""}
-                  relevantNotes={meetingContext.relevantNotes}
-                  recordingMode={recordingState?.mode}
-                  audioSessionResult={audioSessionResult}
-                  activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
-                  chatRefreshKey={chatRefreshKey}
-                  activeSessionId={recordingState?.sessionId}
-                  onAudioRetry={handleAudioRetry}
-                  onAudioDiscard={handleAudioDiscard}
-                />
-              ) : drawerTab === "history" && selectedId ? (
-                <VersionHistoryPanel
-                  noteId={selectedId}
-                  onSelectVersion={setSelectedVersion}
-                  selectedVersionId={selectedVersion?.id}
-                  refreshKey={versionRefreshKey}
-                />
-              ) : drawerTab === "toc" && selectedId ? (
-                <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
-              ) : null}
+            {/* AI Assistant stays mounted across drawerTab switches —
+                a key={drawerTab} wrapper here used to remount it on
+                every flip to History/TOC and back, wiping the chat
+                state until the async history fetch completed. Now we
+                hide it with display:none when off-tab. The other
+                panels (history, toc) live in a keyed sibling so they
+                still get fresh state on each open. */}
+            <div className="flex-1 min-w-0 h-full relative">
+              {settings.masterAiEnabled && settings.qaAssistant && (
+                <div
+                  className="absolute inset-0"
+                  style={{ display: drawerTab === "assistant" ? undefined : "none" }}
+                >
+                  <AIAssistantPanel
+                    onSelectNote={handleQaSelectNote}
+                    isOpen={qaOpen && drawerTab === "assistant"}
+                    isRecording={isRecording ?? false}
+                    isSearchingContext={meetingContext.isSearching}
+                    liveTranscript={recordingState?.liveTranscript ?? ""}
+                    relevantNotes={meetingContext.relevantNotes}
+                    recordingMode={recordingState?.mode}
+                    audioSessionResult={audioSessionResult}
+                    activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
+                    chatRefreshKey={chatRefreshKey}
+                    activeSessionId={recordingState?.sessionId}
+                    onAudioRetry={handleAudioRetry}
+                    onAudioDiscard={handleAudioDiscard}
+                    autoApprove={settings.autoApprove}
+                    focusNonce={aiFocusNonce}
+                    onNoteContentRewritten={({ noteId, newContent }) => {
+                      if (selectedId === noteId) {
+                        setContent(newContent);
+                      }
+                      loadNotesRef.current();
+                    }}
+                  />
+                </div>
+              )}
+              {drawerTab !== "assistant" && (
+                <div key={drawerTab} className="absolute inset-0 animate-fade-in">
+                  {drawerTab === "history" && selectedId ? (
+                    <VersionHistoryPanel
+                      noteId={selectedId}
+                      onSelectVersion={setSelectedVersion}
+                      selectedVersionId={selectedVersion?.id}
+                      refreshKey={versionRefreshKey}
+                    />
+                  ) : drawerTab === "toc" && selectedId ? (
+                    <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -77,12 +77,12 @@ export function NoteDetailScreen({ route, navigation }: Props) {
 
   const handleDelete = useCallback(() => {
     Alert.alert(
-      "Delete Note",
-      "Are you sure you want to delete this note?",
+      "Move to Trash",
+      "Move this note to Trash?",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete",
+          text: "Move to Trash",
           style: "destructive",
           onPress: async () => {
             await deleteNote.mutateAsync({ id: noteId });

@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, saveChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags } from "../api/ai.ts";
+import { askQuestion, type AskQuestionEvent, type NoteCard, fetchChatHistory, replaceChatMessages, clearServerChatHistory, type ChatMessageData, summarizeNote as apiSummarize, suggestTags as apiSuggestTags, confirmTool, type PendingConfirmation } from "../api/ai.ts";
 import { searchNotes, createNote, updateNote, softDeleteNote, fetchFolders, fetchTags, fetchFavoriteNotes, fetchRecentlyEditedNotes, fetchTrash, restoreNote as dbRestoreNote, renameFolder as dbRenameFolder, renameTag as dbRenameTag, deleteFolder as dbDeleteFolder } from "../lib/db.ts";
 import type { QASource } from "@derekentringer/ns-shared";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
+import { buildHistoryForClaude } from "../lib/chatHistory.ts";
+import { serializeChatToMarkdown, defaultChatTitle } from "../lib/chatExport.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
+import { ConfirmationCard } from "./ConfirmationCard.tsx";
 
 const ASSISTANT_TIPS = [
   // Search & discover
@@ -96,6 +99,115 @@ function extractCitations(text: string): string[] {
 
 function stripCitations(text: string): string {
   return text.replace(CITE_RE, "").replace(/ {2,}/g, " ").trim();
+}
+
+/** Phase E.5: attach numbered superscript citation markers to note
+ *  references in the assistant text. References are detected two ways,
+ *  whichever Claude happened to emit:
+ *    - explicit `[Note Title]` brackets (the convention we ask for in
+ *      the system prompt)
+ *    - a bare/bold-wrapped exact title match against the sources +
+ *      noteCards pool (Claude doesn't always follow the bracket
+ *      instruction — it frequently renders titles as `**Title**` in
+ *      listicle responses like /recent)
+ *
+ *  Each referenced title gets ONE citation marker at its first
+ *  appearance; subsequent mentions are left as-is. Numbering follows
+ *  the order of first appearance in the text, which is also the order
+ *  the pills render underneath the message.
+ */
+export function linkifyCitations(
+  text: string,
+  sources?: { id: string; title: string }[],
+  noteCards?: { id: string; title: string }[],
+): string {
+  // Dedup titles across sources (Q&A citations) + noteCards (pills from
+  // search / recent / favorites / etc.) — both are legitimate citation
+  // targets.
+  const titles: string[] = [];
+  const seen = new Set<string>();
+  for (const c of [...(sources ?? []), ...(noteCards ?? [])]) {
+    if (c.title && !seen.has(c.title)) {
+      seen.add(c.title);
+      titles.push(c.title);
+    }
+  }
+  if (titles.length === 0) return stripCitations(text);
+
+  type Ref = { start: number; end: number; title: string; kind: "bracket" | "bare" };
+  const refs: Ref[] = [];
+  const titleSet = new Set(titles);
+
+  // Pass 1: explicit `[Title]` markers.
+  {
+    CITE_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = CITE_RE.exec(text)) !== null) {
+      if (titleSet.has(m[1])) {
+        refs.push({ start: m.index, end: m.index + m[0].length, title: m[1], kind: "bracket" });
+      }
+    }
+  }
+
+  // Pass 2: bare exact-title matches. Mask existing `[...]` sections
+  // first so we don't double-count bracketed hits or match inside the
+  // label of a regular markdown link `[label](url)`. Masking with
+  // same-length spaces keeps positional indexes valid against `text`.
+  const masked = text.replace(/\[[^\]]*\]/g, (m) => " ".repeat(m.length));
+  // Longest-first so a title like "Meeting Notes — 04/13" wins over
+  // "Meeting Notes" when both are in the pool.
+  const sortedTitles = [...titles].sort((a, b) => b.length - a.length);
+  const escaped = sortedTitles.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const bareRe = new RegExp(`(?<!\\w)(${escaped.join("|")})(?!\\w)`, "g");
+  {
+    let m: RegExpExecArray | null;
+    while ((m = bareRe.exec(masked)) !== null) {
+      refs.push({ start: m.index, end: m.index + m[0].length, title: m[1], kind: "bare" });
+    }
+  }
+
+  refs.sort((a, b) => a.start - b.start);
+
+  const titleToIdx = new Map<string, number>();
+  let nextIdx = 1;
+  for (const r of refs) {
+    if (!titleToIdx.has(r.title)) titleToIdx.set(r.title, nextIdx++);
+  }
+  if (titleToIdx.size === 0) return stripCitations(text);
+
+  // Walk once, writing out the rewritten text. First reference per
+  // title gets the citation marker; later references stay bare.
+  const citedOnce = new Set<string>();
+  let out = "";
+  let cursor = 0;
+  for (const r of refs) {
+    out += text.slice(cursor, r.start);
+    const idx = titleToIdx.get(r.title)!;
+    const isFirst = !citedOnce.has(r.title);
+    citedOnce.add(r.title);
+    const enc = encodeURIComponent(r.title);
+    // Escape `]` and `[` inside the title so they don't break out of
+    // the markdown link label.
+    const titleLabel = r.title.replace(/[\\[\]]/g, "\\$&");
+    const titleLink = `[${titleLabel}](cite:${enc})`;
+    const numberLink = `[${idx}](cite:${enc})`;
+    // Both bracket and bare references render the same way: title and
+    // superscript number are BOTH clickable links to the same note.
+    // Users naturally click the title rather than hunting for the
+    // tiny number. The renderer differentiates: numeric content →
+    // superscript button; everything else → inline link.
+    out += isFirst ? `${titleLink}${numberLink}` : titleLink;
+    cursor = r.end;
+  }
+  out += text.slice(cursor);
+
+  // Strip any remaining `[...]` brackets that don't point at a real
+  // markdown link (those would be followed by `(`). These are almost
+  // always hallucinated citations pointing at titles not in the pool,
+  // and shouldn't render as literal brackets in the UI.
+  out = out.replace(/\[[^\]]+\](?!\()/g, "");
+
+  return out.replace(/ {2,}/g, " ").trim();
 }
 
 function relativeTime(dateStr: string): string {
@@ -208,6 +320,27 @@ interface Message {
   sources?: QASource[];
   meetingData?: MeetingSummaryData;
   noteCards?: NoteCard[];
+  // Phase C: when set, this message is really a destructive-action
+  // confirmation card. Rendered inline; resolved via Apply or Discard.
+  confirmation?: ConfirmationState;
+  // Phase E.2: marks an assistant turn whose Claude call failed. The
+  // chat shows a Retry button that re-fires the preceding user
+  // question with full Phase A history.
+  failed?: boolean;
+}
+
+/** Phase C.4: a single card can hold multiple same-toolName pendings so
+ *  consecutive destructive calls (e.g. Claude queuing 3 deletes in one
+ *  turn) render as one "Delete 3 notes?" batch instead of three
+ *  separate cards. Apply iterates; Discard drops the whole group. */
+interface ConfirmationState {
+  pendings: PendingConfirmation[];
+  status: "pending" | "applying" | "applied" | "discarded" | "failed";
+  resultText?: string;
+  errorMessage?: string;
+  /** Per-item result after Apply; only populated when pendings.length > 1
+   *  so the card can show partial-success detail. */
+  itemResults?: Array<{ id: string; ok: boolean; text?: string; error?: string }>;
 }
 
 const RECORDING_MODE_LABELS: Record<string, string> = {
@@ -280,15 +413,45 @@ interface AIAssistantPanelProps {
   onAudioRetry?: (sessionId: string) => void;
   /** Remove a failed session's chat card + drop its snapshot. */
   onAudioDiscard?: (sessionId: string) => void;
+  /** Phase C.5: per-tool auto-approve for destructive actions. */
+  autoApprove?: {
+    deleteNote: boolean;
+    deleteFolder: boolean;
+    updateNoteContent: boolean;
+    renameNote: boolean;
+    renameFolder: boolean;
+    renameTag: boolean;
+  };
+  /** Phase E.4: bump this counter to force-focus the chat input (used
+   *  by the Cmd+J keyboard shortcut to re-focus the input even when
+   *  the drawer is already open on the assistant tab). */
+  focusNonce?: number;
+  /** Fires after the user applies an `update_note_content`
+   *  confirmation and the server responded OK. The parent wires this
+   *  so the open editor reloads the new content instead of sitting on
+   *  its stale in-memory copy. (Sidebar list refresh still happens
+   *  via the sync-engine `onDataChanged` path.) */
+  onNoteContentRewritten?: (opts: { noteId: string; newContent: string }) => void;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove, focusNonce, onNoteContentRewritten }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [toolActivity, setToolActivity] = useState<string | null>(null);
   const [autocompleteItems, setAutocompleteItems] = useState<ChatCommand[]>([]);
   const [autocompleteIdx, setAutocompleteIdx] = useState(0);
+  // Shell-style prompt history. null = live draft (what the user
+  // was typing); 0 = most recent prior prompt; increasing index =
+  // older. Cap at 10 entries matches the casual-use pattern without
+  // letting a long chat turn into a runaway-scroll hunt.
+  //
+  // History lives in its own ref rather than being derived from the
+  // messages array — so /clear wipes the visible chat but keeps the
+  // typing convenience intact.
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const historyDraftRef = useRef<string>("");
+  const promptHistoryRef = useRef<string[]>([]);
   const inputWrapRef = useRef<HTMLDivElement>(null);
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
@@ -296,6 +459,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Phase E.3: live mirror of `messages` so the memoized commandCtx
+  // can serialize the current chat without rebuilding on every change.
+  const messagesRef = useRef<Message[]>(messages);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
 
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
   const hasNotes = (relevantNotes?.length ?? 0) > 0;
@@ -323,20 +490,58 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     });
   }
 
+  // Hydrate a server row back into an in-memory Message. Phase E
+  // follow-up: confirmation state is persisted for terminal statuses
+  // (applied/discarded/failed) so those cards survive a refresh.
+  function rowToMessage(r: ChatMessageData): Message {
+    return {
+      role: r.role as Message["role"],
+      content: r.content,
+      sources: (r.sources as QASource[] | undefined) ?? undefined,
+      meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+      noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
+      confirmation: (r.confirmation as ConfirmationState | undefined) ?? undefined,
+    };
+  }
+
+  // Pop trailing empty assistant placeholders on hydration. Chats saved
+  // before the empty-placeholder cleanup fix can contain stray empty
+  // bubbles next to completed confirmation cards — this strips them on
+  // load so the restored UI matches the post-fix state.
+  //
+  // Empties can sit ANYWHERE in the array, not just trailing: when
+  // Claude emits a tool_use (delete, rename, etc.) without any
+  // preceding text, the placeholder that was allocated for that
+  // text before streaming started never gets filled — but then a
+  // confirmation card gets appended AFTER it, leaving an empty
+  // bubble between the user question and the card.
+  function stripEmptyPlaceholders(list: Message[]): Message[] {
+    return list.filter((m) => {
+      if (m.role !== "assistant") return true;
+      if (m.content) return true;
+      if (m.confirmation) return true;
+      if (m.noteCards?.length) return true;
+      if (m.meetingData) return true;
+      if (m.sources?.length) return true;
+      if (m.failed) return true;
+      return false;
+    });
+  }
+
   // Load chat history from server on mount
   useEffect(() => {
     if (historyLoadedRef.current) return;
     historyLoadedRef.current = true;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = rows.map((r: ChatMessageData) => ({
-          role: r.role as Message["role"],
-          content: r.content,
-          sources: (r.sources as QASource[] | undefined) ?? undefined,
-          meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
-          noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
-        }));
+        const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
         setMessages(repaintStaleProcessingCards(loaded));
+        // Seed prompt history from the hydrated chat so Up-arrow
+        // navigation works immediately after a page refresh.
+        promptHistoryRef.current = loaded
+          .filter((m) => m.role === "user" && m.content.trim().length > 0)
+          .map((m) => m.content)
+          .slice(-10);
       }
     }).catch(() => {});
   }, []);
@@ -350,13 +555,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (isSavingRef.current) return;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = repaintStaleProcessingCards(rows.map((r: ChatMessageData) => ({
-          role: r.role as Message["role"],
-          content: r.content,
-          sources: (r.sources as QASource[] | undefined) ?? undefined,
-          meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
-          noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
-        })));
+        const loaded = repaintStaleProcessingCards(stripEmptyPlaceholders(rows.map(rowToMessage)));
         setMessages(loaded);
         lastSavedRef.current = JSON.stringify(loaded);
       } else {
@@ -366,9 +565,53 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }).catch(() => {});
   }, [chatRefreshKey]);
 
-  // Persist chat to server when messages change (debounced full replace)
+  // Persist chat to server when messages change (debounced full replace).
+  // Phase D.4: debounce raised from 1s → 5s so bursts of fast-following
+  // updates (meeting-summary card enrichment + Claude stream completion +
+  // tool-result card updates) coalesce into a single write instead of
+  // hitting the server several times per second. The isStreaming guard
+  // already prevents saves during the stream itself; the 5s delay covers
+  // the tail of post-stream updates.
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>("");
+  const persistChatNow = useCallback(() => {
+    if (!historyLoadedRef.current) return;
+    const json = JSON.stringify(messages);
+    if (json === lastSavedRef.current) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    lastSavedRef.current = json;
+    isSavingRef.current = true;
+    // Single transactional PUT replaces all chat messages. Used to be
+    // DELETE-then-POST, which had a narrow race: if the user refreshed
+    // between the two calls the server ended up empty.
+    replaceChatMessages(messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      sources: m.sources,
+      meetingData: m.meetingData,
+      noteCards: m.noteCards,
+      // Persist every confirmation status, including pending. The
+      // panel unmounts on drawer-tab switch (history/toc), so
+      // dropping pending cards meant a mid-task tab flip wiped the
+      // card the user was about to Apply. Pending cards carry
+      // `toolName` + `toolInput`; Apply re-runs the tool server-side
+      // against fresh state, so resuming a stale pending is safe —
+      // the worst case is a graceful "no note found" if the target
+      // was deleted in the meantime. The `applying` status is the
+      // only one we still drop (it's transient, replaced by applied
+      // or failed within the same tick).
+      confirmation:
+        m.confirmation && m.confirmation.status !== "applying"
+          ? m.confirmation
+          : undefined,
+    }))).catch(() => {}).finally(() => {
+      setTimeout(() => { isSavingRef.current = false; }, 500);
+    });
+  }, [messages]);
+
   useEffect(() => {
     if (!historyLoadedRef.current) return;
     if (isStreaming) return;
@@ -376,23 +619,22 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (json === lastSavedRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      lastSavedRef.current = json;
-      isSavingRef.current = true;
-      clearServerChatHistory().then(() => {
-        if (messages.length > 0) {
-          return saveChatMessages(messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-            sources: m.sources,
-            meetingData: m.meetingData,
-            noteCards: m.noteCards,
-          })));
-        }
-      }).catch(() => {}).finally(() => {
-        setTimeout(() => { isSavingRef.current = false; }, 500);
-      });
-    }, 1000);
-  }, [messages, isStreaming]);
+      persistChatNow();
+    }, 5000);
+  }, [messages, isStreaming, persistChatNow]);
+
+  // Phase D.4: flush promptly when a streaming turn just completed so
+  // the final assistant message persists quickly instead of waiting on
+  // the 5s debounce. 200ms gives any tail-state updates (note cards,
+  // sources) a tick to land before the write goes out.
+  const prevStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => persistChatNow(), 200);
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming, persistChatNow]);
 
   useEffect(() => {
     if (isOpen) {
@@ -400,15 +642,33 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     }
   }, [isOpen]);
 
-  const scrollToBottom = useCallback(() => {
+  // Phase E.4: Cmd+J bumps a nonce from the parent; re-focus even when
+  // the drawer was already open (isOpen didn't change).
+  useEffect(() => {
+    if (focusNonce === undefined) return;
+    inputRef.current?.focus();
+  }, [focusNonce]);
+
+  // Auto-scroll heuristic: smooth-scroll to the bottom only when a NEW
+  // message lands or the last message's content grows (streaming).
+  // Earlier this fired on every `messages` reference change, which
+  // meant unrelated parent re-renders (e.g. Trash → notes navigation
+  // restoring selectedId) caused a phantom smooth-scroll animation
+  // even though no user-visible chat change had happened.
+  const prevMessagesLenRef = useRef(messages.length);
+  const prevLastContentLenRef = useRef(messages[messages.length - 1]?.content.length ?? 0);
+  useEffect(() => {
     const container = messagesScrollRef.current;
     if (!container) return;
+    const lastContentLen = messages[messages.length - 1]?.content.length ?? 0;
+    const grew =
+      messages.length > prevMessagesLenRef.current ||
+      lastContentLen > prevLastContentLenRef.current;
+    prevMessagesLenRef.current = messages.length;
+    prevLastContentLenRef.current = lastContentLen;
+    if (!grew) return;
     container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-  }, []);
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+  }, [messages]);
 
   // Auto-expand meeting sections when recording starts
   useEffect(() => {
@@ -706,6 +966,15 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         return `Restored "${note.title}" from trash.`;
       } catch { return "Failed to restore note."; }
     },
+    renameNote: async (oldTitle, newTitle) => {
+      try {
+        const notes = await searchNotes(oldTitle);
+        const note = notes.find((n) => n.title === oldTitle) ?? notes.find((n) => n.title.toLowerCase() === oldTitle.toLowerCase());
+        if (!note) return `Note "${oldTitle}" not found.`;
+        await updateNote(note.id, { title: newTitle });
+        return `Renamed "${oldTitle}" to "${newTitle}".`;
+      } catch { return "Failed to rename note."; }
+    },
     renameFolder: async (oldName, newName) => {
       try {
         const folders = await fetchFolders();
@@ -739,6 +1008,30 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       } catch { return null; }
     },
     clearChat: () => handleClear(),
+    saveChat: async (titleArg) => {
+      try {
+        const current = messagesRef.current;
+        // Anything worth saving: prose content, clickable noteCards,
+        // or Q&A sources. Previously only prose counted, so a chat
+        // composed entirely of /recent or search results refused to
+        // save.
+        const hasContent = current.some(
+          (m) =>
+            (m.role === "user" || m.role === "assistant") &&
+            (m.content.trim().length > 0 ||
+              (m.noteCards?.length ?? 0) > 0 ||
+              (m.sources?.length ?? 0) > 0),
+        );
+        if (!hasContent) return null;
+        const title = titleArg?.trim() || defaultChatTitle();
+        const content = serializeChatToMarkdown(current, {
+          title,
+          timestamp: new Date().toLocaleString(),
+        });
+        const note = await createNote({ title, content });
+        return { id: note.id, title: note.title };
+      } catch { return null; }
+    },
   }), []);
 
   // ─── Slash Command Handler ───────────────────────────
@@ -746,6 +1039,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (!cmd) return false;
     setInput("");
     setAutocompleteItems([]);
+    setHistoryIndex(null);
+    // Keep focus so the user can immediately type another command.
+    // See handleAsk below for why this is deferred past the render.
+    requestAnimationFrame(() => inputRef.current?.focus());
     setMessages((prev) => [...prev, { role: "user", content: `${cmd.command.usage.split(" ")[0]} ${cmd.args}`.trim() }]);
     try {
       const result: CommandResult = await cmd.command.execute(cmd.args, commandCtx);
@@ -758,9 +1055,21 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     return true;
   }
 
+  /** Append a prompt to the Up/Down history ring. Dedup against the
+   *  most-recent entry and cap at 10. Called from both handleAsk
+   *  (regular question) and handleSlashCommand so slash commands
+   *  show up in history too. */
+  function recordPrompt(question: string) {
+    const ring = promptHistoryRef.current;
+    if (ring[ring.length - 1] === question) return;
+    promptHistoryRef.current = [...ring, question].slice(-10);
+  }
+
   async function handleAsk() {
     const question = input.trim();
     if (!question || isStreaming) return;
+
+    recordPrompt(question);
 
     // Check for slash command
     const cmd = parseCommand(question);
@@ -769,9 +1078,48 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       return;
     }
 
+    // Snapshot history BEFORE appending the new user question; Claude's
+    // server-side handler adds the current question as the final user
+    // turn. Text-only rehydration per Phase A design.
+    const history = buildHistoryForClaude(messages);
+
     setInput("");
     setAutocompleteItems([]);
+    setHistoryIndex(null);
     setMessages((prev) => [...prev, { role: "user", content: question }]);
+    // Keep focus on the input so the user can type the next message
+    // without reaching for the mouse. Deferred past the current
+    // render cycle because `performAsk` immediately flips
+    // `isStreaming` true, which re-renders the Ask button as Stop —
+    // a synchronous focus() call here gets clobbered by that render.
+    requestAnimationFrame(() => inputRef.current?.focus());
+    await performAsk(question, history);
+  }
+
+  // Phase E.2: retry a failed assistant turn. Removes the failed turn
+  // (and any confirmation cards since the last user message), rebuilds
+  // history from what's left, and re-fires the question.
+  async function handleRetry(failedIdx: number) {
+    if (isStreaming) return;
+    let question = "";
+    let historyBase: Message[] = [];
+    // Find the preceding user message; drop everything after it.
+    setMessages((prev) => {
+      for (let i = failedIdx - 1; i >= 0; i--) {
+        if (prev[i].role === "user") {
+          question = prev[i].content;
+          historyBase = prev.slice(0, i); // history = messages before the user turn
+          return prev.slice(0, failedIdx); // drop failed assistant msg + anything after
+        }
+      }
+      return prev;
+    });
+    if (!question) return;
+    const history = buildHistoryForClaude(historyBase);
+    await performAsk(question, history);
+  }
+
+  async function performAsk(question: string, history: Array<{ role: "user" | "assistant"; content: string }>) {
     setIsStreaming(true);
     setToolActivity(null);
 
@@ -784,8 +1132,15 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     ]);
 
     try {
-      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined)) {
+      for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined, history, autoApprove)) {
         if (controller.signal.aborted) break;
+
+        // open_note tool fires this side-channel — actually open the
+        // note instead of just leaving Claude's "is now open" reply
+        // dangling with no effect.
+        if (event.openNote) {
+          onSelectNote(event.openNote.id);
+        }
 
         setMessages((prev) => {
           const updated = [...prev];
@@ -797,7 +1152,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             updated[updated.length - 1] = last;
           }
           if (event.error) {
-            last = { ...last, content: event.error };
+            // Phase E.2: mark assistant turn as failed so the UI
+            // renders a Retry button instead of a dead-end error.
+            last = { ...last, content: event.error, failed: true };
             updated[updated.length - 1] = last;
           }
           if (event.text) {
@@ -814,6 +1171,40 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             last = { ...last, noteCards: merged };
             updated[updated.length - 1] = last;
           }
+          if (event.confirmation) {
+            // Phase C.4: if the previous card is still pending AND uses
+            // the same toolName, merge into it so consecutive deletes
+            // etc. render as one batch card. Otherwise insert a new
+            // card. Either way, start a fresh empty assistant bubble
+            // so subsequent streamed text doesn't land on the card.
+            const prev = updated[updated.length - 1];
+            const prevPrev = updated[updated.length - 2];
+            const candidate =
+              prev?.confirmation?.status === "pending" ? prev :
+              prev?.role === "assistant" && prev.content === "" && prevPrev?.confirmation?.status === "pending" ? prevPrev :
+              null;
+            if (
+              candidate?.confirmation &&
+              candidate.confirmation.pendings[0]?.toolName === event.confirmation.toolName
+            ) {
+              // Merge into existing card
+              const idx = updated.indexOf(candidate);
+              updated[idx] = {
+                ...candidate,
+                confirmation: {
+                  ...candidate.confirmation,
+                  pendings: [...candidate.confirmation.pendings, event.confirmation],
+                },
+              };
+            } else {
+              updated.push({
+                role: "assistant",
+                content: "",
+                confirmation: { pendings: [event.confirmation], status: "pending" },
+              });
+              updated.push({ role: "assistant", content: "" });
+            }
+          }
           return updated;
         });
       }
@@ -826,6 +1217,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             updated[updated.length - 1] = {
               ...last,
               content: "Something went wrong. Please try again.",
+              failed: true,
             };
           }
           return updated;
@@ -835,18 +1227,112 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       setIsStreaming(false);
       setToolActivity(null);
       abortRef.current = null;
+      // Clean up empty assistant placeholders anywhere in the list.
+      // The streaming handler pre-allocates placeholders in case
+      // subsequent text follows; when Claude goes straight to a tool
+      // call (e.g. delete_note) with no preceding prose, those
+      // placeholders stay empty and render as stray bubbles in the
+      // chat. After the stream ends, any placeholder with no useful
+      // content is noise — filter all of them, not just trailing.
+      // If, after filtering, the last message is the user's question
+      // (the stream produced literally nothing), surface the real
+      // "something went wrong" fallback.
       setMessages((prev) => {
-        const updated = [...prev];
+        const updated = stripEmptyPlaceholders(prev);
         const last = updated[updated.length - 1];
-        if (last?.role === "assistant" && !last.content) {
-          updated[updated.length - 1] = {
-            ...last,
+        if (last?.role === "user") {
+          updated.push({
+            role: "assistant",
             content: "Something went wrong. Please try again.",
-          };
+            failed: true,
+          });
         }
         return updated;
       });
     }
+  }
+
+  // Phase C — apply or discard a pending destructive action. The
+  // caller passes `pendings` directly (may be a singleton or a batch)
+  // so we don't have to round-trip through setMessages just to read.
+  async function handleConfirmApply(idx: number, pendings: PendingConfirmation[]) {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: { ...msg.confirmation, status: "applying" },
+      };
+      return updated;
+    });
+
+    // Apply sequentially; gather per-item results so a partial failure
+    // can surface "2 of 3 applied" rather than masking what succeeded.
+    const itemResults: Array<{ id: string; ok: boolean; text?: string; error?: string }> = [];
+    for (const pending of pendings) {
+      try {
+        const result = await confirmTool(pending.toolName, pending.toolInput);
+        itemResults.push({ id: pending.id, ok: true, text: result.text });
+        // Notify the parent that a note's content was rewritten so
+        // the open editor can reload. Sidebar list refresh is handled
+        // separately via the sync-engine onDataChanged callback.
+        // The confirm response's noteCards carries the authoritative
+        // note id — prefer it over the preview title, which could
+        // collide if two notes share a title.
+        if (
+          pending.toolName === "update_note_content" &&
+          pending.preview.type === "update_note_content"
+        ) {
+          const noteId = result.noteCards?.[0]?.id;
+          if (noteId) {
+            onNoteContentRewritten?.({
+              noteId,
+              newContent: pending.preview.newContent,
+            });
+          }
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        itemResults.push({ id: pending.id, ok: false, error: message });
+      }
+    }
+
+    const okCount = itemResults.filter((r) => r.ok).length;
+    const allOk = okCount === pendings.length;
+    const noneOk = okCount === 0;
+
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: {
+          ...msg.confirmation,
+          status: allOk ? "applied" : noneOk ? "failed" : "applied", // partial → "applied" with detail
+          resultText: allOk && pendings.length === 1 ? itemResults[0].text :
+            allOk ? `All ${pendings.length} actions applied.` :
+            `${okCount} of ${pendings.length} applied — ${pendings.length - okCount} failed.`,
+          errorMessage: noneOk ? itemResults[0]?.error : undefined,
+          itemResults: pendings.length > 1 ? itemResults : undefined,
+        },
+      };
+      return updated;
+    });
+  }
+
+  function handleConfirmDiscard(idx: number) {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const msg = updated[idx];
+      if (!msg?.confirmation) return prev;
+      updated[idx] = {
+        ...msg,
+        confirmation: { ...msg.confirmation, status: "discarded" },
+      };
+      return updated;
+    });
   }
 
   function handleStop() {
@@ -860,6 +1346,41 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     setMessages([]);
     lastSavedRef.current = "[]";
     clearServerChatHistory().catch(() => {});
+  }
+
+  // Up / Down arrow cycling through prior user prompts. Up steps
+  // further into the past; Down returns toward the live draft
+  // (which is preserved the moment the user starts navigating, so
+  // a half-typed message isn't lost).
+  function navigateHistory(direction: "up" | "down") {
+    // Read from the standalone ring, not from messages[], so history
+    // survives /clear.
+    const prompts = [...promptHistoryRef.current].reverse(); // index 0 = most recent
+    if (prompts.length === 0) return;
+
+    if (direction === "up") {
+      setHistoryIndex((idx) => {
+        if (idx === null) {
+          historyDraftRef.current = input;
+          setInput(prompts[0]);
+          return 0;
+        }
+        const next = Math.min(idx + 1, prompts.length - 1);
+        setInput(prompts[next]);
+        return next;
+      });
+    } else {
+      setHistoryIndex((idx) => {
+        if (idx === null) return null;
+        if (idx === 0) {
+          setInput(historyDraftRef.current);
+          return null;
+        }
+        const next = idx - 1;
+        setInput(prompts[next]);
+        return next;
+      });
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -888,6 +1409,18 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         return;
       }
     }
+    // Prompt history — only when the autocomplete dropdown is closed
+    // (which owns Up/Down for its own navigation while open).
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      navigateHistory("up");
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      navigateHistory("down");
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleAsk();
@@ -897,6 +1430,10 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
     setInput(val);
+    // Any typing exits history navigation — the user is editing a
+    // new prompt. navigateHistory calls setInput directly (no
+    // change event), so this only fires for real keystrokes.
+    setHistoryIndex(null);
     const items = filterCommands(val);
     setAutocompleteItems(val.startsWith("/") && !val.includes(" ") ? items : []);
     setAutocompleteIdx(0);
@@ -912,13 +1449,16 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           AI Assistant
         </span>
+        {/* Phase E.1 was a header indicator; moved inline at the
+            bottom of the conversation (see ThinkingBubble below) so
+            it sits in the user's natural reading position. */}
         {isSearchingContext && (
           <svg className="animate-spin h-3 w-3 text-muted-foreground shrink-0 ml-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
             <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
           </svg>
         )}
-        {messages.length > 0 && (
+        {messages.length > 0 && !isStreaming && (
           <button
             onClick={handleClear}
             className={`text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer ${isSearchingContext ? "" : "ml-auto"}`}
@@ -1109,7 +1649,17 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             key={i}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            {msg.role === "meeting-summary" && msg.meetingData ? (
+            {msg.confirmation ? (
+              <ConfirmationCard
+                pendings={msg.confirmation.pendings}
+                status={msg.confirmation.status}
+                resultText={msg.confirmation.resultText}
+                errorMessage={msg.confirmation.errorMessage}
+                itemResults={msg.confirmation.itemResults}
+                onApply={() => handleConfirmApply(i, msg.confirmation!.pendings)}
+                onDiscard={() => handleConfirmDiscard(i)}
+              />
+            ) : msg.role === "meeting-summary" && msg.meetingData ? (
               <div className="w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
                 <div className="flex items-center gap-1.5 mb-2">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0">
@@ -1195,34 +1745,51 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                   </div>
                 )}
 
-                {/* Surfaced notes */}
-                {msg.meetingData.relevantNotes.length > 0 && (
-                  <div className="mb-2">
-                    <span className="text-[10px] text-muted-foreground">Related notes:</span>
-                    <div className="flex flex-col gap-1 mt-1">
-                      {msg.meetingData.relevantNotes.map((note) => (
-                        <button
-                          key={note.id}
-                          onClick={() => onSelectNote(note.id)}
-                          className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                              <polyline points="14 2 14 8 20 8" />
-                            </svg>
-                            <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
-                              {note.title}
-                            </span>
-                            <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
-                              {Math.round(note.score * 100)}%
-                            </span>
-                          </div>
-                        </button>
-                      ))}
+                {/* Surfaced notes — same first-5-then-<details>
+                    overflow pattern as the assistant pill lists. */}
+                {msg.meetingData.relevantNotes.length > 0 && (() => {
+                  const PILL_LIMIT = 5;
+                  const visible = msg.meetingData.relevantNotes.slice(0, PILL_LIMIT);
+                  const overflow = msg.meetingData.relevantNotes.slice(PILL_LIMIT);
+                  const renderNote = (note: MeetingContextNote) => (
+                    <button
+                      key={note.id}
+                      onClick={() => onSelectNote(note.id)}
+                      className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                          {note.title}
+                        </span>
+                        <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
+                          {Math.round(note.score * 100)}%
+                        </span>
+                      </div>
+                    </button>
+                  );
+                  return (
+                    <div className="mb-2">
+                      <span className="text-[10px] text-muted-foreground">Related notes:</span>
+                      <div className="flex flex-col gap-1 mt-1">
+                        {visible.map(renderNote)}
+                        {overflow.length > 0 && (
+                          <details className="group">
+                            <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors py-1">
+                              Show {overflow.length} more
+                            </summary>
+                            <div className="flex flex-col gap-1 mt-1">
+                              {overflow.map(renderNote)}
+                            </div>
+                          </details>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Transcript preview */}
                 {msg.meetingData.transcript.trim().length > 0 && (
@@ -1243,37 +1810,159 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 ) : msg.content}
               </div>
             ) : (
-              <div className="max-w-[95%] rounded-lg bg-card border border-border px-2.5 py-1.5">
+              <div className={`max-w-[95%] rounded-lg bg-card border px-2.5 py-1.5 ${msg.failed ? "border-destructive/40" : "border-border"}`}>
                 {msg.content ? (
                   <>
-                    <div className="text-sm text-foreground markdown-preview chat-markdown">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ pre: CodeBlock }}>{stripCitations(msg.content)}</ReactMarkdown>
+                    <div className={`text-sm markdown-preview chat-markdown ${msg.failed ? "text-destructive" : "text-foreground"}`}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeHighlight]}
+                        // react-markdown's default urlTransform strips
+                        // any scheme not in its safe-protocol allowlist
+                        // (http/https/mailto/xmpp/ircs). `cite:` is our
+                        // internal scheme and was being wiped to an
+                        // empty href, which collapsed the custom <a>
+                        // renderer into a plain underlined anchor.
+                        // Preserve `cite:` URLs and fall back to the
+                        // default behavior for everything else.
+                        urlTransform={(url) =>
+                          url.startsWith("cite:") ? url : defaultUrlTransform(url)
+                        }
+                        components={{
+                          pre: CodeBlock,
+                          // Phase E.5: render `cite:` URLs as clickable
+                          // numbered superscripts that scroll to the
+                          // matching pill and navigate to the note.
+                          a: ({ href, children, ...rest }) => {
+                            if (typeof href === "string" && href.startsWith("cite:")) {
+                              const title = decodeURIComponent(href.slice(5));
+                              // Look in both sources and noteCards —
+                              // either is a valid citation target.
+                              const source =
+                                msg.sources?.find((s) => s.title === title) ??
+                                msg.noteCards?.find((c) => c.title === title);
+                              if (!source) return <>{children}</>;
+                              // linkifyCitations emits two adjacent
+                              // links per first reference: the title
+                              // text + a numeric superscript marker.
+                              // Both target the same note. We tell
+                              // them apart by inspecting `children` —
+                              // a 1–3 digit string means the
+                              // superscript marker; anything else is
+                              // the inline title link.
+                              const text = typeof children === "string"
+                                ? children
+                                : Array.isArray(children) && children.every((c) => typeof c === "string")
+                                  ? children.join("")
+                                  : "";
+                              const isMarker = /^\d{1,3}$/.test(text);
+                              const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onSelectNote(source.id);
+                              };
+                              if (isMarker) {
+                                // Superscript styling lives directly
+                                // on the <button> — a <sup> wrapper
+                                // loses its font-size scaling because
+                                // <button> resets font-size to the
+                                // browser default.
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={onClick}
+                                    title={title}
+                                    aria-label={`Open note ${title}`}
+                                    data-testid="citation-marker"
+                                    data-cite-title={title}
+                                    className="text-primary hover:underline ml-0.5 px-0.5 font-medium cursor-pointer bg-transparent border-0 p-0"
+                                    style={{ verticalAlign: "super", fontSize: "0.7em", lineHeight: 1 }}
+                                  >
+                                    {children}
+                                  </button>
+                                );
+                              }
+                              // Inline title link — same primary
+                              // color, hover-underline, no superscript
+                              // sizing. Renders as a <button> so the
+                              // global `.markdown-preview a` underline
+                              // doesn't apply.
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={onClick}
+                                  title={`Open ${title}`}
+                                  aria-label={`Open note ${title}`}
+                                  data-testid="citation-title"
+                                  data-cite-title={title}
+                                  className="text-primary hover:underline cursor-pointer bg-transparent border-0 p-0 font-inherit"
+                                >
+                                  {children}
+                                </button>
+                              );
+                            }
+                            return <a href={href} {...rest}>{children}</a>;
+                          },
+                        }}
+                      >
+                        {linkifyCitations(msg.content, msg.sources, msg.noteCards)}
+                      </ReactMarkdown>
                     </div>
+                    {/* Phase E.2: retry button for failed turns. */}
+                    {msg.failed && (
+                      <div className="flex gap-1.5 mt-1.5">
+                        <button
+                          onClick={() => handleRetry(i)}
+                          disabled={isStreaming}
+                          className="px-2 py-1 rounded-md border border-border hover:border-primary/50 text-[11px] text-foreground hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
                     {(() => {
                       const cited = extractCitations(msg.content);
                       const sources = msg.sources?.filter((s) => cited.includes(s.title)) ?? [];
                       if (sources.length === 0) return null;
+                      // Long source lists are noisy. Show the first 5
+                      // inline; if there are more, tuck the rest behind
+                      // a <details> toggle styled like the meeting
+                      // transcript "View transcript" pattern.
+                      const PILL_LIMIT = 5;
+                      const visible = sources.slice(0, PILL_LIMIT);
+                      const overflow = sources.slice(PILL_LIMIT);
+                      const renderPill = (source: { id: string; title: string }) => (
+                        <button
+                          key={source.id}
+                          onClick={() => onSelectNote(source.id)}
+                          className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
+                          data-testid="source-pill"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                              <polyline points="14 2 14 8 20 8" />
+                            </svg>
+                            <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                              {source.title}
+                            </span>
+                          </div>
+                        </button>
+                      );
                       return (
                         <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-border">
                           <span className="text-[10px] text-muted-foreground">Related notes:</span>
-                          {sources.map((source) => (
-                            <button
-                              key={source.id}
-                              onClick={() => onSelectNote(source.id)}
-                              className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
-                              data-testid="source-pill"
-                            >
-                              <div className="flex items-center gap-1.5">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                                  <polyline points="14 2 14 8 20 8" />
-                                </svg>
-                                <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
-                                  {source.title}
-                                </span>
+                          {visible.map(renderPill)}
+                          {overflow.length > 0 && (
+                            <details className="group">
+                              <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors py-1">
+                                Show {overflow.length} more
+                              </summary>
+                              <div className="flex flex-col gap-1 mt-1">
+                                {overflow.map(renderPill)}
                               </div>
-                            </button>
-                          ))}
+                            </details>
+                          )}
                         </div>
                       );
                     })()}
@@ -1292,35 +1981,77 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                     </div>
                   )
                 )}
-                {/* Note cards from tool results */}
-                {msg.noteCards && msg.noteCards.length > 0 && (
-                  <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-border">
-                    {msg.noteCards.map((card) => (
-                      <button
-                        key={card.id}
-                        onClick={() => onSelectNote(card.id)}
-                        className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                            <polyline points="14 2 14 8 20 8" />
-                          </svg>
-                          <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
-                            {card.title}
-                          </span>
-                          {card.folder && (
-                            <span className="text-[10px] text-muted-foreground shrink-0">{card.folder}</span>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Note cards from tool results. Long lists (e.g.
+                    /recent, /favorites, restore-from-trash with many
+                    rows) are visually overwhelming, so collapse the
+                    overflow past the first 5 behind a <details>
+                    summary that mirrors the meeting transcript
+                    show/hide pattern. */}
+                {msg.noteCards && msg.noteCards.length > 0 && (() => {
+                  const PILL_LIMIT = 5;
+                  const visible = msg.noteCards.slice(0, PILL_LIMIT);
+                  const overflow = msg.noteCards.slice(PILL_LIMIT);
+                  const renderCard = (card: { id: string; title: string; folder?: string }) => (
+                    <button
+                      key={card.id}
+                      onClick={() => onSelectNote(card.id)}
+                      className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                          {card.title}
+                        </span>
+                        {card.folder && (
+                          <span className="text-[10px] text-muted-foreground shrink-0">{card.folder}</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                  return (
+                    <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-border">
+                      {visible.map(renderCard)}
+                      {overflow.length > 0 && (
+                        <details className="group">
+                          <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors py-1">
+                            Show {overflow.length} more
+                          </summary>
+                          <div className="flex flex-col gap-1 mt-1">
+                            {overflow.map(renderCard)}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
         ))}
+        {/* Inline "thinking" bubble — replaces the previous header
+            indicator so the live tool activity sits at the bottom of
+            the conversation where the user's eyes already are. Skipped
+            when the last message is an empty assistant placeholder
+            (its existing bounce dots already convey the state). */}
+        {(() => {
+          if (!isStreaming) return null;
+          const last = messages[messages.length - 1];
+          if (last?.role === "assistant" && !last.content && !last.confirmation) return null;
+          return (
+            <div className="flex justify-start mb-2" data-testid="thinking-bubble">
+              <div className="rounded-lg bg-card border border-border px-2.5 py-1.5 flex items-center gap-1.5" aria-live="polite">
+                <svg className="animate-spin h-3 w-3 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                </svg>
+                <span className="text-[11px] text-muted-foreground truncate max-w-[280px]">{toolActivity ?? "Thinking…"}</span>
+              </div>
+            </div>
+          );
+        })()}
         <div ref={messagesEndRef} />
         </div>
       </div>
@@ -1344,6 +2075,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         {isRecording && hasTranscript && !isStreaming && (
           <button
             onClick={() => {
+              const history = buildHistoryForClaude(messages);
               setInput("");
               setMessages((prev) => [...prev, { role: "user", content: "Catch me up on this meeting" }]);
               setIsStreaming(true);
@@ -1352,7 +2084,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
               (async () => {
                 try {
-                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript)) {
+                  for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript, undefined, history, autoApprove)) {
                     if (controller.signal.aborted) break;
                     setMessages((prev) => {
                       const updated = [...prev];

@@ -340,6 +340,11 @@ export function NotesPage() {
   useEffect(() => {
     try { localStorage.setItem("ns-sidebar-view", sidebarView); } catch {}
   }, [sidebarView]);
+  // Remember which tab was active before the user navigated away from
+  // the notes view (Trash, Back button, etc.). When they return to
+  // "notes", we restore focus to that tab so they don't land on the
+  // dashboard with all their open tabs orphaned.
+  const lastActiveTabBeforeViewChangeRef = useRef<string | null>(null);
   const [trashNotes, setTrashNotes] = useState<Note[]>([]);
   const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<"all" | "selected" | null>(null);
@@ -605,6 +610,9 @@ export function NotesPage() {
     return (saved === "assistant" || saved === "history" || saved === "toc") ? saved : "history";
   });
   const [drawerOpen, setDrawerOpen] = useState(() => localStorage.getItem("ns-drawer-open") === "true");
+  // Phase E.4: bumped by the Cmd+J command to re-focus the chat input
+  // even when the drawer is already on the assistant tab.
+  const [aiFocusNonce, setAiFocusNonce] = useState(0);
 
   useEffect(() => { localStorage.setItem("ns-drawer-open", String(drawerOpen)); }, [drawerOpen]);
   useEffect(() => { localStorage.setItem("ns-drawer-tab", drawerTab); }, [drawerTab]);
@@ -874,15 +882,32 @@ export function NotesPage() {
       },
       onNoteRemoteDeleted: async (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
-        // Move local file to OS trash if managed locally
+        // The sync engine fires this for two distinct cases:
+        //   1. Managed local-file deletions — the row was hard-deleted
+        //      server-side as a tombstone. We need to mirror that
+        //      locally (hard-delete + move on-disk file to OS trash)
+        //      so the file doesn't reappear on the next file-watcher
+        //      reconcile.
+        //   2. Regular soft-deletes (e.g. AI assistant delete_note,
+        //      another device clicking the trash icon). The note
+        //      should land in the in-app Trash view, NOT vanish.
+        //      `softDeleteNoteFromRemote` (called just before this
+        //      handler) already set is_deleted=1; hard-deleting on
+        //      top of that wiped the row out of trash entirely.
+        //
+        // Distinguish by whether the note is locally managed: only
+        // managed-file deletes get the hard-delete + OS-trash path.
         try {
           const localPath = await getNoteLocalPath(noteId);
-          if (localPath && await fileExists(localPath)) {
-            suppressPath(localPath, 2000);
-            await moveToTrash(localPath);
+          if (localPath) {
+            if (await fileExists(localPath)) {
+              suppressPath(localPath, 2000);
+              await moveToTrash(localPath);
+            }
+            await hardDeleteNote(noteId).catch(() => {});
           }
-          // Hard-delete the note so it doesn't get re-indexed
-          await hardDeleteNote(noteId).catch(() => {});
+          // else: leave the soft-deleted row in SQLite so it shows
+          // up in the in-app trash view.
         } catch { /* ignore */ }
       },
       onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
@@ -1427,6 +1452,15 @@ export function NotesPage() {
     "drawer:assistant": () => handleDrawerToggle("assistant"),
     "drawer:history": () => handleDrawerToggle("history"),
     "drawer:toc": () => handleDrawerToggle("toc"),
+
+    // AI — Phase E.4: Cmd+J opens the drawer on the assistant tab and
+    // focuses the chat input. Unlike drawer:assistant (which toggles),
+    // this always opens + focuses, matching the ChatGPT/Cursor idiom.
+    "ai:focus-chat": () => {
+      setDrawerTab("assistant");
+      setDrawerOpen(true);
+      setAiFocusNonce((n) => n + 1);
+    },
 
     // Tab Navigation
     "tab:close": () => { if (selectedId) closeTab(selectedId); },
@@ -2342,6 +2376,10 @@ export function NotesPage() {
   // --- Trash ---
 
   async function handleViewTrash() {
+    // Stash the currently-focused tab so we can restore it when the
+    // user comes back via Back. Without this, return-to-notes lands
+    // on the Dashboard even though tabs are still open.
+    lastActiveTabBeforeViewChangeRef.current = selectedId;
     setSidebarView("trash");
     setSelectedId(null);
     setTitle("");
@@ -4022,7 +4060,24 @@ export function NotesPage() {
               }
             }}
             onBack={() => {
+              // Restore the tab the user was viewing before they
+              // entered Trash. Without this, all their open tabs
+              // appear orphaned and the Dashboard renders even
+              // though the tab strip shows multiple notes.
+              const restoreId = lastActiveTabBeforeViewChangeRef.current;
               setSidebarView("notes");
+              if (restoreId && openTabs.includes(restoreId)) {
+                const note =
+                  notes.find((n) => n.id === restoreId) ??
+                  tabNoteCacheRef.current.get(restoreId) ??
+                  null;
+                if (note) {
+                  setSelectedId(restoreId);
+                  setTitle(note.title);
+                  setContent(note.content);
+                  return;
+                }
+              }
               setSelectedId(null);
               setTitle("");
               setContent("");
@@ -4370,7 +4425,7 @@ export function NotesPage() {
               )}
               {confirmDelete ? (
                 <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-destructive">Delete?</span>
+                  <span className="text-[11px] text-destructive">Move to Trash?</span>
                   <button
                     onClick={handleDelete}
                     className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors cursor-pointer"
@@ -4388,8 +4443,8 @@ export function NotesPage() {
                 <button
                   onClick={handleDelete}
                   className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
-                  title="Delete"
-                  aria-label="Delete"
+                  title="Move to Trash"
+                  aria-label="Move to Trash"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 </button>
@@ -4822,33 +4877,58 @@ export function NotesPage() {
               isDragging={drawerResize.isDragging}
               onPointerDown={drawerResize.onPointerDown}
             />
-            <div key={drawerTab} className="flex-1 min-w-0 h-full animate-fade-in">
-              {drawerTab === "assistant" && aiSettings.masterAiEnabled && aiSettings.qaAssistant ? (
-                <AIAssistantPanel
-                  onSelectNote={handleQaSelectNote}
-                  isOpen={drawerOpen}
-                  isRecording={isRecording ?? false}
-                  isSearchingContext={meetingContext.isSearching}
-                  liveTranscript={recordingState?.liveTranscript ?? ""}
-                  relevantNotes={meetingContext.relevantNotes}
-                  recordingMode={recordingState?.mode}
-                  audioSessionResult={audioSessionResult}
-                  activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
-                  chatRefreshKey={chatRefreshKey}
-                  activeSessionId={recordingState?.sessionId}
-                  onAudioRetry={handleAudioRetry}
-                  onAudioDiscard={handleAudioDiscard}
-                />
-              ) : drawerTab === "history" && selectedId ? (
-                <VersionHistoryPanel
-                  noteId={selectedId}
-                  onSelectVersion={setSelectedVersion}
-                  selectedVersionId={selectedVersion?.id}
-                  refreshKey={versionRefreshKey}
-                />
-              ) : drawerTab === "toc" && selectedId ? (
-                <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
-              ) : null}
+            {/* AI Assistant stays mounted across drawerTab switches —
+                a key={drawerTab} wrapper here used to remount it on
+                every flip to History/TOC and back, wiping the chat
+                state until the async history fetch completed. Now we
+                hide it with display:none when off-tab. The other
+                panels (history, toc) live in a keyed sibling so they
+                still get fresh state on each open. */}
+            <div className="flex-1 min-w-0 h-full relative">
+              {aiSettings.masterAiEnabled && aiSettings.qaAssistant && (
+                <div
+                  className="absolute inset-0"
+                  style={{ display: drawerTab === "assistant" ? undefined : "none" }}
+                >
+                  <AIAssistantPanel
+                    onSelectNote={handleQaSelectNote}
+                    isOpen={drawerOpen && drawerTab === "assistant"}
+                    isRecording={isRecording ?? false}
+                    isSearchingContext={meetingContext.isSearching}
+                    liveTranscript={recordingState?.liveTranscript ?? ""}
+                    relevantNotes={meetingContext.relevantNotes}
+                    recordingMode={recordingState?.mode}
+                    audioSessionResult={audioSessionResult}
+                    activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
+                    chatRefreshKey={chatRefreshKey}
+                    activeSessionId={recordingState?.sessionId}
+                    onAudioRetry={handleAudioRetry}
+                    onAudioDiscard={handleAudioDiscard}
+                    autoApprove={aiSettings.autoApprove}
+                    focusNonce={aiFocusNonce}
+                    onNoteContentRewritten={({ noteId, newContent }) => {
+                      if (selectedId === noteId) {
+                        setContent(newContent);
+                      }
+                      reloadNotes();
+                    }}
+                  />
+                </div>
+              )}
+              {drawerTab !== "assistant" && (
+                <div key={drawerTab} className="absolute inset-0 animate-fade-in">
+                  {drawerTab === "history" && selectedId ? (
+                    <VersionHistoryPanel
+                      noteId={selectedId}
+                      onSelectVersion={setSelectedVersion}
+                      selectedVersionId={selectedVersion?.id}
+                      refreshKey={versionRefreshKey}
+                    />
+                  ) : drawerTab === "toc" && selectedId ? (
+                    <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
         </div>

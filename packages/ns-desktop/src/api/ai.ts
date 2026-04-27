@@ -77,6 +77,57 @@ export interface AskQuestionEvent {
   error?: string;
   tool?: { name: string; description: string };
   noteCards?: NoteCard[];
+  // Phase C: a deferred destructive tool call awaiting user approval.
+  confirmation?: PendingConfirmation;
+  // Side-channel for the `open_note` tool — the panel routes this
+  // into onSelectNote so the editor actually opens the requested note.
+  openNote?: { id: string; title: string };
+}
+
+export type ConfirmationPreview =
+  | { type: "delete_note"; title: string; folder?: string }
+  | { type: "update_note_content"; title: string; oldContent: string; newContent: string; oldLen: number; newLen: number }
+  | { type: "rename_note"; oldTitle: string; newTitle: string; folder?: string }
+  | { type: "delete_folder"; folderName: string; affectedCount: number }
+  | { type: "rename_folder"; oldName: string; newName: string }
+  | { type: "rename_tag"; oldName: string; newName: string; affectedCount: number };
+
+export interface PendingConfirmation {
+  id: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  preview: ConfirmationPreview;
+}
+
+export interface ConfirmToolResult {
+  text: string;
+  noteCards?: NoteCard[];
+}
+
+/** Commit a deferred destructive tool call after the user clicks Apply. */
+export async function confirmTool(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): Promise<ConfirmToolResult> {
+  const response = await apiFetch("/ai/tools/confirm", {
+    method: "POST",
+    body: JSON.stringify({ toolName, toolInput }),
+  });
+  if (!response.ok) {
+    throw new Error(`Confirm failed: ${response.status}`);
+  }
+  return (await response.json()) as ConfirmToolResult;
+}
+
+/** Phase C.5: per-tool auto-approve sent to the backend so destructive
+ *  tools can skip the confirmation gate when the user has opted in. */
+export interface AutoApproveFlags {
+  deleteNote?: boolean;
+  deleteFolder?: boolean;
+  updateNoteContent?: boolean;
+  renameNote?: boolean;
+  renameFolder?: boolean;
+  renameTag?: boolean;
 }
 
 export async function* askQuestion(
@@ -84,13 +135,27 @@ export async function* askQuestion(
   signal: AbortSignal,
   transcript?: string,
   activeNote?: { id: string; title: string; content: string },
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+  autoApprove?: AutoApproveFlags,
 ): AsyncGenerator<AskQuestionEvent> {
-  const body: { question: string; transcript?: string; activeNote?: { id: string; title: string; content: string } } = { question };
+  const body: {
+    question: string;
+    transcript?: string;
+    activeNote?: { id: string; title: string; content: string };
+    history?: Array<{ role: "user" | "assistant"; content: string }>;
+    autoApprove?: AutoApproveFlags;
+  } = { question };
   if (transcript && transcript.trim().length > 0) {
     body.transcript = transcript;
   }
   if (activeNote) {
     body.activeNote = activeNote;
+  }
+  if (history && history.length > 0) {
+    body.history = history;
+  }
+  if (autoApprove && Object.values(autoApprove).some(Boolean)) {
+    body.autoApprove = autoApprove;
   }
   const response = await apiFetch("/ai/ask", {
     method: "POST",
@@ -266,6 +331,9 @@ export interface ChatMessageData {
   sources?: QASource[] | null;
   meetingData?: Record<string, unknown> | null;
   noteCards?: NoteCard[] | null;
+  /** Phase E follow-up: only terminal statuses (applied/discarded/failed)
+   *  are persisted — in-flight pending/applying cards are dropped on save. */
+  confirmation?: Record<string, unknown> | null;
   createdAt: string;
 }
 
@@ -277,10 +345,25 @@ export async function fetchChatHistory(): Promise<ChatMessageData[]> {
 }
 
 export async function saveChatMessages(
-  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown }[],
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[],
 ): Promise<void> {
   await apiFetch("/ai/chat-history", {
     method: "POST",
+    body: JSON.stringify({ messages }),
+  });
+}
+
+/**
+ * Atomic replace of the user's chat history — transactional on the
+ * server. Use this instead of a clear-then-save pair; the race
+ * between the two calls could leave the DB empty if the user
+ * refreshed (or the network blipped) at exactly the wrong moment.
+ */
+export async function replaceChatMessages(
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[],
+): Promise<void> {
+  await apiFetch("/ai/chat-history", {
+    method: "PUT",
     body: JSON.stringify({ messages }),
   });
 }

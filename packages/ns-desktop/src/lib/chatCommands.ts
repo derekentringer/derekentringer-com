@@ -23,10 +23,14 @@ export interface CommandContext {
   unfavoriteNote: (noteTitle: string) => Promise<string>;
   listTrash: () => Promise<{ id: string; title: string }[]>;
   restoreNote: (noteTitle: string) => Promise<string>;
+  renameNote: (oldTitle: string, newTitle: string) => Promise<string>;
   renameFolder: (oldName: string, newName: string) => Promise<string>;
   renameTag: (oldName: string, newName: string) => Promise<string>;
   duplicateNote: (noteTitle: string) => Promise<{ id: string; title: string } | null>;
   clearChat: () => void;
+  /** Phase E.3: serialize the current chat session and create a note
+   *  from it. Returns the new note (or null if nothing to save). */
+  saveChat: (title?: string) => Promise<{ id: string; title: string } | null>;
 }
 
 export interface CommandResult {
@@ -219,6 +223,16 @@ export const CHAT_COMMANDS: ChatCommand[] = [
     },
   },
   {
+    name: "rename",
+    description: "Rename a note",
+    usage: "/rename [old title] to [new title]",
+    execute: async (args, ctx) => {
+      const match = args.match(/^(.+?)\s+to\s+(.+)$/i);
+      if (!match) return { text: "Usage: /rename [old title] to [new title]" };
+      return { text: await ctx.renameNote(match[1].trim(), match[2].trim()) };
+    },
+  },
+  {
     name: "renamefolder",
     description: "Rename a folder",
     usage: "/renamefolder [old name] to [new name]",
@@ -259,6 +273,19 @@ export const CHAT_COMMANDS: ChatCommand[] = [
     execute: async (_args, ctx) => {
       ctx.clearChat();
       return { text: "", silent: true };
+    },
+  },
+  {
+    name: "savechat",
+    description: "Save the current chat as a note",
+    usage: "/savechat [title]",
+    execute: async (args, ctx) => {
+      const note = await ctx.saveChat(args.trim() || undefined);
+      if (!note) return { text: "Nothing to save — chat is empty." };
+      return {
+        text: `Saved chat as "${note.title}".`,
+        noteCards: [{ id: note.id, title: note.title }],
+      };
     },
   },
 ];

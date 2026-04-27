@@ -11,6 +11,7 @@ vi.mock("../api/ai.ts", () => ({
   askQuestion: (...args: unknown[]) => mockAskQuestion(...args),
   fetchChatHistory: () => Promise.resolve([]),
   saveChatMessages: () => Promise.resolve(),
+  replaceChatMessages: () => Promise.resolve(),
   clearServerChatHistory: () => Promise.resolve(),
 }));
 
@@ -71,9 +72,11 @@ describe("AIAssistantPanel", () => {
     const askButton = screen.getByText("Ask");
     await userEvent.click(askButton);
 
-    // Wait for source pill to appear
-    const sourcePill = await screen.findByText("React Basics");
-    await userEvent.click(sourcePill);
+    // Scope to the source pill specifically — the title now also
+    // appears as an inline citation link inside the assistant message,
+    // so a bare findByText("React Basics") matches multiple elements.
+    const pill = await screen.findByTestId("source-pill");
+    await userEvent.click(pill);
 
     expect(onSelectNote).toHaveBeenCalledWith("note-1");
   });

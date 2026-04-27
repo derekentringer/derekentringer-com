@@ -1,0 +1,442 @@
+// Phase C (docs/ns/ai-assist-arch/phase-c-action-safety.md): inline
+// confirmation UI for destructive tool calls Claude wants to make.
+// The card shows a preview (title, affected count, or a content diff
+// for rewrites), plus Apply / Discard buttons. Apply re-invokes the
+// same tool via POST /ai/tools/confirm (server-side: autoApprove=true).
+
+import { useState, useEffect } from "react";
+import type { ConfirmationPreview, PendingConfirmation } from "../api/ai.ts";
+import { diffLines, type DiffLine } from "../lib/diff.ts";
+
+export interface ConfirmationCardProps {
+  /** One or more pending actions. Length > 1 is a Phase C.4 batch
+   *  (e.g. Claude queued 3 deletes in one turn). */
+  pendings: PendingConfirmation[];
+  status: "pending" | "applying" | "applied" | "discarded" | "failed";
+  resultText?: string;
+  errorMessage?: string;
+  /** Only populated for batches; per-item status after Apply. */
+  itemResults?: Array<{ id: string; ok: boolean; text?: string; error?: string }>;
+  onApply: () => void;
+  onDiscard: () => void;
+}
+
+function DestructiveIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500 shrink-0 mt-0.5">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function HeadlineForPreview(preview: ConfirmationPreview): string {
+  switch (preview.type) {
+    case "delete_note":
+      return "Move note to trash?";
+    case "delete_folder":
+      return "Delete folder?";
+    case "update_note_content":
+      return "Rewrite note content?";
+    case "rename_note":
+      return "Rename note?";
+    case "rename_folder":
+      return "Rename folder?";
+    case "rename_tag":
+      return "Rename tag?";
+  }
+}
+
+/** Tiny body-text diff for `update_note_content`. We don't need a
+ *  full side-by-side — a summary line + old/new previews is enough
+ *  context for the user to decide. */
+function UpdateDiffPreview({ preview }: { preview: Extract<ConfirmationPreview, { type: "update_note_content" }> }) {
+  const delta = preview.newLen - preview.oldLen;
+  const pctChange = preview.oldLen > 0
+    ? Math.round(((preview.newLen - preview.oldLen) / preview.oldLen) * 100)
+    : 100;
+  const sign = delta >= 0 ? "+" : "";
+  const oldSnippet = preview.oldContent.slice(0, 200);
+  const newSnippet = preview.newContent.slice(0, 200);
+
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      <div className="text-[11px] text-muted-foreground">
+        <span className="font-mono">{preview.oldLen}</span> → <span className="font-mono">{preview.newLen}</span> chars (<span className={delta === 0 ? "" : delta > 0 ? "text-emerald-600" : "text-destructive"}>{sign}{delta}, {pctChange >= 0 ? "+" : ""}{pctChange}%</span>)
+      </div>
+      {preview.oldLen > 0 && (
+        <div className="rounded border border-destructive/30 bg-destructive/5 p-1.5">
+          <p className="text-[10px] text-muted-foreground mb-0.5 uppercase tracking-wider">Before</p>
+          <p className="text-[11px] font-mono whitespace-pre-wrap break-words text-foreground/80">
+            {oldSnippet}{preview.oldContent.length > 200 ? "…" : ""}
+          </p>
+        </div>
+      )}
+      <div className="rounded border border-emerald-500/30 bg-emerald-500/5 p-1.5">
+        <p className="text-[10px] text-muted-foreground mb-0.5 uppercase tracking-wider">After</p>
+        <p className="text-[11px] font-mono whitespace-pre-wrap break-words text-foreground/80">
+          {newSnippet}{preview.newContent.length > 200 ? "…" : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Phase E-followup: full-diff modal opened from the "Preview" button
+ *  on an update_note_content card. Reuses diffLines() from lib/diff.ts
+ *  (same engine VersionHistoryPanel uses for its diff view). Kept
+ *  inline here because it's tightly coupled to the card UX. */
+function DiffLineRow({ line }: { line: DiffLine }) {
+  const bgClass =
+    line.type === "added" ? "bg-green-900/30" :
+    line.type === "removed" ? "bg-red-900/30" : "";
+  const textClass =
+    line.type === "added" ? "text-green-400" :
+    line.type === "removed" ? "text-red-400" : "text-muted-foreground";
+  const prefix = line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
+  return (
+    <div className={`px-3 py-0.5 font-mono text-xs whitespace-pre-wrap ${bgClass}`}>
+      <span className={textClass}>{prefix} {line.text}</span>
+    </div>
+  );
+}
+
+/** Pair removed/added lines into side-by-side rows. Mirrors the
+ *  algorithm in DiffView.tsx so the two experiences stay consistent. */
+function pairSplitRows(diff: DiffLine[]): { left: (DiffLine | null)[]; right: (DiffLine | null)[] } {
+  const left: (DiffLine | null)[] = [];
+  const right: (DiffLine | null)[] = [];
+  let i = 0;
+  while (i < diff.length) {
+    const line = diff[i];
+    if (line.type === "same") {
+      left.push(line);
+      right.push(line);
+      i++;
+    } else if (line.type === "removed") {
+      const removedStart = i;
+      while (i < diff.length && diff[i].type === "removed") i++;
+      const addedStart = i;
+      while (i < diff.length && diff[i].type === "added") i++;
+      const removedCount = addedStart - removedStart;
+      const addedCount = i - addedStart;
+      const maxCount = Math.max(removedCount, addedCount);
+      for (let k = 0; k < maxCount; k++) {
+        left.push(k < removedCount ? diff[removedStart + k] : null);
+        right.push(k < addedCount ? diff[addedStart + k] : null);
+      }
+    } else {
+      left.push(null);
+      right.push(line);
+      i++;
+    }
+  }
+  return { left, right };
+}
+
+function DiffPreviewModal({
+  title,
+  oldContent,
+  newContent,
+  onClose,
+}: {
+  title: string;
+  oldContent: string;
+  newContent: string;
+  onClose: () => void;
+}) {
+  const [viewMode, setViewMode] = useState<"unified" | "split">("unified");
+  const diff = diffLines(oldContent, newContent);
+  const added = diff.filter((l) => l.type === "added").length;
+  const removed = diff.filter((l) => l.type === "removed").length;
+  const split = viewMode === "split" ? pairSplitRows(diff) : null;
+
+  // Escape-to-close.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const modes: { value: "unified" | "split"; label: string }[] = [
+    { value: "unified", label: "Unified" },
+    { value: "split", label: "Split" },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-fade-in"
+      onClick={onClose}
+      data-testid="diff-preview-modal"
+    >
+      <div
+        className="w-[90vw] max-w-5xl h-[85vh] flex flex-col bg-card border border-border rounded-lg shadow-xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border shrink-0">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground truncate">Preview rewrite — {title}</p>
+            <p className="text-[11px] text-muted-foreground">
+              <span className="text-green-500">+{added}</span> / <span className="text-red-500">−{removed}</span> lines · {oldContent.length} → {newContent.length} chars
+            </p>
+          </div>
+          <div className="flex rounded-md border border-border overflow-hidden">
+            {modes.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setViewMode(m.value)}
+                className={`px-2.5 py-0.5 text-xs transition-colors cursor-pointer ${
+                  viewMode === m.value
+                    ? "bg-primary text-primary-contrast font-medium"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                }`}
+                data-testid={`diff-preview-mode-${m.value}`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={onClose}
+            className="px-3 py-1 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+        {split ? (
+          <div className="flex-1 overflow-auto flex">
+            <div className="flex-1 border-r border-border min-w-0">
+              <div className="sticky top-0 px-3 py-1 bg-card border-b border-border text-xs font-medium text-muted-foreground z-10">
+                Before
+              </div>
+              {split.left.map((line, idx) =>
+                line ? (
+                  <DiffLineRow key={idx} line={line} />
+                ) : (
+                  <div key={idx} className="px-3 py-0.5 font-mono text-xs">&nbsp;</div>
+                ),
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="sticky top-0 px-3 py-1 bg-card border-b border-border text-xs font-medium text-muted-foreground z-10">
+                After
+              </div>
+              {split.right.map((line, idx) =>
+                line ? (
+                  <DiffLineRow key={idx} line={line} />
+                ) : (
+                  <div key={idx} className="px-3 py-0.5 font-mono text-xs">&nbsp;</div>
+                ),
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-auto">
+            {diff.map((line, i) => (
+              <DiffLineRow key={i} line={line} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PreviewBody({ preview }: { preview: ConfirmationPreview }) {
+  switch (preview.type) {
+    case "delete_note":
+      return (
+        <p className="text-xs text-foreground/80">
+          <span className="font-medium">&quot;{preview.title}&quot;</span>
+          {preview.folder && <span className="text-muted-foreground"> in {preview.folder}</span>}
+          {" "}will be moved to Trash. You can restore it from Trash before the auto-delete timer purges it.
+        </p>
+      );
+    case "delete_folder":
+      return (
+        <p className="text-xs text-foreground/80">
+          Folder <span className="font-medium">&quot;{preview.folderName}&quot;</span> will be deleted.
+          {preview.affectedCount > 0 && (
+            <> {preview.affectedCount} note{preview.affectedCount === 1 ? "" : "s"} inside will become unfiled (not deleted).</>
+          )}
+        </p>
+      );
+    case "update_note_content":
+      return (
+        <>
+          <p className="text-xs text-foreground/80">
+            Content of <span className="font-medium">&quot;{preview.title}&quot;</span> will be replaced. The previous version is saved in version history.
+          </p>
+          <UpdateDiffPreview preview={preview} />
+        </>
+      );
+    case "rename_note":
+      return (
+        <p className="text-xs text-foreground/80">
+          Rename note <span className="font-medium">&quot;{preview.oldTitle}&quot;</span> → <span className="font-medium">&quot;{preview.newTitle}&quot;</span>
+          {preview.folder && <span className="text-muted-foreground"> in {preview.folder}</span>}.
+        </p>
+      );
+    case "rename_folder":
+      return (
+        <p className="text-xs text-foreground/80">
+          Rename <span className="font-medium">&quot;{preview.oldName}&quot;</span> → <span className="font-medium">&quot;{preview.newName}&quot;</span>.
+        </p>
+      );
+    case "rename_tag":
+      return (
+        <p className="text-xs text-foreground/80">
+          Rename tag <span className="font-medium">#{preview.oldName}</span> → <span className="font-medium">#{preview.newName}</span> across {preview.affectedCount} note{preview.affectedCount === 1 ? "" : "s"}.
+        </p>
+      );
+  }
+}
+
+function BatchHeadline(toolName: string, count: number): string {
+  switch (toolName) {
+    case "delete_note": return `Move ${count} notes to trash?`;
+    case "delete_folder": return `Delete ${count} folders?`;
+    case "update_note_content": return `Rewrite ${count} notes?`;
+    case "rename_note": return `Rename ${count} notes?`;
+    case "rename_folder": return `Rename ${count} folders?`;
+    case "rename_tag": return `Rename ${count} tags?`;
+    default: return `Apply ${count} actions?`;
+  }
+}
+
+function batchItemSummary(preview: ConfirmationPreview): string {
+  switch (preview.type) {
+    case "delete_note": return preview.title;
+    case "delete_folder": return `${preview.folderName} (${preview.affectedCount} note${preview.affectedCount === 1 ? "" : "s"})`;
+    case "update_note_content": {
+      const delta = preview.newLen - preview.oldLen;
+      const sign = delta >= 0 ? "+" : "";
+      return `${preview.title} (${sign}${delta} chars)`;
+    }
+    case "rename_note": return `${preview.oldTitle} → ${preview.newTitle}`;
+    case "rename_folder": return `${preview.oldName} → ${preview.newName}`;
+    case "rename_tag": return `#${preview.oldName} → #${preview.newName} (${preview.affectedCount})`;
+  }
+}
+
+export function ConfirmationCard({ pendings, status, resultText, errorMessage, itemResults, onApply, onDiscard }: ConfirmationCardProps) {
+  const isBatch = pendings.length > 1;
+  const first = pendings[0];
+  const [showDiffPreview, setShowDiffPreview] = useState(false);
+  if (!first) return null;
+  if (status === "applied") {
+    // Partial-success case: some items failed but at least one succeeded.
+    const failures = itemResults?.filter((r) => !r.ok) ?? [];
+    return (
+      <div className={`w-full rounded-lg bg-card border p-3 animate-fade-in ${failures.length > 0 ? "border-amber-500/40" : "border-emerald-500/30"}`}>
+        <p className={`text-xs ${failures.length > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+          {failures.length > 0 ? "⚠" : "✓"} {resultText ?? "Applied."}
+        </p>
+        {failures.length > 0 && (
+          <ul className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
+            {failures.map((f) => (
+              <li key={f.id}>• {f.error}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  if (status === "discarded") {
+    return (
+      <div className="w-full rounded-lg bg-card border border-border p-3 animate-fade-in opacity-70">
+        <p className="text-xs text-muted-foreground">Discarded — no changes made.</p>
+      </div>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <div className="w-full rounded-lg bg-card border border-destructive/40 p-3 animate-fade-in">
+        <p className="text-xs text-destructive font-medium">Couldn&apos;t apply the change</p>
+        {errorMessage && <p className="text-[11px] text-muted-foreground mt-0.5">{errorMessage}</p>}
+        <div className="flex gap-1.5 mt-1.5">
+          <button
+            onClick={onApply}
+            className="px-2 py-1 rounded-md border border-border hover:border-primary/50 text-[11px] text-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+          <button
+            onClick={onDiscard}
+            className="px-2 py-1 rounded-md border border-border hover:border-destructive/50 text-[11px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+          >
+            Discard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const applying = status === "applying";
+
+  return (
+    <div className="w-full rounded-lg bg-card border border-amber-500/40 p-3 animate-fade-in">
+      <div className="flex items-start gap-1.5 mb-2">
+        <DestructiveIcon />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-foreground">
+            {isBatch ? BatchHeadline(first.toolName, pendings.length) : HeadlineForPreview(first.preview)}
+          </p>
+          <div className="mt-1">
+            {isBatch ? (
+              <ul className="text-[11px] text-foreground/80 space-y-0.5">
+                {pendings.map((p) => (
+                  <li key={p.id} className="truncate">• {batchItemSummary(p.preview)}</li>
+                ))}
+              </ul>
+            ) : (
+              <PreviewBody preview={first.preview} />
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-1.5 mt-2">
+        {/* Preview button — only meaningful for update_note_content.
+            Opens a full-diff modal so the user can see more than the
+            200-char old/new snippets in the card. Not rendered for
+            batches since each item would need its own modal. */}
+        {!isBatch && first.preview.type === "update_note_content" && (
+          <button
+            onClick={() => setShowDiffPreview(true)}
+            disabled={applying}
+            className="px-2.5 py-1 rounded-md border border-border hover:border-primary/50 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            Preview
+          </button>
+        )}
+        <button
+          onClick={onApply}
+          disabled={applying}
+          className="px-2.5 py-1 rounded-md bg-primary text-primary-contrast text-[11px] font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        >
+          {applying ? "Applying…" : "Apply"}
+        </button>
+        <button
+          onClick={onDiscard}
+          disabled={applying}
+          className="px-2.5 py-1 rounded-md border border-border hover:border-destructive/50 text-[11px] text-muted-foreground hover:text-destructive disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        >
+          Discard
+        </button>
+      </div>
+      {showDiffPreview && first.preview.type === "update_note_content" && (
+        <DiffPreviewModal
+          title={first.preview.title}
+          oldContent={first.preview.oldContent}
+          newContent={first.preview.newContent}
+          onClose={() => setShowDiffPreview(false)}
+        />
+      )}
+    </div>
+  );
+}
