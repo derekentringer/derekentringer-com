@@ -613,13 +613,24 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     inputRef.current?.focus();
   }, [focusNonce]);
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
-
+  // Auto-scroll heuristic: smooth-scroll to the bottom only when a NEW
+  // message lands or the last message's content grows (streaming).
+  // Earlier this fired on every `messages` reference change, which
+  // meant unrelated parent re-renders (e.g. Trash → notes navigation
+  // restoring selectedId) caused a phantom smooth-scroll animation
+  // even though no user-visible chat change had happened.
+  const prevMessagesLenRef = useRef(messages.length);
+  const prevLastContentLenRef = useRef(messages[messages.length - 1]?.content.length ?? 0);
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+    const lastContentLen = messages[messages.length - 1]?.content.length ?? 0;
+    const grew =
+      messages.length > prevMessagesLenRef.current ||
+      lastContentLen > prevLastContentLenRef.current;
+    prevMessagesLenRef.current = messages.length;
+    prevLastContentLenRef.current = lastContentLen;
+    if (!grew) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [messages]);
 
   // Auto-expand meeting sections when recording starts
   useEffect(() => {

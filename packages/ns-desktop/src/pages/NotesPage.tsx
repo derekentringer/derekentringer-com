@@ -4877,50 +4877,58 @@ export function NotesPage() {
               isDragging={drawerResize.isDragging}
               onPointerDown={drawerResize.onPointerDown}
             />
-            <div key={drawerTab} className="flex-1 min-w-0 h-full animate-fade-in">
-              {drawerTab === "assistant" && aiSettings.masterAiEnabled && aiSettings.qaAssistant ? (
-                <AIAssistantPanel
-                  onSelectNote={handleQaSelectNote}
-                  isOpen={drawerOpen}
-                  isRecording={isRecording ?? false}
-                  isSearchingContext={meetingContext.isSearching}
-                  liveTranscript={recordingState?.liveTranscript ?? ""}
-                  relevantNotes={meetingContext.relevantNotes}
-                  recordingMode={recordingState?.mode}
-                  audioSessionResult={audioSessionResult}
-                  activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
-                  chatRefreshKey={chatRefreshKey}
-                  activeSessionId={recordingState?.sessionId}
-                  onAudioRetry={handleAudioRetry}
-                  onAudioDiscard={handleAudioDiscard}
-                  autoApprove={aiSettings.autoApprove}
-                  focusNonce={aiFocusNonce}
-                  onNoteContentRewritten={({ noteId, newContent }) => {
-                    // Assistant just rewrote a note via update_note_content
-                    // confirmation. Sync will eventually catch up, but the
-                    // open editor holds its own content state and would
-                    // otherwise sit stale until reload. If the rewritten
-                    // note is the one currently in focus, push the new
-                    // content into the editor immediately so what the
-                    // user sees matches what's now committed server-side.
-                    if (selectedId === noteId) {
-                      setContent(newContent);
-                    }
-                    // Refresh the sidebar blurb regardless — the list
-                    // shows the old preview until the next reload.
-                    reloadNotes();
-                  }}
-                />
-              ) : drawerTab === "history" && selectedId ? (
-                <VersionHistoryPanel
-                  noteId={selectedId}
-                  onSelectVersion={setSelectedVersion}
-                  selectedVersionId={selectedVersion?.id}
-                  refreshKey={versionRefreshKey}
-                />
-              ) : drawerTab === "toc" && selectedId ? (
-                <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
-              ) : null}
+            {/* AI Assistant stays mounted across drawerTab switches —
+                a key={drawerTab} wrapper here used to remount it on
+                every flip to History/TOC and back, wiping the chat
+                state until the async history fetch completed. Now we
+                hide it with display:none when off-tab. The other
+                panels (history, toc) live in a keyed sibling so they
+                still get fresh state on each open. */}
+            <div className="flex-1 min-w-0 h-full relative">
+              {aiSettings.masterAiEnabled && aiSettings.qaAssistant && (
+                <div
+                  className="absolute inset-0"
+                  style={{ display: drawerTab === "assistant" ? undefined : "none" }}
+                >
+                  <AIAssistantPanel
+                    onSelectNote={handleQaSelectNote}
+                    isOpen={drawerOpen && drawerTab === "assistant"}
+                    isRecording={isRecording ?? false}
+                    isSearchingContext={meetingContext.isSearching}
+                    liveTranscript={recordingState?.liveTranscript ?? ""}
+                    relevantNotes={meetingContext.relevantNotes}
+                    recordingMode={recordingState?.mode}
+                    audioSessionResult={audioSessionResult}
+                    activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
+                    chatRefreshKey={chatRefreshKey}
+                    activeSessionId={recordingState?.sessionId}
+                    onAudioRetry={handleAudioRetry}
+                    onAudioDiscard={handleAudioDiscard}
+                    autoApprove={aiSettings.autoApprove}
+                    focusNonce={aiFocusNonce}
+                    onNoteContentRewritten={({ noteId, newContent }) => {
+                      if (selectedId === noteId) {
+                        setContent(newContent);
+                      }
+                      reloadNotes();
+                    }}
+                  />
+                </div>
+              )}
+              {drawerTab !== "assistant" && (
+                <div key={drawerTab} className="absolute inset-0 animate-fade-in">
+                  {drawerTab === "history" && selectedId ? (
+                    <VersionHistoryPanel
+                      noteId={selectedId}
+                      onSelectVersion={setSelectedVersion}
+                      selectedVersionId={selectedVersion?.id}
+                      refreshKey={versionRefreshKey}
+                    />
+                  ) : drawerTab === "toc" && selectedId ? (
+                    <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
         </div>
