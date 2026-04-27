@@ -340,6 +340,11 @@ export function NotesPage() {
   useEffect(() => {
     try { localStorage.setItem("ns-sidebar-view", sidebarView); } catch {}
   }, [sidebarView]);
+  // Remember which tab was active before the user navigated away from
+  // the notes view (Trash, Back button, etc.). When they return to
+  // "notes", we restore focus to that tab so they don't land on the
+  // dashboard with all their open tabs orphaned.
+  const lastActiveTabBeforeViewChangeRef = useRef<string | null>(null);
   const [trashNotes, setTrashNotes] = useState<Note[]>([]);
   const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<"all" | "selected" | null>(null);
@@ -2371,6 +2376,10 @@ export function NotesPage() {
   // --- Trash ---
 
   async function handleViewTrash() {
+    // Stash the currently-focused tab so we can restore it when the
+    // user comes back via Back. Without this, return-to-notes lands
+    // on the Dashboard even though tabs are still open.
+    lastActiveTabBeforeViewChangeRef.current = selectedId;
     setSidebarView("trash");
     setSelectedId(null);
     setTitle("");
@@ -4051,7 +4060,24 @@ export function NotesPage() {
               }
             }}
             onBack={() => {
+              // Restore the tab the user was viewing before they
+              // entered Trash. Without this, all their open tabs
+              // appear orphaned and the Dashboard renders even
+              // though the tab strip shows multiple notes.
+              const restoreId = lastActiveTabBeforeViewChangeRef.current;
               setSidebarView("notes");
+              if (restoreId && openTabs.includes(restoreId)) {
+                const note =
+                  notes.find((n) => n.id === restoreId) ??
+                  tabNoteCacheRef.current.get(restoreId) ??
+                  null;
+                if (note) {
+                  setSelectedId(restoreId);
+                  setTitle(note.title);
+                  setContent(note.content);
+                  return;
+                }
+              }
               setSelectedId(null);
               setTitle("");
               setContent("");
