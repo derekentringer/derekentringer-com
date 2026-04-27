@@ -79,6 +79,9 @@ export interface AskQuestionEvent {
   noteCards?: NoteCard[];
   // Phase C: a deferred destructive tool call awaiting user approval.
   confirmation?: PendingConfirmation;
+  // Side-channel for the `open_note` tool — the panel routes this
+  // into onSelectNote so the editor actually opens the requested note.
+  openNote?: { id: string; title: string };
 }
 
 export type ConfirmationPreview =

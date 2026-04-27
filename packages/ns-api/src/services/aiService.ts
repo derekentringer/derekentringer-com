@@ -479,7 +479,7 @@ export async function* answerMeetingQuestion(
 }
 
 export interface AgentEvent {
-  type: "tool_activity" | "note_cards" | "text" | "done" | "confirmation";
+  type: "tool_activity" | "note_cards" | "text" | "done" | "confirmation" | "open_note";
   toolName?: string;
   description?: string;
   noteCards?: { id: string; title: string; folder?: string; tags?: string[]; updatedAt?: string }[];
@@ -487,6 +487,12 @@ export interface AgentEvent {
   // Phase C: forwarded to the frontend when a destructive tool call is
   // awaiting user confirmation. The panel renders a ConfirmationCard.
   confirmation?: import("./assistantTools.js").PendingConfirmation;
+  // Side-channel for the `open_note` tool. The tool itself returns a
+  // noteCard pill, but Claude phrases its reply as if the note has
+  // already been opened ("Done! X is now open"). Without this event
+  // the user sees the claim but no tab opens — broken trust. The
+  // frontend reacts by calling its select-note handler.
+  openNote?: { id: string; title: string };
 }
 
 export async function* answerWithTools(
@@ -693,6 +699,15 @@ ${transcript}` : ""}`,
 
         if (result.noteCards && result.noteCards.length > 0) {
           yield { type: "note_cards", noteCards: result.noteCards };
+        }
+
+        // open_note's contract: actually open the note in the
+        // frontend, not just hand back a clickable card. Emit a
+        // side-channel event that the panel routes into its
+        // select-note callback so the editor opens the right tab.
+        if (block.name === "open_note" && result.noteCards && result.noteCards.length > 0) {
+          const card = result.noteCards[0];
+          yield { type: "open_note", openNote: { id: card.id, title: card.title } };
         }
 
         // Phase C: relay the pending confirmation to the frontend

@@ -1077,6 +1077,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       for await (const event of askQuestion(question, controller.signal, isRecording ? liveTranscript : undefined, activeNote ?? undefined, history, autoApprove)) {
         if (controller.signal.aborted) break;
 
+        // open_note tool fires this side-channel — actually open the
+        // note instead of just leaving Claude's "is now open" reply
+        // dangling with no effect.
+        if (event.openNote) {
+          onSelectNote(event.openNote.id);
+        }
+
         setMessages((prev) => {
           const updated = [...prev];
           let last = updated[updated.length - 1];
