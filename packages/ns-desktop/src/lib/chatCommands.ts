@@ -23,6 +23,7 @@ export interface CommandContext {
   unfavoriteNote: (noteTitle: string) => Promise<string>;
   listTrash: () => Promise<{ id: string; title: string }[]>;
   restoreNote: (noteTitle: string) => Promise<string>;
+  renameNote: (oldTitle: string, newTitle: string) => Promise<string>;
   renameFolder: (oldName: string, newName: string) => Promise<string>;
   renameTag: (oldName: string, newName: string) => Promise<string>;
   duplicateNote: (noteTitle: string) => Promise<{ id: string; title: string } | null>;
@@ -219,6 +220,16 @@ export const CHAT_COMMANDS: ChatCommand[] = [
     execute: async (args, ctx) => {
       if (!args.trim()) return { text: "Usage: /restore [note title]" };
       return { text: await ctx.restoreNote(args.trim()) };
+    },
+  },
+  {
+    name: "rename",
+    description: "Rename a note",
+    usage: "/rename [old title] to [new title]",
+    execute: async (args, ctx) => {
+      const match = args.match(/^(.+?)\s+to\s+(.+)$/i);
+      if (!match) return { text: "Usage: /rename [old title] to [new title]" };
+      return { text: await ctx.renameNote(match[1].trim(), match[2].trim()) };
     },
   },
   {

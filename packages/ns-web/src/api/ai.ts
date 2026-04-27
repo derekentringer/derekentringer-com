@@ -87,6 +87,7 @@ export interface AskQuestionEvent {
 export type ConfirmationPreview =
   | { type: "delete_note"; title: string; folder?: string }
   | { type: "update_note_content"; title: string; oldContent: string; newContent: string; oldLen: number; newLen: number }
+  | { type: "rename_note"; oldTitle: string; newTitle: string; folder?: string }
   | { type: "delete_folder"; folderName: string; affectedCount: number }
   | { type: "rename_folder"; oldName: string; newName: string }
   | { type: "rename_tag"; oldName: string; newName: string; affectedCount: number };
@@ -123,6 +124,7 @@ export interface AutoApproveFlags {
   deleteNote?: boolean;
   deleteFolder?: boolean;
   updateNoteContent?: boolean;
+  renameNote?: boolean;
   renameFolder?: boolean;
   renameTag?: boolean;
 }

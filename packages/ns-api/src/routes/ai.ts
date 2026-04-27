@@ -83,6 +83,7 @@ const askSchema = {
           deleteNote: { type: "boolean" },
           deleteFolder: { type: "boolean" },
           updateNoteContent: { type: "boolean" },
+          renameNote: { type: "boolean" },
           renameFolder: { type: "boolean" },
           renameTag: { type: "boolean" },
         },
@@ -253,6 +254,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       deleteNote?: boolean;
       deleteFolder?: boolean;
       updateNoteContent?: boolean;
+      renameNote?: boolean;
       renameFolder?: boolean;
       renameTag?: boolean;
     };
@@ -372,6 +374,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                 "delete_note",
                 "delete_folder",
                 "update_note_content",
+                "rename_note",
                 "rename_folder",
                 "rename_tag",
               ],
