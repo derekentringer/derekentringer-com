@@ -571,14 +571,22 @@ describe("noteStore", () => {
   });
 
   describe("permanentDeleteNote", () => {
-    it("returns true when permanently deleted", async () => {
+    it("returns true when permanently deleted and writes a tombstone", async () => {
       mockPrisma.note.delete.mockResolvedValue({});
+      mockPrisma.entityTombstone.upsert.mockResolvedValue({});
 
       const result = await permanentDeleteNote(TEST_USER_ID, "note-1");
       expect(result).toBe(true);
       expect(mockPrisma.note.delete).toHaveBeenCalledWith({
         where: { id: "note-1", userId: TEST_USER_ID },
       });
+      // Tombstone written so offline clients learn about the deletion.
+      expect(mockPrisma.entityTombstone.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId_entityId: { userId: TEST_USER_ID, entityId: "note-1" } },
+          create: expect.objectContaining({ entityType: "note", entityId: "note-1" }),
+        }),
+      );
     });
 
     it("returns false when not found (P2025)", async () => {
@@ -598,36 +606,43 @@ describe("noteStore", () => {
   });
 
   describe("purgeOldTrash", () => {
-    it("deletes notes older than 30 days by default", async () => {
+    it("deletes notes older than 30 days by default and writes tombstones", async () => {
+      mockPrisma.note.findMany.mockResolvedValue([
+        { id: "n1", userId: TEST_USER_ID },
+        { id: "n2", userId: TEST_USER_ID },
+        { id: "n3", userId: TEST_USER_ID },
+      ]);
       mockPrisma.note.deleteMany.mockResolvedValue({ count: 3 });
+      mockPrisma.entityTombstone.upsert.mockResolvedValue({});
 
       const result = await purgeOldTrash();
 
       expect(result).toBe(3);
       expect(mockPrisma.note.deleteMany).toHaveBeenCalledWith({
-        where: {
-          deletedAt: { lt: expect.any(Date) },
-        },
+        where: { id: { in: ["n1", "n2", "n3"] } },
       });
+      // One tombstone per purged note.
+      expect(mockPrisma.entityTombstone.upsert).toHaveBeenCalledTimes(3);
     });
 
     it("uses custom days parameter", async () => {
-      mockPrisma.note.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrisma.note.findMany.mockResolvedValue([]);
 
       await purgeOldTrash(7);
 
-      expect(mockPrisma.note.deleteMany).toHaveBeenCalledWith({
-        where: {
-          deletedAt: { lt: expect.any(Date) },
-        },
+      expect(mockPrisma.note.findMany).toHaveBeenCalledWith({
+        where: { deletedAt: { lt: expect.any(Date) } },
+        select: { id: true, userId: true },
       });
     });
 
     it("returns 0 when no notes to purge", async () => {
-      mockPrisma.note.deleteMany.mockResolvedValue({ count: 0 });
+      mockPrisma.note.findMany.mockResolvedValue([]);
 
       const result = await purgeOldTrash();
       expect(result).toBe(0);
+      expect(mockPrisma.note.deleteMany).not.toHaveBeenCalled();
+      expect(mockPrisma.entityTombstone.upsert).not.toHaveBeenCalled();
     });
   });
 
