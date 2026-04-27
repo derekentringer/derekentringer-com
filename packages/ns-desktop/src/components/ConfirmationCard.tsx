@@ -250,7 +250,7 @@ function PreviewBody({ preview }: { preview: ConfirmationPreview }) {
         <p className="text-xs text-foreground/80">
           <span className="font-medium">&quot;{preview.title}&quot;</span>
           {preview.folder && <span className="text-muted-foreground"> in {preview.folder}</span>}
-          {" "}will be moved to Trash. You can restore it from Trash within 30 days.
+          {" "}will be moved to Trash. You can restore it from Trash before the auto-delete timer purges it.
         </p>
       );
     case "delete_folder":

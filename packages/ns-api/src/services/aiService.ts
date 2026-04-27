@@ -804,7 +804,7 @@ function describeToolCall(name: string, input: Record<string, unknown>): string 
     case "generate_summary":
       return `Summarizing "${input.noteTitle}"...`;
     case "delete_note":
-      return `Deleting "${input.noteTitle}"...`;
+      return `Moving "${input.noteTitle}" to Trash...`;
     case "delete_folder":
       return `Deleting folder "${input.folderName}"...`;
     case "toggle_favorite":

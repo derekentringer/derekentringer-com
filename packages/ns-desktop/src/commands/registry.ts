@@ -9,7 +9,7 @@ export const DEFAULT_COMMANDS: CommandDefinition[] = [
   // Note
   { id: "note:new", label: "New Note", category: "Note", scope: "global", defaultBinding: { key: "Mod-n" } },
   { id: "note:save", label: "Save Note", category: "Note", scope: "global", defaultBinding: { key: "Mod-s" } },
-  { id: "note:delete", label: "Delete Note", category: "Note", scope: "global", defaultBinding: null },
+  { id: "note:delete", label: "Move Note to Trash", category: "Note", scope: "global", defaultBinding: null },
   { id: "note:export-md", label: "Export as Markdown", category: "Note", scope: "global", defaultBinding: null },
 
   // View & Navigation
