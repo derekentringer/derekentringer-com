@@ -629,8 +629,14 @@ export async function restoreNote(userId: string, id: string): Promise<PrismaNot
 export async function permanentDeleteNote(userId: string, id: string): Promise<boolean> {
   const prisma = getPrisma();
   try {
-    await prisma.note.delete({
-      where: { id, userId },
+    // Tombstone-first hard-delete so other devices learn about the
+    // deletion on their next /sync/pull. Without the tombstone the row
+    // is silently gone from the server but remains in every offline
+    // client's SQLite forever — the bug that surfaced as "I emptied
+    // trash on web but desktop still shows the notes".
+    await prisma.$transaction(async (tx) => {
+      await tx.note.delete({ where: { id, userId } });
+      await writeTombstone(tx, userId, "note", id);
     });
     return true;
   } catch (error) {
@@ -645,8 +651,25 @@ export async function permanentDeleteTrash(userId: string, ids?: string[]): Prom
   if (ids && ids.length > 0) {
     where.id = { in: ids };
   }
-  const result = await prisma.note.deleteMany({ where });
-  return result.count;
+  // Capture ids before the bulk delete so we can write a tombstone for
+  // each one. Same rationale as permanentDeleteNote — without these
+  // tombstones, offline clients (desktop, mobile) can't reconcile an
+  // "Empty Trash" performed on another device.
+  return await prisma.$transaction(async (tx) => {
+    const targets = await tx.note.findMany({
+      where: where as Record<string, unknown>,
+      select: { id: true },
+    });
+    if (targets.length === 0) return 0;
+    const targetIds = targets.map((t) => t.id);
+    const result = await tx.note.deleteMany({
+      where: { userId, id: { in: targetIds } },
+    });
+    for (const targetId of targetIds) {
+      await writeTombstone(tx, userId, "note", targetId);
+    }
+    return result.count;
+  });
 }
 
 export async function purgeOldTrash(days = 30): Promise<number> {
@@ -654,13 +677,23 @@ export async function purgeOldTrash(days = 30): Promise<number> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
 
-  const result = await prisma.note.deleteMany({
-    where: {
-      deletedAt: { lt: cutoff },
-    },
+  // Same tombstone-first contract as permanentDeleteTrash so the
+  // background purge propagates to offline clients.
+  return await prisma.$transaction(async (tx) => {
+    const targets = await tx.note.findMany({
+      where: { deletedAt: { lt: cutoff } },
+      select: { id: true, userId: true },
+    });
+    if (targets.length === 0) return 0;
+    const targetIds = targets.map((t) => t.id);
+    const result = await tx.note.deleteMany({
+      where: { id: { in: targetIds } },
+    });
+    for (const t of targets) {
+      await writeTombstone(tx, t.userId, "note", t.id);
+    }
+    return result.count;
   });
-
-  return result.count;
 }
 
 /**
