@@ -185,15 +185,18 @@ export function linkifyCitations(
     const idx = titleToIdx.get(r.title)!;
     const isFirst = !citedOnce.has(r.title);
     citedOnce.add(r.title);
-    const marker = `[${idx}](cite:${encodeURIComponent(r.title)})`;
-    // Both bracket and bare references render the same way: keep the
-    // title visible and append the superscript marker after it.
-    // Stripping the title from bracket form (`[Title]` → ` ¹`) leaves
-    // the user with floating numbers and no idea which note `¹` refers
-    // to ("That would be ¹ — ..."), defeating the purpose of an inline
-    // citation. Subsequent references to the same title still stay
-    // bare so we don't double-cite.
-    out += isFirst ? `${r.title}${marker}` : r.title;
+    const enc = encodeURIComponent(r.title);
+    // Escape `]` and `[` inside the title so they don't break out of
+    // the markdown link label.
+    const titleLabel = r.title.replace(/[\\[\]]/g, "\\$&");
+    const titleLink = `[${titleLabel}](cite:${enc})`;
+    const numberLink = `[${idx}](cite:${enc})`;
+    // Both bracket and bare references render the same way: title and
+    // superscript number are BOTH clickable links to the same note.
+    // Users naturally click the title rather than hunting for the
+    // tiny number. The renderer differentiates: numeric content →
+    // superscript button; everything else → inline link.
+    out += isFirst ? `${titleLink}${numberLink}` : titleLink;
     cursor = r.end;
   }
   out += text.slice(cursor);
@@ -1794,33 +1797,60 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                                 msg.sources?.find((s) => s.title === title) ??
                                 msg.noteCards?.find((c) => c.title === title);
                               if (!source) return <>{children}</>;
-                              // Button, not <a href="#"> — clicking a
-                              // "#" link can navigate / reload in some
-                              // webview contexts even with
-                              // preventDefault(), and all citation
-                              // hrefs would be literally identical,
-                              // which is confusing in dev tools.
-                              // Superscript styling lives directly on
-                              // the <button> — a <sup> wrapper loses
-                              // its font-size scaling because <button>
-                              // resets font-size to the browser
-                              // default, and vertical-align only
-                              // works when applied to the same element
-                              // that has the shrunken font.
+                              // linkifyCitations emits two adjacent
+                              // links per first reference: the title
+                              // text + a numeric superscript marker.
+                              // Both target the same note. We tell
+                              // them apart by inspecting `children` —
+                              // a 1–3 digit string means the
+                              // superscript marker; anything else is
+                              // the inline title link.
+                              const text = typeof children === "string"
+                                ? children
+                                : Array.isArray(children) && children.every((c) => typeof c === "string")
+                                  ? children.join("")
+                                  : "";
+                              const isMarker = /^\d{1,3}$/.test(text);
+                              const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onSelectNote(source.id);
+                              };
+                              if (isMarker) {
+                                // Superscript styling lives directly
+                                // on the <button> — a <sup> wrapper
+                                // loses its font-size scaling because
+                                // <button> resets font-size to the
+                                // browser default.
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={onClick}
+                                    title={title}
+                                    aria-label={`Open note ${title}`}
+                                    data-testid="citation-marker"
+                                    data-cite-title={title}
+                                    className="text-primary hover:underline ml-0.5 px-0.5 font-medium cursor-pointer bg-transparent border-0 p-0"
+                                    style={{ verticalAlign: "super", fontSize: "0.7em", lineHeight: 1 }}
+                                  >
+                                    {children}
+                                  </button>
+                                );
+                              }
+                              // Inline title link — same primary
+                              // color, hover-underline, no superscript
+                              // sizing. Renders as a <button> so the
+                              // global `.markdown-preview a` underline
+                              // doesn't apply.
                               return (
                                 <button
                                   type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    onSelectNote(source.id);
-                                  }}
-                                  title={title}
+                                  onClick={onClick}
+                                  title={`Open ${title}`}
                                   aria-label={`Open note ${title}`}
-                                  data-testid="citation-marker"
+                                  data-testid="citation-title"
                                   data-cite-title={title}
-                                  className="text-primary hover:underline ml-0.5 px-0.5 font-medium cursor-pointer bg-transparent border-0 p-0"
-                                  style={{ verticalAlign: "super", fontSize: "0.7em", lineHeight: 1 }}
+                                  className="text-primary hover:underline cursor-pointer bg-transparent border-0 p-0 font-inherit"
                                 >
                                   {children}
                                 </button>
