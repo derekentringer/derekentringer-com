@@ -340,6 +340,11 @@ export function NotesPage() {
   useEffect(() => {
     try { localStorage.setItem("ns-sidebar-view", sidebarView); } catch {}
   }, [sidebarView]);
+  // Remember which tab was active before the user navigated away from
+  // the notes view (Trash, Back button, etc.). When they return to
+  // "notes", we restore focus to that tab so they don't land on the
+  // dashboard with all their open tabs orphaned.
+  const lastActiveTabBeforeViewChangeRef = useRef<string | null>(null);
   const [trashNotes, setTrashNotes] = useState<Note[]>([]);
   const [selectedTrashIds, setSelectedTrashIds] = useState<Set<string>>(new Set());
   const [confirmBulkDelete, setConfirmBulkDelete] = useState<"all" | "selected" | null>(null);
@@ -877,15 +882,32 @@ export function NotesPage() {
       },
       onNoteRemoteDeleted: async (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
-        // Move local file to OS trash if managed locally
+        // The sync engine fires this for two distinct cases:
+        //   1. Managed local-file deletions — the row was hard-deleted
+        //      server-side as a tombstone. We need to mirror that
+        //      locally (hard-delete + move on-disk file to OS trash)
+        //      so the file doesn't reappear on the next file-watcher
+        //      reconcile.
+        //   2. Regular soft-deletes (e.g. AI assistant delete_note,
+        //      another device clicking the trash icon). The note
+        //      should land in the in-app Trash view, NOT vanish.
+        //      `softDeleteNoteFromRemote` (called just before this
+        //      handler) already set is_deleted=1; hard-deleting on
+        //      top of that wiped the row out of trash entirely.
+        //
+        // Distinguish by whether the note is locally managed: only
+        // managed-file deletes get the hard-delete + OS-trash path.
         try {
           const localPath = await getNoteLocalPath(noteId);
-          if (localPath && await fileExists(localPath)) {
-            suppressPath(localPath, 2000);
-            await moveToTrash(localPath);
+          if (localPath) {
+            if (await fileExists(localPath)) {
+              suppressPath(localPath, 2000);
+              await moveToTrash(localPath);
+            }
+            await hardDeleteNote(noteId).catch(() => {});
           }
-          // Hard-delete the note so it doesn't get re-indexed
-          await hardDeleteNote(noteId).catch(() => {});
+          // else: leave the soft-deleted row in SQLite so it shows
+          // up in the in-app trash view.
         } catch { /* ignore */ }
       },
       onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
@@ -2354,6 +2376,10 @@ export function NotesPage() {
   // --- Trash ---
 
   async function handleViewTrash() {
+    // Stash the currently-focused tab so we can restore it when the
+    // user comes back via Back. Without this, return-to-notes lands
+    // on the Dashboard even though tabs are still open.
+    lastActiveTabBeforeViewChangeRef.current = selectedId;
     setSidebarView("trash");
     setSelectedId(null);
     setTitle("");
@@ -4034,7 +4060,24 @@ export function NotesPage() {
               }
             }}
             onBack={() => {
+              // Restore the tab the user was viewing before they
+              // entered Trash. Without this, all their open tabs
+              // appear orphaned and the Dashboard renders even
+              // though the tab strip shows multiple notes.
+              const restoreId = lastActiveTabBeforeViewChangeRef.current;
               setSidebarView("notes");
+              if (restoreId && openTabs.includes(restoreId)) {
+                const note =
+                  notes.find((n) => n.id === restoreId) ??
+                  tabNoteCacheRef.current.get(restoreId) ??
+                  null;
+                if (note) {
+                  setSelectedId(restoreId);
+                  setTitle(note.title);
+                  setContent(note.content);
+                  return;
+                }
+              }
               setSelectedId(null);
               setTitle("");
               setContent("");

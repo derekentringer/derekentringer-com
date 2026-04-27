@@ -7,17 +7,24 @@ describe("linkifyCitations", () => {
     { id: "n2", title: "Daily Stand-up Meeting" },
   ];
 
-  it("numbers explicit [Title] brackets", () => {
+  // Helper: each first reference now emits TWO adjacent markdown
+  // links — one for the title text (clickable inline link) and one
+  // for the numeric superscript marker. Both target the same note.
+  const titleLink = (t: string) => `[${t}](cite:${encodeURIComponent(t)})`;
+  const numberLink = (t: string, n: number) => `[${n}](cite:${encodeURIComponent(t)})`;
+  const fullCite = (t: string, n: number) => titleLink(t) + numberLink(t, n);
+
+  it("numbers explicit [Title] brackets and emits both title + number links", () => {
     const out = linkifyCitations(
       "See [Claude Code Use Cases] and also [Daily Stand-up Meeting].",
       undefined,
       pool,
     );
-    expect(out).toContain("[1](cite:Claude%20Code%20Use%20Cases)");
-    expect(out).toContain("[2](cite:Daily%20Stand-up%20Meeting)");
+    expect(out).toContain(fullCite("Claude Code Use Cases", 1));
+    expect(out).toContain(fullCite("Daily Stand-up Meeting", 2));
   });
 
-  it("attaches a marker to bare title matches (the real /recent-style case)", () => {
+  it("attaches both links to bare title matches (the real /recent-style case)", () => {
     // Claude often renders titles as `**Title**` in listicles instead
     // of bracketing them — this is exactly what broke before.
     const out = linkifyCitations(
@@ -26,18 +33,18 @@ describe("linkifyCitations", () => {
       pool,
     );
     expect(out).toBe(
-      "1. **Claude Code Use Cases[1](cite:Claude%20Code%20Use%20Cases)** — An overview of AI.",
+      "1. **" + fullCite("Claude Code Use Cases", 1) + "** — An overview of AI.",
     );
   });
 
-  it("attaches a marker to bare plain-text matches (no bold)", () => {
+  it("attaches both links to bare plain-text matches (no bold)", () => {
     const out = linkifyCitations(
       "I found Claude Code Use Cases in your notes.",
       undefined,
       pool,
     );
     expect(out).toBe(
-      "I found Claude Code Use Cases[1](cite:Claude%20Code%20Use%20Cases) in your notes.",
+      "I found " + fullCite("Claude Code Use Cases", 1) + " in your notes.",
     );
   });
 
@@ -47,11 +54,11 @@ describe("linkifyCitations", () => {
       undefined,
       pool,
     );
-    const marker = "[1](cite:Claude%20Code%20Use%20Cases)";
+    const marker = numberLink("Claude Code Use Cases", 1);
     const count = out.split(marker).length - 1;
     expect(count).toBe(1);
-    // Second mention still shows the title text — no dangling brackets.
-    expect(out).toMatch(/Claude Code Use Cases.*Claude Code Use Cases/);
+    // Second mention is still a clickable title link, just no number.
+    expect(out.split(titleLink("Claude Code Use Cases")).length - 1).toBe(2);
   });
 
   it("numbers by first appearance across mixed bracket + bare forms", () => {
@@ -62,8 +69,8 @@ describe("linkifyCitations", () => {
       undefined,
       pool,
     );
-    expect(out).toContain("[1](cite:Daily%20Stand-up%20Meeting)");
-    expect(out).toContain("[2](cite:Claude%20Code%20Use%20Cases)");
+    expect(out).toContain(numberLink("Daily Stand-up Meeting", 1));
+    expect(out).toContain(numberLink("Claude Code Use Cases", 2));
   });
 
   it("matches longest title first when titles overlap", () => {
@@ -76,10 +83,9 @@ describe("linkifyCitations", () => {
       undefined,
       overlapping,
     );
-    // The longer title absorbs the match; "Meeting" alone isn't
-    // additionally cited inside it.
-    expect(out).toContain("Daily Stand-up Meeting[1](cite:Daily%20Stand-up%20Meeting)");
-    expect(out).not.toMatch(/Meeting\[2\]/);
+    expect(out).toContain(fullCite("Daily Stand-up Meeting", 1));
+    // No extra citation for the prefix "Meeting".
+    expect(out).not.toContain(numberLink("Meeting", 2));
   });
 
   it("does not match inside a regular markdown link label", () => {
@@ -90,9 +96,7 @@ describe("linkifyCitations", () => {
       undefined,
       pool,
     );
-    // The bracketed form does count as a reference (pass 1), so it
-    // becomes a citation. What matters is we don't double-cite or
-    // corrupt the URL portion.
+    // What matters is we don't corrupt the URL portion or double-cite.
     expect(out).not.toContain("example.com[");
   });
 
@@ -108,7 +112,7 @@ describe("linkifyCitations", () => {
       pool,
     );
     // The unknown bracket is stripped; the bare match still fires.
-    expect(out).toContain("Claude Code Use Cases[1](cite:Claude%20Code%20Use%20Cases)");
+    expect(out).toContain(fullCite("Claude Code Use Cases", 1));
     expect(out).not.toContain("Some Unrelated Note");
   });
 
@@ -127,7 +131,7 @@ describe("linkifyCitations", () => {
     const sources = [{ id: "n1", title: "Claude Code Use Cases" }];
     const noteCards = [{ id: "n1", title: "Claude Code Use Cases" }];
     const out = linkifyCitations("Claude Code Use Cases is useful.", sources, noteCards);
-    const marker = "[1](cite:Claude%20Code%20Use%20Cases)";
+    const marker = numberLink("Claude Code Use Cases", 1);
     expect(out.split(marker).length - 1).toBe(1);
   });
 });

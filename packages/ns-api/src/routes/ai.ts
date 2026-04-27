@@ -312,6 +312,10 @@ export default async function aiRoutes(fastify: FastifyInstance) {
               passthrough.write(
                 `data: ${JSON.stringify({ noteCards: event.noteCards })}\n\n`,
               );
+            } else if (event.type === "open_note" && event.openNote) {
+              passthrough.write(
+                `data: ${JSON.stringify({ openNote: event.openNote })}\n\n`,
+              );
             }
           }
 
