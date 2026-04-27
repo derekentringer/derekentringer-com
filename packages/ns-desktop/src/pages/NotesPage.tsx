@@ -4425,7 +4425,7 @@ export function NotesPage() {
               )}
               {confirmDelete ? (
                 <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-destructive">Delete?</span>
+                  <span className="text-[11px] text-destructive">Move to Trash?</span>
                   <button
                     onClick={handleDelete}
                     className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors cursor-pointer"
@@ -4443,8 +4443,8 @@ export function NotesPage() {
                 <button
                   onClick={handleDelete}
                   className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
-                  title="Delete"
-                  aria-label="Delete"
+                  title="Move to Trash"
+                  aria-label="Move to Trash"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 </button>

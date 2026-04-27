@@ -250,12 +250,12 @@ describe("NotesPage", () => {
     const noteButton = await screen.findByText("Test Note");
     await userEvent.click(noteButton);
 
-    // Click delete — first click shows confirmation
-    const deleteButton = screen.getByLabelText("Delete");
+    // Click move-to-trash — first click shows confirmation
+    const deleteButton = screen.getByLabelText("Move to Trash");
     await userEvent.click(deleteButton);
 
     // Confirmation UI should appear
-    expect(screen.getByText("Delete?")).toBeInTheDocument();
+    expect(screen.getByText("Move to Trash?")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
 
     // Click confirm to actually delete
@@ -1049,8 +1049,8 @@ describe("NotesPage", () => {
         expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
       });
 
-      // Delete the note
-      const deleteButton = screen.getByLabelText("Delete");
+      // Move the note to Trash
+      const deleteButton = screen.getByLabelText("Move to Trash");
       await userEvent.click(deleteButton);
       await userEvent.click(screen.getByText("Yes"));
 

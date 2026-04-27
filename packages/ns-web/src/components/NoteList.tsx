@@ -202,7 +202,7 @@ function SortableNoteItem({
               onClick={() => onDeleteClick(note.id)}
               className="w-full text-left px-3 py-1 text-xs text-destructive hover:bg-accent transition-colors"
             >
-              Delete
+              Move to Trash
             </button>
           )}
         </div>
@@ -267,11 +267,12 @@ export function NoteList({
         ))}
       </SortableContext>
 
-      {/* Delete confirmation dialog */}
+      {/* Move-to-trash confirmation dialog */}
       {pendingDeleteId && (
         <ConfirmDialog
-          title="Delete Note"
+          title="Move to Trash"
           message={pendingNote?.title || "Untitled"}
+          confirmLabel="Move to Trash"
           onConfirm={() => {
             onDeleteNote?.(pendingDeleteId);
             setPendingDeleteId(null);

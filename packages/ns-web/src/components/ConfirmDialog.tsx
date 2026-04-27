@@ -5,9 +5,13 @@ interface ConfirmDialogProps {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** Label for the confirm button. Defaults to "Delete" (the dialog
+   *  is most commonly used for delete flows); soft-delete callers
+   *  pass "Move to Trash" so the action and label match. */
+  confirmLabel?: string;
 }
 
-export function ConfirmDialog({ title, message, onConfirm, onCancel }: ConfirmDialogProps) {
+export function ConfirmDialog({ title, message, onConfirm, onCancel, confirmLabel = "Delete" }: ConfirmDialogProps) {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
@@ -33,7 +37,7 @@ export function ConfirmDialog({ title, message, onConfirm, onCancel }: ConfirmDi
             onClick={onConfirm}
             className="px-3 py-1.5 rounded-md bg-destructive text-foreground text-sm hover:bg-destructive-hover transition-colors cursor-pointer"
           >
-            Delete
+            {confirmLabel}
           </button>
         </div>
       </div>

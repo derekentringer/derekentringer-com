@@ -187,7 +187,7 @@ export const ASSISTANT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "delete_note",
-    description: "Move a note to Trash (soft delete — recoverable from Trash for 30 days). Gated behind a user confirmation card; the note is untouched until the user clicks Apply. Describe your intent naturally; the UI shows title + folder.",
+    description: "Move a note to Trash (soft delete — recoverable from Trash until the user's auto-delete timer purges it). Gated behind a user confirmation card; the note is untouched until the user clicks Apply. Describe your intent naturally; the UI shows title + folder.",
     input_schema: {
       type: "object" as const,
       properties: {

@@ -124,10 +124,12 @@ describe("NoteList", () => {
     const button = screen.getByText("Right Click Me");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
 
-    expect(screen.getByText("Delete")).toBeInTheDocument();
+    // The note action used to be labeled "Delete" — now reads
+    // "Move to Trash" since "Delete" is reserved for hard-delete.
+    expect(screen.getByText("Move to Trash")).toBeInTheDocument();
   });
 
-  it("shows confirm dialog when Delete is clicked from context menu", async () => {
+  it("shows confirm dialog when Move to Trash is clicked from context menu", async () => {
     const note = makeNote({ id: "1", title: "My Special Note" });
     const onDeleteNote = vi.fn();
 
@@ -144,9 +146,11 @@ describe("NoteList", () => {
 
     const button = screen.getByText("My Special Note");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
-    await userEvent.click(screen.getByText("Delete"));
+    await userEvent.click(screen.getByText("Move to Trash"));
 
-    expect(screen.getByText("Delete Note")).toBeInTheDocument();
+    // Both the dialog title and the confirm button read
+    // "Move to Trash" — getAllByText finds them both.
+    expect(screen.getAllByText("Move to Trash").length).toBeGreaterThan(0);
     expect(screen.getAllByText("My Special Note")).toHaveLength(2);
   });
 
@@ -167,14 +171,17 @@ describe("NoteList", () => {
 
     const button = screen.getByText("Confirm Delete");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
-    await userEvent.click(screen.getByText("Delete"));
+    await userEvent.click(screen.getByText("Move to Trash"));
 
-    const confirmButtons = screen.getAllByText("Delete");
-    const confirmDeleteBtn = confirmButtons.find(
-      (btn) => btn.closest(".fixed.inset-0") !== null,
+    // Confirm dialog title + confirm button both read "Move to
+    // Trash". Filter to the button (BUTTON tag) inside the dialog
+    // overlay.
+    const candidates = screen.getAllByText("Move to Trash");
+    const confirmBtn = candidates.find(
+      (el) => el.tagName === "BUTTON" && el.closest(".fixed.inset-0") !== null,
     );
-    if (confirmDeleteBtn) {
-      await userEvent.click(confirmDeleteBtn);
+    if (confirmBtn) {
+      await userEvent.click(confirmBtn);
     }
 
     expect(onDeleteNote).toHaveBeenCalledWith("note-123");
@@ -197,11 +204,16 @@ describe("NoteList", () => {
 
     const button = screen.getByText("Cancel Delete");
     await userEvent.pointer({ keys: "[MouseRight]", target: button });
-    await userEvent.click(screen.getByText("Delete"));
+    await userEvent.click(screen.getByText("Move to Trash"));
     await userEvent.click(screen.getByText("Cancel"));
 
     expect(onDeleteNote).not.toHaveBeenCalled();
-    expect(screen.queryByText("Delete Note")).not.toBeInTheDocument();
+    // After cancel the dialog (title + confirm button = 2 matches)
+    // unmounts. The right-click context menu was already dismissed
+    // when the user clicked into it, so the only remaining "Move to
+    // Trash" match would be inside a hidden context menu — but
+    // getAllByText only returns visible nodes.
+    expect(screen.queryAllByText("Move to Trash")).toHaveLength(0);
   });
 
   it("renders empty list without errors", () => {
