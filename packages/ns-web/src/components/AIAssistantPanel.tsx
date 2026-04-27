@@ -1816,27 +1816,45 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                       const cited = extractCitations(msg.content);
                       const sources = msg.sources?.filter((s) => cited.includes(s.title)) ?? [];
                       if (sources.length === 0) return null;
+                      // Long source lists are noisy. Show the first 5
+                      // inline; if there are more, tuck the rest behind
+                      // a <details> toggle styled like the meeting
+                      // transcript "View transcript" pattern.
+                      const PILL_LIMIT = 5;
+                      const visible = sources.slice(0, PILL_LIMIT);
+                      const overflow = sources.slice(PILL_LIMIT);
+                      const renderPill = (source: { id: string; title: string }) => (
+                        <button
+                          key={source.id}
+                          onClick={() => onSelectNote(source.id)}
+                          className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
+                          data-testid="source-pill"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                              <polyline points="14 2 14 8 20 8" />
+                            </svg>
+                            <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                              {source.title}
+                            </span>
+                          </div>
+                        </button>
+                      );
                       return (
                         <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-border">
                           <span className="text-[10px] text-muted-foreground">Related notes:</span>
-                          {sources.map((source) => (
-                            <button
-                              key={source.id}
-                              onClick={() => onSelectNote(source.id)}
-                              className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
-                              data-testid="source-pill"
-                            >
-                              <div className="flex items-center gap-1.5">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                                  <polyline points="14 2 14 8 20 8" />
-                                </svg>
-                                <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
-                                  {source.title}
-                                </span>
+                          {visible.map(renderPill)}
+                          {overflow.length > 0 && (
+                            <details className="group">
+                              <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors py-1">
+                                Show {overflow.length} more
+                              </summary>
+                              <div className="flex flex-col gap-1 mt-1">
+                                {overflow.map(renderPill)}
                               </div>
-                            </button>
-                          ))}
+                            </details>
+                          )}
                         </div>
                       );
                     })()}
@@ -1855,31 +1873,52 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                     </div>
                   )
                 )}
-                {/* Note cards from tool results */}
-                {msg.noteCards && msg.noteCards.length > 0 && (
-                  <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-border">
-                    {msg.noteCards.map((card) => (
-                      <button
-                        key={card.id}
-                        onClick={() => onSelectNote(card.id)}
-                        className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                            <polyline points="14 2 14 8 20 8" />
-                          </svg>
-                          <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
-                            {card.title}
-                          </span>
-                          {card.folder && (
-                            <span className="text-[10px] text-muted-foreground shrink-0">{card.folder}</span>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Note cards from tool results. Long lists (e.g.
+                    /recent, /favorites, restore-from-trash with many
+                    rows) are visually overwhelming, so collapse the
+                    overflow past the first 5 behind a <details>
+                    summary that mirrors the meeting transcript
+                    show/hide pattern. */}
+                {msg.noteCards && msg.noteCards.length > 0 && (() => {
+                  const PILL_LIMIT = 5;
+                  const visible = msg.noteCards.slice(0, PILL_LIMIT);
+                  const overflow = msg.noteCards.slice(PILL_LIMIT);
+                  const renderCard = (card: { id: string; title: string; folder?: string }) => (
+                    <button
+                      key={card.id}
+                      onClick={() => onSelectNote(card.id)}
+                      className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                          {card.title}
+                        </span>
+                        {card.folder && (
+                          <span className="text-[10px] text-muted-foreground shrink-0">{card.folder}</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                  return (
+                    <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-border">
+                      {visible.map(renderCard)}
+                      {overflow.length > 0 && (
+                        <details className="group">
+                          <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors py-1">
+                            Show {overflow.length} more
+                          </summary>
+                          <div className="flex flex-col gap-1 mt-1">
+                            {overflow.map(renderCard)}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
