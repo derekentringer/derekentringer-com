@@ -1724,34 +1724,51 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                   </div>
                 )}
 
-                {/* Surfaced notes */}
-                {msg.meetingData.relevantNotes.length > 0 && (
-                  <div className="mb-2">
-                    <span className="text-[10px] text-muted-foreground">Related notes:</span>
-                    <div className="flex flex-col gap-1 mt-1">
-                      {msg.meetingData.relevantNotes.map((note) => (
-                        <button
-                          key={note.id}
-                          onClick={() => onSelectNote(note.id)}
-                          className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                              <polyline points="14 2 14 8 20 8" />
-                            </svg>
-                            <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
-                              {note.title}
-                            </span>
-                            <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
-                              {Math.round(note.score * 100)}%
-                            </span>
-                          </div>
-                        </button>
-                      ))}
+                {/* Surfaced notes — same first-5-then-<details>
+                    overflow pattern as the assistant pill lists. */}
+                {msg.meetingData.relevantNotes.length > 0 && (() => {
+                  const PILL_LIMIT = 5;
+                  const visible = msg.meetingData.relevantNotes.slice(0, PILL_LIMIT);
+                  const overflow = msg.meetingData.relevantNotes.slice(PILL_LIMIT);
+                  const renderNote = (note: MeetingContextNote) => (
+                    <button
+                      key={note.id}
+                      onClick={() => onSelectNote(note.id)}
+                      className="w-full text-left rounded-md border border-border hover:border-primary/50 p-2 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span className="text-xs font-medium text-foreground/70 group-hover:text-foreground flex-1 truncate transition-colors">
+                          {note.title}
+                        </span>
+                        <span className="text-[10px] text-primary/70 shrink-0 tabular-nums">
+                          {Math.round(note.score * 100)}%
+                        </span>
+                      </div>
+                    </button>
+                  );
+                  return (
+                    <div className="mb-2">
+                      <span className="text-[10px] text-muted-foreground">Related notes:</span>
+                      <div className="flex flex-col gap-1 mt-1">
+                        {visible.map(renderNote)}
+                        {overflow.length > 0 && (
+                          <details className="group">
+                            <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors py-1">
+                              Show {overflow.length} more
+                            </summary>
+                            <div className="flex flex-col gap-1 mt-1">
+                              {overflow.map(renderNote)}
+                            </div>
+                          </details>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Transcript preview */}
                 {msg.meetingData.transcript.trim().length > 0 && (
