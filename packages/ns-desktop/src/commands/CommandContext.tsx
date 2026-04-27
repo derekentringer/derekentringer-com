@@ -17,13 +17,18 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     const registry = registryRef.current;
     function handleKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
-      if (
+      const inEditableField =
         target.tagName === "INPUT" ||
         target.tagName === "TEXTAREA" ||
-        target.tagName === "SELECT"
-      ) {
-        return;
-      }
+        target.tagName === "SELECT" ||
+        target.isContentEditable;
+      // Bare-key shortcuts (no Cmd/Ctrl/Alt) shouldn't steal keystrokes
+      // while the user is typing — but modifier combos like Cmd+J,
+      // Cmd+P, Cmd+S clearly express global intent and should fire
+      // from any focus context. Filtering them out blocks Cmd+J in
+      // the Filter folders box, which is the bug we just hit.
+      const hasModifier = e.metaKey || e.ctrlKey || e.altKey;
+      if (inEditableField && !hasModifier) return;
       registry.executeBinding(e);
     }
     window.addEventListener("keydown", handleKeyDown);
