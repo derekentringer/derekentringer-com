@@ -877,15 +877,32 @@ export function NotesPage() {
       },
       onNoteRemoteDeleted: async (noteId) => {
         closeDeletedNoteTabRef.current(noteId);
-        // Move local file to OS trash if managed locally
+        // The sync engine fires this for two distinct cases:
+        //   1. Managed local-file deletions — the row was hard-deleted
+        //      server-side as a tombstone. We need to mirror that
+        //      locally (hard-delete + move on-disk file to OS trash)
+        //      so the file doesn't reappear on the next file-watcher
+        //      reconcile.
+        //   2. Regular soft-deletes (e.g. AI assistant delete_note,
+        //      another device clicking the trash icon). The note
+        //      should land in the in-app Trash view, NOT vanish.
+        //      `softDeleteNoteFromRemote` (called just before this
+        //      handler) already set is_deleted=1; hard-deleting on
+        //      top of that wiped the row out of trash entirely.
+        //
+        // Distinguish by whether the note is locally managed: only
+        // managed-file deletes get the hard-delete + OS-trash path.
         try {
           const localPath = await getNoteLocalPath(noteId);
-          if (localPath && await fileExists(localPath)) {
-            suppressPath(localPath, 2000);
-            await moveToTrash(localPath);
+          if (localPath) {
+            if (await fileExists(localPath)) {
+              suppressPath(localPath, 2000);
+              await moveToTrash(localPath);
+            }
+            await hardDeleteNote(noteId).catch(() => {});
           }
-          // Hard-delete the note so it doesn't get re-indexed
-          await hardDeleteNote(noteId).catch(() => {});
+          // else: leave the soft-deleted row in SQLite so it shows
+          // up in the in-app trash view.
         } catch { /* ignore */ }
       },
       onFolderRemoteDeleted: async (folderId, folderName, parentId) => {
