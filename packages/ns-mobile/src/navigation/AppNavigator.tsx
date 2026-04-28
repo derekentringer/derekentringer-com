@@ -171,7 +171,7 @@ function MainTabNavigator() {
         component={AiNavigator}
         options={{
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="robot" color={color} size={size} />
+            <MaterialCommunityIcons name="message-outline" color={color} size={size} />
           ),
         }}
       />
