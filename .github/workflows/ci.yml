@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, develop-ai-assist]
+    branches: [main, develop, develop-ai-assist, develop-ns-mobile-parity]
   pull_request:
-    branches: [main, develop, develop-ai-assist]
+    branches: [main, develop, develop-ai-assist, develop-ns-mobile-parity]
 
 jobs:
   build:
