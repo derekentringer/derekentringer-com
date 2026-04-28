@@ -42,6 +42,14 @@ jest.mock("@react-navigation/native", () => ({
   }),
 }));
 
+// Mock @expo/vector-icons — its real import pulls in expo-font /
+// expo-modules-core which require a native EventEmitter that's
+// unavailable in jsdom. Tests don't render icons; a stub is enough.
+jest.mock("@expo/vector-icons/MaterialCommunityIcons", () => "MaterialCommunityIcons");
+jest.mock("@expo/vector-icons", () => ({
+  MaterialCommunityIcons: "MaterialCommunityIcons",
+}));
+
 // Mock react-native-reanimated
 jest.mock("react-native-reanimated", () => ({
   default: {

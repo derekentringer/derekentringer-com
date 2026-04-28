@@ -52,11 +52,13 @@ export function tokenizeCitations(
     }
   }
   if (pool.length === 0) {
-    // No pool → strip any unknown `[...]` brackets (hallucinated
-    // citations) and return as a single text token. Match desktop's
-    // stripCitations behavior.
+    // No pool → unwrap any unknown `[Title]` brackets (often the AI
+    // bracketed a title that didn't get a corresponding noteCard,
+    // e.g. delete confirmations don't emit pills). Keep the inner
+    // text so the title still reads naturally instead of being
+    // wiped to nothing.
     const stripped = text
-      .replace(/\[([^\]]+)\]/g, "")
+      .replace(/\[([^\]]+)\](?!\()/g, "$1")
       .replace(/ {2,}/g, " ")
       .trim();
     return stripped.length > 0 ? [{ kind: "text", text: stripped }] : [];
@@ -116,10 +118,11 @@ export function tokenizeCitations(
     if (!titleToIndex.has(r.title)) titleToIndex.set(r.title, nextIdx++);
   }
 
-  // No matches → strip any remaining unknown `[...]` and return.
+  // No matches → unwrap any remaining `[Title]` brackets (keep
+  // inner text) and return.
   if (titleToIndex.size === 0) {
     const stripped = text
-      .replace(/\[([^\]]+)\]/g, "")
+      .replace(/\[([^\]]+)\](?!\()/g, "$1")
       .replace(/ {2,}/g, " ")
       .trim();
     return stripped.length > 0 ? [{ kind: "text", text: stripped }] : [];
@@ -134,9 +137,14 @@ export function tokenizeCitations(
 
   const pushText = (s: string) => {
     if (!s) return;
-    // Strip any remaining stray `[...]` brackets that didn't resolve
-    // to a citation (hallucinated targets) and collapse double spaces.
-    const cleaned = s.replace(/\[[^\]]+\](?!\()/g, "").replace(/ {2,}/g, " ");
+    // Unwrap any leftover `[Title]` brackets that didn't resolve to
+    // a citation (the AI sometimes brackets titles that aren't in
+    // the pool, e.g. delete confirmations don't emit noteCards) —
+    // keep the inner text so the prose reads naturally. The
+    // `(?!\()` lookahead leaves real markdown links untouched.
+    const cleaned = s
+      .replace(/\[([^\]]+)\](?!\()/g, "$1")
+      .replace(/ {2,}/g, " ");
     if (cleaned.length === 0) return;
     const last = tokens[tokens.length - 1];
     if (last && last.kind === "text") {

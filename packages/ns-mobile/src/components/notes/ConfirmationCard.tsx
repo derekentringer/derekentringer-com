@@ -15,6 +15,7 @@
 
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
 import type {
@@ -29,11 +30,24 @@ export type ConfirmationStatus =
   | "discarded"
   | "failed";
 
+export interface ItemResult {
+  id: string;
+  ok: boolean;
+  text?: string;
+  error?: string;
+}
+
 interface Props {
-  pending: PendingConfirmation;
+  /** One or more pending actions. Length > 1 is a batched card —
+   *  e.g. Claude queued 3 deletes in one turn — and renders as a
+   *  single Apply CTA with a per-item summary list. */
+  pendings: PendingConfirmation[];
   status: ConfirmationStatus;
   resultText?: string;
   errorMessage?: string;
+  /** Per-item Apply outcomes; only populated for batches. Surfaces
+   *  partial-failure detail in the applied banner. */
+  itemResults?: ItemResult[];
   onApply: () => void;
   onDiscard: () => void;
 }
@@ -47,6 +61,41 @@ export function headlineForPreview(preview: ConfirmationPreview): string {
     case "rename_note": return "Rename note?";
     case "rename_folder": return "Rename folder?";
     case "rename_tag": return "Rename tag?";
+  }
+}
+
+/** Visible for unit-testing. Headline for a batch of N actions of
+ *  the same toolName (e.g. "Move 3 notes to trash?"). */
+export function batchHeadline(toolName: string, count: number): string {
+  switch (toolName) {
+    case "delete_note": return `Move ${count} notes to trash?`;
+    case "delete_folder": return `Delete ${count} folders?`;
+    case "update_note_content": return `Rewrite ${count} notes?`;
+    case "rename_note": return `Rename ${count} notes?`;
+    case "rename_folder": return `Rename ${count} folders?`;
+    case "rename_tag": return `Rename ${count} tags?`;
+    default: return `Apply ${count} actions?`;
+  }
+}
+
+/** Visible for unit-testing. One-line summary for a single item
+ *  inside a batched card. */
+export function batchItemSummary(preview: ConfirmationPreview): string {
+  switch (preview.type) {
+    case "delete_note": return preview.title;
+    case "delete_folder":
+      return `${preview.folderName} (${preview.affectedCount} note${preview.affectedCount === 1 ? "" : "s"})`;
+    case "update_note_content": {
+      const delta = preview.newLen - preview.oldLen;
+      const sign = delta >= 0 ? "+" : "";
+      return `${preview.title} (${sign}${delta} chars)`;
+    }
+    case "rename_note":
+      return `${preview.oldTitle} → ${preview.newTitle}`;
+    case "rename_folder":
+      return `${preview.oldName} → ${preview.newName}`;
+    case "rename_tag":
+      return `#${preview.oldName} → #${preview.newName} (${preview.affectedCount})`;
   }
 }
 
@@ -107,17 +156,23 @@ export function bodyForPreview(preview: ConfirmationPreview): BodyLine {
 }
 
 export function ConfirmationCard({
-  pending,
+  pendings,
   status,
   resultText,
   errorMessage,
+  itemResults,
   onApply,
   onDiscard,
 }: Props) {
   const themeColors = useThemeColors();
-  const lines = bodyForPreview(pending.preview);
+  const first = pendings[0];
+  const isBatch = pendings.length > 1;
+  if (!first) return null;
+  const lines = bodyForPreview(first.preview);
 
   if (status === "applied") {
+    const failures = itemResults?.filter((r) => !r.ok) ?? [];
+    const partial = failures.length > 0;
     return (
       <View
         testID="confirmation-applied"
@@ -125,13 +180,30 @@ export function ConfirmationCard({
           styles.banner,
           {
             backgroundColor: themeColors.card,
-            borderColor: themeColors.success,
+            borderColor: partial ? themeColors.destructive : themeColors.success,
           },
         ]}
       >
-        <Text style={[styles.bannerText, { color: themeColors.success }]}>
-          {resultText ?? "Done."}
+        <Text
+          style={[
+            styles.bannerText,
+            { color: partial ? themeColors.destructive : themeColors.success },
+          ]}
+        >
+          {partial ? "⚠" : "✓"} {resultText ?? "Done."}
         </Text>
+        {partial && (
+          <View style={styles.failureList}>
+            {failures.map((f) => (
+              <Text
+                key={f.id}
+                style={[styles.failureItem, { color: themeColors.muted }]}
+              >
+                • {f.error}
+              </Text>
+            ))}
+          </View>
+        )}
       </View>
     );
   }
@@ -220,20 +292,48 @@ export function ConfirmationCard({
         styles.card,
         {
           backgroundColor: themeColors.card,
-          borderColor: themeColors.border,
+          // Amber border on the pending card to flag the destructive
+          // intent — matches desktop's `border-amber-500/40`.
+          borderColor: `${themeColors.warning}66`,
         },
       ]}
     >
-      <Text style={[styles.headline, { color: themeColors.foreground }]}>
-        {headlineForPreview(pending.preview)}
-      </Text>
-      <Text style={[styles.body, { color: themeColors.foreground }]}>
-        {lines.text}
-        {lines.emphasized && (
-          <Text style={styles.emphasized}>{lines.emphasized}</Text>
-        )}
-        {lines.detail && <Text>{lines.detail}</Text>}
-      </Text>
+      <View style={styles.headerRow}>
+        <MaterialCommunityIcons
+          name="alert-outline"
+          size={14}
+          color={themeColors.warning}
+          style={styles.warningIcon}
+        />
+        <View style={styles.headerBody}>
+          <Text style={[styles.headline, { color: themeColors.foreground }]}>
+            {isBatch
+              ? batchHeadline(first.toolName, pendings.length)
+              : headlineForPreview(first.preview)}
+          </Text>
+          {isBatch ? (
+            <View style={styles.batchList}>
+              {pendings.map((p) => (
+                <Text
+                  key={p.id}
+                  style={[styles.batchItem, { color: themeColors.foreground }]}
+                  numberOfLines={1}
+                >
+                  • {batchItemSummary(p.preview)}
+                </Text>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.body, { color: themeColors.foreground }]}>
+              {lines.text}
+              {lines.emphasized && (
+                <Text style={styles.emphasized}>{lines.emphasized}</Text>
+              )}
+              {lines.detail && <Text>{lines.detail}</Text>}
+            </Text>
+          )}
+        </View>
+      </View>
       <View style={styles.actionRow}>
         <Pressable
           onPress={onApply}
@@ -247,7 +347,7 @@ export function ConfirmationCard({
           ]}
         >
           {applying ? (
-            <ActivityIndicator size="small" color="white" />
+            <ActivityIndicator size="small" color="#000000" />
           ) : (
             <Text style={styles.btnText}>Apply</Text>
           )}
@@ -284,6 +384,11 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: spacing.sm,
   },
+  // Header row — warning icon + headline/body — matches desktop's
+  // `flex items-start gap-1.5 mb-2` shape on the pending card.
+  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  warningIcon: { marginTop: 2 },
+  headerBody: { flex: 1, gap: 4 },
   banner: {
     borderRadius: 8,
     borderWidth: 1,
@@ -292,28 +397,34 @@ const styles = StyleSheet.create({
   },
   bannerTitle: { fontSize: 12, fontWeight: "600" },
   bannerText: { fontSize: 12 },
-  headline: { fontSize: 12, fontWeight: "600" },
+  headline: { fontSize: 12, fontWeight: "500" },
   body: { fontSize: 12, lineHeight: 17 },
   emphasized: { fontWeight: "500" },
-  actionRow: { flexDirection: "row", gap: 6, marginTop: 6 },
-  // Desktop buttons: `px-2.5 py-1 rounded-md text-[11px] font-medium`.
+  actionRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+  // Mobile bumps button height up vs desktop's px-2.5 py-1 — taps
+  // need a comfortable hit target. Apply text is black on the lime
+  // bg (matches `text-primary-contrast`) instead of white.
   btn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 6,
-    minWidth: 64,
+    minWidth: 72,
     alignItems: "center",
     justifyContent: "center",
   },
-  btnText: { color: "white", fontSize: 11, fontWeight: "600" },
+  btnText: { color: "#000000", fontSize: 13, fontWeight: "500" },
   btnSecondary: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 6,
     borderWidth: 1,
-    minWidth: 64,
+    minWidth: 72,
     alignItems: "center",
     justifyContent: "center",
   },
-  btnSecondaryText: { fontSize: 11, fontWeight: "500" },
+  btnSecondaryText: { fontSize: 13, fontWeight: "500" },
+  batchList: { gap: 2 },
+  batchItem: { fontSize: 12, lineHeight: 17 },
+  failureList: { marginTop: spacing.xs, gap: 2 },
+  failureItem: { fontSize: 11, lineHeight: 15 },
 });

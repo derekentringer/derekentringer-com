@@ -19,6 +19,10 @@ export const darkColors = {
   input: "#10121a",
   error: "#ef4444",
   success: "#22c55e",
+  /** Amber-500 — used for "pending destructive action" cues on
+   *  confirmation cards (matches desktop's `border-amber-500/40`
+   *  and `text-amber-500` warning icon). */
+  warning: "#f59e0b",
   tabInactive: "#666666",
 } as const;
 
@@ -37,6 +41,7 @@ export const lightColors = {
   input: "#f0f0f0",
   error: "#ef4444",
   success: "#22c55e",
+  warning: "#f59e0b",
   tabInactive: "#999999",
 } as const;
 
@@ -55,6 +60,7 @@ export type ThemeColors = {
   input: string;
   error: string;
   success: string;
+  warning: string;
   tabInactive: string;
 };
 

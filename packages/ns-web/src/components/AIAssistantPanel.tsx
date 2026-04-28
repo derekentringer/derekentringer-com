@@ -100,7 +100,15 @@ function extractCitations(text: string): string[] {
 }
 
 function stripCitations(text: string): string {
-  return text.replace(CITE_RE, "").replace(/ {2,}/g, " ").trim();
+  // Unwrap unresolved `[Title]` brackets (keep the inner text)
+  // instead of wiping the whole bracketed segment. The AI sometimes
+  // brackets titles that aren't in the citation pool — e.g.
+  // confirmation cards (delete_note, etc.) don't emit `noteCards`,
+  // so a turn like "I've queued up — [A], [B], and [C]." had
+  // nothing to resolve against and the strip wiped the titles
+  // entirely. The `(?!\()` lookahead leaves real markdown links
+  // `[text](url)` untouched.
+  return text.replace(/\[([^\]]+)\](?!\()/g, "$1").replace(/ {2,}/g, " ").trim();
 }
 
 /** Phase E.5: attach numbered superscript citation markers to note
@@ -203,11 +211,12 @@ export function linkifyCitations(
   }
   out += text.slice(cursor);
 
-  // Strip any remaining `[...]` brackets that don't point at a real
-  // markdown link (those would be followed by `(`). These are almost
-  // always hallucinated citations pointing at titles not in the pool,
-  // and shouldn't render as literal brackets in the UI.
-  out = out.replace(/\[[^\]]+\](?!\()/g, "");
+  // Unwrap any remaining `[Title]` brackets that don't point at a
+  // real markdown link (those would be followed by `(`). These are
+  // titles not in the citation pool — keep the inner text so the
+  // prose reads naturally instead of leaving a literal bracket or
+  // wiping the segment.
+  out = out.replace(/\[([^\]]+)\](?!\()/g, "$1");
 
   return out.replace(/ {2,}/g, " ").trim();
 }
