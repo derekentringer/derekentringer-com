@@ -15,6 +15,7 @@
 
 import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
 import type {
@@ -291,36 +292,48 @@ export function ConfirmationCard({
         styles.card,
         {
           backgroundColor: themeColors.card,
-          borderColor: themeColors.border,
+          // Amber border on the pending card to flag the destructive
+          // intent — matches desktop's `border-amber-500/40`.
+          borderColor: `${themeColors.warning}66`,
         },
       ]}
     >
-      <Text style={[styles.headline, { color: themeColors.foreground }]}>
-        {isBatch
-          ? batchHeadline(first.toolName, pendings.length)
-          : headlineForPreview(first.preview)}
-      </Text>
-      {isBatch ? (
-        <View style={styles.batchList}>
-          {pendings.map((p) => (
-            <Text
-              key={p.id}
-              style={[styles.batchItem, { color: themeColors.foreground }]}
-              numberOfLines={1}
-            >
-              • {batchItemSummary(p.preview)}
+      <View style={styles.headerRow}>
+        <MaterialCommunityIcons
+          name="alert-outline"
+          size={14}
+          color={themeColors.warning}
+          style={styles.warningIcon}
+        />
+        <View style={styles.headerBody}>
+          <Text style={[styles.headline, { color: themeColors.foreground }]}>
+            {isBatch
+              ? batchHeadline(first.toolName, pendings.length)
+              : headlineForPreview(first.preview)}
+          </Text>
+          {isBatch ? (
+            <View style={styles.batchList}>
+              {pendings.map((p) => (
+                <Text
+                  key={p.id}
+                  style={[styles.batchItem, { color: themeColors.foreground }]}
+                  numberOfLines={1}
+                >
+                  • {batchItemSummary(p.preview)}
+                </Text>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.body, { color: themeColors.foreground }]}>
+              {lines.text}
+              {lines.emphasized && (
+                <Text style={styles.emphasized}>{lines.emphasized}</Text>
+              )}
+              {lines.detail && <Text>{lines.detail}</Text>}
             </Text>
-          ))}
-        </View>
-      ) : (
-        <Text style={[styles.body, { color: themeColors.foreground }]}>
-          {lines.text}
-          {lines.emphasized && (
-            <Text style={styles.emphasized}>{lines.emphasized}</Text>
           )}
-          {lines.detail && <Text>{lines.detail}</Text>}
-        </Text>
-      )}
+        </View>
+      </View>
       <View style={styles.actionRow}>
         <Pressable
           onPress={onApply}
@@ -334,7 +347,7 @@ export function ConfirmationCard({
           ]}
         >
           {applying ? (
-            <ActivityIndicator size="small" color="white" />
+            <ActivityIndicator size="small" color="#000000" />
           ) : (
             <Text style={styles.btnText}>Apply</Text>
           )}
@@ -371,6 +384,11 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: spacing.sm,
   },
+  // Header row — warning icon + headline/body — matches desktop's
+  // `flex items-start gap-1.5 mb-2` shape on the pending card.
+  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  warningIcon: { marginTop: 2 },
+  headerBody: { flex: 1, gap: 4 },
   banner: {
     borderRadius: 8,
     borderWidth: 1,
@@ -379,30 +397,32 @@ const styles = StyleSheet.create({
   },
   bannerTitle: { fontSize: 12, fontWeight: "600" },
   bannerText: { fontSize: 12 },
-  headline: { fontSize: 12, fontWeight: "600" },
+  headline: { fontSize: 12, fontWeight: "500" },
   body: { fontSize: 12, lineHeight: 17 },
   emphasized: { fontWeight: "500" },
-  actionRow: { flexDirection: "row", gap: 6, marginTop: 6 },
-  // Desktop buttons: `px-2.5 py-1 rounded-md text-[11px] font-medium`.
+  actionRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+  // Mobile bumps button height up vs desktop's px-2.5 py-1 — taps
+  // need a comfortable hit target. Apply text is black on the lime
+  // bg (matches `text-primary-contrast`) instead of white.
   btn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 6,
-    minWidth: 64,
+    minWidth: 72,
     alignItems: "center",
     justifyContent: "center",
   },
-  btnText: { color: "white", fontSize: 11, fontWeight: "600" },
+  btnText: { color: "#000000", fontSize: 13, fontWeight: "500" },
   btnSecondary: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 6,
     borderWidth: 1,
-    minWidth: 64,
+    minWidth: 72,
     alignItems: "center",
     justifyContent: "center",
   },
-  btnSecondaryText: { fontSize: 11, fontWeight: "500" },
+  btnSecondaryText: { fontSize: 13, fontWeight: "500" },
   batchList: { gap: 2 },
   batchItem: { fontSize: 12, lineHeight: 17 },
   failureList: { marginTop: spacing.xs, gap: 2 },
