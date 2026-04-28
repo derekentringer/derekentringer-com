@@ -790,10 +790,11 @@ function MessageBubble({
               : themeColors.border,
           },
           // User bubbles shrink-wrap to content (right-aligned, max
-          // 92% wide). Assistant bubbles fill the row so embedded
-          // pill lists / tables can use the full width without
-          // truncating titles.
-          isUser ? { maxWidth: "92%" } : { flex: 1 },
+          // 92% wide). Assistant bubbles left-align and cap at 80%
+          // so the lane separation reads at a glance — and embedded
+          // pill lists still have room without truncating common
+          // note titles.
+          isUser ? { maxWidth: "92%" } : { maxWidth: "80%" },
         ]}
       >
         {/* Empty-but-streaming placeholder. Show the tool activity if
