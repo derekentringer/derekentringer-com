@@ -3,6 +3,11 @@ import { useColorScheme } from "react-native";
 export const darkColors = {
   background: "#0f1117",
   card: "#12141b",
+  /** Slightly lighter tint used for user message bubbles in the AI
+   *  chat, matching desktop/web's `bg-subtle`. Distinct from `card`
+   *  so user vs assistant bubbles read as different lanes at a
+   *  glance. */
+  subtle: "#1a1d27",
   foreground: "#ececec",
   primary: "#d4e157",
   primaryDark: "#c0ca33",
@@ -20,6 +25,7 @@ export const darkColors = {
 export const lightColors = {
   background: "#ffffff",
   card: "#f5f5f5",
+  subtle: "#ebebed",
   foreground: "#1a1a1a",
   primary: "#c0ca33",
   primaryDark: "#9e9d24",
@@ -37,6 +43,7 @@ export const lightColors = {
 export type ThemeColors = {
   background: string;
   card: string;
+  subtle: string;
   foreground: string;
   primary: string;
   primaryDark: string;

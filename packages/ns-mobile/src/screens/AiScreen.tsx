@@ -71,7 +71,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
@@ -79,8 +78,10 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { useNavigation } from "@react-navigation/native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
@@ -197,8 +198,15 @@ type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
 
 export function AiScreen() {
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation<AiNav>();
+  // KeyboardStickyView translates by the full keyboard height, but
+  // our composer's "rest" position sits above the bottom tab bar
+  // (the screen content area is inset by tabBarHeight). Without
+  // compensation, the composer ends up `tabBarHeight` above the
+  // keyboard top instead of flush. Adding tabBarHeight to
+  // `offset.opened` cancels that gap so the composer pins to the
+  // keyboard top exactly.
+  const tabBarHeight = useBottomTabBarHeight();
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -580,33 +588,41 @@ export function AiScreen() {
     clearServerChatHistory().catch(() => {});
   }, [isStreaming]);
 
-  return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: themeColors.background }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={insets.top}
-    >
-      <View style={[styles.header, { borderBottomColor: themeColors.border }]}>
-        <Text style={[styles.headerTitle, { color: themeColors.foreground }]}>
-          AI Assistant
-        </Text>
-        {messages.length > 0 && (
+  // Mount Clear in the navigator header so we don't render a second
+  // "AI Assistant" title inside the screen. Hidden until there's
+  // something to clear.
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () =>
+        messages.length > 0 ? (
           <Pressable onPress={handleClear} hitSlop={8}>
             <Text style={[styles.headerAction, { color: themeColors.muted }]}>
               Clear
             </Text>
           </Pressable>
-        )}
-      </View>
+        ) : null,
+    });
+  }, [navigation, handleClear, messages.length, themeColors.muted]);
 
+  return (
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {messages.length === 0 ? (
+        // Empty-state parity with ns-web's AIAssistantPanel:
+        // chat-bubble icon at 32px / muted-foreground/40, "Your AI
+        // Assistant" title, and the same description string.
         <View style={styles.empty}>
-          <Text style={[styles.emptyTitle, { color: themeColors.foreground }]}>
-            Ask anything about your notes
+          <MaterialCommunityIcons
+            name="message-outline"
+            size={32}
+            color={themeColors.muted}
+            style={styles.emptyIcon}
+          />
+          <Text style={[styles.emptyTitle, { color: themeColors.muted }]}>
+            Your AI Assistant
           </Text>
           <Text style={[styles.emptyHint, { color: themeColors.muted }]}>
-            Try &quot;summarize my recent meeting notes&quot; or
-            &quot;what notes do I have about React?&quot;
+            Search, create, and organize notes. Summarize content,
+            generate tags, and ask questions during meetings.
           </Text>
         </View>
       ) : (
@@ -630,60 +646,76 @@ export function AiScreen() {
         />
       )}
 
-      <SlashCommandPicker
-        input={input}
-        onPick={(cmd) => {
-          setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
-        }}
-      />
-
-      <View
-        style={[
-          styles.composer,
-          {
-            borderTopColor: themeColors.border,
-            backgroundColor: themeColors.card,
-          },
-        ]}
-      >
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder="Ask, search, create, or organize..."
-          placeholderTextColor={themeColors.muted}
-          multiline
-          editable={!isStreaming}
-          style={[
-            styles.input,
-            {
-              color: themeColors.foreground,
-              backgroundColor: themeColors.input,
-              borderColor: themeColors.border,
-            },
-          ]}
+      {/* KeyboardStickyView translates the composer up by the
+          keyboard height; offset.opened = tabBarHeight cancels the
+          gap that comes from the screen content's tab-bar inset so
+          the composer pins flush to the keyboard top. */}
+      <KeyboardStickyView offset={{ closed: 0, opened: tabBarHeight }}>
+        <SlashCommandPicker
+          input={input}
+          onPick={(cmd) => {
+            setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
+          }}
         />
-        <Pressable
-          onPress={isStreaming ? handleStop : handleSend}
-          disabled={!isStreaming && input.trim().length === 0}
-          style={({ pressed }) => [
-            styles.sendBtn,
+        <View
+          style={[
+            styles.composer,
             {
-              backgroundColor: isStreaming
-                ? themeColors.destructive
-                : themeColors.primary,
-              opacity:
-                pressed || (!isStreaming && input.trim().length === 0)
-                  ? 0.6
-                  : 1,
+              borderTopColor: themeColors.border,
+              backgroundColor: themeColors.card,
             },
           ]}
         >
-          <Text style={styles.sendBtnText}>
-            {isStreaming ? "Stop" : "Send"}
-          </Text>
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask, search, create, or organize..."
+            placeholderTextColor={themeColors.muted}
+            multiline
+            editable={!isStreaming}
+            style={[
+              styles.input,
+              {
+                color: themeColors.foreground,
+                backgroundColor: themeColors.input,
+                borderColor: themeColors.border,
+              },
+            ]}
+          />
+          <Pressable
+            onPress={isStreaming ? handleStop : handleSend}
+            disabled={!isStreaming && input.trim().length === 0}
+            style={({ pressed }) => [
+              styles.sendBtn,
+              {
+                backgroundColor: isStreaming
+                  ? themeColors.destructive
+                  : themeColors.primary,
+                opacity:
+                  pressed || (!isStreaming && input.trim().length === 0)
+                    ? 0.6
+                    : 1,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                // Web parity: Ask uses `text-primary-contrast`
+                // (#000000) + `font-medium` on the lime button;
+                // Stop uses `text-foreground` (regular weight) on
+                // the destructive button. Mobile mirrors that.
+                isStreaming ? styles.stopBtnText : styles.askBtnText,
+                isStreaming
+                  ? { color: themeColors.foreground }
+                  : { color: "#000000" },
+              ]}
+            >
+              {isStreaming ? "Stop" : "Ask"}
+            </Text>
+          </Pressable>
+        </View>
+      </KeyboardStickyView>
+    </View>
   );
 }
 
@@ -767,12 +799,18 @@ function MessageBubble({
         style={[
           styles.bubble,
           {
-            backgroundColor: isUser ? themeColors.input : themeColors.card,
+            backgroundColor: isUser ? themeColors.subtle : themeColors.card,
             borderColor: message.failed
               ? themeColors.destructive
               : themeColors.border,
-            maxWidth: isUser ? "85%" : "95%",
           },
+          // User bubbles shrink-wrap to content (right-aligned, max
+          // 92% wide). Assistant bubbles left-align at a fixed 80%
+          // of the row so the lane separation reads at a glance —
+          // and `width` (not `maxWidth`) forces the bubble to fill
+          // its lane so embedded pill lists / tables don't shrink-
+          // wrap to the longest title and truncate the rest.
+          isUser ? { maxWidth: "92%" } : { width: "80%" },
         ]}
       >
         {/* Empty-but-streaming placeholder. Show the tool activity if
@@ -788,11 +826,7 @@ function MessageBubble({
             </Text>
           </View>
         ) : isUser ? (
-          <Text
-            style={[styles.bubbleText, { color: themeColors.foreground }]}
-          >
-            {message.content}
-          </Text>
+          <UserBubbleText content={message.content} />
         ) : (
           <CitationText
             tokens={tokens}
@@ -823,6 +857,45 @@ function MessageBubble({
         )}
       </View>
     </View>
+  );
+}
+
+// ─── UserBubbleText ──────────────────────────────────────────────
+
+/** Renders a user message. If it starts with a slash command, the
+ *  command word renders as a small mono-font code chip styled with
+ *  the lime accent (matching desktop/web's `<code class="text-primary
+ *  bg-input">` chip). Args after the first space stay as plain
+ *  prose. */
+function UserBubbleText({ content }: { content: string }) {
+  const themeColors = useThemeColors();
+  if (content.startsWith("/")) {
+    const spaceIdx = content.indexOf(" ");
+    const cmd = spaceIdx > 0 ? content.slice(0, spaceIdx) : content;
+    const rest = spaceIdx > 0 ? content.slice(spaceIdx + 1) : "";
+    return (
+      <Text
+        style={[styles.bubbleText, { color: themeColors.foreground }]}
+      >
+        <Text
+          style={[
+            styles.userCommandChip,
+            {
+              color: themeColors.primary,
+              backgroundColor: themeColors.input,
+            },
+          ]}
+        >
+          {cmd}
+        </Text>
+        {rest.length > 0 ? ` ${rest}` : ""}
+      </Text>
+    );
+  }
+  return (
+    <Text style={[styles.bubbleText, { color: themeColors.foreground }]}>
+      {content}
+    </Text>
   );
 }
 
@@ -987,14 +1060,27 @@ function PillList({
           style={({ pressed }) => [
             styles.pill,
             {
-              backgroundColor: themeColors.card,
+              // No bg fill on the pill itself — desktop's default
+              // state has no fill, only a border that brightens on
+              // hover. Mobile uses pressed-state opacity.
               borderColor: themeColors.border,
               opacity: pressed ? 0.7 : 1,
             },
           ]}
         >
+          <MaterialCommunityIcons
+            name="file-document-outline"
+            size={14}
+            color={themeColors.primary}
+            style={styles.pillIcon}
+          />
           <Text
-            style={[styles.pillTitle, { color: themeColors.foreground }]}
+            style={[
+              styles.pillTitle,
+              // muted approximates desktop's `text-foreground/70`
+              // (foreground at 70% opacity).
+              { color: themeColors.muted },
+            ]}
             numberOfLines={1}
           >
             {pill.title}
@@ -1033,28 +1119,39 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 16, fontWeight: "600" },
   headerAction: { fontSize: 13 },
+  // Empty state matches ns-web: `flex flex-col items-center
+  // justify-center py-12 gap-2` with a 32px chat icon, `text-sm`
+  // muted-foreground title, and `text-xs` muted-foreground/60
+  // description.
   empty: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: 16,
+    gap: spacing.sm,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "500",
-    marginBottom: spacing.xs,
-    textAlign: "center",
-  },
-  emptyHint: { fontSize: 13, textAlign: "center" },
+  emptyIcon: { opacity: 0.4 },
+  emptyTitle: { fontSize: 14, textAlign: "center" },
+  emptyHint: { fontSize: 12, textAlign: "center", opacity: 0.6 },
   list: { padding: spacing.md, gap: spacing.sm },
   bubbleRow: { flexDirection: "row", marginBottom: spacing.sm },
   bubble: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 12,
+    // Desktop's chat bubble is `rounded-lg` (8px) + `px-2.5 py-1.5`
+    // — match the geometry so the visual weight is the same.
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
   },
   bubbleText: { fontSize: 14, lineHeight: 20 },
+  userCommandChip: {
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }),
+    fontSize: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
   activityRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   activityText: { fontSize: 13, flex: 1 },
   citationTitle: { fontWeight: "500" },
@@ -1065,18 +1162,23 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     gap: spacing.xs,
   },
-  pillLabel: { fontSize: 11, marginBottom: spacing.xs },
+  pillLabel: { fontSize: 10, marginBottom: spacing.xs },
   pill: {
+    // Desktop pill: `rounded-md p-2 border border-border` with a
+    // file SVG icon + title text. 6px radius, 8px padding, no fill
+    // — fill is only applied on hover (mobile uses pressed-state
+    // opacity instead).
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 6,
     borderWidth: 1,
   },
-  pillTitle: { fontSize: 13, fontWeight: "500", flex: 1 },
-  pillFolder: { fontSize: 11 },
+  pillIcon: {},
+  pillTitle: { fontSize: 12, fontWeight: "500", flex: 1 },
+  pillFolder: { fontSize: 10 },
   showMore: { paddingVertical: spacing.xs, alignItems: "flex-start" },
   showMoreText: { fontSize: 12 },
   pickerWrap: {
@@ -1103,8 +1205,8 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
+    minHeight: 48,
+    maxHeight: 128,
     borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
@@ -1113,12 +1215,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   sendBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
+    // Web's `px-3 py-2 rounded-md` Ask/Stop button: 6px radius,
+    // 12/8 padding. Mobile uses an explicit 48px height to align
+    // with the composer input.
+    height: 48,
+    paddingHorizontal: 12,
+    borderRadius: 6,
     minWidth: 64,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendBtnText: { color: "white", fontSize: 14, fontWeight: "600" },
+  askBtnText: { fontSize: 14, fontWeight: "500" },
+  stopBtnText: { fontSize: 14 },
 });
