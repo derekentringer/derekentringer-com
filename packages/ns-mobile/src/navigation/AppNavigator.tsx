@@ -24,7 +24,7 @@ import { initDatabase } from "@/lib/database";
 import { initSyncEngine, destroySyncEngine } from "@/lib/syncEngine";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { tokenStorage } from "@/services/api";
-import type { DashboardStackParamList, SettingsStackParamList } from "./types";
+import type { AiStackParamList, DashboardStackParamList, SettingsStackParamList } from "./types";
 
 const API_BASE_URL = __DEV__
   ? "http://localhost:3004"
@@ -33,6 +33,7 @@ const API_BASE_URL = __DEV__
 const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
 const DashboardStack = createNativeStackNavigator<DashboardStackParamList>();
+const AiStack = createNativeStackNavigator<AiStackParamList>();
 const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
 
 function AuthNavigator() {
@@ -70,6 +71,36 @@ function DashboardNavigator() {
         options={{ title: "Editor" }}
       />
     </DashboardStack.Navigator>
+  );
+}
+
+function AiNavigator() {
+  const themeColors = useThemeColors();
+
+  return (
+    <AiStack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: themeColors.background },
+        headerTintColor: themeColors.foreground,
+        headerShadowVisible: false,
+      }}
+    >
+      <AiStack.Screen
+        name="AiHome"
+        component={AiScreen}
+        options={{ title: "AI Assistant" }}
+      />
+      <AiStack.Screen
+        name="NoteDetail"
+        component={NoteDetailScreen}
+        options={{ title: "" }}
+      />
+      <AiStack.Screen
+        name="NoteEditor"
+        component={NoteEditorScreen}
+        options={{ title: "Editor" }}
+      />
+    </AiStack.Navigator>
   );
 }
 
@@ -136,11 +167,8 @@ function MainTabNavigator() {
       />
       <MainTab.Screen
         name="AI"
-        component={AiScreen}
+        component={AiNavigator}
         options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.foreground,
           tabBarIcon: ({ color, size }) => (
             <MaterialCommunityIcons name="robot" color={color} size={size} />
           ),
