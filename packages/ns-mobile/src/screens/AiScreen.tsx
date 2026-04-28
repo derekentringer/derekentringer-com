@@ -71,7 +71,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   StyleSheet,
@@ -79,6 +78,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useNavigation } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -605,14 +605,13 @@ export function AiScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: themeColors.background }]}
-      // `padding` behavior works on both platforms when the offset
-      // accounts for the bottom tab bar — KAV pads the bottom of
-      // the view by `keyboardHeight - tabBarHeight`, which lifts the
-      // composer just enough to clear the keyboard without leaving
-      // stale whitespace. On Android, `adjustResize` is also enabled
-      // in the manifest, but `padding` mode is additive (not
-      // duplicative) since RN measures the keyboard event height
-      // directly.
+      // Using react-native-keyboard-controller's KAV which behaves
+      // identically across iOS and Android (the stock RN one didn't
+      // — Android's `adjustResize` fought our padding/height modes
+      // and either left whitespace below the composer or hid it
+      // behind the keyboard). With `behavior="padding"` and
+      // `keyboardVerticalOffset={tabBarHeight}`, the composer is
+      // pinned to the top of the keyboard whenever it's visible.
       behavior="padding"
       keyboardVerticalOffset={tabBarHeight}
     >
@@ -790,11 +789,12 @@ function MessageBubble({
               : themeColors.border,
           },
           // User bubbles shrink-wrap to content (right-aligned, max
-          // 92% wide). Assistant bubbles left-align and cap at 80%
-          // so the lane separation reads at a glance — and embedded
-          // pill lists still have room without truncating common
-          // note titles.
-          isUser ? { maxWidth: "92%" } : { maxWidth: "80%" },
+          // 92% wide). Assistant bubbles left-align at a fixed 80%
+          // of the row so the lane separation reads at a glance —
+          // and `width` (not `maxWidth`) forces the bubble to fill
+          // its lane so embedded pill lists / tables don't shrink-
+          // wrap to the longest title and truncate the rest.
+          isUser ? { maxWidth: "92%" } : { width: "80%" },
         ]}
       >
         {/* Empty-but-streaming placeholder. Show the tool activity if

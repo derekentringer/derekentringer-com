@@ -5,6 +5,7 @@ import { useFonts } from "expo-font";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppNavigator } from "@/navigation/AppNavigator";
@@ -40,12 +41,14 @@ export default function App() {
     >
       <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
-          <BottomSheetModalProvider>
-            <StatusBar style="auto" />
-            <ErrorBoundary>
-              <AppNavigator />
-            </ErrorBoundary>
-          </BottomSheetModalProvider>
+          <KeyboardProvider>
+            <BottomSheetModalProvider>
+              <StatusBar style="auto" />
+              <ErrorBoundary>
+                <AppNavigator />
+              </ErrorBoundary>
+            </BottomSheetModalProvider>
+          </KeyboardProvider>
         </SafeAreaProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
