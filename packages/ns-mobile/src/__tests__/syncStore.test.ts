@@ -2,11 +2,14 @@ import useSyncStore from "@/store/syncStore";
 
 describe("syncStore", () => {
   beforeEach(() => {
-    // Reset store state
+    // Reset store state. chatRefreshKey doesn't have a "reset" action
+    // (it monotonically increases in production); set it via Zustand
+    // directly so tests are order-independent.
     const { setStatus, clearRejections, setIsOnline } = useSyncStore.getState();
     setStatus("idle", null);
     setIsOnline(true);
     clearRejections();
+    useSyncStore.setState({ chatRefreshKey: 0 });
   });
 
   describe("status transitions", () => {
@@ -88,6 +91,17 @@ describe("syncStore", () => {
       expect(state.rejections[0].changeId).toBe("note-1");
       expect(state.rejectionActions.forcePush).toBe(mockForcePush);
       expect(state.rejectionActions.discard).toBe(mockDiscard);
+    });
+
+    it("starts with chatRefreshKey 0 and increments on bump", () => {
+      // Phase A.5.1 — used by the AiScreen to detect remote chat-
+      // history changes from other devices.
+      expect(useSyncStore.getState().chatRefreshKey).toBe(0);
+      useSyncStore.getState().bumpChatRefresh();
+      expect(useSyncStore.getState().chatRefreshKey).toBe(1);
+      useSyncStore.getState().bumpChatRefresh();
+      useSyncStore.getState().bumpChatRefresh();
+      expect(useSyncStore.getState().chatRefreshKey).toBe(3);
     });
 
     it("clears rejections", () => {

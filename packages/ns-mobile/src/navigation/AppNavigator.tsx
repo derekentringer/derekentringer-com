@@ -233,6 +233,11 @@ function AuthenticatedApp() {
           onSyncRejections: (rejections, forcePush, discard) => {
             syncSetRejections(rejections, forcePush, discard);
           },
+          onChatChanged: () => {
+            // Phase A.5.1: another device wrote to the user's chat
+            // history; nudge AiScreen to re-run fetchChatHistory.
+            useSyncStore.getState().bumpChatRefresh();
+          },
         },
       );
     })();

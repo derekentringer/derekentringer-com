@@ -39,6 +39,12 @@ export interface SyncEngineCallbacks {
     forcePush: (changeIds: string[]) => Promise<void>,
     discard: (changeIds: string[]) => Promise<void>,
   ) => void;
+  /** Phase A.5.1 — fires when the server's SSE stream emits a
+   *  `chat` event, signaling another device wrote to the user's
+   *  chat history. The AiScreen reacts by re-running
+   *  `fetchChatHistory` (the in-flight write guard prevents the
+   *  echo loop). */
+  onChatChanged?: () => void;
 }
 
 // ─── Constants ─────────────────────────────────────────────
@@ -68,6 +74,7 @@ let deviceId: string | null = null;
 let statusCallback: SyncEngineCallbacks["onStatusChange"] | null = null;
 let dataChangedCallback: SyncEngineCallbacks["onDataChanged"] | null = null;
 let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
+let chatChangedCallback: SyncEngineCallbacks["onChatChanged"] | null = null;
 
 // SSE state
 let sseXhr: XMLHttpRequest | null = null;
@@ -141,6 +148,7 @@ export async function initSyncEngine(
   statusCallback = callbacks.onStatusChange;
   dataChangedCallback = callbacks.onDataChanged;
   syncRejectionsCallback = callbacks.onSyncRejections ?? null;
+  chatChangedCallback = callbacks.onChatChanged ?? null;
 
   await getOrCreateDeviceId();
 
@@ -206,6 +214,7 @@ export function destroySyncEngine(): void {
   statusCallback = null;
   dataChangedCallback = null;
   syncRejectionsCallback = null;
+  chatChangedCallback = null;
   syncInProgress = false;
   deviceId = null;
   backoffMs = 1000;
@@ -307,6 +316,8 @@ async function connectSse(): Promise<void> {
         } else if (line.startsWith("data: ")) {
           if (currentEvent === "sync") {
             triggerSync();
+          } else if (currentEvent === "chat") {
+            chatChangedCallback?.();
           }
           currentEvent = "";
         } else if (line === "") {

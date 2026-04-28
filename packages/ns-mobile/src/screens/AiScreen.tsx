@@ -1,3 +1,13 @@
+// Phase A.5.1 (mobile parity): cross-device chat refetch.
+//
+// The mobile sync engine now subscribes to the server's SSE `chat`
+// event and bumps useSyncStore.chatRefreshKey when another device
+// writes to chat history. AiScreen watches that counter and re-runs
+// fetchChatHistory(). The existing isSavingRef + lastSavedRef
+// guards prevent a self-echo loop — our own writes briefly set
+// isSavingRef true, and even after that flips back, the refetched
+// JSON matches lastSavedRef so we no-op.
+//
 // Phase A.6 (mobile parity): AI settings + auto-approve flags.
 //
 // AiScreen now reads `autoApprove` from the persisted aiSettings
@@ -89,6 +99,7 @@ import {
   trimChatHistory,
 } from "@/lib/chatHistory";
 import useAiSettingsStore from "@/store/aiSettingsStore";
+import useSyncStore from "@/store/syncStore";
 import {
   ConfirmationCard,
   type ConfirmationStatus,
@@ -189,6 +200,7 @@ export function AiScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AiNav>();
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
+  const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -277,6 +289,29 @@ export function AiScreen() {
       }
     };
   }, [messages, isStreaming, persistNow]);
+
+  // Phase A.5.1: react to remote chat-history changes from other
+  // devices. The sync engine bumps `chatRefreshKey` when it sees a
+  // server-side `chat` SSE event; we re-fetch and swap state.
+  // Skip the very first render (chatRefreshKey === 0) — that's just
+  // the initial store value, not a real signal.
+  useEffect(() => {
+    if (chatRefreshKey === 0) return;
+    if (!historyLoadedRef.current) return;
+    if (isSavingRef.current) return;
+    fetchChatHistory()
+      .then((rows) => {
+        const loaded = rowsToMessages(rows);
+        const json = JSON.stringify(loaded);
+        // No-op if the server's view matches what we already have.
+        if (json === lastSavedRef.current) return;
+        lastSavedRef.current = json;
+        setMessages(loaded);
+      })
+      .catch(() => {
+        // Non-fatal; next bump will retry.
+      });
+  }, [chatRefreshKey]);
 
   // Fast-flush: 200ms after a streaming turn ends, persist promptly
   // so the assistant message survives a quick screen close.
