@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   Pressable,
+  ScrollView,
   StyleSheet,
   Switch,
   Alert,
@@ -81,7 +82,11 @@ export function SettingsScreen({ navigation }: Props) {
   const styles = makeStyles(themeColors);
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.card}>
@@ -231,7 +236,7 @@ export function SettingsScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <SyncIssuesSheet bottomSheetRef={syncIssuesRef} />
-    </View>
+    </ScrollView>
   );
 }
 
@@ -265,8 +270,12 @@ function AiSettingsSection() {
       <Switch
         value={value}
         onValueChange={onChange}
+        // Off-state track was `themeColors.input` (#10121a in dark
+        // mode) which sat invisible against the card. Use the
+        // muted-foreground gray so the track reads as a track,
+        // not a floating thumb.
         trackColor={{
-          false: themeColors.input,
+          false: themeColors.mutedForeground,
           true: themeColors.primary,
         }}
         thumbColor="#fff"
@@ -318,18 +327,25 @@ function AiSettingsSection() {
         renderToggle("AI Assistant chat", qaAssistant, setQaAssistant,
           "Q&A panel + slash commands.")}
       {showAutoApprove && (
-        <View style={styles.autoApproveBlock}>
-          <Text
-            style={[
-              styles.autoApproveHeading,
-              { color: themeColors.muted },
-            ]}
-          >
-            Auto-approve destructive actions
-          </Text>
-          <Text style={[styles.toggleInfo, { color: themeColors.muted }]}>
-            When off, Claude waits for your confirmation. Enable sparingly.
-          </Text>
+        <>
+          <View style={styles.autoApproveBlock}>
+            <Text
+              style={[
+                styles.autoApproveHeading,
+                { color: themeColors.muted },
+              ]}
+            >
+              Auto-approve destructive actions
+            </Text>
+            <Text
+              style={[
+                styles.autoApproveDescription,
+                { color: themeColors.muted },
+              ]}
+            >
+              When off, Claude waits for your confirmation. Enable sparingly.
+            </Text>
+          </View>
           {autoApproveLabels.map(({ key, label, info }) =>
             renderToggle(
               label,
@@ -338,7 +354,7 @@ function AiSettingsSection() {
               info,
             ),
           )}
-        </View>
+        </>
       )}
     </View>
   );
@@ -346,10 +362,16 @@ function AiSettingsSection() {
 
 function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useThemeColors>) {
   return StyleSheet.create({
+    // Outer ScrollView style takes flex + bg only; padding moves
+    // to `scrollContent` so the bottom inset can grow without
+    // clipping the auto-approve list above the tab bar.
     container: {
       flex: 1,
       backgroundColor: themeColors.background,
+    },
+    scrollContent: {
       padding: spacing.md,
+      paddingBottom: spacing.xl,
     },
     section: {
       marginBottom: spacing.lg,
@@ -434,11 +456,12 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
       fontSize: 11,
       marginTop: 2,
     },
+    // No divider — the section title carries enough visual
+    // separation. Inner padding aligns the heading + description
+    // with the toggle-row labels (which are inset by spacing.md).
     autoApproveBlock: {
       marginTop: spacing.sm,
-      paddingTop: spacing.sm,
-      borderTopWidth: 1,
-      borderTopColor: themeColors.border,
+      paddingHorizontal: spacing.md,
     },
     autoApproveHeading: {
       fontSize: 11,
@@ -446,6 +469,13 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
       textTransform: "uppercase",
       marginBottom: spacing.xs,
       letterSpacing: 0.5,
+    },
+    // Description sits under the heading with the same horizontal
+    // inset; explicit margin-bottom adds breathing room before the
+    // first toggle row.
+    autoApproveDescription: {
+      fontSize: 11,
+      marginBottom: spacing.sm,
     },
     menuRowRight: {
       flexDirection: "row",
