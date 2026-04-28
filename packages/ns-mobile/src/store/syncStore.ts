@@ -12,6 +12,11 @@ interface SyncState {
     discard: ((changeIds: string[]) => Promise<void>) | null;
   };
   lastSyncedAt: string | null;
+  /** Phase A.5.1 — bumped whenever the sync engine's SSE stream
+   *  emits a `chat` event from the server (another device wrote to
+   *  the user's chat history). AiScreen reads it as a "go refetch
+   *  chat history" trigger. */
+  chatRefreshKey: number;
 }
 
 interface SyncActions {
@@ -24,6 +29,8 @@ interface SyncActions {
   ) => void;
   clearRejections: () => void;
   setLastSyncedAt: (timestamp: string) => void;
+  /** Bump the chatRefreshKey to signal a remote chat-history change. */
+  bumpChatRefresh: () => void;
 }
 
 const useSyncStore = create<SyncState & SyncActions>()((set) => ({
@@ -33,6 +40,7 @@ const useSyncStore = create<SyncState & SyncActions>()((set) => ({
   rejections: [],
   rejectionActions: { forcePush: null, discard: null },
   lastSyncedAt: null,
+  chatRefreshKey: 0,
 
   setStatus: (status, error) => {
     set({ status, error });
@@ -50,6 +58,9 @@ const useSyncStore = create<SyncState & SyncActions>()((set) => ({
     set({ rejections: [], rejectionActions: { forcePush: null, discard: null } }),
 
   setLastSyncedAt: (timestamp) => set({ lastSyncedAt: timestamp }),
+
+  bumpChatRefresh: () =>
+    set((state) => ({ chatRefreshKey: state.chatRefreshKey + 1 })),
 }));
 
 export default useSyncStore;

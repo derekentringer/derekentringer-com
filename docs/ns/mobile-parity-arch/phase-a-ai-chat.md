@@ -56,8 +56,14 @@ Phase A is split into incremental sub-PRs so each ships independently:
   knows which tools to bypass. New `summarizeNote` / `suggestTags`
   api wrappers + `/summarize` and `/gentags` slash commands.
   `/renametag` still deferred — needs a `renameTag` helper in
-  `noteStore.ts`. **A.5.1 follow-up**: cross-device live refetch
-  via sync engine `onChatChanged` callback.
+  `noteStore.ts`.
+- **A.5.1 — Cross-device live refetch** ✓ shipped. Mobile sync
+  engine subscribes to the server's SSE `chat` event and bumps a
+  new `chatRefreshKey` counter on `useSyncStore`. AiScreen watches
+  the counter and re-runs `fetchChatHistory()`; the existing
+  `isSavingRef` + `lastSavedRef` guards prevent the self-echo loop
+  on local writes. Closes Phase A — mobile is now at parity with
+  desktop/web for AI Assistant chat.
 
 ## What desktop/web have
 
