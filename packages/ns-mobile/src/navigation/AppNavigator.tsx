@@ -8,6 +8,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useQueryClient } from "@tanstack/react-query";
 import useAuthStore from "@/store/authStore";
 import useSyncStore from "@/store/syncStore";
+import useAiSettingsStore from "@/store/aiSettingsStore";
 import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
@@ -203,6 +204,10 @@ function AuthenticatedApp() {
     syncInitialized.current = true;
 
     (async () => {
+      // Hydrate the AI settings store from AsyncStorage so the
+      // AiScreen reads the user's persisted auto-approve flags
+      // before its first askQuestion call.
+      void useAiSettingsStore.getState().hydrate();
       // Initialize local database first — must complete before any queries fire
       await initDatabase();
       // Phase A.0: normalize any drifted folder isLocalFile flag to match its

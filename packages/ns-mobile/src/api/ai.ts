@@ -214,3 +214,15 @@ export async function replaceChatMessages(
 export async function clearServerChatHistory(): Promise<void> {
   await api.delete("/ai/chat-history");
 }
+
+// ─── AI single-note helpers (Phase A.6) ──────────────────────────
+
+export async function summarizeNote(noteId: string): Promise<string> {
+  const response = await api.post<{ summary: string }>("/ai/summarize", { noteId });
+  return response.data.summary;
+}
+
+export async function suggestTags(noteId: string): Promise<string[]> {
+  const response = await api.post<{ tags: string[] }>("/ai/tags", { noteId });
+  return response.data.tags ?? [];
+}

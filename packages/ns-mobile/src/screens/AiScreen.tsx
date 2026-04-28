@@ -1,3 +1,13 @@
+// Phase A.6 (mobile parity): AI settings + auto-approve flags.
+//
+// AiScreen now reads `autoApprove` from the persisted aiSettings
+// store and passes it to every askQuestion call. When a destructive
+// tool's flag is true, the backend skips the confirmation gate and
+// runs the tool directly — the assistant phrases its reply as
+// completed instead of "I've proposed". The Settings tab gets a new
+// "AI Assistant" section with a master toggle plus a per-tool
+// auto-approve list.
+//
 // Phase A.5 (mobile parity): chat persistence + history-aware
 // follow-ups + /savechat slash command.
 //
@@ -78,6 +88,7 @@ import {
   serializeChatHistory,
   trimChatHistory,
 } from "@/lib/chatHistory";
+import useAiSettingsStore from "@/store/aiSettingsStore";
 import {
   ConfirmationCard,
   type ConfirmationStatus,
@@ -177,6 +188,7 @@ export function AiScreen() {
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AiNav>();
+  const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -359,6 +371,7 @@ export function AiScreen() {
         undefined,
         undefined,
         historySnapshot,
+        autoApprove,
       )) {
         if (controller.signal.aborted) break;
 
@@ -450,7 +463,7 @@ export function AiScreen() {
       setIsStreaming(false);
       abortRef.current = null;
     }
-  }, [input, isStreaming, scrollToBottom, openNote]);
+  }, [input, isStreaming, scrollToBottom, openNote, messages, autoApprove]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
