@@ -114,21 +114,38 @@ describe("tokenizeCitations", () => {
     expect(titleHits(tokens, "Meeting")).toBe(0);
   });
 
-  it("strips brackets pointing to titles not in pool", () => {
+  it("unwraps brackets pointing to titles not in pool — keeps inner text", () => {
     const tokens = tokenizeCitations(
       "See [Some Unrelated Note] and Claude Code Use Cases.",
       undefined,
       POOL,
     );
-    // Unknown bracket disappears from the rendered text.
-    expect(plainText(tokens)).not.toContain("Some Unrelated Note");
-    // The bare match still fires.
+    // Inner text of unknown bracket survives, but is plain text
+    // (not a clickable title token — it has no noteId).
+    expect(plainText(tokens)).toContain("Some Unrelated Note");
+    expect(titleHits(tokens, "Some Unrelated Note")).toBe(0);
+    // The bare match for the in-pool title still fires.
     expect(titleHits(tokens, "Claude Code Use Cases")).toBe(1);
   });
 
-  it("returns an empty token stream when pool is empty and only unknown brackets remain", () => {
+  it("unwraps unknown brackets to plain text when pool is empty", () => {
+    // Regression: confirmation cards (delete_note) don't emit
+    // noteCards, so the AI's bracketed title references had no
+    // pool to match against and were getting wiped to nothing.
+    // Now the inner text survives.
     const tokens = tokenizeCitations("[Unknown Note]", undefined, []);
-    expect(tokens).toEqual([]);
+    expect(tokens).toEqual([{ kind: "text", text: "Unknown Note" }]);
+  });
+
+  it("unwraps unknown brackets in a longer sentence (delete-three-notes regression)", () => {
+    const tokens = tokenizeCitations(
+      "I've queued up the deletion of all three notes — [Delete#1], [Delete#2], and [Delete#3].",
+      undefined,
+      [],
+    );
+    expect(plainText(tokens)).toBe(
+      "I've queued up the deletion of all three notes — Delete#1, Delete#2, and Delete#3.",
+    );
   });
 
   it("returns just plain text when pool is empty and prose has no citations", () => {
