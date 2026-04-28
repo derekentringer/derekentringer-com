@@ -80,6 +80,7 @@ import {
 } from "react-native";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { useNavigation } from "@react-navigation/native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
@@ -198,6 +199,14 @@ type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
 export function AiScreen() {
   const themeColors = useThemeColors();
   const navigation = useNavigation<AiNav>();
+  // KeyboardStickyView translates by the full keyboard height, but
+  // our composer's "rest" position sits above the bottom tab bar
+  // (the screen content area is inset by tabBarHeight). Without
+  // compensation, the composer ends up `tabBarHeight` above the
+  // keyboard top instead of flush. Adding tabBarHeight to
+  // `offset.opened` cancels that gap so the composer pins to the
+  // keyboard top exactly.
+  const tabBarHeight = useBottomTabBarHeight();
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -628,13 +637,11 @@ export function AiScreen() {
         />
       )}
 
-      {/* KeyboardStickyView is purpose-built for "input bar pinned
-          to the keyboard" UX — when the keyboard opens, this view
-          translates up by the keyboard height and rides above the
-          tab bar / behind the keyboard. When closed, it sits at the
-          bottom of its parent (above the tab bar). Works on both
-          iOS and Android via the keyboard-controller native module. */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+      {/* KeyboardStickyView translates the composer up by the
+          keyboard height; offset.opened = tabBarHeight cancels the
+          gap that comes from the screen content's tab-bar inset so
+          the composer pins flush to the keyboard top. */}
+      <KeyboardStickyView offset={{ closed: 0, opened: tabBarHeight }}>
         <SlashCommandPicker
           input={input}
           onPick={(cmd) => {
