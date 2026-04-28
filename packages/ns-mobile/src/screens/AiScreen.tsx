@@ -512,7 +512,16 @@ export function AiScreen() {
     abortRef.current?.abort();
   }, []);
 
-  const handleConfirmApply = useCallback(async (idx: number) => {
+  const handleConfirmApply = useCallback(async (
+    idx: number,
+    pending: PendingConfirmation,
+  ) => {
+    // Bug fix: the prior shape used a `setMessages(prev => prev)`
+    // side-effect to read the pending payload, but React enqueues
+    // updaters — by the time the function reached `confirmTool(...)`
+    // `pending` was still null and the call was skipped, leaving
+    // the card with a forever-spinner. Pass `pending` straight from
+    // the call site instead.
     setMessages((prev) => {
       const updated = [...prev];
       const target = updated[idx];
@@ -523,16 +532,8 @@ export function AiScreen() {
       };
       return updated;
     });
-    let pending: PendingConfirmation | null = null;
-    setMessages((prev) => {
-      const target = prev[idx];
-      if (target?.confirmation) pending = target.confirmation.pending;
-      return prev;
-    });
-    if (!pending) return;
-    const p = pending as PendingConfirmation;
     try {
-      const result = await confirmTool(p.toolName, p.toolInput);
+      const result = await confirmTool(pending.toolName, pending.toolInput);
       setMessages((prev) => {
         const updated = [...prev];
         const target = updated[idx];
@@ -726,7 +727,7 @@ interface MessageBubbleProps {
   messageIndex: number;
   isStreaming: boolean;
   onOpenNote: (noteId: string) => void;
-  onConfirmApply: (idx: number) => void;
+  onConfirmApply: (idx: number, pending: PendingConfirmation) => void;
   onConfirmDiscard: (idx: number) => void;
 }
 
@@ -780,7 +781,7 @@ function MessageBubble({
             status={message.confirmation.status}
             resultText={message.confirmation.resultText}
             errorMessage={message.confirmation.errorMessage}
-            onApply={() => onConfirmApply(messageIndex)}
+            onApply={() => onConfirmApply(messageIndex, message.confirmation!.pending)}
             onDiscard={() => onConfirmDiscard(messageIndex)}
           />
         </View>
