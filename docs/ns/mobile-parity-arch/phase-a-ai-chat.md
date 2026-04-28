@@ -4,6 +4,25 @@
 "Coming soon" placeholder) with a real AI chat experience that
 matches feature-for-feature what desktop and web have today.
 
+## Sub-phases
+
+Phase A is split into incremental sub-PRs so each ships independently:
+
+- **A.1 — Foundation + basic streaming** ✓ shipped. SSE pipeline via
+  `react-native-sse`, working chat with streaming text from
+  `/ai/ask`, user/assistant turns, send/stop/clear. No tools,
+  citations, slash commands, or persistence yet.
+- **A.2 — Tools, citations, source pills, note cards.** Render the
+  rich content events the API already emits.
+- **A.3 — Slash commands.** Bottom-sheet picker + parsing logic
+  mirrored from `chatCommands.ts`.
+- **A.4 — Confirmation cards.** Inline cards for destructive actions;
+  preview sheet before commit.
+- **A.5 — Persistence + cross-device sync.** `fetchChatHistory`,
+  `replaceChatMessages`, SSE-driven refetch on remote update.
+- **A.6 — Settings + auto-approve.** AI section in
+  `SettingsScreen.tsx` with auto-approve toggles per destructive tool.
+
 ## What desktop/web have
 
 - Streaming text from `/ai/ask` (SSE)
