@@ -1122,16 +1122,9 @@ const styles = StyleSheet.create({
   // Empty state matches ns-web: `flex flex-col items-center
   // justify-center py-12 gap-2` with a 32px chat icon, `text-sm`
   // muted-foreground title, and `text-xs` muted-foreground/60
-  // description. Positioned absolutely so the centering uses the
-  // full content view height (above the composer + tab bar)
-  // instead of the (content - composer) sliver — matches the
-  // user's expectation of "centered in the content view".
+  // description.
   empty: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
