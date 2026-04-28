@@ -1,3 +1,14 @@
+// Phase A.5 (mobile parity): chat persistence + history-aware
+// follow-ups + /savechat slash command.
+//
+// On mount: fetchChatHistory() rehydrates prior turns. On every
+// messages change: a debounced replaceChatMessages() persists to
+// the server (5s steady-state debounce, 200ms fast-flush after a
+// streaming turn ends — same shape desktop/web use). Each new
+// askQuestion call serializes the prior text turns and passes them
+// as `history` so the model has continuity ("the second one", "why
+// did you say that").
+//
 // Phase A.4 (mobile parity): confirmation cards for destructive
 // AI tool calls (delete_note, delete_folder, update_note_content,
 // rename_note, rename_folder, rename_tag).
@@ -36,7 +47,7 @@
 // Slash commands (A.3), confirmation cards (A.4), persistence (A.5),
 // and AI settings (A.6) are still ahead.
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -55,10 +66,18 @@ import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
 import {
   askQuestion,
+  clearServerChatHistory,
   confirmTool,
+  fetchChatHistory,
+  replaceChatMessages,
+  type ChatMessageData,
   type NoteCard,
   type PendingConfirmation,
 } from "@/api/ai";
+import {
+  serializeChatHistory,
+  trimChatHistory,
+} from "@/lib/chatHistory";
 import {
   ConfirmationCard,
   type ConfirmationStatus,
@@ -93,6 +112,63 @@ interface Message {
   };
 }
 
+// ─── Hydration helpers (Phase A.5) ────────────────────────────────
+
+interface PersistedConfirmation {
+  pending: PendingConfirmation;
+  status: ConfirmationStatus;
+  resultText?: string;
+  errorMessage?: string;
+}
+
+function rowsToMessages(rows: ChatMessageData[]): Message[] {
+  return rows
+    .map<Message | null>((r) => {
+      // We only round-trip user / assistant. meeting-summary is a
+      // future-shape (mobile doesn't surface them yet — defer to
+      // Phase C audio recording follow-up).
+      if (r.role !== "user" && r.role !== "assistant") return null;
+      const conf = r.confirmation as PersistedConfirmation | undefined;
+      return {
+        role: r.role,
+        content: r.content,
+        sources: r.sources as QASource[] | undefined,
+        noteCards: r.noteCards as NoteCard[] | undefined,
+        confirmation:
+          // Drop transient `applying` states from persisted history —
+          // they're never the final state and re-rehydrating one would
+          // leave the spinner spinning forever.
+          conf && conf.status !== "applying" ? conf : undefined,
+      };
+    })
+    .filter((m): m is Message => m !== null)
+    // Strip empty assistant placeholders from older saves (any bubble
+    // with no content, no card, no confirmation, no failure marker).
+    .filter((m) => {
+      if (m.role !== "assistant") return true;
+      if (m.content) return true;
+      if (m.confirmation) return true;
+      if (m.noteCards?.length) return true;
+      if (m.sources?.length) return true;
+      if (m.failed) return true;
+      return false;
+    });
+}
+
+function messagesToRows(messages: Message[]): ChatMessageData[] {
+  return messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+    sources: m.sources,
+    noteCards: m.noteCards,
+    // Persist confirmations except the transient applying state.
+    confirmation:
+      m.confirmation && m.confirmation.status !== "applying"
+        ? m.confirmation
+        : undefined,
+  }));
+}
+
 const PILL_LIMIT = 5;
 
 type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
@@ -113,6 +189,93 @@ export function AiScreen() {
     },
     [navigation],
   );
+
+  // ─── Phase A.5: hydration + persistence ──────────────────────
+  // Rehydrate the chat from the server on mount so the user lands
+  // back into their last conversation. Persisted by the matching
+  // effect below whenever messages change. Guarded by
+  // historyLoadedRef so the first persistence write doesn't race
+  // with the load.
+  const historyLoadedRef = useRef(false);
+  const lastSavedRef = useRef<string>("");
+  const isSavingRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (historyLoadedRef.current) return;
+    historyLoadedRef.current = true;
+    fetchChatHistory()
+      .then((rows) => {
+        if (rows.length === 0) return;
+        const loaded = rowsToMessages(rows);
+        setMessages((prev) => {
+          // If the user already started typing/sending while hydration
+          // was in flight, don't clobber their work — keep what's
+          // there and skip the rehydrate. Mark lastSaved so we don't
+          // immediately re-write the same value.
+          if (prev.length > 0) return prev;
+          lastSavedRef.current = JSON.stringify(loaded);
+          return loaded;
+        });
+      })
+      .catch(() => {
+        // Hydration failure is non-fatal — the user can still chat.
+      });
+  }, []);
+
+  const persistNow = useCallback(() => {
+    if (!historyLoadedRef.current) return;
+    const json = JSON.stringify(messages);
+    if (json === lastSavedRef.current) return;
+    lastSavedRef.current = json;
+    isSavingRef.current = true;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    replaceChatMessages(messagesToRows(messages))
+      .catch(() => {
+        // Non-fatal — next change will retry. Don't roll back
+        // lastSavedRef so we don't write the same payload N times.
+      })
+      .finally(() => {
+        setTimeout(() => {
+          isSavingRef.current = false;
+        }, 500);
+      });
+  }, [messages]);
+
+  // Steady-state debounce: 5s after the latest mutation, push to
+  // the server. Resets every time messages change. Skips writes
+  // while a stream is in flight (the post-stream fast-flush effect
+  // below picks that up promptly).
+  useEffect(() => {
+    if (!historyLoadedRef.current) return;
+    if (isStreaming) return;
+    const json = JSON.stringify(messages);
+    if (json === lastSavedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      persistNow();
+    }, 5000);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [messages, isStreaming, persistNow]);
+
+  // Fast-flush: 200ms after a streaming turn ends, persist promptly
+  // so the assistant message survives a quick screen close.
+  const prevStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => persistNow(), 200);
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming, persistNow]);
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -139,6 +302,13 @@ export function AiScreen() {
             setMessages([]);
           },
           openInTab: openNote,
+          getChatMessages: () =>
+            messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+              noteCards: m.noteCards,
+              sources: m.sources,
+            })),
         });
         if (result.silent) return;
         setMessages((prev) => [
@@ -174,8 +344,22 @@ export function AiScreen() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Pass the prior text turns to the model for continuity. We
+    // serialize from the messages snapshot BEFORE the user's new
+    // question + the empty assistant placeholder we just appended,
+    // so the history doesn't contain the in-flight turn.
+    const historySnapshot = trimChatHistory(
+      serializeChatHistory(messages),
+    );
+
     try {
-      for await (const event of askQuestion(question, controller.signal)) {
+      for await (const event of askQuestion(
+        question,
+        controller.signal,
+        undefined,
+        undefined,
+        historySnapshot,
+      )) {
         if (controller.signal.aborted) break;
 
         // open_note is a side-channel: route immediately to the note
@@ -343,6 +527,9 @@ export function AiScreen() {
   const handleClear = useCallback(() => {
     if (isStreaming) abortRef.current?.abort();
     setMessages([]);
+    lastSavedRef.current = "[]";
+    // Wipe server history too so a refresh doesn't bring it back.
+    clearServerChatHistory().catch(() => {});
   }, [isStreaming]);
 
   return (
