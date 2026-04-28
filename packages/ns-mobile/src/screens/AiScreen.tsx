@@ -1,3 +1,13 @@
+// Phase A.3 (mobile parity): slash commands.
+//
+// Builds on A.2's rich-content rendering. Adds the slash-command
+// catalog from `lib/chatCommands.ts` plus an inline typeahead picker
+// that appears above the composer when input starts with `/`. Tap a
+// command → fills the composer with `/<name>` ready for args. On
+// send, parseCommand → execute locally → result rendered as an
+// assistant message; non-command input falls through to askQuestion
+// streaming as before.
+//
 // Phase A.2 (mobile parity): AI chat with tools, citations, and pills.
 //
 // Builds on A.1's streaming foundation. Now handles:
@@ -34,8 +44,12 @@ import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
 import { askQuestion, type NoteCard } from "@/api/ai";
 import {
+  filterCommands,
+  parseCommand,
+  type ChatCommand,
+} from "@/lib/chatCommands";
+import {
   tokenizeCitations,
-  type CitationSource,
   type CitationToken,
 } from "@/lib/linkifyCitations";
 import type { AiStackParamList } from "@/navigation/types";
@@ -80,6 +94,43 @@ export function AiScreen() {
   const handleSend = useCallback(async () => {
     const question = input.trim();
     if (!question || isStreaming) return;
+
+    // Slash command path — execute locally, append the result as an
+    // assistant turn, skip the SSE stream entirely.
+    const parsed = parseCommand(question);
+    if (parsed) {
+      setInput("");
+      // Show the user's command in the chat for context.
+      setMessages((prev) => [...prev, { role: "user", content: question }]);
+      scrollToBottom();
+      try {
+        const result = await parsed.command.execute(parsed.args, {
+          clearChat: () => {
+            if (abortRef.current) abortRef.current.abort();
+            setMessages([]);
+          },
+          openInTab: openNote,
+        });
+        if (result.silent) return;
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: result.text,
+            noteCards: result.noteCards,
+          },
+        ]);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Command failed.";
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: message, failed: true },
+        ]);
+      }
+      scrollToBottom();
+      return;
+    }
 
     setInput("");
     setIsStreaming(true);
@@ -228,6 +279,13 @@ export function AiScreen() {
         />
       )}
 
+      <SlashCommandPicker
+        input={input}
+        onPick={(cmd) => {
+          setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
+        }}
+      />
+
       <View
         style={[
           styles.composer,
@@ -293,15 +351,6 @@ function MessageBubble({
 }: MessageBubbleProps) {
   const themeColors = useThemeColors();
   const isUser = message.role === "user";
-
-  // Build the citation pool from sources + noteCards so the renderer
-  // knows which titles to linkify in the prose.
-  const pool = useMemo<CitationSource[]>(() => {
-    return [
-      ...(message.sources ?? []).map((s) => ({ id: s.id, title: s.title })),
-      ...(message.noteCards ?? []).map((c) => ({ id: c.id, title: c.title })),
-    ];
-  }, [message.sources, message.noteCards]);
 
   const tokens = useMemo<CitationToken[]>(() => {
     if (isUser || !message.content) return [];
@@ -391,8 +440,6 @@ function MessageBubble({
           />
         )}
       </View>
-      {/* Suppresses unused-pool lint when no rich tokens emit. */}
-      {pool.length === 0 && null}
     </View>
   );
 }
@@ -444,6 +491,78 @@ function CitationText({
         );
       })}
     </Text>
+  );
+}
+
+// ─── SlashCommandPicker ──────────────────────────────────────────
+
+function SlashCommandPicker({
+  input,
+  onPick,
+}: {
+  input: string;
+  onPick: (cmd: ChatCommand) => void;
+}) {
+  const themeColors = useThemeColors();
+
+  // Only show the picker while the user is composing a slash command
+  // and they haven't yet typed args (no space). Once they hit space
+  // they're typing args and the picker would just be in the way.
+  const trimmed = input.trim();
+  const isPickingCommand =
+    trimmed.startsWith("/") && !trimmed.includes(" ");
+  if (!isPickingCommand) return null;
+
+  const matches = filterCommands(trimmed);
+  if (matches.length === 0) return null;
+
+  return (
+    <View
+      style={[
+        styles.pickerWrap,
+        {
+          backgroundColor: themeColors.card,
+          borderTopColor: themeColors.border,
+        },
+      ]}
+    >
+      <FlatList
+        data={matches}
+        keyExtractor={(c) => c.name}
+        keyboardShouldPersistTaps="handled"
+        // Long lists get a scroll cap; mostly there are <10 matches.
+        style={styles.pickerList}
+        renderItem={({ item }) => (
+          <Pressable
+            onPress={() => onPick(item)}
+            style={({ pressed }) => [
+              styles.pickerRow,
+              {
+                backgroundColor: pressed
+                  ? themeColors.input
+                  : "transparent",
+              },
+            ]}
+            testID={`slash-${item.name}`}
+          >
+            <Text
+              style={[styles.pickerName, { color: themeColors.primary }]}
+            >
+              /{item.name}
+            </Text>
+            <Text
+              style={[
+                styles.pickerDescription,
+                { color: themeColors.muted },
+              ]}
+              numberOfLines={1}
+            >
+              {item.description}
+            </Text>
+          </Pressable>
+        )}
+      />
+    </View>
   );
 }
 
@@ -578,6 +697,20 @@ const styles = StyleSheet.create({
   pillFolder: { fontSize: 11 },
   showMore: { paddingVertical: spacing.xs, alignItems: "flex-start" },
   showMoreText: { fontSize: 12 },
+  pickerWrap: {
+    borderTopWidth: 1,
+    maxHeight: 240,
+  },
+  pickerList: { maxHeight: 240 },
+  pickerRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.sm,
+  },
+  pickerName: { fontSize: 14, fontWeight: "600", minWidth: 80 },
+  pickerDescription: { fontSize: 12, flex: 1 },
   composer: {
     flexDirection: "row",
     alignItems: "flex-end",

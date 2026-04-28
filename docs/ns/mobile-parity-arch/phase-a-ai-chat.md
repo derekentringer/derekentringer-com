@@ -19,8 +19,14 @@ Phase A is split into incremental sub-PRs so each ships independently:
   emits structured tokens for RN instead of markdown). AI tab now
   has its own stack so pill / citation taps navigate to NoteDetail.
   open_note SSE event routes through the navigation handler.
-- **A.3 — Slash commands.** Bottom-sheet picker + parsing logic
-  mirrored from `chatCommands.ts`.
+- **A.3 — Slash commands** ✓ shipped. Mobile `chatCommands.ts`
+  mirrors the desktop/web shape (15 commands ported: create, delete,
+  deletefolder, recent, favorites, folders, tags, open, favorite,
+  unfavorite, trash, restore, duplicate, move, clear). Inline
+  typeahead picker above the composer when input starts with `/`,
+  tap fills the command name. Confirmation-gated rename* and AI-
+  flavored summarize / gentags / savechat / multi-arg tag will land
+  in A.4–A.6 as their dependencies arrive.
 - **A.4 — Confirmation cards.** Inline cards for destructive actions;
   preview sheet before commit.
 - **A.5 — Persistence + cross-device sync.** `fetchChatHistory`,
