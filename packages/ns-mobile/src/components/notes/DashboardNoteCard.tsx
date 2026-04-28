@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import type { Note } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
-import { spacing, borderRadius } from "@/theme";
+import { spacing } from "@/theme";
 import { stripMarkdown } from "@/lib/markdown";
 import { relativeTime } from "@/lib/time";
 
@@ -101,19 +101,21 @@ export function DashboardNoteCard({ note, onPress, compact, folderName }: Dashbo
 }
 
 const styles = StyleSheet.create({
+  // Desktop's DashboardNoteCard: `bg-card rounded-md border p-3` —
+  // 6px radius, 12px padding. Mobile mirrors that geometry.
   card: {
     width: 220,
-    borderRadius: borderRadius.lg,
+    borderRadius: 6,
     borderWidth: 1,
-    padding: spacing.md,
+    padding: 12,
     marginRight: spacing.sm,
   },
   tileCard: {
     flex: 1,
     minHeight: 120,
-    borderRadius: borderRadius.lg,
+    borderRadius: 6,
     borderWidth: 1,
-    padding: spacing.sm,
+    padding: 12,
   },
   spacer: {
     flex: 1,

@@ -275,42 +275,45 @@ export function ConfirmationCard({
 }
 
 const styles = StyleSheet.create({
+  // Desktop's pending / applied / discarded / failed cards all use
+  // `rounded-lg bg-card border p-3` with `text-xs` content. Mobile
+  // mirrors that geometry: 8px radius, 12px padding, 12px text.
   card: {
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 1,
-    padding: spacing.md,
+    padding: 12,
     gap: spacing.sm,
   },
   banner: {
     borderRadius: 8,
     borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    padding: 12,
     gap: spacing.xs,
   },
-  bannerTitle: { fontSize: 13, fontWeight: "600" },
-  bannerText: { fontSize: 13 },
-  headline: { fontSize: 14, fontWeight: "600" },
-  body: { fontSize: 13, lineHeight: 18 },
+  bannerTitle: { fontSize: 12, fontWeight: "600" },
+  bannerText: { fontSize: 12 },
+  headline: { fontSize: 12, fontWeight: "600" },
+  body: { fontSize: 12, lineHeight: 17 },
   emphasized: { fontWeight: "500" },
-  actionRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs },
+  actionRow: { flexDirection: "row", gap: 6, marginTop: 6 },
+  // Desktop buttons: `px-2.5 py-1 rounded-md text-[11px] font-medium`.
   btn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
-    minWidth: 80,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    minWidth: 64,
     alignItems: "center",
     justifyContent: "center",
   },
-  btnText: { color: "white", fontSize: 14, fontWeight: "600" },
+  btnText: { color: "white", fontSize: 11, fontWeight: "600" },
   btnSecondary: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
     borderWidth: 1,
-    minWidth: 80,
+    minWidth: 64,
     alignItems: "center",
     justifyContent: "center",
   },
-  btnSecondaryText: { fontSize: 14, fontWeight: "500" },
+  btnSecondaryText: { fontSize: 11, fontWeight: "500" },
 });

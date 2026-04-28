@@ -82,6 +82,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
@@ -1029,14 +1030,27 @@ function PillList({
           style={({ pressed }) => [
             styles.pill,
             {
-              backgroundColor: themeColors.card,
+              // No bg fill on the pill itself — desktop's default
+              // state has no fill, only a border that brightens on
+              // hover. Mobile uses pressed-state opacity.
               borderColor: themeColors.border,
               opacity: pressed ? 0.7 : 1,
             },
           ]}
         >
+          <MaterialCommunityIcons
+            name="file-document-outline"
+            size={14}
+            color={themeColors.primary}
+            style={styles.pillIcon}
+          />
           <Text
-            style={[styles.pillTitle, { color: themeColors.foreground }]}
+            style={[
+              styles.pillTitle,
+              // muted approximates desktop's `text-foreground/70`
+              // (foreground at 70% opacity).
+              { color: themeColors.muted },
+            ]}
             numberOfLines={1}
           >
             {pill.title}
@@ -1091,9 +1105,11 @@ const styles = StyleSheet.create({
   list: { padding: spacing.md, gap: spacing.sm },
   bubbleRow: { flexDirection: "row", marginBottom: spacing.sm },
   bubble: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 12,
+    // Desktop's chat bubble is `rounded-lg` (8px) + `px-2.5 py-1.5`
+    // — match the geometry so the visual weight is the same.
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
   },
   bubbleText: { fontSize: 14, lineHeight: 20 },
@@ -1115,18 +1131,23 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     gap: spacing.xs,
   },
-  pillLabel: { fontSize: 11, marginBottom: spacing.xs },
+  pillLabel: { fontSize: 10, marginBottom: spacing.xs },
   pill: {
+    // Desktop pill: `rounded-md p-2 border border-border` with a
+    // file SVG icon + title text. 6px radius, 8px padding, no fill
+    // — fill is only applied on hover (mobile uses pressed-state
+    // opacity instead).
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 6,
     borderWidth: 1,
   },
-  pillTitle: { fontSize: 13, fontWeight: "500", flex: 1 },
-  pillFolder: { fontSize: 11 },
+  pillIcon: {},
+  pillTitle: { fontSize: 12, fontWeight: "500", flex: 1 },
+  pillFolder: { fontSize: 10 },
   showMore: { paddingVertical: spacing.xs, alignItems: "flex-start" },
   showMoreText: { fontSize: 12 },
   pickerWrap: {

@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import type { Note } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
-import { spacing, borderRadius } from "@/theme";
+import { spacing } from "@/theme";
 import { stripMarkdown } from "@/lib/markdown";
 import { relativeTime } from "@/lib/time";
 
@@ -107,10 +107,13 @@ export function NoteListItem({ note, onPress }: NoteListItemProps) {
 }
 
 const styles = StyleSheet.create({
+  // Card geometry matches desktop's note-list rows: 6px radius
+  // (`rounded-md`) + 12px padding (`p-3`). Mobile keeps the
+  // outer margins so cards sit as a list of stacked tiles.
   container: {
-    borderRadius: borderRadius.lg,
+    borderRadius: 6,
     borderWidth: 1,
-    padding: spacing.md,
+    padding: 12,
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
@@ -140,7 +143,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   folderBadge: {
-    borderRadius: borderRadius.sm,
+    borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
     maxWidth: 120,
