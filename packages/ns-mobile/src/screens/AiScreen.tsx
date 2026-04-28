@@ -591,8 +591,14 @@ export function AiScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: themeColors.background }]}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={tabBarHeight + insets.top}
+      // On Android the manifest sets `adjustResize`, so the window
+      // already shrinks under the keyboard. Layering KAV on top
+      // double-handles and leaves stale whitespace when the keyboard
+      // dismisses. Disable KAV on Android and let the OS do the
+      // resize. iOS still needs `padding` + the tab-bar / header
+      // offset because UIKit doesn't auto-resize.
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? tabBarHeight + insets.top : 0}
     >
       <View style={[styles.header, { borderBottomColor: themeColors.border }]}>
         <Text style={[styles.headerTitle, { color: themeColors.foreground }]}>
@@ -779,7 +785,7 @@ function MessageBubble({
             borderColor: message.failed
               ? themeColors.destructive
               : themeColors.border,
-            maxWidth: isUser ? "85%" : "95%",
+            maxWidth: isUser ? "92%" : "100%",
           },
         ]}
       >
