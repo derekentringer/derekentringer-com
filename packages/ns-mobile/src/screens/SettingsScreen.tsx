@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   Pressable,
   StyleSheet,
+  Switch,
   Alert,
 } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -13,6 +14,9 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SettingsStackParamList } from "@/navigation/types";
 import useAuthStore from "@/store/authStore";
 import useSyncStore from "@/store/syncStore";
+import useAiSettingsStore, {
+  type AutoApproveSettings,
+} from "@/store/aiSettingsStore";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useTrashCount } from "@/hooks/useTrash";
@@ -180,6 +184,11 @@ export function SettingsScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.section}>
+        <Text style={styles.sectionTitle}>AI Assistant</Text>
+        <AiSettingsSection />
+      </View>
+
+      <View style={styles.section}>
         <Text style={styles.sectionTitle}>Data</Text>
         <Pressable
           style={styles.menuRow}
@@ -222,6 +231,115 @@ export function SettingsScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <SyncIssuesSheet bottomSheetRef={syncIssuesRef} />
+    </View>
+  );
+}
+
+// ─── AI Settings Section ─────────────────────────────────────────
+
+function AiSettingsSection() {
+  const themeColors = useThemeColors();
+  const styles = makeStyles(themeColors);
+  const masterAiEnabled = useAiSettingsStore((s) => s.masterAiEnabled);
+  const qaAssistant = useAiSettingsStore((s) => s.qaAssistant);
+  const autoApprove = useAiSettingsStore((s) => s.autoApprove);
+  const setMasterAiEnabled = useAiSettingsStore((s) => s.setMasterAiEnabled);
+  const setQaAssistant = useAiSettingsStore((s) => s.setQaAssistant);
+  const setAutoApprove = useAiSettingsStore((s) => s.setAutoApprove);
+
+  const renderToggle = (
+    label: string,
+    value: boolean,
+    onChange: (v: boolean) => void,
+    info?: string,
+  ) => (
+    <View style={styles.toggleRow} key={label}>
+      <View style={styles.toggleLabelWrap}>
+        <Text style={styles.menuRowText}>{label}</Text>
+        {info && (
+          <Text style={[styles.toggleInfo, { color: themeColors.muted }]}>
+            {info}
+          </Text>
+        )}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{
+          false: themeColors.input,
+          true: themeColors.primary,
+        }}
+        thumbColor="#fff"
+      />
+    </View>
+  );
+
+  // Per-tool auto-approve list — only meaningful when master + QA
+  // are both enabled.
+  const showAutoApprove = masterAiEnabled && qaAssistant;
+  const autoApproveLabels: Array<{ key: keyof AutoApproveSettings; label: string; info: string }> = [
+    {
+      key: "deleteNote",
+      label: "Move notes to Trash",
+      info: "Auto-approve `delete_note`. Notes go to Trash and can be restored until the trash auto-delete timer purges them.",
+    },
+    {
+      key: "deleteFolder",
+      label: "Delete folders",
+      info: "Auto-approve `delete_folder`. Notes inside become Unfiled.",
+    },
+    {
+      key: "updateNoteContent",
+      label: "Rewrite note content",
+      info: "Auto-approve `update_note_content`. Previous version stays in version history.",
+    },
+    {
+      key: "renameNote",
+      label: "Rename notes",
+      info: "Auto-approve `rename_note`. Title only; content / folder / tags / id are unchanged.",
+    },
+    {
+      key: "renameFolder",
+      label: "Rename folders",
+      info: "Auto-approve `rename_folder`.",
+    },
+    {
+      key: "renameTag",
+      label: "Rename tags",
+      info: "Auto-approve `rename_tag`. Affects every note using that tag.",
+    },
+  ];
+
+  return (
+    <View>
+      {renderToggle("AI features", masterAiEnabled, setMasterAiEnabled,
+        "Master gate for all AI calls. Off disables the AI tab entirely.")}
+      {masterAiEnabled &&
+        renderToggle("AI Assistant chat", qaAssistant, setQaAssistant,
+          "Q&A panel + slash commands.")}
+      {showAutoApprove && (
+        <View style={styles.autoApproveBlock}>
+          <Text
+            style={[
+              styles.autoApproveHeading,
+              { color: themeColors.muted },
+            ]}
+          >
+            Auto-approve destructive actions
+          </Text>
+          <Text style={[styles.toggleInfo, { color: themeColors.muted }]}>
+            When off, Claude waits for your confirmation. Enable sparingly.
+          </Text>
+          {autoApproveLabels.map(({ key, label, info }) =>
+            renderToggle(
+              label,
+              autoApprove[key],
+              (v) => setAutoApprove(key, v),
+              info,
+            ),
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -298,6 +416,36 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
       color: themeColors.foreground,
       fontSize: 16,
       flex: 1,
+    },
+    toggleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: borderRadius.md,
+      backgroundColor: themeColors.card,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      gap: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    toggleLabelWrap: { flex: 1 },
+    toggleInfo: {
+      fontSize: 11,
+      marginTop: 2,
+    },
+    autoApproveBlock: {
+      marginTop: spacing.sm,
+      paddingTop: spacing.sm,
+      borderTopWidth: 1,
+      borderTopColor: themeColors.border,
+    },
+    autoApproveHeading: {
+      fontSize: 11,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      marginBottom: spacing.xs,
+      letterSpacing: 0.5,
     },
     menuRowRight: {
       flexDirection: "row",

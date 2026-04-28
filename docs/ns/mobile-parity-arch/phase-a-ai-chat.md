@@ -46,8 +46,18 @@ Phase A is split into incremental sub-PRs so each ships independently:
   command. Cross-device SSE-driven refetch deferred — mobile sync
   engine doesn't surface `onChatChanged` yet; tracked as A.5
   follow-up.
-- **A.6 — Settings + auto-approve.** AI section in
-  `SettingsScreen.tsx` with auto-approve toggles per destructive tool.
+- **A.6 — Settings + auto-approve + AI helpers** ✓ shipped. New
+  `aiSettingsStore` (Zustand + AsyncStorage) mirrors desktop/web's
+  `useAiSettings` shape. SettingsScreen gains an "AI Assistant"
+  section: master gate, chat toggle, and per-tool auto-approve
+  switches (deleteNote / deleteFolder / updateNoteContent /
+  renameNote / renameFolder / renameTag). AiScreen pipes
+  `autoApprove` into every `askQuestion` call so the backend
+  knows which tools to bypass. New `summarizeNote` / `suggestTags`
+  api wrappers + `/summarize` and `/gentags` slash commands.
+  `/renametag` still deferred — needs a `renameTag` helper in
+  `noteStore.ts`. **A.5.1 follow-up**: cross-device live refetch
+  via sync engine `onChatChanged` callback.
 
 ## What desktop/web have
 

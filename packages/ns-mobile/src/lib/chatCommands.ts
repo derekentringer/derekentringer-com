@@ -32,7 +32,11 @@ import {
   serializeChatToMarkdown,
   type ExportMessage,
 } from "./chatExport";
-import type { NoteCard } from "@/api/ai";
+import {
+  summarizeNote as apiSummarizeNote,
+  suggestTags as apiSuggestTags,
+  type NoteCard,
+} from "@/api/ai";
 
 export interface ChatCommand {
   name: string;
@@ -290,6 +294,56 @@ export const CHAT_COMMANDS: ChatCommand[] = [
         text: `Duplicated as "${copy.title}".`,
         noteCards: [{ id: copy.id, title: copy.title }],
       };
+    },
+  },
+  {
+    name: "summarize",
+    description: "AI-generate a summary for a note",
+    usage: "/summarize [note title]",
+    execute: async (args) => {
+      if (!args.trim()) return { text: "Usage: /summarize [note title]" };
+      const note = await findNoteByTitle(args.trim());
+      if (!note) return { text: `No note found with title "${args.trim()}".` };
+      try {
+        const summary = await apiSummarizeNote(note.id);
+        if (!summary.trim()) return { text: `No summary returned for "${note.title}".` };
+        // Persist the summary on the note so it shows in the
+        // detail header — same effect as desktop.
+        await updateNoteLocal(note.id, { summary });
+        return {
+          text: `Summary of "${note.title}":\n\n${summary}`,
+          noteCards: [{ id: note.id, title: note.title }],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Summarize failed.";
+        return { text: `Failed to summarize: ${message}` };
+      }
+    },
+  },
+  {
+    name: "gentags",
+    description: "AI-suggest tags for a note",
+    usage: "/gentags [note title]",
+    execute: async (args) => {
+      if (!args.trim()) return { text: "Usage: /gentags [note title]" };
+      const note = await findNoteByTitle(args.trim());
+      if (!note) return { text: `No note found with title "${args.trim()}".` };
+      try {
+        const tags = await apiSuggestTags(note.id);
+        if (tags.length === 0) {
+          return { text: `No tag suggestions for "${note.title}".` };
+        }
+        // Merge into existing tags, preserving prior ones.
+        const merged = Array.from(new Set([...(note.tags ?? []), ...tags]));
+        await updateNoteLocal(note.id, { tags: merged });
+        return {
+          text: `Suggested tags for "${note.title}": ${tags.map((t) => `#${t}`).join(", ")}`,
+          noteCards: [{ id: note.id, title: note.title }],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Tag suggestion failed.";
+        return { text: `Failed to suggest tags: ${message}` };
+      }
     },
   },
   {
