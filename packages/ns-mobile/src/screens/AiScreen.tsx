@@ -690,7 +690,7 @@ export function AiScreen() {
             ]}
           >
             <Text style={styles.sendBtnText}>
-              {isStreaming ? "Stop" : "Send"}
+              {isStreaming ? "Stop" : "Ask"}
             </Text>
           </Pressable>
         </View>
@@ -1184,8 +1184,8 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
+    minHeight: 48,
+    maxHeight: 128,
     borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
