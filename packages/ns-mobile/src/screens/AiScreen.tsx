@@ -1,3 +1,14 @@
+// Phase A.4 (mobile parity): confirmation cards for destructive
+// AI tool calls (delete_note, delete_folder, update_note_content,
+// rename_note, rename_folder, rename_tag).
+//
+// When the SSE stream emits a `confirmation` event, the assistant
+// turn's bubble grows a ConfirmationCard with Apply / Discard
+// buttons. Apply re-runs the tool server-side via /ai/tools/confirm
+// (autoApprove=true on that path) and updates the card to "applied"
+// or "failed". Discard flips the card to "discarded" without
+// touching the server.
+//
 // Phase A.3 (mobile parity): slash commands.
 //
 // Builds on A.2's rich-content rendering. Adds the slash-command
@@ -42,7 +53,16 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
-import { askQuestion, type NoteCard } from "@/api/ai";
+import {
+  askQuestion,
+  confirmTool,
+  type NoteCard,
+  type PendingConfirmation,
+} from "@/api/ai";
+import {
+  ConfirmationCard,
+  type ConfirmationStatus,
+} from "@/components/notes/ConfirmationCard";
 import {
   filterCommands,
   parseCommand,
@@ -62,6 +82,15 @@ interface Message {
   noteCards?: NoteCard[];
   toolActivity?: string | null;
   failed?: boolean;
+  /** Phase A.4: when the SSE stream emits a `confirmation` event, the
+   *  assistant turn carries the pending action + its current state.
+   *  The card renders inside the bubble. */
+  confirmation?: {
+    pending: PendingConfirmation;
+    status: ConfirmationStatus;
+    resultText?: string;
+    errorMessage?: string;
+  };
 }
 
 const PILL_LIMIT = 5;
@@ -197,6 +226,22 @@ export function AiScreen() {
           }
 
           updated[updated.length - 1] = next;
+
+          // Confirmation events become a NEW assistant message so the
+          // card sits in its own bubble — same shape desktop uses.
+          // After the card, append an empty assistant placeholder so
+          // any continued stream text lands cleanly.
+          if (event.confirmation) {
+            updated.push({
+              role: "assistant",
+              content: "",
+              confirmation: {
+                pending: event.confirmation,
+                status: "pending",
+              },
+            });
+            updated.push({ role: "assistant", content: "" });
+          }
           return updated;
         });
       }
@@ -225,6 +270,74 @@ export function AiScreen() {
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
+  }, []);
+
+  const handleConfirmApply = useCallback(async (idx: number) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const target = updated[idx];
+      if (!target?.confirmation) return prev;
+      updated[idx] = {
+        ...target,
+        confirmation: { ...target.confirmation, status: "applying" },
+      };
+      return updated;
+    });
+    let pending: PendingConfirmation | null = null;
+    setMessages((prev) => {
+      const target = prev[idx];
+      if (target?.confirmation) pending = target.confirmation.pending;
+      return prev;
+    });
+    if (!pending) return;
+    const p = pending as PendingConfirmation;
+    try {
+      const result = await confirmTool(p.toolName, p.toolInput);
+      setMessages((prev) => {
+        const updated = [...prev];
+        const target = updated[idx];
+        if (!target?.confirmation) return prev;
+        updated[idx] = {
+          ...target,
+          confirmation: {
+            ...target.confirmation,
+            status: "applied",
+            resultText: result.text,
+          },
+        };
+        return updated;
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Apply failed.";
+      setMessages((prev) => {
+        const updated = [...prev];
+        const target = updated[idx];
+        if (!target?.confirmation) return prev;
+        updated[idx] = {
+          ...target,
+          confirmation: {
+            ...target.confirmation,
+            status: "failed",
+            errorMessage: message,
+          },
+        };
+        return updated;
+      });
+    }
+  }, []);
+
+  const handleConfirmDiscard = useCallback((idx: number) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const target = updated[idx];
+      if (!target?.confirmation) return prev;
+      updated[idx] = {
+        ...target,
+        confirmation: { ...target.confirmation, status: "discarded" },
+      };
+      return updated;
+    });
   }, []);
 
   const handleClear = useCallback(() => {
@@ -266,11 +379,14 @@ export function AiScreen() {
           ref={listRef}
           data={messages}
           keyExtractor={(_, idx) => `msg-${idx}`}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <MessageBubble
               message={item}
+              messageIndex={index}
               isStreaming={isStreaming}
               onOpenNote={openNote}
+              onConfirmApply={handleConfirmApply}
+              onConfirmDiscard={handleConfirmDiscard}
             />
           )}
           contentContainerStyle={styles.list}
@@ -340,14 +456,20 @@ export function AiScreen() {
 
 interface MessageBubbleProps {
   message: Message;
+  messageIndex: number;
   isStreaming: boolean;
   onOpenNote: (noteId: string) => void;
+  onConfirmApply: (idx: number) => void;
+  onConfirmDiscard: (idx: number) => void;
 }
 
 function MessageBubble({
   message,
+  messageIndex,
   isStreaming,
   onOpenNote,
+  onConfirmApply,
+  onConfirmDiscard,
 }: MessageBubbleProps) {
   const themeColors = useThemeColors();
   const isUser = message.role === "user";
@@ -373,6 +495,31 @@ function MessageBubble({
   const filteredSources = useMemo(() => {
     return (message.sources ?? []).filter((s) => citedSourceIds.has(s.id));
   }, [message.sources, citedSourceIds]);
+
+  // Confirmation messages render a card instead of a regular bubble.
+  // The bubble itself is suppressed; the card carries its own border
+  // and looks like a freestanding action prompt.
+  if (message.confirmation) {
+    return (
+      <View
+        style={[
+          styles.bubbleRow,
+          { justifyContent: "flex-start" },
+        ]}
+      >
+        <View style={styles.confirmationWrap}>
+          <ConfirmationCard
+            pending={message.confirmation.pending}
+            status={message.confirmation.status}
+            resultText={message.confirmation.resultText}
+            errorMessage={message.confirmation.errorMessage}
+            onApply={() => onConfirmApply(messageIndex)}
+            onDiscard={() => onConfirmDiscard(messageIndex)}
+          />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -711,6 +858,7 @@ const styles = StyleSheet.create({
   },
   pickerName: { fontSize: 14, fontWeight: "600", minWidth: 80 },
   pickerDescription: { fontSize: 12, flex: 1 },
+  confirmationWrap: { width: "95%" },
   composer: {
     flexDirection: "row",
     alignItems: "flex-end",

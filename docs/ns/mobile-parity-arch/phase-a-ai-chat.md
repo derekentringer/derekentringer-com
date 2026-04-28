@@ -27,8 +27,16 @@ Phase A is split into incremental sub-PRs so each ships independently:
   tap fills the command name. Confirmation-gated rename* and AI-
   flavored summarize / gentags / savechat / multi-arg tag will land
   in A.4–A.6 as their dependencies arrive.
-- **A.4 — Confirmation cards.** Inline cards for destructive actions;
-  preview sheet before commit.
+- **A.4 — Confirmation cards** ✓ shipped. Inline ConfirmationCard
+  rendered when the SSE stream emits a `confirmation` event for the
+  6 gated tools (delete_note / delete_folder / update_note_content /
+  rename_note / rename_folder / rename_tag). Apply re-runs the tool
+  via /ai/tools/confirm; Discard flips the card without touching the
+  server. Status state machine: pending → applying → applied /
+  failed (with retry) / discarded. Two new direct-DB slash commands
+  added: `/rename`, `/renamefolder` (matching desktop's bypass-the-
+  gate pattern). `/renametag` deferred — needs a renameTag helper
+  in noteStore.
 - **A.5 — Persistence + cross-device sync.** `fetchChatHistory`,
   `replaceChatMessages`, SSE-driven refetch on remote update.
 - **A.6 — Settings + auto-approve.** AI section in
