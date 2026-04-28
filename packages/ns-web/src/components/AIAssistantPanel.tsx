@@ -457,6 +457,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
   const hasNotes = (relevantNotes?.length ?? 0) > 0;
+  // Two refs to gate hydration: `fetchStartedRef` flips immediately
+  // to prevent duplicate fetches; `historyLoadedRef` flips ONLY in
+  // .finally() so persistence/cross-device-refresh effects can't
+  // run until the server's view is known. Without this, a slow or
+  // failed fetch let the persist debounce save an empty messages
+  // array back to the server, wiping the user's chat history (and
+  // propagating the wipe to other surfaces via the chat SSE).
+  const fetchStartedRef = useRef(false);
   const historyLoadedRef = useRef(false);
 
   // Phase 2 chat-load repaint: snapshots are in-memory only, so a persisted
@@ -512,8 +520,8 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
   // Load chat history from server on mount
   useEffect(() => {
-    if (historyLoadedRef.current) return;
-    historyLoadedRef.current = true;
+    if (fetchStartedRef.current) return;
+    fetchStartedRef.current = true;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
         const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
@@ -524,8 +532,18 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           .filter((m) => m.role === "user" && m.content.trim().length > 0)
           .map((m) => m.content)
           .slice(-10);
+        lastSavedRef.current = JSON.stringify(loaded);
+      } else {
+        // Server has no history. Mark lastSaved so the persist
+        // effect treats local empty state as already saved.
+        lastSavedRef.current = "[]";
       }
-    }).catch(() => {});
+    }).catch(() => {
+      // Hydration failure: leave lastSavedRef as "" so we don't
+      // persist an empty state back to the server.
+    }).finally(() => {
+      historyLoadedRef.current = true;
+    });
   }, []);
 
   // Suppress refetch during our own saves
