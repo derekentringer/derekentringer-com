@@ -78,13 +78,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import {
-  KeyboardChatScrollView,
-  KeyboardStickyView,
-} from "react-native-keyboard-controller";
-import type { ScrollViewProps } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useNavigation } from "@react-navigation/native";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
@@ -249,14 +244,6 @@ type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
 export function AiScreen() {
   const themeColors = useThemeColors();
   const navigation = useNavigation<AiNav>();
-  // KeyboardStickyView translates by the full keyboard height, but
-  // our composer's "rest" position sits above the bottom tab bar
-  // (the screen content area is inset by tabBarHeight). Without
-  // compensation, the composer ends up `tabBarHeight` above the
-  // keyboard top instead of flush. Adding tabBarHeight to
-  // `offset.opened` cancels that gap so the composer pins to the
-  // keyboard top exactly.
-  const tabBarHeight = useBottomTabBarHeight();
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -409,11 +396,16 @@ export function AiScreen() {
     prevStreamingRef.current = isStreaming;
   }, [isStreaming, persistNow]);
 
-  const scrollToBottom = useCallback(() => {
-    requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    });
-  }, []);
+  // The chat uses an inverted FlatList — `data` is messages
+  // reversed, so the newest item is at the visual bottom and the
+  // scroll position is naturally anchored there. New items
+  // prepended to the data (i.e. appended to messages) render at
+  // the bottom without any manual scroll-to-end, and streaming
+  // text growing the latest bubble keeps that bubble's bottom
+  // pinned to the viewport bottom for free. No scrollToEnd /
+  // onContentSizeChange / measurement-race plumbing needed.
+  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+
 
   const handleSend = useCallback(async () => {
     const question = input.trim();
@@ -426,7 +418,6 @@ export function AiScreen() {
       setInput("");
       // Show the user's command in the chat for context.
       setMessages((prev) => [...prev, { role: "user", content: question }]);
-      scrollToBottom();
       try {
         const result = await parsed.command.execute(parsed.args, {
           clearChat: () => {
@@ -459,7 +450,6 @@ export function AiScreen() {
           { role: "assistant", content: message, failed: true },
         ]);
       }
-      scrollToBottom();
       return;
     }
 
@@ -471,7 +461,6 @@ export function AiScreen() {
       { role: "user", content: question },
       { role: "assistant", content: "" },
     ]);
-    scrollToBottom();
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -613,7 +602,7 @@ export function AiScreen() {
       setIsStreaming(false);
       abortRef.current = null;
     }
-  }, [input, isStreaming, scrollToBottom, openNote, messages, autoApprove]);
+  }, [input, isStreaming, openNote, messages, autoApprove]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -717,7 +706,11 @@ export function AiScreen() {
   }, [navigation, handleClear, messages.length, themeColors.muted]);
 
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: themeColors.background }]}
+      behavior="padding"
+      automaticOffset
+    >
       {messages.length === 0 ? (
         // Empty-state parity with ns-web's AIAssistantPanel:
         // chat-bubble icon at 32px / muted-foreground/40, "Your AI
@@ -740,103 +733,104 @@ export function AiScreen() {
       ) : (
         <FlatList
           ref={listRef}
-          data={messages}
-          keyExtractor={(_, idx) => `msg-${idx}`}
-          renderItem={({ item, index }) => (
-            <MessageBubble
-              message={item}
-              messageIndex={index}
-              isStreaming={isStreaming}
-              onOpenNote={openNote}
-              onConfirmApply={handleConfirmApply}
-              onConfirmDiscard={handleConfirmDiscard}
-            />
-          )}
+          data={reversedMessages}
+          inverted
+          // The display index counts from newest (0) to oldest;
+          // the original-array index is its mirror. Keying by the
+          // original index keeps each message's identity stable
+          // when new ones are appended (otherwise FlatList sees
+          // every item shift down by one and remounts the world).
+          keyExtractor={(_, displayIdx) =>
+            `msg-${messages.length - 1 - displayIdx}`
+          }
+          renderItem={({ item, index: displayIdx }) => {
+            const messageIndex = messages.length - 1 - displayIdx;
+            return (
+              <MessageBubble
+                message={item}
+                messageIndex={messageIndex}
+                isStreaming={isStreaming}
+                onOpenNote={openNote}
+                onConfirmApply={handleConfirmApply}
+                onConfirmDiscard={handleConfirmDiscard}
+              />
+            );
+          }}
           contentContainerStyle={styles.list}
-          onContentSizeChange={scrollToBottom}
           keyboardShouldPersistTaps="handled"
-          // KeyboardChatScrollView is the v1.21+ chat-aware
-          // scroller from react-native-keyboard-controller — when
-          // the keyboard opens, it lifts the content (not just the
-          // composer) so the latest message stays visible above
-          // the keyboard, and supports interactive swipe-to-
-          // dismiss. Drop-in via renderScrollComponent.
-          renderScrollComponent={(props: ScrollViewProps) => (
-            <KeyboardChatScrollView {...props} />
-          )}
         />
       )}
 
-      {/* KeyboardStickyView translates the composer up by the
-          keyboard height; offset.opened = tabBarHeight cancels the
-          gap that comes from the screen content's tab-bar inset so
-          the composer pins flush to the keyboard top. */}
-      <KeyboardStickyView offset={{ closed: 0, opened: tabBarHeight }}>
-        <SlashCommandPicker
-          input={input}
-          onPick={(cmd) => {
-            setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
-          }}
-        />
-        <View
+      <SlashCommandPicker
+        input={input}
+        onPick={(cmd) => {
+          setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
+        }}
+      />
+      <View
+        style={[
+          styles.composer,
+          {
+            borderTopColor: themeColors.border,
+            backgroundColor: themeColors.card,
+          },
+        ]}
+      >
+        <TextInput
+          value={input}
+          onChangeText={setInput}
+          placeholder="Ask, search, create, or organize..."
+          placeholderTextColor={themeColors.muted}
+          multiline
+          // Don't toggle editable while streaming — on Android the
+          // TextInput losing editability blurs the field and
+          // dismisses the keyboard, which made hitting Ask close
+          // the keyboard for non-slash questions while slash
+          // commands left it open. The Send/Stop button already
+          // gates submission; the user can keep typing the next
+          // question while the previous one streams.
           style={[
-            styles.composer,
+            styles.input,
             {
-              borderTopColor: themeColors.border,
-              backgroundColor: themeColors.card,
+              color: themeColors.foreground,
+              backgroundColor: themeColors.input,
+              borderColor: themeColors.border,
+            },
+          ]}
+        />
+        <Pressable
+          onPress={isStreaming ? handleStop : handleSend}
+          disabled={!isStreaming && input.trim().length === 0}
+          style={({ pressed }) => [
+            styles.sendBtn,
+            {
+              backgroundColor: isStreaming
+                ? themeColors.destructive
+                : themeColors.primary,
+              opacity:
+                pressed || (!isStreaming && input.trim().length === 0)
+                  ? 0.6
+                  : 1,
             },
           ]}
         >
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            placeholder="Ask, search, create, or organize..."
-            placeholderTextColor={themeColors.muted}
-            multiline
-            editable={!isStreaming}
+          <Text
             style={[
-              styles.input,
-              {
-                color: themeColors.foreground,
-                backgroundColor: themeColors.input,
-                borderColor: themeColors.border,
-              },
-            ]}
-          />
-          <Pressable
-            onPress={isStreaming ? handleStop : handleSend}
-            disabled={!isStreaming && input.trim().length === 0}
-            style={({ pressed }) => [
-              styles.sendBtn,
-              {
-                backgroundColor: isStreaming
-                  ? themeColors.destructive
-                  : themeColors.primary,
-                opacity:
-                  pressed || (!isStreaming && input.trim().length === 0)
-                    ? 0.6
-                    : 1,
-              },
+              // Web parity: Ask uses `text-primary-contrast`
+              // (#000000) + `font-medium` on the lime button;
+              // Stop uses `text-foreground` (regular weight) on
+              // the destructive button. Mobile mirrors that.
+              isStreaming ? styles.stopBtnText : styles.askBtnText,
+              isStreaming
+                ? { color: themeColors.foreground }
+                : { color: "#000000" },
             ]}
           >
-            <Text
-              style={[
-                // Web parity: Ask uses `text-primary-contrast`
-                // (#000000) + `font-medium` on the lime button;
-                // Stop uses `text-foreground` (regular weight) on
-                // the destructive button. Mobile mirrors that.
-                isStreaming ? styles.stopBtnText : styles.askBtnText,
-                isStreaming
-                  ? { color: themeColors.foreground }
-                  : { color: "#000000" },
-              ]}
-            >
-              {isStreaming ? "Stop" : "Ask"}
-            </Text>
-          </Pressable>
-        </View>
-      </KeyboardStickyView>
-    </View>
+            {isStreaming ? "Stop" : "Ask"}
+          </Text>
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
