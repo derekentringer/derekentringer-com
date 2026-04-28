@@ -278,17 +278,38 @@ export function AiScreen() {
   // effect below whenever messages change. Guarded by
   // historyLoadedRef so the first persistence write doesn't race
   // with the load.
+  // Two refs cover the hydration cycle:
+  //   `fetchStartedRef` — flips true when the fetch is dispatched.
+  //     Prevents duplicate fetches across re-renders. Set early.
+  //   `historyLoadedRef` — flips true ONLY after the fetch settles
+  //     (success OR failure). The persist effect / fast-flush /
+  //     cross-device-refresh all gate on this so they can't fire
+  //     until we know what the server already has.
+  //
+  // The original implementation set historyLoadedRef true at the
+  // top of the effect — before the fetch resolved — which meant a
+  // slow/failed fetch could let the 5s steady-state debounce save
+  // an empty messages array back to the server, wiping the user's
+  // chat history (and propagating that wipe to web/desktop via the
+  // chat SSE channel).
+  const fetchStartedRef = useRef(false);
   const historyLoadedRef = useRef(false);
   const lastSavedRef = useRef<string>("");
   const isSavingRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (historyLoadedRef.current) return;
-    historyLoadedRef.current = true;
+    if (fetchStartedRef.current) return;
+    fetchStartedRef.current = true;
     fetchChatHistory()
       .then((rows) => {
-        if (rows.length === 0) return;
+        if (rows.length === 0) {
+          // Server has no history. Mark lastSaved as "[]" so the
+          // persist effect treats the local empty state as already
+          // saved and doesn't schedule a redundant write.
+          lastSavedRef.current = "[]";
+          return;
+        }
         const loaded = rowsToMessages(rows);
         setMessages((prev) => {
           // If the user already started typing/sending while hydration
@@ -302,6 +323,12 @@ export function AiScreen() {
       })
       .catch(() => {
         // Hydration failure is non-fatal — the user can still chat.
+        // Leave lastSavedRef as "" so we DON'T persist an empty
+        // state back to the server (avoids wiping their history if
+        // the fetch failed transiently).
+      })
+      .finally(() => {
+        historyLoadedRef.current = true;
       });
   }, []);
 

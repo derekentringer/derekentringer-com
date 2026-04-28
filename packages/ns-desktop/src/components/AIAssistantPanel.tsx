@@ -475,6 +475,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
   const hasNotes = (relevantNotes?.length ?? 0) > 0;
+  // Two-phase hydration ref: `fetchStartedRef` prevents duplicate
+  // fetches; `historyLoadedRef` flips ONLY in .finally() so the
+  // persist effect can't race a slow/failed fetch and write an
+  // empty messages array to the server (which would propagate to
+  // other surfaces via the chat SSE channel and wipe their state).
+  const fetchStartedRef = useRef(false);
   const historyLoadedRef = useRef(false);
 
   // Chat-load repaint rule: snapshots live in memory only, so a processing
@@ -539,8 +545,8 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
   // Load chat history from server on mount
   useEffect(() => {
-    if (historyLoadedRef.current) return;
-    historyLoadedRef.current = true;
+    if (fetchStartedRef.current) return;
+    fetchStartedRef.current = true;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
         const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
@@ -551,8 +557,18 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           .filter((m) => m.role === "user" && m.content.trim().length > 0)
           .map((m) => m.content)
           .slice(-10);
+        lastSavedRef.current = JSON.stringify(loaded);
+      } else {
+        // Server has no history. Mark lastSaved so the persist
+        // effect treats local empty state as already saved.
+        lastSavedRef.current = "[]";
       }
-    }).catch(() => {});
+    }).catch(() => {
+      // Hydration failure: leave lastSavedRef as "" so we don't
+      // persist an empty state back to the server.
+    }).finally(() => {
+      historyLoadedRef.current = true;
+    });
   }, []);
 
   // Suppress refetch during our own saves
