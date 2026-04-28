@@ -79,7 +79,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -199,7 +198,6 @@ type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
 
 export function AiScreen() {
   const themeColors = useThemeColors();
-  const insets = useSafeAreaInsets();
   // The AI tab is wrapped by both a bottom tab bar AND a header
   // (set in AiNavigator). The keyboard-avoiding view needs the tab
   // bar height as offset on Android; on iOS the header height is
@@ -588,31 +586,36 @@ export function AiScreen() {
     clearServerChatHistory().catch(() => {});
   }, [isStreaming]);
 
-  return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: themeColors.background }]}
-      // On Android the manifest sets `adjustResize`, so the window
-      // already shrinks under the keyboard. Layering KAV on top
-      // double-handles and leaves stale whitespace when the keyboard
-      // dismisses. Disable KAV on Android and let the OS do the
-      // resize. iOS still needs `padding` + the tab-bar / header
-      // offset because UIKit doesn't auto-resize.
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? tabBarHeight + insets.top : 0}
-    >
-      <View style={[styles.header, { borderBottomColor: themeColors.border }]}>
-        <Text style={[styles.headerTitle, { color: themeColors.foreground }]}>
-          AI Assistant
-        </Text>
-        {messages.length > 0 && (
+  // Mount Clear in the navigator header so we don't render a second
+  // "AI Assistant" title inside the screen. Hidden until there's
+  // something to clear.
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () =>
+        messages.length > 0 ? (
           <Pressable onPress={handleClear} hitSlop={8}>
             <Text style={[styles.headerAction, { color: themeColors.muted }]}>
               Clear
             </Text>
           </Pressable>
-        )}
-      </View>
+        ) : null,
+    });
+  }, [navigation, handleClear, messages.length, themeColors.muted]);
 
+  return (
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: themeColors.background }]}
+      // `padding` behavior works on both platforms when the offset
+      // accounts for the bottom tab bar — KAV pads the bottom of
+      // the view by `keyboardHeight - tabBarHeight`, which lifts the
+      // composer just enough to clear the keyboard without leaving
+      // stale whitespace. On Android, `adjustResize` is also enabled
+      // in the manifest, but `padding` mode is additive (not
+      // duplicative) since RN measures the keyboard event height
+      // directly.
+      behavior="padding"
+      keyboardVerticalOffset={tabBarHeight}
+    >
       {messages.length === 0 ? (
         <View style={styles.empty}>
           <Text style={[styles.emptyTitle, { color: themeColors.foreground }]}>
@@ -785,8 +788,12 @@ function MessageBubble({
             borderColor: message.failed
               ? themeColors.destructive
               : themeColors.border,
-            maxWidth: isUser ? "92%" : "100%",
           },
+          // User bubbles shrink-wrap to content (right-aligned, max
+          // 92% wide). Assistant bubbles fill the row so embedded
+          // pill lists / tables can use the full width without
+          // truncating titles.
+          isUser ? { maxWidth: "92%" } : { flex: 1 },
         ]}
       >
         {/* Empty-but-streaming placeholder. Show the tool activity if
