@@ -78,8 +78,13 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import {
+  KeyboardStickyView,
+  useReanimatedKeyboardAnimation,
+} from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useNavigation } from "@react-navigation/native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
@@ -245,6 +250,30 @@ type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
 export function AiScreen() {
   const themeColors = useThemeColors();
   const navigation = useNavigation<AiNav>();
+  // Bottom-tabs inset on the screen content. Used as the
+  // KeyboardStickyView opened-offset so the composer pins flush
+  // to the keyboard top (without it the sticky view overshoots
+  // by tabBarHeight). Also used in the spacer height math so the
+  // last message lands above the lifted composer.
+  const tabBarHeight = useBottomTabBarHeight();
+  // Keyboard animation as a Reanimated SharedValue. `height` is
+  // negative when the keyboard is open (e.g. -300) and 0 when
+  // closed. Used to drive a spacer at the inverted FlatList's
+  // visual bottom — the FlatList container itself never resizes,
+  // so the keyboard transition no longer triggers per-frame
+  // FlatList relayout / virtualization churn that caused jitter.
+  const keyboardAnim = useReanimatedKeyboardAnimation();
+
+  // Spacer rendered as the inverted FlatList's ListHeaderComponent
+  // (ListHeader = top of data = visual bottom in inverted). Its
+  // height grows with the keyboard so the newest message stays
+  // above the lifted composer. We subtract tabBarHeight because
+  // the screen content area is already inset by the bottom tabs;
+  // KeyboardStickyView translates the composer up by the same
+  // amount so the math lines up.
+  const spacerStyle = useAnimatedStyle(() => ({
+    height: Math.max(0, -keyboardAnim.height.value - tabBarHeight),
+  }));
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -707,10 +736,8 @@ export function AiScreen() {
   }, [navigation, handleClear, messages.length, themeColors.muted]);
 
   return (
-    <KeyboardAvoidingView
+    <View
       style={[styles.container, { backgroundColor: themeColors.background }]}
-      behavior="padding"
-      automaticOffset
     >
       {messages.length === 0 ? (
         // Empty-state parity with ns-web's AIAssistantPanel:
@@ -759,24 +786,31 @@ export function AiScreen() {
           }}
           contentContainerStyle={styles.list}
           keyboardShouldPersistTaps="handled"
+          // Inverted FlatList: ListHeaderComponent renders at top
+          // of data which is the visual BOTTOM after inversion.
+          // This keyboard-driven spacer is what pushes the newest
+          // message above the lifted composer without resizing
+          // the FlatList itself.
+          ListHeaderComponent={<Animated.View style={spacerStyle} />}
         />
       )}
 
-      <SlashCommandPicker
-        input={input}
-        onPick={(cmd) => {
-          setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
-        }}
-      />
-      <View
-        style={[
-          styles.composer,
-          {
-            borderTopColor: themeColors.border,
-            backgroundColor: themeColors.card,
-          },
-        ]}
-      >
+      <KeyboardStickyView offset={{ closed: 0, opened: tabBarHeight }}>
+        <SlashCommandPicker
+          input={input}
+          onPick={(cmd) => {
+            setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
+          }}
+        />
+        <View
+          style={[
+            styles.composer,
+            {
+              borderTopColor: themeColors.border,
+              backgroundColor: themeColors.card,
+            },
+          ]}
+        >
         <TextInput
           value={input}
           onChangeText={setInput}
@@ -830,8 +864,9 @@ export function AiScreen() {
             {isStreaming ? "Stop" : "Ask"}
           </Text>
         </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+        </View>
+      </KeyboardStickyView>
+    </View>
   );
 }
 
