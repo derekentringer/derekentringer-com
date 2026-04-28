@@ -78,9 +78,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { useNavigation } from "@react-navigation/native";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
@@ -198,12 +197,6 @@ type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
 
 export function AiScreen() {
   const themeColors = useThemeColors();
-  // The AI tab is wrapped by both a bottom tab bar AND a header
-  // (set in AiNavigator). The keyboard-avoiding view needs the tab
-  // bar height as offset on Android; on iOS the header height is
-  // also added. Without this the keyboard floats over the
-  // composer.
-  const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<AiNav>();
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
@@ -603,18 +596,7 @@ export function AiScreen() {
   }, [navigation, handleClear, messages.length, themeColors.muted]);
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: themeColors.background }]}
-      // Using react-native-keyboard-controller's KAV which behaves
-      // identically across iOS and Android (the stock RN one didn't
-      // — Android's `adjustResize` fought our padding/height modes
-      // and either left whitespace below the composer or hid it
-      // behind the keyboard). With `behavior="padding"` and
-      // `keyboardVerticalOffset={tabBarHeight}`, the composer is
-      // pinned to the top of the keyboard whenever it's visible.
-      behavior="padding"
-      keyboardVerticalOffset={tabBarHeight}
-    >
+    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {messages.length === 0 ? (
         <View style={styles.empty}>
           <Text style={[styles.emptyTitle, { color: themeColors.foreground }]}>
@@ -646,60 +628,67 @@ export function AiScreen() {
         />
       )}
 
-      <SlashCommandPicker
-        input={input}
-        onPick={(cmd) => {
-          setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
-        }}
-      />
-
-      <View
-        style={[
-          styles.composer,
-          {
-            borderTopColor: themeColors.border,
-            backgroundColor: themeColors.card,
-          },
-        ]}
-      >
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder="Ask, search, create, or organize..."
-          placeholderTextColor={themeColors.muted}
-          multiline
-          editable={!isStreaming}
-          style={[
-            styles.input,
-            {
-              color: themeColors.foreground,
-              backgroundColor: themeColors.input,
-              borderColor: themeColors.border,
-            },
-          ]}
+      {/* KeyboardStickyView is purpose-built for "input bar pinned
+          to the keyboard" UX — when the keyboard opens, this view
+          translates up by the keyboard height and rides above the
+          tab bar / behind the keyboard. When closed, it sits at the
+          bottom of its parent (above the tab bar). Works on both
+          iOS and Android via the keyboard-controller native module. */}
+      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+        <SlashCommandPicker
+          input={input}
+          onPick={(cmd) => {
+            setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
+          }}
         />
-        <Pressable
-          onPress={isStreaming ? handleStop : handleSend}
-          disabled={!isStreaming && input.trim().length === 0}
-          style={({ pressed }) => [
-            styles.sendBtn,
+        <View
+          style={[
+            styles.composer,
             {
-              backgroundColor: isStreaming
-                ? themeColors.destructive
-                : themeColors.primary,
-              opacity:
-                pressed || (!isStreaming && input.trim().length === 0)
-                  ? 0.6
-                  : 1,
+              borderTopColor: themeColors.border,
+              backgroundColor: themeColors.card,
             },
           ]}
         >
-          <Text style={styles.sendBtnText}>
-            {isStreaming ? "Stop" : "Send"}
-          </Text>
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask, search, create, or organize..."
+            placeholderTextColor={themeColors.muted}
+            multiline
+            editable={!isStreaming}
+            style={[
+              styles.input,
+              {
+                color: themeColors.foreground,
+                backgroundColor: themeColors.input,
+                borderColor: themeColors.border,
+              },
+            ]}
+          />
+          <Pressable
+            onPress={isStreaming ? handleStop : handleSend}
+            disabled={!isStreaming && input.trim().length === 0}
+            style={({ pressed }) => [
+              styles.sendBtn,
+              {
+                backgroundColor: isStreaming
+                  ? themeColors.destructive
+                  : themeColors.primary,
+                opacity:
+                  pressed || (!isStreaming && input.trim().length === 0)
+                    ? 0.6
+                    : 1,
+              },
+            ]}
+          >
+            <Text style={styles.sendBtnText}>
+              {isStreaming ? "Stop" : "Send"}
+            </Text>
+          </Pressable>
+        </View>
+      </KeyboardStickyView>
+    </View>
   );
 }
 
