@@ -27,6 +27,11 @@ import {
   toggleFavoriteLocal,
   updateNoteLocal,
 } from "./noteStore";
+import {
+  defaultChatTitle,
+  serializeChatToMarkdown,
+  type ExportMessage,
+} from "./chatExport";
 import type { NoteCard } from "@/api/ai";
 
 export interface ChatCommand {
@@ -41,6 +46,9 @@ export interface CommandContext {
   clearChat: () => void;
   /** Opens a note in the AI tab's stack. Implemented by AiScreen. */
   openInTab?: (noteId: string) => void;
+  /** Snapshot of the current chat for /savechat. AiScreen passes
+   *  the in-memory messages array. */
+  getChatMessages?: () => ExportMessage[];
 }
 
 export interface CommandResult {
@@ -336,6 +344,33 @@ export const CHAT_COMMANDS: ChatCommand[] = [
     execute: async (_args, ctx) => {
       ctx.clearChat();
       return { text: "", silent: true };
+    },
+  },
+  {
+    name: "savechat",
+    description: "Save the current chat as a note",
+    usage: "/savechat [title]",
+    execute: async (args, ctx) => {
+      const messages = ctx.getChatMessages?.() ?? [];
+      // Drop the in-flight `/savechat` user message itself so it
+      // doesn't show up as a "## You" turn at the bottom of the
+      // exported note.
+      const filtered = messages.filter(
+        (m) => !(m.role === "user" && m.content.trim().toLowerCase().startsWith("/savechat")),
+      );
+      if (filtered.length === 0) {
+        return { text: "Nothing to save — chat is empty." };
+      }
+      const title = args.trim() || defaultChatTitle();
+      const content = serializeChatToMarkdown(filtered, {
+        title,
+        timestamp: new Date().toISOString(),
+      });
+      const note = await createNoteLocal({ title, content });
+      return {
+        text: `Saved chat as "${note.title}".`,
+        noteCards: [{ id: note.id, title: note.title }],
+      };
     },
   },
 ];

@@ -37,8 +37,15 @@ Phase A is split into incremental sub-PRs so each ships independently:
   added: `/rename`, `/renamefolder` (matching desktop's bypass-the-
   gate pattern). `/renametag` deferred — needs a renameTag helper
   in noteStore.
-- **A.5 — Persistence + cross-device sync.** `fetchChatHistory`,
-  `replaceChatMessages`, SSE-driven refetch on remote update.
+- **A.5 — Persistence + history-aware follow-ups + /savechat** ✓ shipped.
+  Mount-time `fetchChatHistory()` rehydrates prior turns. Debounced
+  `replaceChatMessages()` (5s steady, 200ms fast-flush after stream
+  end) persists to the server. `serializeChatHistory` + `trimChatHistory`
+  feed prior text turns to each new `askQuestion` call so the model
+  has continuity. New `chatExport.ts` powers the `/savechat` slash
+  command. Cross-device SSE-driven refetch deferred — mobile sync
+  engine doesn't surface `onChatChanged` yet; tracked as A.5
+  follow-up.
 - **A.6 — Settings + auto-approve.** AI section in
   `SettingsScreen.tsx` with auto-approve toggles per destructive tool.
 
