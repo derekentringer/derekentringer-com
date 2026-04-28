@@ -12,8 +12,13 @@ Phase A is split into incremental sub-PRs so each ships independently:
   `react-native-sse`, working chat with streaming text from
   `/ai/ask`, user/assistant turns, send/stop/clear. No tools,
   citations, slash commands, or persistence yet.
-- **A.2 — Tools, citations, source pills, note cards.** Render the
-  rich content events the API already emits.
+- **A.2 — Tools, citations, source pills, note cards** ✓ shipped.
+  Tool activity indicator, source pills, note-card pills (first-5-
+  then-collapse), inline citations via a token-based renderer
+  (`tokenizeCitations` mirrors desktop's `linkifyCitations` but
+  emits structured tokens for RN instead of markdown). AI tab now
+  has its own stack so pill / citation taps navigate to NoteDetail.
+  open_note SSE event routes through the navigation handler.
 - **A.3 — Slash commands.** Bottom-sheet picker + parsing logic
   mirrored from `chatCommands.ts`.
 - **A.4 — Confirmation cards.** Inline cards for destructive actions;

@@ -13,6 +13,12 @@ export type DashboardStackParamList = {
   NoteEditor: { noteId?: string };
 };
 
+export type AiStackParamList = {
+  AiHome: undefined;
+  NoteDetail: { noteId: string };
+  NoteEditor: { noteId?: string };
+};
+
 export type SettingsStackParamList = {
   SettingsHome: undefined;
   Trash: undefined;
@@ -25,6 +31,6 @@ export type SettingsStackParamList = {
 export type MainTabParamList = {
   Dashboard: NavigatorScreenParams<DashboardStackParamList>;
   Notes: NavigatorScreenParams<NotesStackParamList>;
-  AI: undefined;
+  AI: NavigatorScreenParams<AiStackParamList>;
   Settings: NavigatorScreenParams<SettingsStackParamList>;
 };
