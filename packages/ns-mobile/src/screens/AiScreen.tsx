@@ -78,7 +78,10 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
+import {
+  KeyboardStickyView,
+  useKeyboardState,
+} from "react-native-keyboard-controller";
 import { useNavigation } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -253,6 +256,13 @@ export function AiScreen() {
   // `offset.opened` cancels that gap so the composer pins to the
   // keyboard top exactly.
   const tabBarHeight = useBottomTabBarHeight();
+  // Watch keyboard visibility/height so the chat list can grow its
+  // bottom padding when the keyboard is up — otherwise the most
+  // recent messages get hidden behind the keyboard. Selector form
+  // avoids re-renders on unrelated keyboard-state changes.
+  const keyboardHeight = useKeyboardState((s) => (s.isVisible ? s.height : 0));
+  const listBottomPad =
+    keyboardHeight > tabBarHeight ? keyboardHeight - tabBarHeight : 0;
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -366,6 +376,15 @@ export function AiScreen() {
         // Non-fatal; next bump will retry.
       });
   }, [chatRefreshKey]);
+
+  // When the keyboard opens, scroll the list to the bottom on the
+  // next frame so the most recent message lands above the composer
+  // (the new bottom padding has just expanded the scrollable area).
+  useEffect(() => {
+    if (keyboardHeight > 0 && messages.length > 0) {
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    }
+  }, [keyboardHeight, messages.length]);
 
   // Fast-flush: 200ms after a streaming turn ends, persist promptly
   // so the assistant message survives a quick screen close.
@@ -721,7 +740,14 @@ export function AiScreen() {
               onConfirmDiscard={handleConfirmDiscard}
             />
           )}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[
+            styles.list,
+            // Pad the bottom by the keyboard height (minus the tab
+            // bar inset that already lives in our coordinate space)
+            // so the most recent message clears the keyboard and the
+            // composer that floats above it.
+            { paddingBottom: spacing.md + listBottomPad },
+          ]}
           onContentSizeChange={scrollToBottom}
           keyboardShouldPersistTaps="handled"
         />
