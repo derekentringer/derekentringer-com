@@ -2,9 +2,18 @@ import * as SQLite from "expo-sqlite";
 
 let db: SQLite.SQLiteDatabase | null = null;
 
+// Use a separate SQLite file for dev (localhost ns-api) so the
+// prod-synced cache doesn't leak into local sessions and vice
+// versa — slash commands like /folders read straight from this
+// DB, so cross-environment data leaks otherwise. Mirrors the
+// desktop pattern in `src/lib/dbName.ts`.
+export function getDatabaseName(): string {
+  return __DEV__ ? "notesync_localhost.db" : "notesync.db";
+}
+
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (db) return db;
-  db = await SQLite.openDatabaseAsync("notesync.db");
+  db = await SQLite.openDatabaseAsync(getDatabaseName());
   return db;
 }
 
@@ -119,9 +128,22 @@ async function migrateToV3(database: SQLite.SQLiteDatabase): Promise<void> {
   // server's isLocalFile flag round-trips through mobile's local cache.
   // Mobile never stamps the flag locally (managed-locally is a
   // desktop-only concept), but it must not strip it from pulled data.
-  await database.execAsync(`
-    ALTER TABLE folders ADD COLUMN is_local_file INTEGER NOT NULL DEFAULT 0;
-  `);
+  //
+  // The base CREATE TABLE already includes is_local_file, so a
+  // freshly-created DB will throw "duplicate column name" when this
+  // ALTER runs — swallow that case so init completes. Only legacy
+  // DBs created before the column was added to the base CREATE
+  // actually need the ALTER.
+  try {
+    await database.execAsync(`
+      ALTER TABLE folders ADD COLUMN is_local_file INTEGER NOT NULL DEFAULT 0;
+    `);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/duplicate column name/i.test(message)) {
+      throw err;
+    }
+  }
 
   await setSchemaVersion(database, 3);
 }

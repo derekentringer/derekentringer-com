@@ -25,10 +25,12 @@ describe("database", () => {
     jest.doMock("expo-sqlite", () => ({
       openDatabaseAsync: mockOpenDatabaseAsync,
     }));
-    const { initDatabase } = require("../lib/database");
+    const { initDatabase, getDatabaseName } = require("../lib/database");
     await initDatabase();
 
-    expect(mockOpenDatabaseAsync).toHaveBeenCalledWith("notesync.db");
+    // Jest sets __DEV__ = true (see jest.config.js globals), so we get
+    // the dev DB name. Both names are valid in production code paths.
+    expect(mockOpenDatabaseAsync).toHaveBeenCalledWith(getDatabaseName());
   });
 
   it("creates all required tables", async () => {
