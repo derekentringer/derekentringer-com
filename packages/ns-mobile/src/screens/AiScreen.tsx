@@ -113,6 +113,7 @@ import {
   tokenizeCitations,
   type CitationToken,
 } from "@/lib/linkifyCitations";
+import { ChatBubbleEnter } from "@/components/ChatBubbleEnter";
 import type { AiStackParamList } from "@/navigation/types";
 import type { QASource } from "@derekentringer/ns-shared";
 
@@ -883,7 +884,8 @@ function MessageBubble({
   // and looks like a freestanding action prompt.
   if (message.confirmation) {
     return (
-      <View
+      <ChatBubbleEnter
+        align="left"
         style={[
           styles.bubbleRow,
           { justifyContent: "flex-start" },
@@ -900,12 +902,13 @@ function MessageBubble({
             onDiscard={() => onConfirmDiscard(messageIndex)}
           />
         </View>
-      </View>
+      </ChatBubbleEnter>
     );
   }
 
   return (
-    <View
+    <ChatBubbleEnter
+      align={isUser ? "right" : "left"}
       style={[
         styles.bubbleRow,
         { justifyContent: isUser ? "flex-end" : "flex-start" },
@@ -972,7 +975,7 @@ function MessageBubble({
           />
         )}
       </View>
-    </View>
+    </ChatBubbleEnter>
   );
 }
 
