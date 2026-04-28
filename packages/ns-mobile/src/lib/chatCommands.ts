@@ -22,6 +22,7 @@ import {
   getAllNotes,
   getFolders,
   getNote,
+  renameFolderLocal,
   restoreNoteLocal,
   toggleFavoriteLocal,
   updateNoteLocal,
@@ -281,6 +282,36 @@ export const CHAT_COMMANDS: ChatCommand[] = [
         text: `Duplicated as "${copy.title}".`,
         noteCards: [{ id: copy.id, title: copy.title }],
       };
+    },
+  },
+  {
+    name: "rename",
+    description: "Rename a note",
+    usage: "/rename [old title] to [new title]",
+    execute: async (args) => {
+      const match = args.match(/^(.+?)\s+to\s+(.+)$/i);
+      if (!match) return { text: "Usage: /rename [old title] to [new title]" };
+      const note = await findNoteByTitle(match[1].trim());
+      if (!note) return { text: `No note found with title "${match[1].trim()}".` };
+      const newTitle = match[2].trim();
+      if (newTitle.length === 0) return { text: "New title cannot be empty." };
+      await updateNoteLocal(note.id, { title: newTitle });
+      return { text: `Renamed "${note.title}" to "${newTitle}".` };
+    },
+  },
+  {
+    name: "renamefolder",
+    description: "Rename a folder",
+    usage: "/renamefolder [old name] to [new name]",
+    execute: async (args) => {
+      const match = args.match(/^(.+?)\s+to\s+(.+)$/i);
+      if (!match) return { text: "Usage: /renamefolder [old name] to [new name]" };
+      const folder = await findFolderByName(match[1].trim());
+      if (!folder) return { text: `No folder found with name "${match[1].trim()}".` };
+      const newName = match[2].trim();
+      if (newName.length === 0) return { text: "New name cannot be empty." };
+      await renameFolderLocal(folder.id, newName);
+      return { text: `Renamed folder "${folder.name}" to "${newName}".` };
     },
   },
   {
