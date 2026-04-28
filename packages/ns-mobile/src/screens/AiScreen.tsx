@@ -689,7 +689,18 @@ export function AiScreen() {
               },
             ]}
           >
-            <Text style={styles.sendBtnText}>
+            <Text
+              style={[
+                // Web parity: Ask uses `text-primary-contrast`
+                // (#000000) + `font-medium` on the lime button;
+                // Stop uses `text-foreground` (regular weight) on
+                // the destructive button. Mobile mirrors that.
+                isStreaming ? styles.stopBtnText : styles.askBtnText,
+                isStreaming
+                  ? { color: themeColors.foreground }
+                  : { color: "#000000" },
+              ]}
+            >
               {isStreaming ? "Stop" : "Ask"}
             </Text>
           </Pressable>
@@ -1194,12 +1205,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   sendBtn: {
+    // Web's `px-3 py-2 rounded-md` Ask/Stop button: 6px radius,
+    // 12/8 padding. Mobile uses an explicit 48px height to align
+    // with the composer input.
     height: 48,
-    paddingHorizontal: spacing.md,
-    borderRadius: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
     minWidth: 64,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendBtnText: { color: "white", fontSize: 14, fontWeight: "600" },
+  askBtnText: { fontSize: 14, fontWeight: "500" },
+  stopBtnText: { fontSize: 14 },
 });
