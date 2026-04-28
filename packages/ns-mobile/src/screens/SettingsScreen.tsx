@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   Pressable,
+  ScrollView,
   StyleSheet,
   Switch,
   Alert,
@@ -81,7 +82,11 @@ export function SettingsScreen({ navigation }: Props) {
   const styles = makeStyles(themeColors);
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account</Text>
         <View style={styles.card}>
@@ -231,7 +236,7 @@ export function SettingsScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <SyncIssuesSheet bottomSheetRef={syncIssuesRef} />
-    </View>
+    </ScrollView>
   );
 }
 
@@ -346,10 +351,16 @@ function AiSettingsSection() {
 
 function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useThemeColors>) {
   return StyleSheet.create({
+    // Outer ScrollView style takes flex + bg only; padding moves
+    // to `scrollContent` so the bottom inset can grow without
+    // clipping the auto-approve list above the tab bar.
     container: {
       flex: 1,
       backgroundColor: themeColors.background,
+    },
+    scrollContent: {
       padding: spacing.md,
+      paddingBottom: spacing.xl,
     },
     section: {
       marginBottom: spacing.lg,
