@@ -81,6 +81,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
@@ -198,6 +199,12 @@ type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
 export function AiScreen() {
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
+  // The AI tab is wrapped by both a bottom tab bar AND a header
+  // (set in AiNavigator). The keyboard-avoiding view needs the tab
+  // bar height as offset on Android; on iOS the header height is
+  // also added. Without this the keyboard floats over the
+  // composer.
+  const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<AiNav>();
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
@@ -583,8 +590,8 @@ export function AiScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: themeColors.background }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={insets.top}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={tabBarHeight + insets.top}
     >
       <View style={[styles.header, { borderBottomColor: themeColors.border }]}>
         <Text style={[styles.headerTitle, { color: themeColors.foreground }]}>
@@ -767,7 +774,7 @@ function MessageBubble({
         style={[
           styles.bubble,
           {
-            backgroundColor: isUser ? themeColors.input : themeColors.card,
+            backgroundColor: isUser ? themeColors.subtle : themeColors.card,
             borderColor: message.failed
               ? themeColors.destructive
               : themeColors.border,
@@ -788,11 +795,7 @@ function MessageBubble({
             </Text>
           </View>
         ) : isUser ? (
-          <Text
-            style={[styles.bubbleText, { color: themeColors.foreground }]}
-          >
-            {message.content}
-          </Text>
+          <UserBubbleText content={message.content} />
         ) : (
           <CitationText
             tokens={tokens}
@@ -823,6 +826,45 @@ function MessageBubble({
         )}
       </View>
     </View>
+  );
+}
+
+// ─── UserBubbleText ──────────────────────────────────────────────
+
+/** Renders a user message. If it starts with a slash command, the
+ *  command word renders as a small mono-font code chip styled with
+ *  the lime accent (matching desktop/web's `<code class="text-primary
+ *  bg-input">` chip). Args after the first space stay as plain
+ *  prose. */
+function UserBubbleText({ content }: { content: string }) {
+  const themeColors = useThemeColors();
+  if (content.startsWith("/")) {
+    const spaceIdx = content.indexOf(" ");
+    const cmd = spaceIdx > 0 ? content.slice(0, spaceIdx) : content;
+    const rest = spaceIdx > 0 ? content.slice(spaceIdx + 1) : "";
+    return (
+      <Text
+        style={[styles.bubbleText, { color: themeColors.foreground }]}
+      >
+        <Text
+          style={[
+            styles.userCommandChip,
+            {
+              color: themeColors.primary,
+              backgroundColor: themeColors.input,
+            },
+          ]}
+        >
+          {cmd}
+        </Text>
+        {rest.length > 0 ? ` ${rest}` : ""}
+      </Text>
+    );
+  }
+  return (
+    <Text style={[styles.bubbleText, { color: themeColors.foreground }]}>
+      {content}
+    </Text>
   );
 }
 
@@ -1055,6 +1097,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   bubbleText: { fontSize: 14, lineHeight: 20 },
+  userCommandChip: {
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }),
+    fontSize: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
   activityRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   activityText: { fontSize: 13, flex: 1 },
   citationTitle: { fontWeight: "500" },
