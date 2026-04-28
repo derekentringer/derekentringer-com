@@ -11,6 +11,7 @@ import { buildHistoryForClaude } from "../lib/chatHistory.ts";
 import { serializeChatToMarkdown, defaultChatTitle } from "../lib/chatExport.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { ConfirmationCard } from "./ConfirmationCard.tsx";
+import { ChatBubbleEnter } from "./ChatBubbleEnter.tsx";
 
 const ASSISTANT_TIPS = [
   // Search & discover
@@ -1613,8 +1614,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           </div>
         )}
         {messages.map((msg, i) => (
-          <div
+          <ChatBubbleEnter
             key={i}
+            align={msg.role === "user" ? "right" : "left"}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             {msg.confirmation ? (
@@ -1986,7 +1988,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 })()}
               </div>
             )}
-          </div>
+          </ChatBubbleEnter>
         ))}
         {/* Inline "thinking" bubble — replaces the previous header
             indicator so the live tool activity sits at the bottom of
