@@ -607,13 +607,22 @@ export function AiScreen() {
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {messages.length === 0 ? (
+        // Empty-state parity with ns-web's AIAssistantPanel:
+        // chat-bubble icon at 32px / muted-foreground/40, "Your AI
+        // Assistant" title, and the same description string.
         <View style={styles.empty}>
-          <Text style={[styles.emptyTitle, { color: themeColors.foreground }]}>
-            Ask anything about your notes
+          <MaterialCommunityIcons
+            name="message-outline"
+            size={32}
+            color={themeColors.muted}
+            style={styles.emptyIcon}
+          />
+          <Text style={[styles.emptyTitle, { color: themeColors.muted }]}>
+            Your AI Assistant
           </Text>
           <Text style={[styles.emptyHint, { color: themeColors.muted }]}>
-            Try &quot;summarize my recent meeting notes&quot; or
-            &quot;what notes do I have about React?&quot;
+            Search, create, and organize notes. Summarize content,
+            generate tags, and ask questions during meetings.
           </Text>
         </View>
       ) : (
@@ -1110,19 +1119,20 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 16, fontWeight: "600" },
   headerAction: { fontSize: 13 },
+  // Empty state matches ns-web: `flex flex-col items-center
+  // justify-center py-12 gap-2` with a 32px chat icon, `text-sm`
+  // muted-foreground title, and `text-xs` muted-foreground/60
+  // description.
   empty: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: 16,
+    gap: spacing.sm,
   },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: "500",
-    marginBottom: spacing.xs,
-    textAlign: "center",
-  },
-  emptyHint: { fontSize: 13, textAlign: "center" },
+  emptyIcon: { opacity: 0.4 },
+  emptyTitle: { fontSize: 14, textAlign: "center" },
+  emptyHint: { fontSize: 12, textAlign: "center", opacity: 0.6 },
   list: { padding: spacing.md, gap: spacing.sm },
   bubbleRow: { flexDirection: "row", marginBottom: spacing.sm },
   bubble: {
