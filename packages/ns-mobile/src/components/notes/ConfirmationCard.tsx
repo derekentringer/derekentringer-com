@@ -29,11 +29,24 @@ export type ConfirmationStatus =
   | "discarded"
   | "failed";
 
+export interface ItemResult {
+  id: string;
+  ok: boolean;
+  text?: string;
+  error?: string;
+}
+
 interface Props {
-  pending: PendingConfirmation;
+  /** One or more pending actions. Length > 1 is a batched card —
+   *  e.g. Claude queued 3 deletes in one turn — and renders as a
+   *  single Apply CTA with a per-item summary list. */
+  pendings: PendingConfirmation[];
   status: ConfirmationStatus;
   resultText?: string;
   errorMessage?: string;
+  /** Per-item Apply outcomes; only populated for batches. Surfaces
+   *  partial-failure detail in the applied banner. */
+  itemResults?: ItemResult[];
   onApply: () => void;
   onDiscard: () => void;
 }
@@ -47,6 +60,41 @@ export function headlineForPreview(preview: ConfirmationPreview): string {
     case "rename_note": return "Rename note?";
     case "rename_folder": return "Rename folder?";
     case "rename_tag": return "Rename tag?";
+  }
+}
+
+/** Visible for unit-testing. Headline for a batch of N actions of
+ *  the same toolName (e.g. "Move 3 notes to trash?"). */
+export function batchHeadline(toolName: string, count: number): string {
+  switch (toolName) {
+    case "delete_note": return `Move ${count} notes to trash?`;
+    case "delete_folder": return `Delete ${count} folders?`;
+    case "update_note_content": return `Rewrite ${count} notes?`;
+    case "rename_note": return `Rename ${count} notes?`;
+    case "rename_folder": return `Rename ${count} folders?`;
+    case "rename_tag": return `Rename ${count} tags?`;
+    default: return `Apply ${count} actions?`;
+  }
+}
+
+/** Visible for unit-testing. One-line summary for a single item
+ *  inside a batched card. */
+export function batchItemSummary(preview: ConfirmationPreview): string {
+  switch (preview.type) {
+    case "delete_note": return preview.title;
+    case "delete_folder":
+      return `${preview.folderName} (${preview.affectedCount} note${preview.affectedCount === 1 ? "" : "s"})`;
+    case "update_note_content": {
+      const delta = preview.newLen - preview.oldLen;
+      const sign = delta >= 0 ? "+" : "";
+      return `${preview.title} (${sign}${delta} chars)`;
+    }
+    case "rename_note":
+      return `${preview.oldTitle} → ${preview.newTitle}`;
+    case "rename_folder":
+      return `${preview.oldName} → ${preview.newName}`;
+    case "rename_tag":
+      return `#${preview.oldName} → #${preview.newName} (${preview.affectedCount})`;
   }
 }
 
@@ -107,17 +155,23 @@ export function bodyForPreview(preview: ConfirmationPreview): BodyLine {
 }
 
 export function ConfirmationCard({
-  pending,
+  pendings,
   status,
   resultText,
   errorMessage,
+  itemResults,
   onApply,
   onDiscard,
 }: Props) {
   const themeColors = useThemeColors();
-  const lines = bodyForPreview(pending.preview);
+  const first = pendings[0];
+  const isBatch = pendings.length > 1;
+  if (!first) return null;
+  const lines = bodyForPreview(first.preview);
 
   if (status === "applied") {
+    const failures = itemResults?.filter((r) => !r.ok) ?? [];
+    const partial = failures.length > 0;
     return (
       <View
         testID="confirmation-applied"
@@ -125,13 +179,30 @@ export function ConfirmationCard({
           styles.banner,
           {
             backgroundColor: themeColors.card,
-            borderColor: themeColors.success,
+            borderColor: partial ? themeColors.destructive : themeColors.success,
           },
         ]}
       >
-        <Text style={[styles.bannerText, { color: themeColors.success }]}>
-          {resultText ?? "Done."}
+        <Text
+          style={[
+            styles.bannerText,
+            { color: partial ? themeColors.destructive : themeColors.success },
+          ]}
+        >
+          {partial ? "⚠" : "✓"} {resultText ?? "Done."}
         </Text>
+        {partial && (
+          <View style={styles.failureList}>
+            {failures.map((f) => (
+              <Text
+                key={f.id}
+                style={[styles.failureItem, { color: themeColors.muted }]}
+              >
+                • {f.error}
+              </Text>
+            ))}
+          </View>
+        )}
       </View>
     );
   }
@@ -225,15 +296,31 @@ export function ConfirmationCard({
       ]}
     >
       <Text style={[styles.headline, { color: themeColors.foreground }]}>
-        {headlineForPreview(pending.preview)}
+        {isBatch
+          ? batchHeadline(first.toolName, pendings.length)
+          : headlineForPreview(first.preview)}
       </Text>
-      <Text style={[styles.body, { color: themeColors.foreground }]}>
-        {lines.text}
-        {lines.emphasized && (
-          <Text style={styles.emphasized}>{lines.emphasized}</Text>
-        )}
-        {lines.detail && <Text>{lines.detail}</Text>}
-      </Text>
+      {isBatch ? (
+        <View style={styles.batchList}>
+          {pendings.map((p) => (
+            <Text
+              key={p.id}
+              style={[styles.batchItem, { color: themeColors.foreground }]}
+              numberOfLines={1}
+            >
+              • {batchItemSummary(p.preview)}
+            </Text>
+          ))}
+        </View>
+      ) : (
+        <Text style={[styles.body, { color: themeColors.foreground }]}>
+          {lines.text}
+          {lines.emphasized && (
+            <Text style={styles.emphasized}>{lines.emphasized}</Text>
+          )}
+          {lines.detail && <Text>{lines.detail}</Text>}
+        </Text>
+      )}
       <View style={styles.actionRow}>
         <Pressable
           onPress={onApply}
@@ -316,4 +403,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnSecondaryText: { fontSize: 11, fontWeight: "500" },
+  batchList: { gap: 2 },
+  batchItem: { fontSize: 12, lineHeight: 17 },
+  failureList: { marginTop: spacing.xs, gap: 2 },
+  failureItem: { fontSize: 11, lineHeight: 15 },
 });

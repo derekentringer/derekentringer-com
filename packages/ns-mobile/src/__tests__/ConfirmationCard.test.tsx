@@ -10,6 +10,8 @@
  */
 
 import {
+  batchHeadline,
+  batchItemSummary,
   bodyForPreview,
   headlineForPreview,
 } from "../components/notes/ConfirmationCard";
@@ -165,5 +167,56 @@ describe("bodyForPreview", () => {
       affectedCount: 4,
     });
     expect(many.detail).toContain("across 4 notes.");
+  });
+});
+
+describe("batchHeadline", () => {
+  it("formats per-tool batch headlines with the count", () => {
+    expect(batchHeadline("delete_note", 3)).toBe("Move 3 notes to trash?");
+    expect(batchHeadline("delete_folder", 2)).toBe("Delete 2 folders?");
+    expect(batchHeadline("update_note_content", 4)).toBe("Rewrite 4 notes?");
+    expect(batchHeadline("rename_note", 5)).toBe("Rename 5 notes?");
+    expect(batchHeadline("rename_folder", 2)).toBe("Rename 2 folders?");
+    expect(batchHeadline("rename_tag", 6)).toBe("Rename 6 tags?");
+  });
+
+  it("falls back to a generic headline for unknown tools", () => {
+    expect(batchHeadline("future_tool", 2)).toBe("Apply 2 actions?");
+  });
+});
+
+describe("batchItemSummary", () => {
+  it("returns a one-line summary per preview type", () => {
+    expect(batchItemSummary({ type: "delete_note", title: "Foo" })).toBe("Foo");
+    expect(
+      batchItemSummary({ type: "delete_folder", folderName: "Inbox", affectedCount: 0 }),
+    ).toBe("Inbox (0 notes)");
+    expect(
+      batchItemSummary({ type: "delete_folder", folderName: "Inbox", affectedCount: 1 }),
+    ).toBe("Inbox (1 note)");
+    expect(
+      batchItemSummary({
+        type: "update_note_content",
+        title: "Notes",
+        oldContent: "",
+        newContent: "",
+        oldLen: 100,
+        newLen: 60,
+      }),
+    ).toBe("Notes (-40 chars)");
+    expect(
+      batchItemSummary({ type: "rename_note", oldTitle: "A", newTitle: "B" }),
+    ).toBe("A → B");
+    expect(
+      batchItemSummary({ type: "rename_folder", oldName: "Old", newName: "New" }),
+    ).toBe("Old → New");
+    expect(
+      batchItemSummary({
+        type: "rename_tag",
+        oldName: "old",
+        newName: "new",
+        affectedCount: 7,
+      }),
+    ).toBe("#old → #new (7)");
   });
 });

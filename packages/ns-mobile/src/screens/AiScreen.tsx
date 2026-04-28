@@ -117,6 +117,13 @@ import {
 import type { AiStackParamList } from "@/navigation/types";
 import type { QASource } from "@derekentringer/ns-shared";
 
+interface ItemResult {
+  id: string;
+  ok: boolean;
+  text?: string;
+  error?: string;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -125,23 +132,29 @@ interface Message {
   toolActivity?: string | null;
   failed?: boolean;
   /** Phase A.4: when the SSE stream emits a `confirmation` event, the
-   *  assistant turn carries the pending action + its current state.
-   *  The card renders inside the bubble. */
+   *  assistant turn carries one or more pending actions (consecutive
+   *  same-tool confirmations merge into a single batched card —
+   *  matches desktop's `pendings` array). */
   confirmation?: {
-    pending: PendingConfirmation;
+    pendings: PendingConfirmation[];
     status: ConfirmationStatus;
     resultText?: string;
     errorMessage?: string;
+    itemResults?: ItemResult[];
   };
 }
 
 // ─── Hydration helpers (Phase A.5) ────────────────────────────────
 
 interface PersistedConfirmation {
-  pending: PendingConfirmation;
+  /** New shape — array of pendings (batched card). */
+  pendings?: PendingConfirmation[];
+  /** Legacy shape from pre-batch saves; one pending only. */
+  pending?: PendingConfirmation;
   status: ConfirmationStatus;
   resultText?: string;
   errorMessage?: string;
+  itemResults?: ItemResult[];
 }
 
 function rowsToMessages(rows: ChatMessageData[]): Message[] {
@@ -152,16 +165,36 @@ function rowsToMessages(rows: ChatMessageData[]): Message[] {
       // Phase C audio recording follow-up).
       if (r.role !== "user" && r.role !== "assistant") return null;
       const conf = r.confirmation as PersistedConfirmation | undefined;
+      let confirmation: Message["confirmation"];
+      if (conf) {
+        const pendings =
+          conf.pendings && conf.pendings.length > 0
+            ? conf.pendings
+            : conf.pending
+              ? [conf.pending]
+              : [];
+        if (pendings.length > 0) {
+          // A persisted "applying" status means we crashed mid-Apply
+          // (or another device is mid-Apply) — flip it back to
+          // "pending" so the user can re-Apply instead of staring at
+          // a forever-spinner.
+          const status: ConfirmationStatus =
+            conf.status === "applying" ? "pending" : conf.status;
+          confirmation = {
+            pendings,
+            status,
+            resultText: conf.resultText,
+            errorMessage: conf.errorMessage,
+            itemResults: conf.itemResults,
+          };
+        }
+      }
       return {
         role: r.role,
         content: r.content,
         sources: r.sources as QASource[] | undefined,
         noteCards: r.noteCards as NoteCard[] | undefined,
-        confirmation:
-          // Drop transient `applying` states from persisted history —
-          // they're never the final state and re-rehydrating one would
-          // leave the spinner spinning forever.
-          conf && conf.status !== "applying" ? conf : undefined,
+        confirmation,
       };
     })
     .filter((m): m is Message => m !== null)
@@ -179,17 +212,30 @@ function rowsToMessages(rows: ChatMessageData[]): Message[] {
 }
 
 function messagesToRows(messages: Message[]): ChatMessageData[] {
-  return messages.map((m) => ({
-    role: m.role,
-    content: m.content,
-    sources: m.sources,
-    noteCards: m.noteCards,
-    // Persist confirmations except the transient applying state.
-    confirmation:
-      m.confirmation && m.confirmation.status !== "applying"
-        ? m.confirmation
-        : undefined,
-  }));
+  return messages.map((m) => {
+    let confirmation: PersistedConfirmation | undefined;
+    if (m.confirmation) {
+      // Persist `applying` as `pending` — losing the card on a
+      // cross-device refetch was worse than the small risk of a
+      // re-Apply prompt; the user can simply tap again.
+      const status: ConfirmationStatus =
+        m.confirmation.status === "applying" ? "pending" : m.confirmation.status;
+      confirmation = {
+        pendings: m.confirmation.pendings,
+        status,
+        resultText: m.confirmation.resultText,
+        errorMessage: m.confirmation.errorMessage,
+        itemResults: m.confirmation.itemResults,
+      };
+    }
+    return {
+      role: m.role,
+      content: m.content,
+      sources: m.sources,
+      noteCards: m.noteCards,
+      confirmation,
+    };
+  });
 }
 
 const PILL_LIMIT = 5;
@@ -467,20 +513,50 @@ export function AiScreen() {
 
           updated[updated.length - 1] = next;
 
-          // Confirmation events become a NEW assistant message so the
-          // card sits in its own bubble — same shape desktop uses.
-          // After the card, append an empty assistant placeholder so
-          // any continued stream text lands cleanly.
+          // Confirmation events: if the most recent card is still
+          // pending and uses the same toolName, merge into it (so
+          // "delete A and B" renders as one batched card with one
+          // Apply CTA — matching desktop). Otherwise insert a new
+          // card. Either way, append an empty assistant placeholder
+          // so subsequent streamed text lands cleanly.
           if (event.confirmation) {
-            updated.push({
-              role: "assistant",
-              content: "",
-              confirmation: {
-                pending: event.confirmation,
-                status: "pending",
-              },
-            });
-            updated.push({ role: "assistant", content: "" });
+            const prevMsg = updated[updated.length - 1];
+            const prevPrevMsg = updated[updated.length - 2];
+            const candidate =
+              prevMsg?.confirmation?.status === "pending"
+                ? prevMsg
+                : prevMsg?.role === "assistant" &&
+                    prevMsg.content === "" &&
+                    prevPrevMsg?.confirmation?.status === "pending"
+                  ? prevPrevMsg
+                  : null;
+            if (
+              candidate?.confirmation &&
+              candidate.confirmation.pendings[0]?.toolName ===
+                event.confirmation.toolName
+            ) {
+              const candIdx = updated.indexOf(candidate);
+              updated[candIdx] = {
+                ...candidate,
+                confirmation: {
+                  ...candidate.confirmation,
+                  pendings: [
+                    ...candidate.confirmation.pendings,
+                    event.confirmation,
+                  ],
+                },
+              };
+            } else {
+              updated.push({
+                role: "assistant",
+                content: "",
+                confirmation: {
+                  pendings: [event.confirmation],
+                  status: "pending",
+                },
+              });
+              updated.push({ role: "assistant", content: "" });
+            }
           }
           return updated;
         });
@@ -514,14 +590,12 @@ export function AiScreen() {
 
   const handleConfirmApply = useCallback(async (
     idx: number,
-    pending: PendingConfirmation,
+    pendings: PendingConfirmation[],
   ) => {
-    // Bug fix: the prior shape used a `setMessages(prev => prev)`
-    // side-effect to read the pending payload, but React enqueues
-    // updaters — by the time the function reached `confirmTool(...)`
-    // `pending` was still null and the call was skipped, leaving
-    // the card with a forever-spinner. Pass `pending` straight from
-    // the call site instead.
+    // Pendings come straight from the call site so we don't have to
+    // round-trip through setMessages just to read them (a prior
+    // setState-side-effect read was racing with React's deferred
+    // updater queue and bailing out of the call entirely).
     setMessages((prev) => {
       const updated = [...prev];
       const target = updated[idx];
@@ -532,40 +606,46 @@ export function AiScreen() {
       };
       return updated;
     });
-    try {
-      const result = await confirmTool(pending.toolName, pending.toolInput);
-      setMessages((prev) => {
-        const updated = [...prev];
-        const target = updated[idx];
-        if (!target?.confirmation) return prev;
-        updated[idx] = {
-          ...target,
-          confirmation: {
-            ...target.confirmation,
-            status: "applied",
-            resultText: result.text,
-          },
-        };
-        return updated;
-      });
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Apply failed.";
-      setMessages((prev) => {
-        const updated = [...prev];
-        const target = updated[idx];
-        if (!target?.confirmation) return prev;
-        updated[idx] = {
-          ...target,
-          confirmation: {
-            ...target.confirmation,
-            status: "failed",
-            errorMessage: message,
-          },
-        };
-        return updated;
-      });
+
+    // Apply sequentially; gather per-item results so a partial
+    // failure surfaces as "2 of 3 applied" instead of masking
+    // either the wins or the losses.
+    const itemResults: ItemResult[] = [];
+    for (const p of pendings) {
+      try {
+        const result = await confirmTool(p.toolName, p.toolInput);
+        itemResults.push({ id: p.id, ok: true, text: result.text });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Apply failed.";
+        itemResults.push({ id: p.id, ok: false, error: message });
+      }
     }
+
+    const okCount = itemResults.filter((r) => r.ok).length;
+    const allOk = okCount === pendings.length;
+    const noneOk = okCount === 0;
+
+    setMessages((prev) => {
+      const updated = [...prev];
+      const target = updated[idx];
+      if (!target?.confirmation) return prev;
+      updated[idx] = {
+        ...target,
+        confirmation: {
+          ...target.confirmation,
+          status: noneOk ? "failed" : "applied",
+          resultText:
+            allOk && pendings.length === 1
+              ? itemResults[0].text
+              : allOk
+                ? `All ${pendings.length} actions applied.`
+                : `${okCount} of ${pendings.length} applied — ${pendings.length - okCount} failed.`,
+          errorMessage: noneOk ? itemResults[0]?.error : undefined,
+          itemResults: pendings.length > 1 ? itemResults : undefined,
+        },
+      };
+      return updated;
+    });
   }, []);
 
   const handleConfirmDiscard = useCallback((idx: number) => {
@@ -727,7 +807,7 @@ interface MessageBubbleProps {
   messageIndex: number;
   isStreaming: boolean;
   onOpenNote: (noteId: string) => void;
-  onConfirmApply: (idx: number, pending: PendingConfirmation) => void;
+  onConfirmApply: (idx: number, pendings: PendingConfirmation[]) => void;
   onConfirmDiscard: (idx: number) => void;
 }
 
@@ -777,11 +857,12 @@ function MessageBubble({
       >
         <View style={styles.confirmationWrap}>
           <ConfirmationCard
-            pending={message.confirmation.pending}
+            pendings={message.confirmation.pendings}
             status={message.confirmation.status}
             resultText={message.confirmation.resultText}
             errorMessage={message.confirmation.errorMessage}
-            onApply={() => onConfirmApply(messageIndex, message.confirmation!.pending)}
+            itemResults={message.confirmation.itemResults}
+            onApply={() => onConfirmApply(messageIndex, message.confirmation!.pendings)}
             onDiscard={() => onConfirmDiscard(messageIndex)}
           />
         </View>
