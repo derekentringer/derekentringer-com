@@ -36,7 +36,7 @@ import { useTags } from "@/hooks/useTags";
 import { FolderPicker } from "@/components/notes/FolderPicker";
 import { MarkdownToolbar } from "@/components/notes/MarkdownToolbar";
 import { TagInput } from "@/components/notes/TagInput";
-import { AiActionsSheet, type AiActionKey } from "@/components/notes/AiActionsSheet";
+import { type AiActionKey } from "@/components/notes/AiActionsSheet";
 import { SummaryBanner } from "@/components/notes/SummaryBanner";
 import {
   summarizeNote as apiSummarizeNote,
@@ -87,7 +87,6 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const contentRef = useRef<TextInput>(null);
   const selectionRef = useRef({ start: 0, end: 0 });
   const folderSheetRef = useRef<BottomSheetModal>(null);
-  const aiSheetRef = useRef<BottomSheetModal>(null);
 
   const { data: noteData, isLoading } = useNote(noteId ?? "");
   const deleteNoteMutation = useDeleteNote();
@@ -423,11 +422,6 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     );
   }, [noteId, updateNoteMutation]);
 
-  const handleAiPress = useCallback(() => {
-    Keyboard.dismiss();
-    aiSheetRef.current?.present();
-  }, []);
-
   const mdStyles = useMemo(
     () => ({
       body: { color: themeColors.foreground, fontSize: 15, lineHeight: 22 },
@@ -627,13 +621,12 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             />
           </View>
 
-          {/* Toolbar (full-width) — sparkle button opens the AI
-              actions sheet. */}
+          {/* Toolbar (full-width). Sparkle/AI button is hidden
+              until Continue Writing / AI Rewrite (Phase B.3/B.4)
+              land — Summarize + Suggest Tags moved to the header
+              overflow menu. */}
           <View style={styles.toolbarWrapper}>
-            <MarkdownToolbar
-              onAction={handleToolbarAction}
-              onAiPress={noteId ? handleAiPress : undefined}
-            />
+            <MarkdownToolbar onAction={handleToolbarAction} />
           </View>
 
           {/* Content. When propertiesMode === "panel" and the note
@@ -686,21 +679,9 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         mode="assign"
       />
 
-      {/* AI Actions sheet (Phase B). Phase B.1 wires Summarize;
-          tags/continue/rewrite are placeholders until B.2-B.4. */}
-      <AiActionsSheet
-        bottomSheetRef={aiSheetRef}
-        busyKey={aiBusyKey}
-        handlers={{
-          summarize: handleAiSummarize,
-          tags: handleAiSuggestTags,
-          continue: null,
-          rewrite: null,
-        }}
-      />
-
-      {/* Header overflow menu — frontmatter toggle (edit mode
-          only) + delete. Mirrors NoteDetailScreen's pattern. */}
+      {/* Header overflow menu — AI actions, frontmatter toggle
+          (edit mode only) + delete. Mirrors NoteDetailScreen's
+          pattern. */}
       {showOverflow ? (
         <Pressable
           style={styles.overflowBackdrop}
@@ -715,6 +696,70 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               },
             ]}
           >
+            {noteId ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  if (aiBusyKey) return;
+                  setShowOverflow(false);
+                  handleAiSummarize();
+                }}
+                disabled={!!aiBusyKey}
+                accessibilityRole="button"
+                accessibilityState={{
+                  busy: aiBusyKey === "summarize",
+                  disabled: !!aiBusyKey,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="text-box-outline"
+                  size={20}
+                  color={themeColors.primary}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                    !!aiBusyKey && { opacity: 0.5 },
+                  ]}
+                >
+                  {aiBusyKey === "summarize"
+                    ? "Generating Summary…"
+                    : "Generate Summary"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {noteId ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  if (aiBusyKey) return;
+                  setShowOverflow(false);
+                  handleAiSuggestTags();
+                }}
+                disabled={!!aiBusyKey}
+                accessibilityRole="button"
+                accessibilityState={{
+                  busy: aiBusyKey === "tags",
+                  disabled: !!aiBusyKey,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="tag-multiple-outline"
+                  size={20}
+                  color={themeColors.primary}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                    !!aiBusyKey && { opacity: 0.5 },
+                  ]}
+                >
+                  {aiBusyKey === "tags" ? "Suggesting Tags…" : "Suggest Tags"}
+                </Text>
+              </Pressable>
+            ) : null}
             {!isPreview ? (
               <Pressable
                 style={styles.overflowItem}
