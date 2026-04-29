@@ -597,6 +597,24 @@ export function AiScreen() {
                 },
               };
             } else {
+              // If the previous turn is an empty assistant
+              // placeholder (still showing the in-progress tool
+              // activity spinner), drop it — the confirmation card
+              // we're about to push subsumes that activity. Without
+              // this the spinner is sandwiched between the user
+              // message and the card and never gets its toolActivity
+              // cleared, leaving a stuck "Moving 'X' to Trash…" row.
+              const last = updated[updated.length - 1];
+              if (
+                last?.role === "assistant" &&
+                last.content === "" &&
+                !last.confirmation &&
+                !last.noteCards?.length &&
+                !last.sources?.length &&
+                !last.failed
+              ) {
+                updated.pop();
+              }
               updated.push({
                 role: "assistant",
                 content: "",
@@ -1055,6 +1073,16 @@ function UserBubbleText({ content }: { content: string }) {
 
 // ─── CitationText ────────────────────────────────────────────────
 
+const SUPERSCRIPT_DIGITS = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"];
+
+function toSuperscriptDigits(n: number): string {
+  return ` ${Math.abs(n)
+    .toString()
+    .split("")
+    .map((d) => SUPERSCRIPT_DIGITS[Number(d)] ?? d)
+    .join("")}`;
+}
+
 function CitationText({
   tokens,
   failed,
@@ -1087,7 +1115,11 @@ function CitationText({
             </Text>
           );
         }
-        // Marker — small superscript number.
+        // Marker — RN's inline Text has no CSS `vertical-align:
+        // super` equivalent, so we render the index using Unicode
+        // superscript digits (¹²³…) which are font-rendered above
+        // the baseline — matches the look of <sup> on web/desktop
+        // without absolute positioning or lineHeight hacks.
         return (
           <Text
             key={`m-${i}`}
@@ -1095,7 +1127,7 @@ function CitationText({
             style={[styles.citationMarker, { color: themeColors.primary }]}
             testID="citation-marker"
           >
-            {` ${t.index}`}
+            {toSuperscriptDigits(t.index)}
           </Text>
         );
       })}
@@ -1309,7 +1341,11 @@ const styles = StyleSheet.create({
   activityRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   activityText: { fontSize: 13, flex: 1 },
   citationTitle: { fontWeight: "500" },
-  citationMarker: { fontSize: 11, fontWeight: "600" },
+  // Unicode superscript digits are font-rendered above the
+  // baseline at ~60% size already; we keep fontSize at the
+  // bubble's own (14) so the cap-height matches and the lime
+  // weight reads as a citation.
+  citationMarker: { fontSize: 14, fontWeight: "600" },
   pillSection: {
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
