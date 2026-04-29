@@ -193,34 +193,18 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               color={themeColors.foreground}
             />
           </Pressable>
-          {noteId ? (
-            <Pressable
-              onPress={handleDelete}
-              accessibilityRole="button"
-              accessibilityLabel="Delete note"
-              style={styles.headerButton}
-            >
-              <MaterialCommunityIcons
-                name="trash-can-outline"
-                size={22}
-                color={themeColors.destructive}
-              />
-            </Pressable>
-          ) : null}
-          {!isPreview ? (
-            <Pressable
-              onPress={() => setShowOverflow((v) => !v)}
-              accessibilityRole="button"
-              accessibilityLabel="More options"
-              style={styles.headerButton}
-            >
-              <MaterialCommunityIcons
-                name="dots-vertical"
-                size={22}
-                color={themeColors.foreground}
-              />
-            </Pressable>
-          ) : null}
+          <Pressable
+            onPress={() => setShowOverflow((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel="More options"
+            style={styles.headerButton}
+          >
+            <MaterialCommunityIcons
+              name="dots-vertical"
+              size={22}
+              color={themeColors.foreground}
+            />
+          </Pressable>
         </View>
       ),
     });
@@ -715,8 +699,8 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         }}
       />
 
-      {/* Header overflow menu — currently just frontmatter
-          show/hide, room for more low-priority editor actions. */}
+      {/* Header overflow menu — frontmatter toggle (edit mode
+          only) + delete. Mirrors NoteDetailScreen's pattern. */}
       {showOverflow ? (
         <Pressable
           style={styles.overflowBackdrop}
@@ -731,34 +715,60 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               },
             ]}
           >
-            <Pressable
-              style={styles.overflowItem}
-              onPress={() => {
-                setShowOverflow(false);
-                togglePropertiesMode();
-              }}
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons
-                name="code-tags"
-                size={20}
-                color={
-                  propertiesMode === "source"
-                    ? themeColors.primary
-                    : themeColors.foreground
-                }
-              />
-              <Text
-                style={[
-                  styles.overflowText,
-                  { color: themeColors.foreground },
-                ]}
+            {!isPreview ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  setShowOverflow(false);
+                  togglePropertiesMode();
+                }}
+                accessibilityRole="button"
               >
-                {propertiesMode === "source"
-                  ? "Hide Frontmatter"
-                  : "Show Frontmatter"}
-              </Text>
-            </Pressable>
+                <MaterialCommunityIcons
+                  name="code-tags"
+                  size={20}
+                  color={
+                    propertiesMode === "source"
+                      ? themeColors.primary
+                      : themeColors.foreground
+                  }
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                  ]}
+                >
+                  {propertiesMode === "source"
+                    ? "Hide Frontmatter"
+                    : "Show Frontmatter"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {noteId ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  setShowOverflow(false);
+                  handleDelete();
+                }}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name="trash-can-outline"
+                  size={20}
+                  color={themeColors.destructive}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.destructive },
+                  ]}
+                >
+                  Move to Trash
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </Pressable>
       ) : null}
