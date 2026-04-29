@@ -5,10 +5,12 @@ import {
 } from "@tanstack/react-query";
 import { getAllNotes, restoreNoteLocal } from "@/lib/noteStore";
 import {
+  fetchTrash,
   permanentDeleteNote,
   emptyTrash,
 } from "@/api/notes";
 import { notifyLocalChange } from "@/lib/syncEngine";
+import useSyncStore from "@/store/syncStore";
 
 export function useTrash() {
   return useQuery({
@@ -18,9 +20,24 @@ export function useTrash() {
 }
 
 export function useTrashCount() {
+  // Source the badge count from the server's `/notes/trash` total
+  // when online so it matches what web + desktop show. Sync push
+  // is asynchronous on mobile, so a pure-local count drifts
+  // whenever there are pending soft-deletes / restores in either
+  // direction. If we're offline, fall back to the local SQLite
+  // count.
+  const isOnline = useSyncStore((s) => s.isOnline);
   return useQuery({
-    queryKey: ["trash", "count"],
+    queryKey: ["trash", "count", isOnline],
     queryFn: async () => {
+      if (isOnline) {
+        try {
+          const result = await fetchTrash({ pageSize: 1 });
+          return result.total ?? 0;
+        } catch {
+          // Network blip — fall through to the local count.
+        }
+      }
       const notes = await getAllNotes({ deletedOnly: true });
       return notes.length;
     },
