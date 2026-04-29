@@ -124,7 +124,10 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag, isLoading }: Ta
   const maxH = useRef(new Animated.Value(9999)).current;
   useEffect(() => {
     if (naturalHeight === null || collapsedHeight === null) return;
-    const target = !hasOverflow
+    // While suggestions are streaming in, force the wrap to its
+    // full natural height so the shimmer chips + any newly-added
+    // tags aren't hidden behind the 2-row clamp.
+    const target = isLoading || !hasOverflow
       ? naturalHeight
       : expanded
         ? naturalHeight
@@ -135,7 +138,19 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag, isLoading }: Ta
       easing: cardAnimEasing,
       useNativeDriver: false,
     }).start();
-  }, [expanded, hasOverflow, collapsedHeight, naturalHeight, maxH]);
+  }, [expanded, hasOverflow, isLoading, collapsedHeight, naturalHeight, maxH]);
+
+  // When tag suggestions finish (`isLoading` flips false) auto-
+  // expand so the user actually sees the newly-merged tags
+  // instead of them being silently clipped below the 2-row
+  // clamp. They can collapse manually afterwards.
+  const prevLoadingRef = useRef(isLoading ?? false);
+  useEffect(() => {
+    if (prevLoadingRef.current && !isLoading) {
+      setExpanded(true);
+    }
+    prevLoadingRef.current = isLoading ?? false;
+  }, [isLoading, setExpanded]);
 
   return (
     <View>
