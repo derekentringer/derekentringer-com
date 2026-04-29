@@ -360,9 +360,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     if (!noteId || aiBusyKey) return;
     setAiBusyKey("summarize");
     try {
-      // Flush any pending auto-save so the server has the
-      // freshest content before summarizing.
-      flush();
+      // Await the local save so the latest content lands in
+      // SQLite before the AI request — fire-and-forget would
+      // race with /ai/summarize reading from the server-synced
+      // copy.
+      await flush();
       const result = await apiSummarizeNote(noteId);
       setSummary(result);
       await updateNoteMutation.mutateAsync({
@@ -387,11 +389,27 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     if (!noteId || aiBusyKey) return;
     setAiBusyKey("tags");
     try {
-      flush();
+      // Await the local save so the latest content lands in
+      // SQLite before the AI request goes out — fire-and-forget
+      // would race with /ai/tags reading from the server-synced
+      // copy.
+      await flush();
       const suggested = await apiSuggestTags(noteId);
-      if (suggested.length === 0) return;
+      if (suggested.length === 0) {
+        Alert.alert(
+          "AI Tags",
+          "No tag suggestions returned. Try writing more content first.",
+        );
+        return;
+      }
       const merged = Array.from(new Set([...tags, ...suggested]));
-      if (merged.length === tags.length) return;
+      if (merged.length === tags.length) {
+        Alert.alert(
+          "AI Tags",
+          "Suggested tags are already on this note.",
+        );
+        return;
+      }
       setTags(merged);
       await updateNoteMutation.mutateAsync({
         id: noteId,
