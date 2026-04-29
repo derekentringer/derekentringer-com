@@ -36,7 +36,7 @@ import { useTags } from "@/hooks/useTags";
 import { FolderPicker } from "@/components/notes/FolderPicker";
 import { MarkdownToolbar } from "@/components/notes/MarkdownToolbar";
 import { TagInput } from "@/components/notes/TagInput";
-import { AiActionsSheet, type AiActionKey } from "@/components/notes/AiActionsSheet";
+import { type AiActionKey } from "@/components/notes/AiActionsSheet";
 import { SummaryBanner } from "@/components/notes/SummaryBanner";
 import {
   summarizeNote as apiSummarizeNote,
@@ -82,11 +82,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const [isPreview, setIsPreview] = useState(false);
   const [isLoaded, setIsLoaded] = useState(!initialNoteId);
   const [aiBusyKey, setAiBusyKey] = useState<AiActionKey | null>(null);
+  const [showOverflow, setShowOverflow] = useState(false);
 
   const contentRef = useRef<TextInput>(null);
   const selectionRef = useRef({ start: 0, end: 0 });
   const folderSheetRef = useRef<BottomSheetModal>(null);
-  const aiSheetRef = useRef<BottomSheetModal>(null);
 
   const { data: noteData, isLoading } = useNote(noteId ?? "");
   const deleteNoteMutation = useDeleteNote();
@@ -177,31 +177,13 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   // Header options
   useEffect(() => {
     navigation.setOptions({
-      title: noteId ? "Edit Note" : "New Note",
+      title: noteId
+        ? isPreview
+          ? "Edit Note - Preview"
+          : "Edit Note"
+        : "New Note",
       headerRight: () => (
         <View style={styles.headerRight}>
-          {!isPreview ? (
-            <Pressable
-              onPress={togglePropertiesMode}
-              accessibilityRole="button"
-              accessibilityLabel={
-                propertiesMode === "source"
-                  ? "Hide frontmatter"
-                  : "Show frontmatter"
-              }
-              style={styles.headerButton}
-            >
-              <MaterialCommunityIcons
-                name="code-tags"
-                size={22}
-                color={
-                  propertiesMode === "source"
-                    ? themeColors.primary
-                    : themeColors.foreground
-                }
-              />
-            </Pressable>
-          ) : null}
           <Pressable
             onPress={() => setIsPreview((p) => !p)}
             accessibilityRole="button"
@@ -214,24 +196,22 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               color={themeColors.foreground}
             />
           </Pressable>
-          {noteId ? (
-            <Pressable
-              onPress={handleDelete}
-              accessibilityRole="button"
-              accessibilityLabel="Delete note"
-              style={styles.headerButton}
-            >
-              <MaterialCommunityIcons
-                name="trash-can-outline"
-                size={22}
-                color={themeColors.destructive}
-              />
-            </Pressable>
-          ) : null}
+          <Pressable
+            onPress={() => setShowOverflow((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel="More options"
+            style={styles.headerButton}
+          >
+            <MaterialCommunityIcons
+              name="dots-vertical"
+              size={22}
+              color={themeColors.foreground}
+            />
+          </Pressable>
         </View>
       ),
     });
-  }, [navigation, noteId, isPreview, propertiesMode, themeColors]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [navigation, noteId, isPreview, themeColors]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flush on unmount
   useEffect(() => {
@@ -360,9 +340,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     if (!noteId || aiBusyKey) return;
     setAiBusyKey("summarize");
     try {
-      // Flush any pending auto-save so the server has the
-      // freshest content before summarizing.
-      flush();
+      // Await the local save so the latest content lands in
+      // SQLite before the AI request — fire-and-forget would
+      // race with /ai/summarize reading from the server-synced
+      // copy.
+      await flush();
       const result = await apiSummarizeNote(noteId);
       setSummary(result);
       await updateNoteMutation.mutateAsync({
@@ -387,11 +369,27 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     if (!noteId || aiBusyKey) return;
     setAiBusyKey("tags");
     try {
-      flush();
+      // Await the local save so the latest content lands in
+      // SQLite before the AI request goes out — fire-and-forget
+      // would race with /ai/tags reading from the server-synced
+      // copy.
+      await flush();
       const suggested = await apiSuggestTags(noteId);
-      if (suggested.length === 0) return;
+      if (suggested.length === 0) {
+        Alert.alert(
+          "AI Tags",
+          "No tag suggestions returned. Try writing more content first.",
+        );
+        return;
+      }
       const merged = Array.from(new Set([...tags, ...suggested]));
-      if (merged.length === tags.length) return;
+      if (merged.length === tags.length) {
+        Alert.alert(
+          "AI Tags",
+          "Suggested tags are already on this note.",
+        );
+        return;
+      }
       setTags(merged);
       await updateNoteMutation.mutateAsync({
         id: noteId,
@@ -427,11 +425,6 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       ],
     );
   }, [noteId, updateNoteMutation]);
-
-  const handleAiPress = useCallback(() => {
-    Keyboard.dismiss();
-    aiSheetRef.current?.present();
-  }, []);
 
   const mdStyles = useMemo(
     () => ({
@@ -620,6 +613,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             <SummaryBanner
               summary={summary}
               onDelete={handleAiSummaryDelete}
+              isLoading={aiBusyKey === "summarize"}
             />
 
             <TagInput
@@ -627,16 +621,16 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               allTags={tagsData?.tags ?? []}
               onAddTag={handleAddTag}
               onRemoveTag={handleRemoveTag}
+              isLoading={aiBusyKey === "tags"}
             />
           </View>
 
-          {/* Toolbar (full-width) — sparkle button opens the AI
-              actions sheet. */}
+          {/* Toolbar (full-width). Sparkle/AI button is hidden
+              until Continue Writing / AI Rewrite (Phase B.3/B.4)
+              land — Summarize + Suggest Tags moved to the header
+              overflow menu. */}
           <View style={styles.toolbarWrapper}>
-            <MarkdownToolbar
-              onAction={handleToolbarAction}
-              onAiPress={noteId ? handleAiPress : undefined}
-            />
+            <MarkdownToolbar onAction={handleToolbarAction} />
           </View>
 
           {/* Content. When propertiesMode === "panel" and the note
@@ -689,18 +683,144 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         mode="assign"
       />
 
-      {/* AI Actions sheet (Phase B). Phase B.1 wires Summarize;
-          tags/continue/rewrite are placeholders until B.2-B.4. */}
-      <AiActionsSheet
-        bottomSheetRef={aiSheetRef}
-        busyKey={aiBusyKey}
-        handlers={{
-          summarize: handleAiSummarize,
-          tags: handleAiSuggestTags,
-          continue: null,
-          rewrite: null,
-        }}
-      />
+      {/* Header overflow menu — AI actions, frontmatter toggle
+          (edit mode only) + delete. Mirrors NoteDetailScreen's
+          pattern. */}
+      {showOverflow ? (
+        <Pressable
+          style={styles.overflowBackdrop}
+          onPress={() => setShowOverflow(false)}
+        >
+          <View
+            style={[
+              styles.overflowMenu,
+              {
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+              },
+            ]}
+          >
+            {noteId && !isPreview ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  if (aiBusyKey) return;
+                  setShowOverflow(false);
+                  handleAiSummarize();
+                }}
+                disabled={!!aiBusyKey}
+                accessibilityRole="button"
+                accessibilityState={{
+                  busy: aiBusyKey === "summarize",
+                  disabled: !!aiBusyKey,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="text-box-outline"
+                  size={20}
+                  color={themeColors.primary}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                    !!aiBusyKey && { opacity: 0.5 },
+                  ]}
+                >
+                  {aiBusyKey === "summarize"
+                    ? "Generating Summary…"
+                    : "Generate Summary"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {noteId && !isPreview ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  if (aiBusyKey) return;
+                  setShowOverflow(false);
+                  handleAiSuggestTags();
+                }}
+                disabled={!!aiBusyKey}
+                accessibilityRole="button"
+                accessibilityState={{
+                  busy: aiBusyKey === "tags",
+                  disabled: !!aiBusyKey,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="tag-multiple-outline"
+                  size={20}
+                  color={themeColors.primary}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                    !!aiBusyKey && { opacity: 0.5 },
+                  ]}
+                >
+                  {aiBusyKey === "tags" ? "Suggesting Tags…" : "Suggest Tags"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {!isPreview ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  setShowOverflow(false);
+                  togglePropertiesMode();
+                }}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name="code-tags"
+                  size={20}
+                  color={
+                    propertiesMode === "source"
+                      ? themeColors.primary
+                      : themeColors.foreground
+                  }
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                  ]}
+                >
+                  {propertiesMode === "source"
+                    ? "Hide Frontmatter"
+                    : "Show Frontmatter"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {noteId ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  setShowOverflow(false);
+                  handleDelete();
+                }}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name="trash-can-outline"
+                  size={20}
+                  color={themeColors.destructive}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.destructive },
+                  ]}
+                >
+                  Move to Trash
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </Pressable>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -788,5 +908,34 @@ const styles = StyleSheet.create({
   emptyContent: {
     fontSize: 15,
     fontStyle: "italic",
+  },
+  overflowBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+  },
+  overflowMenu: {
+    position: "absolute",
+    top: 4,
+    right: spacing.md,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: 4,
+    minWidth: 200,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 11,
+  },
+  overflowItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    gap: spacing.sm,
+  },
+  overflowText: {
+    fontSize: 15,
   },
 });

@@ -12,6 +12,9 @@ import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useClampedRows } from "@/hooks/useClampedRows";
 import { cardAnimDuration, cardAnimEasing } from "@/lib/animations";
+import { SkeletonLoader } from "@/components/common/SkeletonLoader";
+
+const LOADING_SKELETON_WIDTHS = [72, 96, 84];
 
 const COLLAPSED_LINES = 2;
 const ROW_GAP = 6;
@@ -21,9 +24,13 @@ interface TagInputProps {
   allTags: { name: string; count: number }[];
   onAddTag: (tag: string) => void;
   onRemoveTag: (tag: string) => void;
+  /** When true a row of shimmer chips renders alongside the
+   *  current tags so the user knows tag suggestions are being
+   *  generated. */
+  isLoading?: boolean;
 }
 
-export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps) {
+export function TagInput({ tags, allTags, onAddTag, onRemoveTag, isLoading }: TagInputProps) {
   const themeColors = useThemeColors();
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -115,20 +122,45 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
   // `naturalHeight` and `collapsedHeight` are known the value
   // animates between the two endpoints on toggle.
   const maxH = useRef(new Animated.Value(9999)).current;
+  // First time we know the layout, snap to target without
+  // animating — otherwise the wrap visibly shrinks from 9999 →
+  // collapsedHeight on mount, which the user perceives as the
+  // card "animating upward".
+  const initRef = useRef(false);
   useEffect(() => {
     if (naturalHeight === null || collapsedHeight === null) return;
-    const target = !hasOverflow
+    // While suggestions are streaming in, force the wrap to its
+    // full natural height so the shimmer chips + any newly-added
+    // tags aren't hidden behind the 2-row clamp.
+    const target = isLoading || !hasOverflow
       ? naturalHeight
       : expanded
         ? naturalHeight
         : collapsedHeight;
+    if (!initRef.current) {
+      initRef.current = true;
+      maxH.setValue(target);
+      return;
+    }
     Animated.timing(maxH, {
       toValue: target,
       duration: cardAnimDuration,
       easing: cardAnimEasing,
       useNativeDriver: false,
     }).start();
-  }, [expanded, hasOverflow, collapsedHeight, naturalHeight, maxH]);
+  }, [expanded, hasOverflow, isLoading, collapsedHeight, naturalHeight, maxH]);
+
+  // When tag suggestions finish (`isLoading` flips false) auto-
+  // expand so the user actually sees the newly-merged tags
+  // instead of them being silently clipped below the 2-row
+  // clamp. They can collapse manually afterwards.
+  const prevLoadingRef = useRef(isLoading ?? false);
+  useEffect(() => {
+    if (prevLoadingRef.current && !isLoading) {
+      setExpanded(true);
+    }
+    prevLoadingRef.current = isLoading ?? false;
+  }, [isLoading, setExpanded]);
 
   return (
     <View>
@@ -180,6 +212,16 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
               </Pressable>
             </View>
           ))}
+          {isLoading
+            ? LOADING_SKELETON_WIDTHS.map((w, i) => (
+                <SkeletonLoader
+                  key={`tag-skel-${i}`}
+                  width={w}
+                  height={22}
+                  borderRadiusSize={10}
+                />
+              ))
+            : null}
           <TextInput
             style={[styles.input, { color: themeColors.foreground }]}
             placeholder={tags.length === 0 ? "Add tags..." : ""}

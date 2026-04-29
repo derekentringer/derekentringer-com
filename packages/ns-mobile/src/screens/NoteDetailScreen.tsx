@@ -120,6 +120,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
   });
 
   const tagsMaxH = useRef(new Animated.Value(9999)).current;
+  const tagsInitRef = useRef(false);
   useEffect(() => {
     if (
       tagsClamp.naturalHeight === null ||
@@ -132,6 +133,11 @@ export function NoteDetailScreen({ route, navigation }: Props) {
       : tagsClamp.expanded
         ? tagsClamp.naturalHeight
         : tagsClamp.collapsedHeight;
+    if (!tagsInitRef.current) {
+      tagsInitRef.current = true;
+      tagsMaxH.setValue(target);
+      return;
+    }
     Animated.timing(tagsMaxH, {
       toValue: target,
       duration: cardAnimDuration,
@@ -235,18 +241,6 @@ export function NoteDetailScreen({ route, navigation }: Props) {
               name={note?.favorite ? "star" : "star-outline"}
               size={22}
               color={note?.favorite ? themeColors.primary : themeColors.foreground}
-            />
-          </Pressable>
-          <Pressable
-            onPress={handleCopyLink}
-            style={styles.headerButton}
-            accessibilityRole="button"
-            accessibilityLabel="Copy link"
-          >
-            <MaterialCommunityIcons
-              name="link-variant"
-              size={22}
-              color={themeColors.foreground}
             />
           </Pressable>
           <Pressable
@@ -534,6 +528,19 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           onPress={() => setShowOverflow(false)}
         >
           <View style={[styles.overflowMenu, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
+            <Pressable
+              style={styles.overflowItem}
+              onPress={() => {
+                setShowOverflow(false);
+                handleCopyLink();
+              }}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="link-variant" size={20} color={themeColors.foreground} />
+              <Text style={[styles.overflowText, { color: themeColors.foreground }]}>
+                Copy Link
+              </Text>
+            </Pressable>
             <Pressable
               style={styles.overflowItem}
               onPress={() => {
