@@ -177,7 +177,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   // Header options
   useEffect(() => {
     navigation.setOptions({
-      title: noteId ? "Edit Note" : "New Note",
+      title: noteId
+        ? isPreview
+          ? "Edit Note - Preview"
+          : "Edit Note"
+        : "New Note",
       headerRight: () => (
         <View style={styles.headerRight}>
           <Pressable
