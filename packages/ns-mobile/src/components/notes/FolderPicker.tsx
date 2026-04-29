@@ -26,6 +26,13 @@ interface FolderPickerProps {
   folders: FolderInfo[];
   selectedFolderId: string | undefined;
   onSelect: (folderId: string | undefined) => void;
+  /** "filter" (default): list-screen filtering UX — both "All
+   *  Notes" and "Unfiled" appear as system entries.
+   *  "assign": editor folder-assignment UX — only "Unfiled" is
+   *  available since "All Notes" isn't a real bucket a note can
+   *  live in. Mirrors web/desktop where the editor's folder
+   *  dropdown lists Unfiled + real folders, no All Notes. */
+  mode?: "filter" | "assign";
 }
 
 interface FlatFolder {
@@ -302,6 +309,7 @@ export function FolderPicker({
   folders,
   selectedFolderId,
   onSelect,
+  mode = "filter",
 }: FolderPickerProps) {
   const themeColors = useThemeColors();
   const createFolder = useCreateFolder();
@@ -333,8 +341,10 @@ export function FolderPicker({
       count: 0,
       isSystem: true,
     };
-    return [allNotes, unfiled, ...flattenFolderTree(folders)];
-  }, [folders]);
+    const systemEntries =
+      mode === "assign" ? [unfiled] : [allNotes, unfiled];
+    return [...systemEntries, ...flattenFolderTree(folders)];
+  }, [folders, mode]);
 
   const handleSelect = useCallback(
     (folderId: string | undefined) => {
