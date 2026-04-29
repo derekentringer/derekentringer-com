@@ -38,7 +38,10 @@ import { MarkdownToolbar } from "@/components/notes/MarkdownToolbar";
 import { TagInput } from "@/components/notes/TagInput";
 import { AiActionsSheet, type AiActionKey } from "@/components/notes/AiActionsSheet";
 import { SummaryBanner } from "@/components/notes/SummaryBanner";
-import { summarizeNote as apiSummarizeNote } from "@/api/ai";
+import {
+  summarizeNote as apiSummarizeNote,
+  suggestTags as apiSuggestTags,
+} from "@/api/ai";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import {
   toggleBold,
@@ -375,6 +378,34 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     }
   }, [noteId, aiBusyKey, flush, updateNoteMutation]);
 
+  // Phase B.2: ask the API for tag suggestions for the current
+  // note, dedupe against the existing tag list, and persist the
+  // merged set. Mirrors desktop's handleSuggestTags — no
+  // confirmation UI; user can remove unwanted suggestions via the
+  // chip X buttons afterward.
+  const handleAiSuggestTags = useCallback(async () => {
+    if (!noteId || aiBusyKey) return;
+    setAiBusyKey("tags");
+    try {
+      flush();
+      const suggested = await apiSuggestTags(noteId);
+      if (suggested.length === 0) return;
+      const merged = Array.from(new Set([...tags, ...suggested]));
+      if (merged.length === tags.length) return;
+      setTags(merged);
+      await updateNoteMutation.mutateAsync({
+        id: noteId,
+        data: { tags: merged },
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to suggest tags.";
+      Alert.alert("AI Tags", message);
+    } finally {
+      setAiBusyKey(null);
+    }
+  }, [noteId, aiBusyKey, flush, tags, updateNoteMutation]);
+
   const handleAiSummaryDelete = useCallback(() => {
     if (!noteId) return;
     Alert.alert(
@@ -665,7 +696,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         busyKey={aiBusyKey}
         handlers={{
           summarize: handleAiSummarize,
-          tags: null,
+          tags: handleAiSuggestTags,
           continue: null,
           rewrite: null,
         }}
