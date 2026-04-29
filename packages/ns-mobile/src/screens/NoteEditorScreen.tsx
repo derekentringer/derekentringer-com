@@ -92,6 +92,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       ? stripFrontmatter(content)
       : content;
 
+
   const { save, flush, isSaving, isSaved, error } = useAutoSave({
     noteId,
     onCreated: (newId) => {
@@ -304,9 +305,54 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const mdStyles = useMemo(
     () => ({
       body: { color: themeColors.foreground, fontSize: 15, lineHeight: 22 },
-      heading1: { color: themeColors.foreground, fontSize: 24, fontWeight: "700" as const, marginBottom: 8 },
-      heading2: { color: themeColors.foreground, fontSize: 20, fontWeight: "600" as const, marginBottom: 6 },
-      heading3: { color: themeColors.foreground, fontSize: 17, fontWeight: "600" as const, marginBottom: 4 },
+      // Heading parity with ns-web's `.markdown-preview h{1..3}` —
+      // primary color on h1/h2, top margin so headings don't
+      // collide with the prior paragraph. Mirrors NoteDetailScreen.
+      heading1: {
+        color: themeColors.primary,
+        fontSize: 26,
+        fontWeight: "700" as const,
+        marginTop: 16,
+        marginBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: themeColors.border,
+        paddingBottom: 4,
+      },
+      heading2: {
+        color: themeColors.primary,
+        fontSize: 21,
+        fontWeight: "700" as const,
+        marginTop: 16,
+        marginBottom: 6,
+      },
+      heading3: {
+        color: themeColors.foreground,
+        fontSize: 17,
+        fontWeight: "600" as const,
+        marginTop: 12,
+        marginBottom: 4,
+      },
+      heading4: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
+        marginBottom: 4,
+      },
+      heading5: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
+        marginBottom: 4,
+      },
+      heading6: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
+        marginBottom: 4,
+      },
       code_inline: {
         backgroundColor: themeColors.card,
         color: themeColors.primary,
