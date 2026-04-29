@@ -244,18 +244,6 @@ export function NoteDetailScreen({ route, navigation }: Props) {
             />
           </Pressable>
           <Pressable
-            onPress={handleCopyLink}
-            style={styles.headerButton}
-            accessibilityRole="button"
-            accessibilityLabel="Copy link"
-          >
-            <MaterialCommunityIcons
-              name="link-variant"
-              size={22}
-              color={themeColors.foreground}
-            />
-          </Pressable>
-          <Pressable
             onPress={() => setShowOverflow((p) => !p)}
             style={styles.headerButton}
             accessibilityRole="button"
@@ -540,6 +528,19 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           onPress={() => setShowOverflow(false)}
         >
           <View style={[styles.overflowMenu, { backgroundColor: themeColors.card, borderColor: themeColors.border }]}>
+            <Pressable
+              style={styles.overflowItem}
+              onPress={() => {
+                setShowOverflow(false);
+                handleCopyLink();
+              }}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="link-variant" size={20} color={themeColors.foreground} />
+              <Text style={[styles.overflowText, { color: themeColors.foreground }]}>
+                Copy Link
+              </Text>
+            </Pressable>
             <Pressable
               style={styles.overflowItem}
               onPress={() => {
