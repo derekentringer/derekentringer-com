@@ -497,11 +497,16 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               <Text
                 style={[
                   styles.folderButtonText,
-                  { color: folderName ? themeColors.foreground : themeColors.muted },
+                  // "Unfiled" is the real bucket the note lives in
+                  // when no folder is set — the same label web/
+                  // desktop use. Treat it as a regular foreground
+                  // label rather than the muted "No folder"
+                  // placeholder we used to show.
+                  { color: themeColors.foreground },
                 ]}
                 numberOfLines={1}
               >
-                {folderName || "No folder"}
+                {folderName || "Unfiled"}
               </Text>
               <MaterialCommunityIcons
                 name="chevron-down"
@@ -558,12 +563,19 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         </ScrollView>
       )}
 
-      {/* Folder picker */}
+      {/* Folder picker — "assign" mode hides the All Notes entry
+          since a note can't live in that virtual bucket; only
+          Unfiled + real folders are valid targets here. A note
+          with no folderId is "Unfiled", so we coerce undefined
+          → "unfiled" so the picker highlights that row as
+          selected (the FolderPicker's Unfiled entry has id
+          "unfiled"). */}
       <FolderPicker
         bottomSheetRef={folderSheetRef}
         folders={foldersData?.folders ?? []}
-        selectedFolderId={folderId}
+        selectedFolderId={folderId ?? "unfiled"}
         onSelect={handleFolderSelect}
+        mode="assign"
       />
     </KeyboardAvoidingView>
   );
