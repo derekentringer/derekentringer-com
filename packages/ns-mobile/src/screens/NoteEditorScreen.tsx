@@ -82,6 +82,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const [isPreview, setIsPreview] = useState(false);
   const [isLoaded, setIsLoaded] = useState(!initialNoteId);
   const [aiBusyKey, setAiBusyKey] = useState<AiActionKey | null>(null);
+  const [showOverflow, setShowOverflow] = useState(false);
 
   const contentRef = useRef<TextInput>(null);
   const selectionRef = useRef({ start: 0, end: 0 });
@@ -180,28 +181,6 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       title: noteId ? "Edit Note" : "New Note",
       headerRight: () => (
         <View style={styles.headerRight}>
-          {!isPreview ? (
-            <Pressable
-              onPress={togglePropertiesMode}
-              accessibilityRole="button"
-              accessibilityLabel={
-                propertiesMode === "source"
-                  ? "Hide frontmatter"
-                  : "Show frontmatter"
-              }
-              style={styles.headerButton}
-            >
-              <MaterialCommunityIcons
-                name="code-tags"
-                size={22}
-                color={
-                  propertiesMode === "source"
-                    ? themeColors.primary
-                    : themeColors.foreground
-                }
-              />
-            </Pressable>
-          ) : null}
           <Pressable
             onPress={() => setIsPreview((p) => !p)}
             accessibilityRole="button"
@@ -228,10 +207,24 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               />
             </Pressable>
           ) : null}
+          {!isPreview ? (
+            <Pressable
+              onPress={() => setShowOverflow((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel="More options"
+              style={styles.headerButton}
+            >
+              <MaterialCommunityIcons
+                name="dots-vertical"
+                size={22}
+                color={themeColors.foreground}
+              />
+            </Pressable>
+          ) : null}
         </View>
       ),
     });
-  }, [navigation, noteId, isPreview, propertiesMode, themeColors]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [navigation, noteId, isPreview, themeColors]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flush on unmount
   useEffect(() => {
@@ -721,6 +714,54 @@ export function NoteEditorScreen({ route, navigation }: Props) {
           rewrite: null,
         }}
       />
+
+      {/* Header overflow menu — currently just frontmatter
+          show/hide, room for more low-priority editor actions. */}
+      {showOverflow ? (
+        <Pressable
+          style={styles.overflowBackdrop}
+          onPress={() => setShowOverflow(false)}
+        >
+          <View
+            style={[
+              styles.overflowMenu,
+              {
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+              },
+            ]}
+          >
+            <Pressable
+              style={styles.overflowItem}
+              onPress={() => {
+                setShowOverflow(false);
+                togglePropertiesMode();
+              }}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons
+                name="code-tags"
+                size={20}
+                color={
+                  propertiesMode === "source"
+                    ? themeColors.primary
+                    : themeColors.foreground
+                }
+              />
+              <Text
+                style={[
+                  styles.overflowText,
+                  { color: themeColors.foreground },
+                ]}
+              >
+                {propertiesMode === "source"
+                  ? "Hide Frontmatter"
+                  : "Show Frontmatter"}
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -808,5 +849,34 @@ const styles = StyleSheet.create({
   emptyContent: {
     fontSize: 15,
     fontStyle: "italic",
+  },
+  overflowBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+  },
+  overflowMenu: {
+    position: "absolute",
+    top: 4,
+    right: spacing.md,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: 4,
+    minWidth: 200,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 11,
+  },
+  overflowItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    gap: spacing.sm,
+  },
+  overflowText: {
+    fontSize: 15,
   },
 });
