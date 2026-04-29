@@ -19,7 +19,16 @@ import type { NotesStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { formatCreatedDate, formatModifiedDate } from "@/lib/time";
-import { useNote, useDeleteNote, useUpdateNote } from "@/hooks/useNotes";
+import {
+  useNote,
+  useDeleteNote,
+  useUpdateNote,
+  useAllNotesForWikiLinks,
+} from "@/hooks/useNotes";
+import {
+  resolveWikiLinks,
+  parseWikiLinkUrl,
+} from "@/lib/resolveWikiLinks";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import useSyncStore from "@/store/syncStore";
 import { useFolders } from "@/hooks/useFolders";
@@ -74,6 +83,27 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const deleteNoteMutation = useDeleteNote();
   const updateNoteMutation = useUpdateNote();
   const { data: foldersData } = useFolders();
+  // Title → noteId map for `[[wiki-link]]` resolution in preview.
+  const { data: allNotes } = useAllNotesForWikiLinks();
+  const titleToIdMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of allNotes ?? []) {
+      if (n.deletedAt) continue;
+      if (n.title) map.set(n.title.toLowerCase(), n.id);
+    }
+    return map;
+  }, [allNotes]);
+  const handleLinkPress = useCallback(
+    (url: string) => {
+      const wikiNoteId = parseWikiLinkUrl(url);
+      if (wikiNoteId) {
+        navigation.push("NoteDetail", { noteId: wikiNoteId });
+        return false;
+      }
+      return true;
+    },
+    [navigation],
+  );
   const { data: tagsData } = useTags();
   const isOnline = useSyncStore((s) => s.isOnline);
   const propertiesMode = useEditorSettingsStore((s) => s.propertiesMode);
@@ -311,12 +341,13 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       heading1: {
         color: themeColors.primary,
         fontSize: 26,
+        lineHeight: 34,
         fontWeight: "700" as const,
         marginTop: 16,
-        marginBottom: 8,
+        marginBottom: 16,
         borderBottomWidth: 1,
         borderBottomColor: themeColors.border,
-        paddingBottom: 4,
+        paddingBottom: 12,
       },
       heading2: {
         color: themeColors.primary,
@@ -369,7 +400,16 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         paddingVertical: 4,
       },
       link: { color: themeColors.primary },
-      hr: { backgroundColor: themeColors.border },
+      // Mirrors NoteDetailScreen: explicit height + margins so the
+      // hr renders as a visible 1px rule with breathing room above
+      // and below (web's `.markdown-preview hr`: 1px border +
+      // 1.5em margin).
+      hr: {
+        backgroundColor: themeColors.border,
+        height: 1,
+        marginTop: 24,
+        marginBottom: 24,
+      },
     }),
     [themeColors],
   );
@@ -410,7 +450,9 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             </Text>
           ) : null}
           {content ? (
-            <Markdown style={mdStyles}>{stripFrontmatter(content)}</Markdown>
+            <Markdown style={mdStyles} onLinkPress={handleLinkPress}>
+              {resolveWikiLinks(stripFrontmatter(content), titleToIdMap)}
+            </Markdown>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>
               No content

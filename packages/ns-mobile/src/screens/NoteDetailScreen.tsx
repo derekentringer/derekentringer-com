@@ -24,7 +24,12 @@ import {
   useNote,
   useDeleteNote,
   useToggleFavorite,
+  useAllNotesForWikiLinks,
 } from "@/hooks/useNotes";
+import {
+  resolveWikiLinks,
+  parseWikiLinkUrl,
+} from "@/lib/resolveWikiLinks";
 import { useBacklinks } from "@/hooks/useBacklinks";
 import { useVersions, useRestoreVersion } from "@/hooks/useVersions";
 import { BacklinksSection } from "@/components/notes/BacklinksSection";
@@ -43,6 +48,32 @@ export function NoteDetailScreen({ route, navigation }: Props) {
   const themeColors = useThemeColors();
 
   const { data: note, isLoading, isError, refetch, isRefetching } = useNote(noteId);
+  // Title → noteId map for `[[wiki-link]]` resolution. Cached
+  // with a long staleTime since note titles don't change often.
+  const { data: allNotes } = useAllNotesForWikiLinks();
+  const titleToIdMap = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of allNotes ?? []) {
+      if (n.deletedAt) continue;
+      if (n.title) map.set(n.title.toLowerCase(), n.id);
+    }
+    return map;
+  }, [allNotes]);
+  const renderedContent = React.useMemo(() => {
+    if (!note?.content) return "";
+    return resolveWikiLinks(stripFrontmatter(note.content), titleToIdMap);
+  }, [note?.content, titleToIdMap]);
+  const handleLinkPress = React.useCallback(
+    (url: string) => {
+      const wikiNoteId = parseWikiLinkUrl(url);
+      if (wikiNoteId) {
+        navigation.push("NoteDetail", { noteId: wikiNoteId });
+        return false; // we handled it; don't open externally
+      }
+      return true; // let the lib open external URLs
+    },
+    [navigation],
+  );
   const { data: backlinksData } = useBacklinks(noteId);
   const {
     data: versionsData,
@@ -191,12 +222,13 @@ export function NoteDetailScreen({ route, navigation }: Props) {
       heading1: {
         color: themeColors.primary,
         fontSize: 26,
+        lineHeight: 34,
         fontWeight: "700" as const,
         marginTop: 16,
-        marginBottom: 8,
+        marginBottom: 16,
         borderBottomWidth: 1,
         borderBottomColor: themeColors.border,
-        paddingBottom: 4,
+        paddingBottom: 12,
       },
       heading2: {
         color: themeColors.primary,
@@ -259,7 +291,16 @@ export function NoteDetailScreen({ route, navigation }: Props) {
         paddingVertical: 4,
       },
       link: { color: themeColors.primary },
-      hr: { backgroundColor: themeColors.border },
+      // Web's `.markdown-preview hr` uses a 1px top border + 1.5em
+      // vertical margin. RN's react-native-markdown-display renders
+      // hr as a View, so we need explicit height + margins —
+      // backgroundColor alone gave us a 0-height invisible rule.
+      hr: {
+        backgroundColor: themeColors.border,
+        height: 1,
+        marginTop: 24,
+        marginBottom: 24,
+      },
     }),
     [themeColors],
   );
@@ -356,7 +397,9 @@ export function NoteDetailScreen({ route, navigation }: Props) {
             still surfaced in the title/tags/dates header above. */}
         <View style={styles.content}>
           {note.content ? (
-            <Markdown style={mdStyles}>{stripFrontmatter(note.content)}</Markdown>
+            <Markdown style={mdStyles} onLinkPress={handleLinkPress}>
+              {renderedContent}
+            </Markdown>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>
               No content
