@@ -122,6 +122,11 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag, isLoading }: Ta
   // `naturalHeight` and `collapsedHeight` are known the value
   // animates between the two endpoints on toggle.
   const maxH = useRef(new Animated.Value(9999)).current;
+  // First time we know the layout, snap to target without
+  // animating — otherwise the wrap visibly shrinks from 9999 →
+  // collapsedHeight on mount, which the user perceives as the
+  // card "animating upward".
+  const initRef = useRef(false);
   useEffect(() => {
     if (naturalHeight === null || collapsedHeight === null) return;
     // While suggestions are streaming in, force the wrap to its
@@ -132,6 +137,11 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag, isLoading }: Ta
       : expanded
         ? naturalHeight
         : collapsedHeight;
+    if (!initRef.current) {
+      initRef.current = true;
+      maxH.setValue(target);
+      return;
+    }
     Animated.timing(maxH, {
       toValue: target,
       duration: cardAnimDuration,
