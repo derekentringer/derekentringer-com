@@ -12,6 +12,9 @@ import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useClampedRows } from "@/hooks/useClampedRows";
 import { cardAnimDuration, cardAnimEasing } from "@/lib/animations";
+import { SkeletonLoader } from "@/components/common/SkeletonLoader";
+
+const LOADING_SKELETON_WIDTHS = [72, 96, 84];
 
 const COLLAPSED_LINES = 2;
 const ROW_GAP = 6;
@@ -21,9 +24,13 @@ interface TagInputProps {
   allTags: { name: string; count: number }[];
   onAddTag: (tag: string) => void;
   onRemoveTag: (tag: string) => void;
+  /** When true a row of shimmer chips renders alongside the
+   *  current tags so the user knows tag suggestions are being
+   *  generated. */
+  isLoading?: boolean;
 }
 
-export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps) {
+export function TagInput({ tags, allTags, onAddTag, onRemoveTag, isLoading }: TagInputProps) {
   const themeColors = useThemeColors();
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -180,6 +187,16 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
               </Pressable>
             </View>
           ))}
+          {isLoading
+            ? LOADING_SKELETON_WIDTHS.map((w, i) => (
+                <SkeletonLoader
+                  key={`tag-skel-${i}`}
+                  width={w}
+                  height={22}
+                  borderRadiusSize={10}
+                />
+              ))
+            : null}
           <TextInput
             style={[styles.input, { color: themeColors.foreground }]}
             placeholder={tags.length === 0 ? "Add tags..." : ""}

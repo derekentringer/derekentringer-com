@@ -620,6 +620,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             <SummaryBanner
               summary={summary}
               onDelete={handleAiSummaryDelete}
+              isLoading={aiBusyKey === "summarize"}
             />
 
             <TagInput
@@ -627,6 +628,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               allTags={tagsData?.tags ?? []}
               onAddTag={handleAddTag}
               onRemoveTag={handleRemoveTag}
+              isLoading={aiBusyKey === "tags"}
             />
           </View>
 

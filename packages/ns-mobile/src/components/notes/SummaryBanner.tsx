@@ -11,6 +11,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { cardAnimDuration, cardAnimEasing } from "@/lib/animations";
+import { SkeletonLoader } from "@/components/common/SkeletonLoader";
 
 // AI-generated summary banner — mirrors web/desktop's expandable
 // summary block above the note content. Tapping anywhere on the
@@ -33,9 +34,13 @@ export interface SummaryBannerProps {
    *  detail screen), the close icon is hidden. The handler is
    *  responsible for confirming with the user before clearing. */
   onDelete?: () => void;
+  /** When true a shimmer placeholder renders in place of the
+   *  summary text. The banner stays mounted even with no summary
+   *  yet so the loading state is visible while the AI runs. */
+  isLoading?: boolean;
 }
 
-export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
+export function SummaryBanner({ summary, onDelete, isLoading }: SummaryBannerProps) {
   const themeColors = useThemeColors();
   const [expanded, setExpanded] = useState(false);
   const [naturalHeight, setNaturalHeight] = useState<number | null>(null);
@@ -73,7 +78,7 @@ export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
     }
   };
 
-  if (!summary || !summary.trim()) return null;
+  if (!isLoading && (!summary || !summary.trim())) return null;
 
   const chevronRotation = rotate.interpolate({
     inputRange: [0, 1],
@@ -107,19 +112,25 @@ export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
           Summary
         </Text>
       </View>
-      <Animated.View style={[styles.textClamp, { height: animHeight }]}>
-        <Text
-          style={[
-            styles.summaryText,
-            styles.summaryTextAbs,
-            { color: themeColors.foreground },
-          ]}
-          onLayout={handleTextLayout}
-        >
-          {summary}
-        </Text>
-      </Animated.View>
-      {onDelete ? (
+      {isLoading ? (
+        <View style={styles.loadingRow}>
+          <SkeletonLoader height={14} width="92%" />
+        </View>
+      ) : (
+        <Animated.View style={[styles.textClamp, { height: animHeight }]}>
+          <Text
+            style={[
+              styles.summaryText,
+              styles.summaryTextAbs,
+              { color: themeColors.foreground },
+            ]}
+            onLayout={handleTextLayout}
+          >
+            {summary}
+          </Text>
+        </Animated.View>
+      )}
+      {onDelete && !isLoading ? (
         <Pressable
           onPress={onDelete}
           style={styles.deleteButton}
@@ -161,6 +172,10 @@ const styles = StyleSheet.create({
   textClamp: {
     overflow: "hidden",
     position: "relative",
+  },
+  loadingRow: {
+    paddingVertical: 2,
+    paddingRight: 24,
   },
   summaryText: {
     fontSize: 13,
