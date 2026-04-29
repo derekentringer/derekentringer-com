@@ -183,22 +183,54 @@ export function NoteDetailScreen({ route, navigation }: Props) {
   const mdStyles = React.useMemo(
     () => ({
       body: { color: themeColors.foreground, fontSize: 15, lineHeight: 22 },
+      // Heading styles mirror ns-web's `.markdown-preview h{1..3}`:
+      //   h1/h2 use the primary (lime) accent + a top margin for
+      //   breathing room above; h3 uses foreground. The previous
+      //   styles were foreground-only with no marginTop, so headings
+      //   collided with the prior paragraph and didn't pop visually.
       heading1: {
-        color: themeColors.foreground,
-        fontSize: 24,
+        color: themeColors.primary,
+        fontSize: 26,
         fontWeight: "700" as const,
+        marginTop: 16,
         marginBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: themeColors.border,
+        paddingBottom: 4,
       },
       heading2: {
-        color: themeColors.foreground,
-        fontSize: 20,
-        fontWeight: "600" as const,
+        color: themeColors.primary,
+        fontSize: 21,
+        fontWeight: "700" as const,
+        marginTop: 16,
         marginBottom: 6,
       },
       heading3: {
         color: themeColors.foreground,
         fontSize: 17,
         fontWeight: "600" as const,
+        marginTop: 12,
+        marginBottom: 4,
+      },
+      heading4: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
+        marginBottom: 4,
+      },
+      heading5: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
+        marginBottom: 4,
+      },
+      heading6: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
         marginBottom: 4,
       },
       code_inline: {
