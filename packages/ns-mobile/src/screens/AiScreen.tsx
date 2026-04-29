@@ -1312,7 +1312,11 @@ const styles = StyleSheet.create({
   empty: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
+    // Sit ~1/3 of the way down the available space instead of
+    // dead-center so the message doesn't get visually swallowed
+    // by the bottom input bar / tab bar.
+    justifyContent: "flex-start",
+    paddingTop: "25%",
     paddingHorizontal: 16,
     gap: spacing.sm,
   },
