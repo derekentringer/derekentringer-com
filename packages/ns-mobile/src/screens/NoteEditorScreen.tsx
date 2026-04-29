@@ -696,7 +696,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               },
             ]}
           >
-            {noteId ? (
+            {noteId && !isPreview ? (
               <Pressable
                 style={styles.overflowItem}
                 onPress={() => {
@@ -729,7 +729,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
                 </Text>
               </Pressable>
             ) : null}
-            {noteId ? (
+            {noteId && !isPreview ? (
               <Pressable
                 style={styles.overflowItem}
                 onPress={() => {
