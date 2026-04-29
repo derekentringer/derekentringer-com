@@ -39,7 +39,8 @@ import { ErrorCard } from "@/components/common/ErrorCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { SummaryBanner } from "@/components/notes/SummaryBanner";
 import { useClampedRows } from "@/hooks/useClampedRows";
-import { configureCardExpandAnimation } from "@/lib/animations";
+import { cardLayoutTransition } from "@/lib/animations";
+import ReanimatedAnimated from "react-native-reanimated";
 import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { useFolders } from "@/hooks/useFolders";
 import { findFolderName } from "@/lib/folders";
@@ -408,11 +409,9 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           <SummaryBanner summary={note.summary} />
 
           {note.tags.length > 0 ? (
-            <Pressable
-              onPress={() => {
-                configureCardExpandAnimation();
-                tagsClamp.setExpanded((v) => !v);
-              }}
+            <ReanimatedAnimated.View layout={cardLayoutTransition}>
+              <Pressable
+              onPress={() => tagsClamp.setExpanded((v) => !v)}
               style={[
                 styles.tagsCard,
                 {
@@ -474,6 +473,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
                 ))}
               </View>
             </Pressable>
+            </ReanimatedAnimated.View>
           ) : null}
         </View>
 

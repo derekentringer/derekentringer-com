@@ -1,21 +1,22 @@
 import React, { useState, useRef, useEffect } from "react";
 import { View, Text, Pressable, Animated, StyleSheet } from "react-native";
+import ReanimatedAnimated from "react-native-reanimated";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
-import { configureCardExpandAnimation } from "@/lib/animations";
+import { cardLayoutTransition } from "@/lib/animations";
 
 // AI-generated summary banner — mirrors web/desktop's expandable
 // summary block above the note content. Tapping anywhere on the
-// banner expands/collapses; the trash icon (when present) clears
-// the summary. The banner is hidden if `summary` is empty/null.
+// banner expands/collapses; the close (×) icon clears the
+// summary. The banner is hidden if `summary` is empty/null.
 
 const COLLAPSED_LINES = 1;
 
 export interface SummaryBannerProps {
   summary: string | null | undefined;
   /** Optional clear-summary handler. When omitted (e.g. read-only
-   *  detail screen), the trash icon is hidden. The handler is
+   *  detail screen), the close icon is hidden. The handler is
    *  responsible for confirming with the user before clearing. */
   onDelete?: () => void;
 }
@@ -41,58 +42,57 @@ export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
   });
 
   return (
-    <Pressable
-      onPress={() => {
-        configureCardExpandAnimation();
-        setExpanded((v) => !v);
-      }}
-      style={[
-        styles.container,
-        {
-          backgroundColor: themeColors.card,
-          borderColor: themeColors.border,
-        },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={expanded ? "Collapse summary" : "Expand summary"}
-    >
-      <View style={styles.toggleRow}>
-        <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={16}
-            color={themeColors.muted}
-          />
-        </Animated.View>
-        <Text
-          style={[styles.label, { color: themeColors.muted }]}
-        >
-          Summary
-        </Text>
-      </View>
-      <Text
-        style={[styles.summaryText, { color: themeColors.foreground }]}
-        numberOfLines={expanded ? undefined : COLLAPSED_LINES}
-        ellipsizeMode="tail"
+    <ReanimatedAnimated.View layout={cardLayoutTransition}>
+      <Pressable
+        onPress={() => setExpanded((v) => !v)}
+        style={[
+          styles.container,
+          {
+            backgroundColor: themeColors.card,
+            borderColor: themeColors.border,
+          },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? "Collapse summary" : "Expand summary"}
       >
-        {summary}
-      </Text>
-      {onDelete ? (
-        <Pressable
-          onPress={onDelete}
-          style={styles.deleteButton}
-          accessibilityRole="button"
-          accessibilityLabel="Delete summary"
-          hitSlop={8}
+        <View style={styles.toggleRow}>
+          <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={16}
+              color={themeColors.muted}
+            />
+          </Animated.View>
+          <Text
+            style={[styles.label, { color: themeColors.muted }]}
+          >
+            Summary
+          </Text>
+        </View>
+        <Text
+          style={[styles.summaryText, { color: themeColors.foreground }]}
+          numberOfLines={expanded ? undefined : COLLAPSED_LINES}
+          ellipsizeMode="tail"
         >
-          <MaterialCommunityIcons
-            name="close"
-            size={16}
-            color={themeColors.muted}
-          />
-        </Pressable>
-      ) : null}
-    </Pressable>
+          {summary}
+        </Text>
+        {onDelete ? (
+          <Pressable
+            onPress={onDelete}
+            style={styles.deleteButton}
+            accessibilityRole="button"
+            accessibilityLabel="Delete summary"
+            hitSlop={8}
+          >
+            <MaterialCommunityIcons
+              name="close"
+              size={16}
+              color={themeColors.muted}
+            />
+          </Pressable>
+        ) : null}
+      </Pressable>
+    </ReanimatedAnimated.View>
   );
 }
 

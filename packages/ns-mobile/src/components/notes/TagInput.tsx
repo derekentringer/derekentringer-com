@@ -7,11 +7,12 @@ import {
   Animated,
   StyleSheet,
 } from "react-native";
+import ReanimatedAnimated from "react-native-reanimated";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useClampedRows } from "@/hooks/useClampedRows";
-import { configureCardExpandAnimation } from "@/lib/animations";
+import { cardLayoutTransition } from "@/lib/animations";
 
 const COLLAPSED_LINES = 2;
 const ROW_GAP = 6;
@@ -114,12 +115,9 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
   });
 
   return (
-    <View>
+    <ReanimatedAnimated.View layout={cardLayoutTransition}>
       <Pressable
-        onPress={() => {
-          configureCardExpandAnimation();
-          setExpanded((v) => !v);
-        }}
+        onPress={() => setExpanded((v) => !v)}
         style={[
           styles.container,
           { backgroundColor: themeColors.input, borderColor: themeColors.border },
@@ -207,7 +205,7 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
           ))}
         </View>
       ) : null}
-    </View>
+    </ReanimatedAnimated.View>
   );
 }
 
