@@ -41,7 +41,12 @@ export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
   const [naturalHeight, setNaturalHeight] = useState<number | null>(null);
 
   const rotate = useRef(new Animated.Value(0)).current;
-  const maxHeight = useRef(new Animated.Value(COLLAPSED_TEXT_HEIGHT)).current;
+  // Wrapper uses explicit `height` (not maxHeight) because the
+  // inner Text is absolutely positioned so it can measure
+  // naturally regardless of the wrapper's clamp. Without `height`,
+  // an absolutely-positioned child wouldn't contribute to the
+  // wrapper's content height, so the wrapper would collapse to 0.
+  const animHeight = useRef(new Animated.Value(COLLAPSED_TEXT_HEIGHT)).current;
 
   useEffect(() => {
     Animated.timing(rotate, {
@@ -53,23 +58,18 @@ export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
 
   useEffect(() => {
     if (naturalHeight === null) return;
-    Animated.timing(maxHeight, {
+    Animated.timing(animHeight, {
       toValue: expanded ? naturalHeight : COLLAPSED_TEXT_HEIGHT,
       duration: cardAnimDuration,
       easing: cardAnimEasing,
       useNativeDriver: false,
     }).start();
-  }, [expanded, naturalHeight, maxHeight]);
+  }, [expanded, naturalHeight, animHeight]);
 
   const handleTextLayout = (e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
-    if (naturalHeight === null) {
+    if (naturalHeight === null || Math.abs(h - naturalHeight) > 2) {
       setNaturalHeight(h);
-      maxHeight.setValue(expanded ? h : COLLAPSED_TEXT_HEIGHT);
-    } else if (Math.abs(h - naturalHeight) > 2 && expanded) {
-      // Summary text changed while expanded — re-measure.
-      setNaturalHeight(h);
-      maxHeight.setValue(h);
     }
   };
 
@@ -107,9 +107,13 @@ export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
           Summary
         </Text>
       </View>
-      <Animated.View style={{ maxHeight, overflow: "hidden" }}>
+      <Animated.View style={[styles.textClamp, { height: animHeight }]}>
         <Text
-          style={[styles.summaryText, { color: themeColors.foreground }]}
+          style={[
+            styles.summaryText,
+            styles.summaryTextAbs,
+            { color: themeColors.foreground },
+          ]}
           onLayout={handleTextLayout}
         >
           {summary}
@@ -154,11 +158,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: "uppercase",
   },
+  textClamp: {
+    overflow: "hidden",
+    position: "relative",
+  },
   summaryText: {
     fontSize: 13,
     lineHeight: 18,
     fontStyle: "italic",
     paddingRight: 24,
+  },
+  summaryTextAbs: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
   },
   deleteButton: {
     position: "absolute",
