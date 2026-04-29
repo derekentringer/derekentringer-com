@@ -31,6 +31,7 @@ import { BacklinksSection } from "@/components/notes/BacklinksSection";
 import { VersionHistorySheet } from "@/components/notes/VersionHistorySheet";
 import { ErrorCard } from "@/components/common/ErrorCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
+import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { useFolders } from "@/hooks/useFolders";
 import { findFolderName } from "@/lib/folders";
 import { manualSync } from "@/lib/syncEngine";
@@ -317,10 +318,13 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           </View>
         ) : null}
 
-        {/* Content */}
+        {/* Content — frontmatter is stripped before rendering so the
+            YAML block doesn't appear as raw text in the preview;
+            mirrors web/desktop NotesPage behavior. The metadata is
+            still surfaced in the title/tags/dates header above. */}
         <View style={styles.content}>
           {note.content ? (
-            <Markdown style={mdStyles}>{note.content}</Markdown>
+            <Markdown style={mdStyles}>{stripFrontmatter(note.content)}</Markdown>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>
               No content

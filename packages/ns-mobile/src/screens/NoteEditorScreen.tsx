@@ -39,6 +39,12 @@ import {
   insertQuote,
 } from "@/lib/editorActions";
 import { findFolderName } from "@/lib/folders";
+import {
+  parseFrontmatter,
+  serializeFrontmatter,
+  stripFrontmatter,
+} from "@derekentringer/ns-shared";
+import useEditorSettingsStore from "@/store/editorSettingsStore";
 
 type Props = NativeStackScreenProps<NotesStackParamList, "NoteEditor">;
 
@@ -48,6 +54,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
 
   const [noteId, setNoteId] = useState(initialNoteId);
   const [title, setTitle] = useState("");
+  // `content` is always the full note text including the YAML
+  // frontmatter block (if any). The TextInput renders either the
+  // full content (source mode) or just the body (panel mode); on
+  // edit we recombine the new body with the original frontmatter
+  // so the YAML round-trips even when hidden.
   const [content, setContent] = useState("");
   const [folderId, setFolderId] = useState<string | undefined>(undefined);
   const [folderName, setFolderName] = useState<string | undefined>(undefined);
@@ -65,6 +76,21 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const { data: foldersData } = useFolders();
   const { data: tagsData } = useTags();
   const isOnline = useSyncStore((s) => s.isOnline);
+  const propertiesMode = useEditorSettingsStore((s) => s.propertiesMode);
+  const togglePropertiesMode = useEditorSettingsStore(
+    (s) => s.togglePropertiesMode,
+  );
+
+  // Parsed view of the current content. `body` is what the user
+  // sees in panel mode; `rawYaml`/`metadata`/`unknownFields` are
+  // what we re-attach when they edit. Recomputed when `content`
+  // changes.
+  const parsed = useMemo(() => parseFrontmatter(content), [content]);
+  const hasFrontmatter = parsed.rawYaml.trim().length > 0;
+  const displayValue =
+    propertiesMode === "panel" && hasFrontmatter
+      ? stripFrontmatter(content)
+      : content;
 
   const { save, flush, isSaving, isSaved, error } = useAutoSave({
     noteId,
@@ -104,6 +130,28 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       title: noteId ? "Edit Note" : "New Note",
       headerRight: () => (
         <View style={styles.headerRight}>
+          {!isPreview ? (
+            <Pressable
+              onPress={togglePropertiesMode}
+              accessibilityRole="button"
+              accessibilityLabel={
+                propertiesMode === "source"
+                  ? "Hide frontmatter"
+                  : "Show frontmatter"
+              }
+              style={styles.headerButton}
+            >
+              <MaterialCommunityIcons
+                name="code-tags"
+                size={22}
+                color={
+                  propertiesMode === "source"
+                    ? themeColors.primary
+                    : themeColors.foreground
+                }
+              />
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={() => setIsPreview((p) => !p)}
             accessibilityRole="button"
@@ -133,7 +181,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         </View>
       ),
     });
-  }, [navigation, noteId, isPreview, themeColors]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [navigation, noteId, isPreview, propertiesMode, themeColors]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flush on unmount
   useEffect(() => {
@@ -226,8 +274,20 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       const fn = actions[action];
       if (!fn) return;
 
-      const result = fn(content, start, end);
-      setContent(result.text);
+      // In panel mode the TextInput's selection is relative to the
+      // visible body, not the full content (which has frontmatter
+      // prepended). Operate on `displayValue`, then re-serialize
+      // body + original frontmatter so the YAML round-trips.
+      const result = fn(displayValue, start, end);
+      const nextContent =
+        propertiesMode === "panel" && hasFrontmatter
+          ? serializeFrontmatter(
+              parsed.metadata,
+              result.text,
+              parsed.unknownFields,
+            )
+          : result.text;
+      setContent(nextContent);
       selectionRef.current = result.selection;
 
       // Re-focus and set selection after state update
@@ -238,7 +298,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         contentRef.current?.focus();
       }, 50);
     },
-    [content],
+    [displayValue, propertiesMode, hasFrontmatter, parsed],
   );
 
   const mdStyles = useMemo(
@@ -304,7 +364,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             </Text>
           ) : null}
           {content ? (
-            <Markdown style={mdStyles}>{content}</Markdown>
+            <Markdown style={mdStyles}>{stripFrontmatter(content)}</Markdown>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>
               No content
@@ -375,14 +435,31 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             <MarkdownToolbar onAction={handleToolbarAction} />
           </View>
 
-          {/* Content */}
+          {/* Content. When propertiesMode === "panel" and the note
+              has frontmatter, the TextInput shows the body only; on
+              edit we re-serialize body + the original frontmatter
+              so the YAML round-trips through saves. In source mode
+              the TextInput shows the full note including the YAML
+              block, matching web's `</>` toggle. */}
           <TextInput
             ref={contentRef}
             style={[styles.contentInput, { color: themeColors.foreground }]}
             placeholder="Start writing..."
             placeholderTextColor={themeColors.muted}
-            value={content}
-            onChangeText={setContent}
+            value={displayValue}
+            onChangeText={(next) => {
+              if (propertiesMode === "panel" && hasFrontmatter) {
+                setContent(
+                  serializeFrontmatter(
+                    parsed.metadata,
+                    next,
+                    parsed.unknownFields,
+                  ),
+                );
+              } else {
+                setContent(next);
+              }
+            }}
             multiline
             textAlignVertical="top"
             scrollEnabled={false}
