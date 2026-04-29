@@ -7,12 +7,11 @@ import {
   Animated,
   StyleSheet,
 } from "react-native";
-import ReanimatedAnimated from "react-native-reanimated";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useClampedRows } from "@/hooks/useClampedRows";
-import { cardLayoutTransition } from "@/lib/animations";
+import { cardAnimDuration, cardAnimEasing } from "@/lib/animations";
 
 const COLLAPSED_LINES = 2;
 const ROW_GAP = 6;
@@ -37,6 +36,7 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
     setExpanded,
     hasOverflow,
     collapsedHeight,
+    naturalHeight,
     handleContainerLayout,
     handleUnitLayout,
   } = useClampedRows({
@@ -96,11 +96,6 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
     [inputValue, tags, onRemoveTag],
   );
 
-  const clampStyle =
-    !expanded && hasOverflow && collapsedHeight !== null
-      ? { maxHeight: collapsedHeight, overflow: "hidden" as const }
-      : null;
-
   const rotate = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(rotate, {
@@ -114,8 +109,29 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
     outputRange: ["0deg", "90deg"],
   });
 
+  // Per-frame `Animated.Value` driving the chip wrap's
+  // `maxHeight`. Initial 9999 means "no cap" so the first onLayout
+  // pass measures naturalHeight unconstrained; once both
+  // `naturalHeight` and `collapsedHeight` are known the value
+  // animates between the two endpoints on toggle.
+  const maxH = useRef(new Animated.Value(9999)).current;
+  useEffect(() => {
+    if (naturalHeight === null || collapsedHeight === null) return;
+    const target = !hasOverflow
+      ? naturalHeight
+      : expanded
+        ? naturalHeight
+        : collapsedHeight;
+    Animated.timing(maxH, {
+      toValue: target,
+      duration: cardAnimDuration,
+      easing: cardAnimEasing,
+      useNativeDriver: false,
+    }).start();
+  }, [expanded, hasOverflow, collapsedHeight, naturalHeight, maxH]);
+
   return (
-    <ReanimatedAnimated.View layout={cardLayoutTransition}>
+    <View>
       <Pressable
         onPress={() => setExpanded((v) => !v)}
         style={[
@@ -136,8 +152,9 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
           <Text style={[styles.label, { color: themeColors.muted }]}>Tags</Text>
         </View>
 
+        <Animated.View style={{ maxHeight: maxH, overflow: "hidden" }}>
         <View
-          style={[styles.chipWrap, clampStyle]}
+          style={styles.chipWrap}
           onLayout={handleContainerLayout}
         >
           {tags.map((tag, i) => (
@@ -179,6 +196,7 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
             blurOnSubmit={false}
           />
         </View>
+        </Animated.View>
       </Pressable>
 
       {showSuggestions && suggestions.length > 0 ? (
@@ -205,7 +223,7 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
           ))}
         </View>
       ) : null}
-    </ReanimatedAnimated.View>
+    </View>
   );
 }
 

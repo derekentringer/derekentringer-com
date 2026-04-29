@@ -39,8 +39,7 @@ import { ErrorCard } from "@/components/common/ErrorCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { SummaryBanner } from "@/components/notes/SummaryBanner";
 import { useClampedRows } from "@/hooks/useClampedRows";
-import { cardLayoutTransition } from "@/lib/animations";
-import ReanimatedAnimated from "react-native-reanimated";
+import { cardAnimDuration, cardAnimEasing } from "@/lib/animations";
 import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { useFolders } from "@/hooks/useFolders";
 import { findFolderName } from "@/lib/folders";
@@ -119,6 +118,33 @@ export function NoteDetailScreen({ route, navigation }: Props) {
     inputRange: [0, 1],
     outputRange: ["0deg", "90deg"],
   });
+
+  const tagsMaxH = useRef(new Animated.Value(9999)).current;
+  useEffect(() => {
+    if (
+      tagsClamp.naturalHeight === null ||
+      tagsClamp.collapsedHeight === null
+    ) {
+      return;
+    }
+    const target = !tagsClamp.hasOverflow
+      ? tagsClamp.naturalHeight
+      : tagsClamp.expanded
+        ? tagsClamp.naturalHeight
+        : tagsClamp.collapsedHeight;
+    Animated.timing(tagsMaxH, {
+      toValue: target,
+      duration: cardAnimDuration,
+      easing: cardAnimEasing,
+      useNativeDriver: false,
+    }).start();
+  }, [
+    tagsClamp.expanded,
+    tagsClamp.hasOverflow,
+    tagsClamp.collapsedHeight,
+    tagsClamp.naturalHeight,
+    tagsMaxH,
+  ]);
 
   // Refetch when screen regains focus (e.g. returning from editor)
   useFocusEffect(
@@ -409,8 +435,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           <SummaryBanner summary={note.summary} />
 
           {note.tags.length > 0 ? (
-            <ReanimatedAnimated.View layout={cardLayoutTransition}>
-              <Pressable
+            <Pressable
               onPress={() => tagsClamp.setExpanded((v) => !v)}
               style={[
                 styles.tagsCard,
@@ -441,39 +466,37 @@ export function NoteDetailScreen({ route, navigation }: Props) {
                 </Text>
               </View>
 
-              <View
-                style={[
-                  styles.tagsWrap,
-                  !tagsClamp.expanded &&
-                  tagsClamp.hasOverflow &&
-                  tagsClamp.collapsedHeight !== null
-                    ? {
-                        maxHeight: tagsClamp.collapsedHeight,
-                        overflow: "hidden",
-                      }
-                    : null,
-                ]}
-                onLayout={tagsClamp.handleContainerLayout}
+              <Animated.View
+                style={{ maxHeight: tagsMaxH, overflow: "hidden" }}
               >
-                {note.tags.map((tag, i) => (
-                  <View
-                    key={tag}
-                    style={[
-                      styles.tagChip,
-                      { backgroundColor: `${themeColors.primary}1A` },
-                    ]}
-                    onLayout={i === 0 ? tagsClamp.handleUnitLayout : undefined}
-                  >
-                    <Text
-                      style={[styles.tagText, { color: themeColors.primary }]}
+                <View
+                  style={styles.tagsWrap}
+                  onLayout={tagsClamp.handleContainerLayout}
+                >
+                  {note.tags.map((tag, i) => (
+                    <View
+                      key={tag}
+                      style={[
+                        styles.tagChip,
+                        { backgroundColor: `${themeColors.primary}1A` },
+                      ]}
+                      onLayout={
+                        i === 0 ? tagsClamp.handleUnitLayout : undefined
+                      }
                     >
-                      {tag}
-                    </Text>
-                  </View>
-                ))}
-              </View>
+                      <Text
+                        style={[
+                          styles.tagText,
+                          { color: themeColors.primary },
+                        ]}
+                      >
+                        {tag}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </Animated.View>
             </Pressable>
-            </ReanimatedAnimated.View>
           ) : null}
         </View>
 
