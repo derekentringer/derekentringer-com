@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import useAuthStore from "@/store/authStore";
 import useSyncStore from "@/store/syncStore";
 import useAiSettingsStore from "@/store/aiSettingsStore";
+import useEditorSettingsStore from "@/store/editorSettingsStore";
 import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
@@ -208,6 +209,9 @@ function AuthenticatedApp() {
       // AiScreen reads the user's persisted auto-approve flags
       // before its first askQuestion call.
       void useAiSettingsStore.getState().hydrate();
+      // Hydrate editor settings (frontmatter show/hide toggle) so
+      // the editor opens in the user's last-chosen mode.
+      void useEditorSettingsStore.getState().hydrate();
       // Initialize local database first — must complete before any queries fire
       await initDatabase();
       // Phase A.0: normalize any drifted folder isLocalFile flag to match its
