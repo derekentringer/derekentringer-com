@@ -80,6 +80,8 @@ import {
   fetchChatHistory,
   replaceChatMessages,
   clearServerChatHistory,
+  summarizeNote,
+  suggestTags,
 } from "../api/ai";
 
 beforeEach(() => {
@@ -141,6 +143,36 @@ describe("ai api client (mobile)", () => {
       mockDelete.mockResolvedValue({ data: {} });
       await clearServerChatHistory();
       expect(mockDelete).toHaveBeenCalledWith("/ai/chat-history");
+    });
+  });
+
+  describe("summarizeNote", () => {
+    it("POSTs the noteId and returns the summary string", async () => {
+      mockPost.mockResolvedValue({ data: { summary: "Short summary." } });
+      const result = await summarizeNote("note-1");
+      expect(mockPost).toHaveBeenCalledWith("/ai/summarize", {
+        noteId: "note-1",
+      });
+      expect(result).toBe("Short summary.");
+    });
+  });
+
+  describe("suggestTags", () => {
+    it("POSTs the noteId and returns the tag list", async () => {
+      mockPost.mockResolvedValue({
+        data: { tags: ["meeting", "planning"] },
+      });
+      const result = await suggestTags("note-1");
+      expect(mockPost).toHaveBeenCalledWith("/ai/tags", {
+        noteId: "note-1",
+      });
+      expect(result).toEqual(["meeting", "planning"]);
+    });
+
+    it("returns an empty array when the server returns no tags", async () => {
+      mockPost.mockResolvedValue({ data: {} });
+      const result = await suggestTags("note-1");
+      expect(result).toEqual([]);
     });
   });
 
