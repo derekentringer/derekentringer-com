@@ -634,7 +634,19 @@ async function pullChanges(id: string): Promise<void> {
 
 async function applyNoteChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
-    await softDeleteNoteFromRemote(change.id, change.timestamp);
+    // The server includes full note data in delete-action pull
+    // payloads. Upserting (instead of `UPDATE … WHERE id = ?`)
+    // ensures we INSERT the row as soft-deleted when mobile never
+    // saw the create — e.g. another device created + deleted the
+    // note in the same session. Without this the trash count
+    // silently undercounts vs desktop. Fall back to the legacy
+    // UPDATE-only path if no data is attached.
+    const noteData = change.data as Note | null;
+    if (noteData) {
+      await upsertNoteFromRemote(noteData);
+    } else {
+      await softDeleteNoteFromRemote(change.id, change.timestamp);
+    }
     return;
   }
 
@@ -645,7 +657,15 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
 
 async function applyFolderChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
-    await softDeleteFolderFromRemote(change.id, change.timestamp);
+    // Same rationale as applyNoteChange — INSERT as soft-deleted
+    // when the folder was created+deleted before this device
+    // pulled, so folder-derived state stays in sync.
+    const folderData = change.data as FolderSyncData | null;
+    if (folderData) {
+      await upsertFolderFromRemote(folderData);
+    } else {
+      await softDeleteFolderFromRemote(change.id, change.timestamp);
+    }
     return;
   }
 
