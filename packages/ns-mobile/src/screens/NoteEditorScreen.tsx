@@ -36,6 +36,9 @@ import { useTags } from "@/hooks/useTags";
 import { FolderPicker } from "@/components/notes/FolderPicker";
 import { MarkdownToolbar } from "@/components/notes/MarkdownToolbar";
 import { TagInput } from "@/components/notes/TagInput";
+import { AiActionsSheet, type AiActionKey } from "@/components/notes/AiActionsSheet";
+import { SummaryBanner } from "@/components/notes/SummaryBanner";
+import { summarizeNote as apiSummarizeNote } from "@/api/ai";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import {
   toggleBold,
@@ -72,12 +75,15 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const [folderId, setFolderId] = useState<string | undefined>(undefined);
   const [folderName, setFolderName] = useState<string | undefined>(undefined);
   const [tags, setTags] = useState<string[]>([]);
+  const [summary, setSummary] = useState<string | null>(null);
   const [isPreview, setIsPreview] = useState(false);
   const [isLoaded, setIsLoaded] = useState(!initialNoteId);
+  const [aiBusyKey, setAiBusyKey] = useState<AiActionKey | null>(null);
 
   const contentRef = useRef<TextInput>(null);
   const selectionRef = useRef({ start: 0, end: 0 });
   const folderSheetRef = useRef<BottomSheetModal>(null);
+  const aiSheetRef = useRef<BottomSheetModal>(null);
 
   const { data: noteData, isLoading } = useNote(noteId ?? "");
   const deleteNoteMutation = useDeleteNote();
@@ -138,9 +144,19 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       setFolderId(noteData.folderId ?? undefined);
       setFolderName(noteData.folder ?? undefined);
       setTags(noteData.tags || []);
+      setSummary(noteData.summary ?? null);
       setIsLoaded(true);
     }
   }, [noteData, isLoaded]);
+
+  // Keep the local summary mirror in sync if the note's summary
+  // changes from outside this screen (e.g. AI Assistant chat ran
+  // /summarize on this note from another device).
+  useEffect(() => {
+    if (isLoaded && noteData) {
+      setSummary(noteData.summary ?? null);
+    }
+  }, [isLoaded, noteData?.summary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save on title/content changes
   useEffect(() => {
@@ -332,6 +348,60 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     [displayValue, propertiesMode, hasFrontmatter, parsed],
   );
 
+  // Phase B.1: generate AI summary for the current note. Saves
+  // the in-flight content first (so the API sees the freshest
+  // text), calls /ai/summarize, persists the resulting summary
+  // via the existing useUpdateNote mutation. Mirrors web's
+  // handleSummarize in NotesPage.
+  const handleAiSummarize = useCallback(async () => {
+    if (!noteId || aiBusyKey) return;
+    setAiBusyKey("summarize");
+    try {
+      // Flush any pending auto-save so the server has the
+      // freshest content before summarizing.
+      flush();
+      const result = await apiSummarizeNote(noteId);
+      setSummary(result);
+      await updateNoteMutation.mutateAsync({
+        id: noteId,
+        data: { summary: result },
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to generate summary.";
+      Alert.alert("AI Summary", message);
+    } finally {
+      setAiBusyKey(null);
+    }
+  }, [noteId, aiBusyKey, flush, updateNoteMutation]);
+
+  const handleAiSummaryDelete = useCallback(() => {
+    if (!noteId) return;
+    Alert.alert(
+      "Delete Summary",
+      "Delete this AI summary? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setSummary(null);
+            updateNoteMutation.mutate({
+              id: noteId,
+              data: { summary: null },
+            });
+          },
+        },
+      ],
+    );
+  }, [noteId, updateNoteMutation]);
+
+  const handleAiPress = useCallback(() => {
+    Keyboard.dismiss();
+    aiSheetRef.current?.present();
+  }, []);
+
   const mdStyles = useMemo(
     () => ({
       body: { color: themeColors.foreground, fontSize: 15, lineHeight: 22 },
@@ -478,7 +548,8 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             blurOnSubmit={false}
           />
 
-          {/* Folder + Tags row */}
+          {/* Folder + Summary + Tags row — matches web/desktop
+              order: folder picker, AI summary banner, then tags. */}
           <View style={styles.metaSection}>
             <Pressable
               style={[styles.folderButton, { borderColor: themeColors.border }]}
@@ -515,6 +586,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               />
             </Pressable>
 
+            <SummaryBanner
+              summary={summary}
+              onDelete={handleAiSummaryDelete}
+            />
+
             <TagInput
               tags={tags}
               allTags={tagsData?.tags ?? []}
@@ -523,9 +599,13 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             />
           </View>
 
-          {/* Toolbar (full-width) */}
+          {/* Toolbar (full-width) — sparkle button opens the AI
+              actions sheet. */}
           <View style={styles.toolbarWrapper}>
-            <MarkdownToolbar onAction={handleToolbarAction} />
+            <MarkdownToolbar
+              onAction={handleToolbarAction}
+              onAiPress={noteId ? handleAiPress : undefined}
+            />
           </View>
 
           {/* Content. When propertiesMode === "panel" and the note
@@ -577,6 +657,19 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         onSelect={handleFolderSelect}
         mode="assign"
       />
+
+      {/* AI Actions sheet (Phase B). Phase B.1 wires Summarize;
+          tags/continue/rewrite are placeholders until B.2-B.4. */}
+      <AiActionsSheet
+        bottomSheetRef={aiSheetRef}
+        busyKey={aiBusyKey}
+        handlers={{
+          summarize: handleAiSummarize,
+          tags: null,
+          continue: null,
+          rewrite: null,
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -598,7 +691,8 @@ const styles = StyleSheet.create({
   },
   statusBar: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 4,
+    paddingTop: spacing.md,
+    paddingBottom: 0,
     minHeight: 20,
   },
   statusText: {
@@ -608,7 +702,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   editorContent: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
   },
   titleInput: {
@@ -618,6 +713,7 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   toolbarWrapper: {
+    marginTop: spacing.sm,
     marginHorizontal: -spacing.md,
     marginBottom: spacing.sm,
   },
@@ -629,7 +725,6 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   metaSection: {
-    marginBottom: spacing.sm,
     gap: spacing.sm,
   },
   folderButton: {
@@ -650,7 +745,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   previewContent: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
   },
   previewTitle: {
