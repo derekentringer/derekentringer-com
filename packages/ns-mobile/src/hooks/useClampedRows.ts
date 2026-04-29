@@ -44,18 +44,12 @@ export function useClampedRows({
     collapsedHeight !== null &&
     naturalHeight > collapsedHeight + 2;
 
-  const handleContainerLayout = useCallback(
-    (e: LayoutChangeEvent) => {
-      // Only record natural height when the container is unclamped
-      // — either we're expanded or we haven't detected overflow
-      // yet. Once clamping is active onLayout reports the clamped
-      // height, which we ignore.
-      if (expanded || !hasOverflow) {
-        setNaturalHeight(e.nativeEvent.layout.height);
-      }
-    },
-    [expanded, hasOverflow],
-  );
+  const handleContainerLayout = useCallback((e: LayoutChangeEvent) => {
+    // Inner row container is always unclamped — the wrapping
+    // Animated.View applies the maxHeight clamp, so inner's
+    // onLayout reports natural height every time.
+    setNaturalHeight(e.nativeEvent.layout.height);
+  }, []);
 
   const handleUnitLayout = useCallback((e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
@@ -75,6 +69,7 @@ export function useClampedRows({
     setExpanded,
     hasOverflow,
     collapsedHeight,
+    naturalHeight,
     handleContainerLayout,
     handleUnitLayout,
   };
