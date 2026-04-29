@@ -7,6 +7,7 @@ import {
   Alert,
   RefreshControl,
   ActivityIndicator,
+  Animated,
   StyleSheet,
 } from "react-native";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -38,6 +39,7 @@ import { ErrorCard } from "@/components/common/ErrorCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { SummaryBanner } from "@/components/notes/SummaryBanner";
 import { useClampedRows } from "@/hooks/useClampedRows";
+import { configureCardExpandAnimation } from "@/lib/animations";
 import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { useFolders } from "@/hooks/useFolders";
 import { findFolderName } from "@/lib/folders";
@@ -102,6 +104,19 @@ export function NoteDetailScreen({ route, navigation }: Props) {
     maxLines: 2,
     rowGap: 6,
     chrome: 0,
+  });
+
+  const tagsRotate = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(tagsRotate, {
+      toValue: tagsClamp.expanded ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [tagsClamp.expanded, tagsRotate]);
+  const tagsChevronRotation = tagsRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "90deg"],
   });
 
   // Refetch when screen regains focus (e.g. returning from editor)
@@ -394,7 +409,10 @@ export function NoteDetailScreen({ route, navigation }: Props) {
 
           {note.tags.length > 0 ? (
             <Pressable
-              onPress={() => tagsClamp.setExpanded((v) => !v)}
+              onPress={() => {
+                configureCardExpandAnimation();
+                tagsClamp.setExpanded((v) => !v);
+              }}
               style={[
                 styles.tagsCard,
                 {
@@ -408,11 +426,15 @@ export function NoteDetailScreen({ route, navigation }: Props) {
               }
             >
               <View style={styles.tagsHeaderRow}>
-                <MaterialCommunityIcons
-                  name={tagsClamp.expanded ? "chevron-down" : "chevron-right"}
-                  size={16}
-                  color={themeColors.muted}
-                />
+                <Animated.View
+                  style={{ transform: [{ rotate: tagsChevronRotation }] }}
+                >
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={16}
+                    color={themeColors.muted}
+                  />
+                </Animated.View>
                 <Text
                   style={[styles.tagsLabel, { color: themeColors.muted }]}
                 >

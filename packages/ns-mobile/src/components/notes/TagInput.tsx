@@ -1,15 +1,17 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   Pressable,
+  Animated,
   StyleSheet,
 } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useClampedRows } from "@/hooks/useClampedRows";
+import { configureCardExpandAnimation } from "@/lib/animations";
 
 const COLLAPSED_LINES = 2;
 const ROW_GAP = 6;
@@ -98,10 +100,26 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
       ? { maxHeight: collapsedHeight, overflow: "hidden" as const }
       : null;
 
+  const rotate = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(rotate, {
+      toValue: expanded ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, rotate]);
+  const chevronRotation = rotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "90deg"],
+  });
+
   return (
     <View>
       <Pressable
-        onPress={() => setExpanded((v) => !v)}
+        onPress={() => {
+          configureCardExpandAnimation();
+          setExpanded((v) => !v);
+        }}
         style={[
           styles.container,
           { backgroundColor: themeColors.input, borderColor: themeColors.border },
@@ -110,11 +128,13 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
         accessibilityLabel={expanded ? "Collapse tags" : "Expand tags"}
       >
         <View style={styles.headerRow}>
-          <MaterialCommunityIcons
-            name={expanded ? "chevron-down" : "chevron-right"}
-            size={16}
-            color={themeColors.muted}
-          />
+          <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={16}
+              color={themeColors.muted}
+            />
+          </Animated.View>
           <Text style={[styles.label, { color: themeColors.muted }]}>Tags</Text>
         </View>
 

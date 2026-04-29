@@ -1,8 +1,9 @@
-import React, { useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import React, { useState, useRef, useEffect } from "react";
+import { View, Text, Pressable, Animated, StyleSheet } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
+import { configureCardExpandAnimation } from "@/lib/animations";
 
 // AI-generated summary banner — mirrors web/desktop's expandable
 // summary block above the note content. Tapping anywhere on the
@@ -22,12 +23,29 @@ export interface SummaryBannerProps {
 export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
   const themeColors = useThemeColors();
   const [expanded, setExpanded] = useState(false);
+  const rotate = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(rotate, {
+      toValue: expanded ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, rotate]);
 
   if (!summary || !summary.trim()) return null;
 
+  const chevronRotation = rotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "90deg"],
+  });
+
   return (
     <Pressable
-      onPress={() => setExpanded((v) => !v)}
+      onPress={() => {
+        configureCardExpandAnimation();
+        setExpanded((v) => !v);
+      }}
       style={[
         styles.container,
         {
@@ -39,11 +57,13 @@ export function SummaryBanner({ summary, onDelete }: SummaryBannerProps) {
       accessibilityLabel={expanded ? "Collapse summary" : "Expand summary"}
     >
       <View style={styles.toggleRow}>
-        <MaterialCommunityIcons
-          name={expanded ? "chevron-down" : "chevron-right"}
-          size={16}
-          color={themeColors.muted}
-        />
+        <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={16}
+            color={themeColors.muted}
+          />
+        </Animated.View>
         <Text
           style={[styles.label, { color: themeColors.muted }]}
         >
