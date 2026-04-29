@@ -4,12 +4,15 @@ import {
   Text,
   TextInput,
   Pressable,
-  FlatList,
   StyleSheet,
 } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
+import { useClampedRows } from "@/hooks/useClampedRows";
+
+const COLLAPSED_LINES = 2;
+const ROW_GAP = 6;
 
 interface TagInputProps {
   tags: string[];
@@ -22,6 +25,23 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
   const themeColors = useThemeColors();
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  // Mirrors the SummaryBanner pattern: chevron + "TAGS" label
+  // header sits at the top of the card; the chip wrap below is
+  // clamped to 2 rows when collapsed. The chip wrap itself has no
+  // padding/border, so chrome = 0 in the hook.
+  const {
+    expanded,
+    setExpanded,
+    hasOverflow,
+    collapsedHeight,
+    handleContainerLayout,
+    handleUnitLayout,
+  } = useClampedRows({
+    itemCount: tags.length,
+    maxLines: COLLAPSED_LINES,
+    rowGap: ROW_GAP,
+    chrome: 0,
+  });
 
   const suggestions = useMemo(() => {
     if (!inputValue.trim()) return [];
@@ -73,52 +93,75 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
     [inputValue, tags, onRemoveTag],
   );
 
+  const clampStyle =
+    !expanded && hasOverflow && collapsedHeight !== null
+      ? { maxHeight: collapsedHeight, overflow: "hidden" as const }
+      : null;
+
   return (
     <View>
-      <View
+      <Pressable
+        onPress={() => setExpanded((v) => !v)}
         style={[
           styles.container,
           { backgroundColor: themeColors.input, borderColor: themeColors.border },
         ]}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? "Collapse tags" : "Expand tags"}
       >
-        {tags.map((tag) => (
-          <View
-            key={tag}
-            style={[styles.chip, { backgroundColor: `${themeColors.primary}1A` }]}
-          >
-            <Text style={[styles.chipText, { color: themeColors.primary }]}>
-              {tag}
-            </Text>
-            <Pressable
-              onPress={() => onRemoveTag(tag)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Remove tag ${tag}`}
+        <View style={styles.headerRow}>
+          <MaterialCommunityIcons
+            name={expanded ? "chevron-down" : "chevron-right"}
+            size={16}
+            color={themeColors.muted}
+          />
+          <Text style={[styles.label, { color: themeColors.muted }]}>Tags</Text>
+        </View>
+
+        <View
+          style={[styles.chipWrap, clampStyle]}
+          onLayout={handleContainerLayout}
+        >
+          {tags.map((tag, i) => (
+            <View
+              key={tag}
+              style={[styles.chip, { backgroundColor: `${themeColors.primary}1A` }]}
+              onLayout={i === 0 ? handleUnitLayout : undefined}
             >
-              <MaterialCommunityIcons
-                name="close-circle"
-                size={16}
-                color={themeColors.primary}
-              />
-            </Pressable>
-          </View>
-        ))}
-        <TextInput
-          style={[styles.input, { color: themeColors.foreground }]}
-          placeholder={tags.length === 0 ? "Add tags..." : ""}
-          placeholderTextColor={themeColors.muted}
-          value={inputValue}
-          onChangeText={handleChangeText}
-          onSubmitEditing={handleSubmit}
-          onKeyPress={handleKeyPress}
-          onFocus={() => setShowSuggestions(true)}
-          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-          returnKeyType="done"
-          autoCapitalize="none"
-          autoCorrect={false}
-          blurOnSubmit={false}
-        />
-      </View>
+              <Text style={[styles.chipText, { color: themeColors.primary }]}>
+                {tag}
+              </Text>
+              <Pressable
+                onPress={() => onRemoveTag(tag)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove tag ${tag}`}
+              >
+                <MaterialCommunityIcons
+                  name="close-circle"
+                  size={16}
+                  color={themeColors.primary}
+                />
+              </Pressable>
+            </View>
+          ))}
+          <TextInput
+            style={[styles.input, { color: themeColors.foreground }]}
+            placeholder={tags.length === 0 ? "Add tags..." : ""}
+            placeholderTextColor={themeColors.muted}
+            value={inputValue}
+            onChangeText={handleChangeText}
+            onSubmitEditing={handleSubmit}
+            onKeyPress={handleKeyPress}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            returnKeyType="done"
+            autoCapitalize="none"
+            autoCorrect={false}
+            blurOnSubmit={false}
+          />
+        </View>
+      </Pressable>
 
       {showSuggestions && suggestions.length > 0 ? (
         <View
@@ -150,15 +193,28 @@ export function TagInput({ tags, allTags, onAddTag, onRemoveTag }: TagInputProps
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
     borderWidth: 1,
     borderRadius: borderRadius.md,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    gap: 6,
-    minHeight: 40,
+    paddingVertical: spacing.sm,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 4,
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  chipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: ROW_GAP,
   },
   chip: {
     flexDirection: "row",

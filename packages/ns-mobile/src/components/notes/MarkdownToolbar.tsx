@@ -25,9 +25,18 @@ const BUTTONS: ToolbarButton[] = [
 
 interface MarkdownToolbarProps {
   onAction: (action: string) => void;
+  /** Optional handler for the sparkle "AI" button. When provided
+   *  a sparkle button is rendered at the start of the toolbar
+   *  (Phase B: opens the AI actions sheet). When omitted the
+   *  button is hidden so consumers that don't surface AI actions
+   *  see the toolbar unchanged. */
+  onAiPress?: () => void;
 }
 
-export function MarkdownToolbar({ onAction }: MarkdownToolbarProps) {
+export function MarkdownToolbar({
+  onAction,
+  onAiPress,
+}: MarkdownToolbarProps) {
   const themeColors = useThemeColors();
 
   return (
@@ -38,6 +47,23 @@ export function MarkdownToolbar({ onAction }: MarkdownToolbarProps) {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="always"
       >
+        {onAiPress ? (
+          <Pressable
+            onPress={onAiPress}
+            style={({ pressed }) => [
+              styles.button,
+              pressed && { backgroundColor: `${themeColors.primary}1A` },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="AI actions"
+          >
+            <MaterialCommunityIcons
+              name="auto-fix"
+              size={22}
+              color={themeColors.primary}
+            />
+          </Pressable>
+        ) : null}
         {BUTTONS.map((btn) => (
           <Pressable
             key={btn.action}

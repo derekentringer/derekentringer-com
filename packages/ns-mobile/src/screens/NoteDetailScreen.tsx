@@ -36,6 +36,8 @@ import { BacklinksSection } from "@/components/notes/BacklinksSection";
 import { VersionHistorySheet } from "@/components/notes/VersionHistorySheet";
 import { ErrorCard } from "@/components/common/ErrorCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
+import { SummaryBanner } from "@/components/notes/SummaryBanner";
+import { useClampedRows } from "@/hooks/useClampedRows";
 import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { useFolders } from "@/hooks/useFolders";
 import { findFolderName } from "@/lib/folders";
@@ -90,6 +92,17 @@ export function NoteDetailScreen({ route, navigation }: Props) {
 
   const versionSheetRef = useRef<BottomSheetModal>(null);
   const [showOverflow, setShowOverflow] = useState(false);
+
+  // Clamp the read-only tag list to 2 rows; tapping the card
+  // expands. Mirrors the editor's TagInput pattern: the inner
+  // chip wrap has no border/padding (chrome = 0), and the parent
+  // card owns the chrome.
+  const tagsClamp = useClampedRows({
+    itemCount: note?.tags.length ?? 0,
+    maxLines: 2,
+    rowGap: 6,
+    chrome: 0,
+  });
 
   // Refetch when screen regains focus (e.g. returning from editor)
   useFocusEffect(
@@ -353,43 +366,94 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           {note.title || "Untitled"}
         </Text>
 
-        {/* Folder */}
-        <View
-          style={[
-            styles.folderBadge,
-            { backgroundColor: themeColors.border },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="folder-outline"
-            size={12}
-            color={themeColors.muted}
-          />
-          <Text style={[styles.folderText, { color: themeColors.muted }]}>
-            {resolvedFolderName || "No folder"}
-          </Text>
-        </View>
+        {/* Folder + Summary + Tags row — mirrors the editor's
+            metaSection so spacing is consistent across screens.
+            Order is folder → summary → tags, all separated by
+            gap: spacing.sm. */}
+        <View style={styles.metaSection}>
+          <View
+            style={[
+              styles.folderBadge,
+              { backgroundColor: themeColors.border },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="folder-outline"
+              size={12}
+              color={themeColors.muted}
+            />
+            <Text style={[styles.folderText, { color: themeColors.muted }]}>
+              {resolvedFolderName || "Unfiled"}
+            </Text>
+          </View>
 
-        {/* Tags */}
-        {note.tags.length > 0 ? (
-          <View style={styles.tags}>
-            {note.tags.map((tag) => (
-              <View
-                key={tag}
-                style={[
-                  styles.tagChip,
-                  { backgroundColor: `${themeColors.primary}1A` },
-                ]}
-              >
+          {/* AI summary banner (Phase B.1). Read-only on the
+              detail screen, so no delete control — the editor
+              handles clearing. */}
+          <SummaryBanner summary={note.summary} />
+
+          {note.tags.length > 0 ? (
+            <Pressable
+              onPress={() => tagsClamp.setExpanded((v) => !v)}
+              style={[
+                styles.tagsCard,
+                {
+                  backgroundColor: themeColors.input,
+                  borderColor: themeColors.border,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={
+                tagsClamp.expanded ? "Collapse tags" : "Expand tags"
+              }
+            >
+              <View style={styles.tagsHeaderRow}>
+                <MaterialCommunityIcons
+                  name={tagsClamp.expanded ? "chevron-down" : "chevron-right"}
+                  size={16}
+                  color={themeColors.muted}
+                />
                 <Text
-                  style={[styles.tagText, { color: themeColors.primary }]}
+                  style={[styles.tagsLabel, { color: themeColors.muted }]}
                 >
-                  {tag}
+                  Tags
                 </Text>
               </View>
-            ))}
-          </View>
-        ) : null}
+
+              <View
+                style={[
+                  styles.tagsWrap,
+                  !tagsClamp.expanded &&
+                  tagsClamp.hasOverflow &&
+                  tagsClamp.collapsedHeight !== null
+                    ? {
+                        maxHeight: tagsClamp.collapsedHeight,
+                        overflow: "hidden",
+                      }
+                    : null,
+                ]}
+                onLayout={tagsClamp.handleContainerLayout}
+              >
+                {note.tags.map((tag, i) => (
+                  <View
+                    key={tag}
+                    style={[
+                      styles.tagChip,
+                      { backgroundColor: `${themeColors.primary}1A` },
+                    ]}
+                    onLayout={i === 0 ? tagsClamp.handleUnitLayout : undefined}
+                  >
+                    <Text
+                      style={[styles.tagText, { color: themeColors.primary }]}
+                    >
+                      {tag}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </Pressable>
+          ) : null}
+        </View>
 
         {/* Content — frontmatter is stripped before rendering so the
             YAML block doesn't appear as raw text in the preview;
@@ -524,6 +588,9 @@ const styles = StyleSheet.create({
   overflowText: {
     fontSize: 15,
   },
+  metaSection: {
+    gap: spacing.sm,
+  },
   folderBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -532,14 +599,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     gap: 4,
-    marginBottom: spacing.xs,
   },
   folderText: {
     fontSize: 12,
   },
-  tags: {
+  tagsCard: {
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  tagsHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 4,
+  },
+  tagsLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  tagsWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
+    alignItems: "center",
     gap: 6,
   },
   tagChip: {
@@ -548,11 +633,11 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   tagText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "500",
   },
   content: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
     minHeight: 200,
   },
   emptyContent: {
