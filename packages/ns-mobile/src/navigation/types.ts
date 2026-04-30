@@ -11,6 +11,7 @@ export type DashboardStackParamList = {
   DashboardHome: undefined;
   NoteDetail: { noteId: string };
   NoteEditor: { noteId?: string };
+  Recording: undefined;
 };
 
 export type AiStackParamList = {

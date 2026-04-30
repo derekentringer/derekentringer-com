@@ -226,3 +226,111 @@ export async function suggestTags(noteId: string): Promise<string[]> {
   const response = await api.post<{ tags: string[] }>("/ai/tags", { noteId });
   return response.data.tags ?? [];
 }
+
+// ─── Audio transcription + structuring (Phase C.1) ─────────────────
+
+/** Mode mirrors desktop's `audioMode` field: dictates how the AI
+ *  structures the transcript on save. `meeting` exists on desktop
+ *  but is not surfaced on mobile because mobile can't capture
+ *  system audio. */
+export type AudioMode = "lecture" | "memo" | "verbatim";
+
+export interface TranscribeChunkResult {
+  sessionId: string;
+  chunkIndex: number;
+  text: string;
+}
+
+export interface TranscribeResult {
+  title: string;
+  content: string;
+  tags: string[];
+}
+
+/** Build a multipart `FormData` body that React Native can POST.
+ *  The `uri` here is the local file path returned by expo-audio
+ *  (e.g. `file:///…/recording.m4a`). RN's `FormData` accepts the
+ *  `{ uri, name, type }` shape and sends the file as multipart. */
+function buildAudioFormData(
+  uri: string,
+  name: string,
+  mimeType: string,
+  extras: Record<string, string> = {},
+): FormData {
+  const form = new FormData();
+  form.append("file", {
+    uri,
+    name,
+    type: mimeType,
+    // RN's FormData typings don't quite match the web spec — the
+    // cast keeps TS happy without changing the runtime payload.
+  } as unknown as Blob);
+  for (const [k, v] of Object.entries(extras)) {
+    form.append(k, v);
+  }
+  return form;
+}
+
+/** Send one ~20s slice to the server's chunk endpoint. Caller is
+ *  responsible for tracking `sessionId` (stable across the
+ *  recording) and incrementing `chunkIndex`. */
+export async function transcribeChunk(
+  uri: string,
+  mimeType: string,
+  extension: string,
+  sessionId: string,
+  chunkIndex: number,
+): Promise<TranscribeChunkResult> {
+  const form = buildAudioFormData(
+    uri,
+    `chunk-${chunkIndex}.${extension}`,
+    mimeType,
+    { sessionId, chunkIndex: String(chunkIndex) },
+  );
+  const response = await api.post<TranscribeChunkResult>(
+    "/ai/transcribe-chunk",
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
+  return response.data;
+}
+
+/** One-shot transcription of a complete audio file. Useful when
+ *  the chunked path failed (retry from the saved file) or when we
+ *  decide to skip live transcription for short memos. */
+export async function transcribeAudio(
+  uri: string,
+  mimeType: string,
+  extension: string,
+  mode: AudioMode,
+  folderId?: string,
+): Promise<TranscribeResult> {
+  const extras: Record<string, string> = { mode };
+  if (folderId) extras.folderId = folderId;
+  const form = buildAudioFormData(
+    uri,
+    `recording.${extension}`,
+    mimeType,
+    extras,
+  );
+  const response = await api.post<TranscribeResult>(
+    "/ai/transcribe",
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
+  return response.data;
+}
+
+/** Run AI structuring on an already-transcribed string — used
+ *  after the chunk pipeline has assembled the full transcript. */
+export async function structureTranscript(
+  transcript: string,
+  mode: AudioMode,
+  folderId?: string,
+): Promise<TranscribeResult> {
+  const response = await api.post<TranscribeResult>(
+    "/ai/structure-transcript",
+    { transcript, mode, folderId },
+  );
+  return response.data;
+}

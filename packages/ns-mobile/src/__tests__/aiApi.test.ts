@@ -82,6 +82,9 @@ import {
   clearServerChatHistory,
   summarizeNote,
   suggestTags,
+  transcribeChunk,
+  transcribeAudio,
+  structureTranscript,
 } from "../api/ai";
 
 beforeEach(() => {
@@ -173,6 +176,87 @@ describe("ai api client (mobile)", () => {
       mockPost.mockResolvedValue({ data: {} });
       const result = await suggestTags("note-1");
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("transcribeChunk", () => {
+    it("POSTs multipart with sessionId/chunkIndex and returns the chunk text", async () => {
+      mockPost.mockResolvedValue({
+        data: { sessionId: "sess-1", chunkIndex: 2, text: "hello world" },
+      });
+      const result = await transcribeChunk(
+        "file:///tmp/chunk.wav",
+        "audio/wav",
+        "wav",
+        "sess-1",
+        2,
+      );
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      const [path, body, opts] = mockPost.mock.calls[0];
+      expect(path).toBe("/ai/transcribe-chunk");
+      expect(body).toBeInstanceOf(FormData);
+      expect((opts as { headers: Record<string, string> }).headers["Content-Type"]).toBe(
+        "multipart/form-data",
+      );
+      expect(result).toEqual({
+        sessionId: "sess-1",
+        chunkIndex: 2,
+        text: "hello world",
+      });
+    });
+  });
+
+  describe("transcribeAudio", () => {
+    it("POSTs multipart with mode + optional folderId", async () => {
+      mockPost.mockResolvedValue({
+        data: { title: "T", content: "C", tags: ["a"] },
+      });
+      const result = await transcribeAudio(
+        "file:///tmp/rec.m4a",
+        "audio/m4a",
+        "m4a",
+        "memo",
+        "f1",
+      );
+      expect(mockPost).toHaveBeenCalledWith(
+        "/ai/transcribe",
+        expect.any(FormData),
+        expect.objectContaining({
+          headers: { "Content-Type": "multipart/form-data" },
+        }),
+      );
+      expect(result.title).toBe("T");
+      expect(result.tags).toEqual(["a"]);
+    });
+  });
+
+  describe("structureTranscript", () => {
+    it("POSTs JSON transcript + mode + optional folderId", async () => {
+      mockPost.mockResolvedValue({
+        data: { title: "T", content: "C", tags: [] },
+      });
+      const result = await structureTranscript(
+        "Some transcript text",
+        "lecture",
+        "f1",
+      );
+      expect(mockPost).toHaveBeenCalledWith("/ai/structure-transcript", {
+        transcript: "Some transcript text",
+        mode: "lecture",
+        folderId: "f1",
+      });
+      expect(result.title).toBe("T");
+    });
+
+    it("omits folderId when not supplied", async () => {
+      mockPost.mockResolvedValue({
+        data: { title: "T", content: "C", tags: [] },
+      });
+      await structureTranscript("hi", "memo");
+      expect(mockPost).toHaveBeenCalledWith("/ai/structure-transcript", {
+        transcript: "hi",
+        mode: "memo",
+      });
     });
   });
 

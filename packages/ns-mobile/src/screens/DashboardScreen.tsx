@@ -84,6 +84,22 @@ export function DashboardScreen({ navigation }: Props) {
       >
         <EmptyState message="No notes yet. Create your first note to get started!" />
         <Pressable
+          style={[
+            styles.fab,
+            styles.fabSecondary,
+            { backgroundColor: themeColors.card, borderColor: themeColors.border },
+          ]}
+          onPress={() => navigation.navigate("Recording")}
+          accessibilityRole="button"
+          accessibilityLabel="Start recording"
+        >
+          <MaterialCommunityIcons
+            name="microphone"
+            size={26}
+            color={themeColors.foreground}
+          />
+        </Pressable>
+        <Pressable
           style={[styles.fab, { backgroundColor: themeColors.primary }]}
           onPress={() => navigation.navigate("NoteEditor", {})}
           accessibilityRole="button"
@@ -160,6 +176,26 @@ export function DashboardScreen({ navigation }: Props) {
         ) : null}
       </ScrollView>
 
+      {/* Recording FAB — secondary, sits to the left of the
+          primary "new note" FAB so the most-frequent action stays
+          in the canonical bottom-right slot. */}
+      <Pressable
+        style={[
+          styles.fab,
+          styles.fabSecondary,
+          { backgroundColor: themeColors.card, borderColor: themeColors.border },
+        ]}
+        onPress={() => navigation.navigate("Recording")}
+        accessibilityRole="button"
+        accessibilityLabel="Start recording"
+      >
+        <MaterialCommunityIcons
+          name="microphone"
+          size={26}
+          color={themeColors.foreground}
+        />
+      </Pressable>
+
       {/* FAB */}
       <Pressable
         style={[styles.fab, { backgroundColor: themeColors.primary }]}
@@ -213,5 +249,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
+  },
+  fabSecondary: {
+    right: spacing.md + 56 + spacing.sm,
+    borderWidth: 1,
   },
 });

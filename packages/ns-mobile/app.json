@@ -18,7 +18,8 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {
@@ -31,7 +32,14 @@
     },
     "plugins": [
       "expo-font",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow NoteSync to access your microphone so you can record voice memos.",
+          "recordAudioAndroid": true
+        }
+      ]
     ]
   }
 }
