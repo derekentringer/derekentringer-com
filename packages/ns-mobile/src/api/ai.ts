@@ -230,10 +230,12 @@ export async function suggestTags(noteId: string): Promise<string[]> {
 // ─── Audio transcription + structuring (Phase C.1) ─────────────────
 
 /** Mode mirrors desktop's `audioMode` field: dictates how the AI
- *  structures the transcript on save. `meeting` exists on desktop
- *  but is not surfaced on mobile because mobile can't capture
- *  system audio. */
-export type AudioMode = "lecture" | "memo" | "verbatim";
+ *  structures the transcript on save. Mobile surfaces all four
+ *  modes — meeting mode produces an action-items + attendees +
+ *  decisions template even though the phone can only capture mic
+ *  (not system audio), which is still useful when you're holding
+ *  the device in a room or on speakerphone. */
+export type AudioMode = "meeting" | "lecture" | "memo" | "verbatim";
 
 export interface TranscribeChunkResult {
   sessionId: string;

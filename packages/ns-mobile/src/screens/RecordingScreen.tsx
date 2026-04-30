@@ -45,6 +45,13 @@ const MODES: ModeDef[] = [
     icon: "microphone-outline",
   },
   {
+    key: "meeting",
+    label: "Meeting",
+    description:
+      "Mic-only — structured into attendees, decisions, and action items.",
+    icon: "account-group-outline",
+  },
+  {
     key: "lecture",
     label: "Lecture",
     description: "Long-form talk — structured summary with key points.",
