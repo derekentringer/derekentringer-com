@@ -19,16 +19,16 @@ describe("chunkMimeForPlatform", () => {
     });
   });
 
-  it("returns m4a/audio-m4a for Android", () => {
+  it("returns audio/mp4 for Android (M4A container, IANA-canonical MIME)", () => {
     expect(chunkMimeForPlatform("android")).toEqual({
-      mime: "audio/m4a",
+      mime: "audio/mp4",
       extension: "m4a",
     });
   });
 
-  it("falls back to m4a for unknown platforms", () => {
+  it("falls back to audio/mp4 for unknown platforms", () => {
     expect(chunkMimeForPlatform("web")).toEqual({
-      mime: "audio/m4a",
+      mime: "audio/mp4",
       extension: "m4a",
     });
   });

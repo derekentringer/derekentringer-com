@@ -11,11 +11,13 @@ export interface ChunkEntry {
 }
 
 /**
- * iOS records 16kHz mono linear-PCM WAV; Android records AAC/m4a
- * (no native WAV PCM output format on Android). The server's
- * /ai/transcribe-chunk endpoint accepts both — Whisper handles
- * m4a directly. This helper picks the right MIME + extension for
- * the chunk upload's multipart payload.
+ * iOS records 16kHz mono linear-PCM WAV; Android records AAC
+ * inside an MP4 container (M4A is just .mp4 audio-only, no
+ * native WAV PCM output format on Android). The server's
+ * /ai/transcribe-chunk validator only allows the canonical IANA
+ * type `audio/mp4` — it rejects `audio/m4a` even though Whisper
+ * accepts both. The .m4a filename extension is fine; the MIME
+ * is what the validator checks.
  */
 export function chunkMimeForPlatform(
   platform: "ios" | "android" | "web" | "macos" | "windows",
@@ -23,7 +25,7 @@ export function chunkMimeForPlatform(
   if (platform === "ios" || platform === "macos") {
     return { mime: "audio/wav", extension: "wav" };
   }
-  return { mime: "audio/m4a", extension: "m4a" };
+  return { mime: "audio/mp4", extension: "m4a" };
 }
 
 /**
