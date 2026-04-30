@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -10,7 +10,10 @@ import {
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
-import type { RecordingSummary } from "@/store/recordingResultStore";
+import type {
+  RecordingSummary,
+  RelatedNote,
+} from "@/store/recordingResultStore";
 
 // Mirrors ns-web's `meeting-summary` card in
 // `AIAssistantPanel.tsx`:
@@ -34,6 +37,121 @@ const RECORDING_ENDED_LABELS: Record<RecordingSummary["mode"], string> = {
 export interface MeetingSummaryCardProps {
   summary: RecordingSummary;
   onOpenNote: (noteId: string) => void;
+}
+
+/** Tap-to-toggle disclosure row matching web's <details>/<summary>
+ *  pattern. Used by the transcript + related-notes collapsibles
+ *  inside the meeting card. */
+function Disclosure({
+  label,
+  children,
+  themeColorMuted,
+  themeColorForeground,
+  defaultOpen = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  themeColorMuted: string;
+  themeColorForeground: string;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <View>
+      <Pressable
+        onPress={() => setOpen((v) => !v)}
+        style={styles.disclosureSummary}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={open ? `Collapse ${label}` : `Expand ${label}`}
+      >
+        <MaterialCommunityIcons
+          name={open ? "chevron-down" : "chevron-right"}
+          size={12}
+          color={themeColorMuted}
+        />
+        <Text
+          style={[styles.disclosureLabel, { color: themeColorMuted }]}
+        >
+          {label}
+        </Text>
+      </Pressable>
+      {open ? <View style={styles.disclosureBody}>{children}</View> : null}
+      {/* Suppress unused-prop warning when foreground isn't used
+          inside children. */}
+      {themeColorForeground ? null : null}
+    </View>
+  );
+}
+
+const PILL_LIMIT = 5;
+
+function RelatedNotesList({
+  notes,
+  onOpenNote,
+}: {
+  notes: RelatedNote[];
+  onOpenNote: (noteId: string) => void;
+}) {
+  const themeColors = useThemeColors();
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? notes : notes.slice(0, PILL_LIMIT);
+  const overflow = notes.length - PILL_LIMIT;
+  return (
+    <View style={styles.relatedList}>
+      {visible.map((n) => (
+        <Pressable
+          key={n.id}
+          onPress={() => onOpenNote(n.id)}
+          style={({ pressed }) => [
+            styles.notePill,
+            {
+              borderColor: pressed
+                ? `${themeColors.primary}80`
+                : themeColors.border,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`Open related note ${n.title}`}
+        >
+          <MaterialCommunityIcons
+            name="file-document-outline"
+            size={12}
+            color={themeColors.primary}
+          />
+          <Text
+            style={[styles.notePillText, { color: themeColors.foreground }]}
+            numberOfLines={1}
+          >
+            {n.title}
+          </Text>
+          <Text
+            style={[styles.relatedScore, { color: `${themeColors.primary}B3` }]}
+          >
+            {Math.round(n.score * 100)}%
+          </Text>
+        </Pressable>
+      ))}
+      {!showAll && overflow > 0 ? (
+        <Pressable
+          onPress={() => setShowAll(true)}
+          style={styles.disclosureSummary}
+          accessibilityRole="button"
+        >
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={12}
+            color={themeColors.muted}
+          />
+          <Text
+            style={[styles.disclosureLabel, { color: themeColors.muted }]}
+          >
+            Show {overflow} more
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
 
 /**
@@ -184,6 +302,38 @@ export function MeetingSummaryCard({
           </Text>
         </View>
       ) : null}
+
+      {/* Related notes collapsible — mirrors web's PILL_LIMIT=5
+          + "Show N more" pattern. Hidden when no notes were
+          surfaced during recording. */}
+      {summary.relatedNotes && summary.relatedNotes.length > 0 ? (
+        <Disclosure
+          label="Related notes"
+          themeColorMuted={themeColors.muted}
+          themeColorForeground={themeColors.foreground}
+        >
+          <RelatedNotesList
+            notes={summary.relatedNotes}
+            onOpenNote={onOpenNote}
+          />
+        </Disclosure>
+      ) : null}
+
+      {/* Transcript collapsible — same `<details>`-style pattern
+          web uses, with a rough word count in the summary label. */}
+      {summary.transcript && summary.transcript.trim().length > 0 ? (
+        <Disclosure
+          label={`View transcript (${Math.round(summary.transcript.length / 5)} words)`}
+          themeColorMuted={themeColors.muted}
+          themeColorForeground={themeColors.foreground}
+        >
+          <Text
+            style={[styles.transcriptText, { color: themeColors.muted }]}
+          >
+            {summary.transcript}
+          </Text>
+        </Disclosure>
+      ) : null}
     </View>
   );
 }
@@ -263,5 +413,31 @@ const styles = StyleSheet.create({
   },
   errorBody: {
     fontSize: 11,
+  },
+  disclosureSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 4,
+  },
+  disclosureLabel: {
+    fontSize: 10,
+  },
+  disclosureBody: {
+    paddingTop: 4,
+    paddingLeft: 16,
+  },
+  relatedList: {
+    gap: 4,
+  },
+  relatedScore: {
+    fontSize: 10,
+    fontVariant: ["tabular-nums"],
+    marginLeft: "auto",
+  },
+  transcriptText: {
+    fontSize: 12,
+    lineHeight: 18,
+    maxHeight: 200,
   },
 });

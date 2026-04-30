@@ -30,6 +30,16 @@ export type SummaryStatus =
   | "completed"
   | "failed";
 
+/** Note surfaced by the meeting-context pgvector search on web/
+ *  desktop. Mobile doesn't fetch these during recording yet (no
+ *  /ai/meeting-context polling) — the field is reserved so the
+ *  card can render them when that lands. */
+export interface RelatedNote {
+  id: string;
+  title: string;
+  score: number;
+}
+
 export interface RecordingSummary {
   /** Stable id we generated when the recording started. Drives
    *  the AI Assistant card row's React key + matches the chunk
@@ -41,9 +51,11 @@ export interface RecordingSummary {
   mode: AudioMode;
   status: SummaryStatus;
   /** Raw Whisper transcript — populated once transcription
-   *  completes, so the card can show a snippet even before
-   *  Claude finishes structuring. */
+   *  completes. Matches web/desktop's `meetingData.transcript`. */
   transcript?: string;
+  /** Notes surfaced as related context during recording. Empty
+   *  on mobile until /ai/meeting-context polling lands. */
+  relatedNotes?: RelatedNote[];
   /** Local note id once `createNoteLocal` succeeds. The card's
    *  "Open Note" button is enabled only when this is set. */
   noteId?: string;
