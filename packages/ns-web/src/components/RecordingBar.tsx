@@ -19,6 +19,10 @@ interface RecordingBarProps {
   folders?: FolderOption[];
   onFolderChange?: (folderId: string | null) => void;
   onStop: () => void;
+  /** Discard the in-progress recording without producing a note.
+   *  Wires through to AudioRecorder which stops the MediaRecorder
+   *  and skips the post-stop processing pipeline. */
+  onCancel: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -69,7 +73,7 @@ function getPrimaryRgb(): [number, number, number] {
   return [212, 225, 87]; // fallback lime
 }
 
-export function RecordingBar({ state, elapsed, mode, stream, folderId, folders, onFolderChange, onStop }: RecordingBarProps) {
+export function RecordingBar({ state, elapsed, mode, stream, folderId, folders, onFolderChange, onStop, onCancel }: RecordingBarProps) {
   const audioLevel = useAudioLevel(stream, state === "recording");
   const borderRef = useRef<HTMLDivElement>(null);
   const primaryRgbRef = useRef<[number, number, number]>(getPrimaryRgb());
@@ -134,6 +138,23 @@ export function RecordingBar({ state, elapsed, mode, stream, folderId, folders, 
           />
         )}
 
+        {/* Cancel button — confirm before discarding to protect
+            against stray clicks killing a long recording. */}
+        <button
+          onClick={() => {
+            if (window.confirm("Discard this recording? Your audio and transcript will be lost.")) {
+              onCancel();
+            }
+          }}
+          className="ml-auto flex items-center gap-1 h-full px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0"
+          title="Cancel recording"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+          <span>Cancel</span>
+        </button>
       </div>
 
       {/* Bottom border — static */}

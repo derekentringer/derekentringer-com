@@ -3695,6 +3695,7 @@ export function NotesPage() {
           folders={flatFolders}
           onFolderChange={(id) => setRecordingFolderId(id ?? null)}
           onStop={recordingState.onStop}
+          onCancel={recordingState.onCancel}
         />
       )}
     </div>

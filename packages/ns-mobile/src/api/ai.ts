@@ -360,6 +360,41 @@ export async function transcribeAudio(
   );
 }
 
+/** Note surfaced by the server's pgvector similarity search
+ *  against the user's note embeddings. Mirrors desktop's
+ *  `MeetingContextNote` — mobile only renders id/title/score on
+ *  the meeting card so the snippet + updatedAt fields go unused
+ *  for now. */
+export interface MeetingContextNote {
+  id: string;
+  title: string;
+  snippet: string;
+  score: number;
+  updatedAt: string;
+}
+
+export interface MeetingContextResult {
+  relevantNotes: MeetingContextNote[];
+}
+
+/** Pull related notes for a recording's transcript. Server runs
+ *  the transcript through the same embeddings model the notes
+ *  were indexed with and returns top-k matches by cosine
+ *  similarity. Caller passes the just-transcribed text; we use
+ *  this on stop to populate the meeting card's "Related notes"
+ *  pills. */
+export async function fetchMeetingContext(
+  transcript: string,
+  excludeNoteIds?: string[],
+  threshold?: number,
+): Promise<MeetingContextResult> {
+  const response = await api.post<MeetingContextResult>(
+    "/ai/meeting-context",
+    { transcript, excludeNoteIds, threshold },
+  );
+  return response.data;
+}
+
 /** Run AI structuring on an already-transcribed string — used
  *  after the chunk pipeline has assembled the full transcript.
  *  No explicit timeout: long transcripts can take Claude tens of

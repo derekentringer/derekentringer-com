@@ -33,9 +33,19 @@ export async function getChatHistory(userId: string): Promise<ChatMessageRow[]> 
   });
 }
 
+/** Coerce a client-supplied `createdAt` into a `Date` Prisma can
+ *  accept. Returns `undefined` (so Prisma's default `now()` wins) for
+ *  missing or unparseable input — the row still gets a sensible
+ *  timestamp instead of bombing the whole save. */
+function parseClientCreatedAt(input: string | undefined): Date | undefined {
+  if (!input) return undefined;
+  const d = new Date(input);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
 export async function appendChatMessages(
   userId: string,
-  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[],
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown; createdAt?: string }[],
 ): Promise<ChatMessageRow[]> {
   const prisma = getPrisma();
   const created: ChatMessageRow[] = [];
@@ -51,6 +61,7 @@ export async function appendChatMessages(
         meetingData: msg.meetingData ?? undefined,
         noteCards: msg.noteCards ?? undefined,
         confirmation: msg.confirmation ?? undefined,
+        createdAt: parseClientCreatedAt(msg.createdAt),
       },
       select: {
         id: true,
@@ -87,7 +98,7 @@ export async function clearChatHistory(userId: string): Promise<void> {
  */
 export async function replaceChatMessages(
   userId: string,
-  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[],
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown; createdAt?: string }[],
 ): Promise<ChatMessageRow[]> {
   const prisma = getPrisma();
   return prisma.$transaction(async (tx) => {
@@ -104,6 +115,14 @@ export async function replaceChatMessages(
           meetingData: msg.meetingData ?? undefined,
           noteCards: msg.noteCards ?? undefined,
           confirmation: msg.confirmation ?? undefined,
+          // Honor the client's original timestamp on snapshot replace.
+          // Prisma defaults to `now()`, which would otherwise stamp
+          // every existing message as "Just now" on every save — a
+          // particularly nasty bug because the authoring device's
+          // in-memory state hides it; only devices hydrating fresh
+          // from /chat-history (cross-device SSE refetch) saw the
+          // breakage.
+          createdAt: parseClientCreatedAt(msg.createdAt),
         },
         select: {
           id: true,

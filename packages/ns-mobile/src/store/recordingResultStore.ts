@@ -7,6 +7,7 @@ import { Platform } from "react-native";
 // through the SDK's deprecation cycle.
 import * as FileSystem from "expo-file-system/legacy";
 import {
+  fetchMeetingContext,
   structureTranscript,
   transcribeChunk,
   type AudioMode,
@@ -175,6 +176,28 @@ export async function processRecording(
       status: "structuring",
       transcript: rawTranscript,
     });
+
+    // Step 1.5: pgvector similarity search against the user's
+    // note embeddings, in parallel with structuring. Results
+    // populate the meeting card's "Related notes" pills. Failures
+    // here are non-fatal — the card just stays without related
+    // notes. Web/desktop fire the same endpoint on a 45s polling
+    // cadence during recording; mobile doesn't have a live
+    // transcript to feed into a poll, so we kick this off once
+    // post-stop using the full Whisper output.
+    void fetchMeetingContext(rawTranscript)
+      .then((ctx) => {
+        if (!ctx.relevantNotes || ctx.relevantNotes.length === 0) return;
+        const relatedNotes = ctx.relevantNotes.map((n) => ({
+          id: n.id,
+          title: n.title,
+          score: n.score,
+        }));
+        patch(sessionId, { relatedNotes });
+      })
+      .catch((e) => {
+        console.warn("[recording] meeting-context fetch failed", e);
+      });
 
     // Step 2: AI structuring → title / content / tags. Falls back
     // to the raw transcript if structuring fails so the user

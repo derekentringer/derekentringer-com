@@ -94,61 +94,78 @@ function RelatedNotesList({
   onOpenNote: (noteId: string) => void;
 }) {
   const themeColors = useThemeColors();
-  const [showAll, setShowAll] = useState(false);
-  const visible = showAll ? notes : notes.slice(0, PILL_LIMIT);
-  const overflow = notes.length - PILL_LIMIT;
+  // Mirrors web/desktop: first PILL_LIMIT pills are always
+  // visible; the rest sit inside a `<details>`-style toggle that
+  // can be expanded AND collapsed. The summary text always reads
+  // "Show N more" (where N is the overflow count) even when open
+  // — same as the native HTML `<details>` behavior on web.
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const visible = notes.slice(0, PILL_LIMIT);
+  const overflow = notes.slice(PILL_LIMIT);
+  const renderPill = (n: RelatedNote) => (
+    <Pressable
+      key={n.id}
+      onPress={() => onOpenNote(n.id)}
+      style={({ pressed }) => [
+        styles.notePill,
+        {
+          borderColor: pressed
+            ? `${themeColors.primary}80`
+            : themeColors.border,
+        },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={`Open related note ${n.title}`}
+    >
+      <MaterialCommunityIcons
+        name="file-document-outline"
+        size={12}
+        color={themeColors.primary}
+      />
+      <Text
+        style={[styles.notePillText, { color: themeColors.foreground }]}
+        numberOfLines={1}
+      >
+        {n.title}
+      </Text>
+      <Text
+        style={[styles.relatedScore, { color: `${themeColors.primary}B3` }]}
+      >
+        {Math.round(n.score * 100)}%
+      </Text>
+    </Pressable>
+  );
   return (
     <View style={styles.relatedList}>
-      {visible.map((n) => (
-        <Pressable
-          key={n.id}
-          onPress={() => onOpenNote(n.id)}
-          style={({ pressed }) => [
-            styles.notePill,
-            {
-              borderColor: pressed
-                ? `${themeColors.primary}80`
-                : themeColors.border,
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={`Open related note ${n.title}`}
-        >
-          <MaterialCommunityIcons
-            name="file-document-outline"
-            size={12}
-            color={themeColors.primary}
-          />
-          <Text
-            style={[styles.notePillText, { color: themeColors.foreground }]}
-            numberOfLines={1}
+      {visible.map(renderPill)}
+      {overflow.length > 0 ? (
+        <View>
+          <Pressable
+            onPress={() => setOverflowOpen((v) => !v)}
+            style={styles.disclosureSummary}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: overflowOpen }}
+            accessibilityLabel={
+              overflowOpen
+                ? `Hide ${overflow.length} more related notes`
+                : `Show ${overflow.length} more related notes`
+            }
           >
-            {n.title}
-          </Text>
-          <Text
-            style={[styles.relatedScore, { color: `${themeColors.primary}B3` }]}
-          >
-            {Math.round(n.score * 100)}%
-          </Text>
-        </Pressable>
-      ))}
-      {!showAll && overflow > 0 ? (
-        <Pressable
-          onPress={() => setShowAll(true)}
-          style={styles.disclosureSummary}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={12}
-            color={themeColors.muted}
-          />
-          <Text
-            style={[styles.disclosureLabel, { color: themeColors.muted }]}
-          >
-            Show {overflow} more
-          </Text>
-        </Pressable>
+            <MaterialCommunityIcons
+              name={overflowOpen ? "chevron-down" : "chevron-right"}
+              size={12}
+              color={themeColors.muted}
+            />
+            <Text
+              style={[styles.disclosureLabel, { color: themeColors.muted }]}
+            >
+              Show {overflow.length} more
+            </Text>
+          </Pressable>
+          {overflowOpen ? (
+            <View style={styles.relatedList}>{overflow.map(renderPill)}</View>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -304,13 +321,15 @@ export function MeetingSummaryCard({
       ) : null}
 
       {/* Related notes collapsible — mirrors web's PILL_LIMIT=5
-          + "Show N more" pattern. Hidden when no notes were
-          surfaced during recording. */}
+          + "Show N more" pattern. Default open so the user
+          immediately sees the pgvector matches without an extra
+          tap. Hidden when no notes were surfaced. */}
       {summary.relatedNotes && summary.relatedNotes.length > 0 ? (
         <Disclosure
           label="Related notes"
           themeColorMuted={themeColors.muted}
           themeColorForeground={themeColors.foreground}
+          defaultOpen
         >
           <RelatedNotesList
             notes={summary.relatedNotes}
@@ -343,7 +362,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: borderRadius.md,
     padding: spacing.sm + 2,
-    marginVertical: spacing.xs,
     gap: spacing.xs,
   },
   header: {

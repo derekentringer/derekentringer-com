@@ -2259,6 +2259,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
           folders={flatFolders}
           onFolderChange={(id) => setRecordingFolderId(id ?? null)}
           onStop={recordingState.onStop}
+          onCancel={recordingState.onCancel}
         />
       )}
     </div>

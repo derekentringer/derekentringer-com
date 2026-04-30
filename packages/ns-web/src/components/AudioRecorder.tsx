@@ -41,6 +41,11 @@ export interface AudioRecordingState {
   liveTranscript: string;
   sessionId: string;
   onStop: () => void;
+  /** Discard the in-progress recording without producing a note.
+   *  The MediaRecorder is stopped and resources are released, but
+   *  the post-stop processing pipeline is skipped so no transcript
+   *  upload, no Whisper call, no /notes/:id PATCH happens. */
+  onCancel: () => void;
 }
 
 /** Self-contained snapshot of a recording session, handed to a detached
@@ -271,6 +276,13 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     };
   }, [controlRef]);
 
+  // When set, the next `recorder.onstop` skips the post-stop
+  // processing pipeline (no transcribe upload, no note creation).
+  // Set by handleCancel right before stop() so the resulting blob
+  // is dropped on the floor instead of producing a "Meeting Ended"
+  // card the user explicitly discarded.
+  const cancelledRef = useRef(false);
+
   const handleStop = useCallback(() => {
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
@@ -284,6 +296,11 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       chunkTimerRef.current = null;
     }
   }, []);
+
+  const handleCancel = useCallback(() => {
+    cancelledRef.current = true;
+    handleStop();
+  }, [handleStop]);
 
   // Build the full transcript from ordered chunks
   function getOrderedTranscript(): string {
@@ -347,9 +364,10 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
         liveTranscript,
         sessionId: sessionIdRef.current,
         onStop: handleStop,
+        onCancel: handleCancel,
       });
     }
-  }, [state, elapsed, mode, liveTranscript, handleStop, onRecordingStateChange]);
+  }, [state, elapsed, mode, liveTranscript, handleStop, handleCancel, onRecordingStateChange]);
 
   async function handleRecord() {
     setShowModes(false);
@@ -378,6 +396,19 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       };
 
       recorder.onstop = () => {
+        // Cancel path: discard chunks, abort any in-flight chunk
+        // transcription, skip the post-stop processing pipeline.
+        // The MediaStream / MediaRecorder are still cleaned up via
+        // `cleanup()` so the mic light goes off.
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          cleanup();
+          setState("idle");
+          setElapsed(0);
+          setLiveTranscript("");
+          return;
+        }
+
         const blobType = recorder.mimeType || "audio/webm";
         const audioBlob = new Blob(chunksRef.current, { type: blobType });
         const fromMap = getOrderedTranscript();
