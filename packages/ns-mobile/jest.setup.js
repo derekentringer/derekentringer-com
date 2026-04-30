@@ -12,6 +12,25 @@ jest.mock("@react-native-community/netinfo", () => ({
   }),
 }));
 
+// Mock expo-file-system / expo-file-system/legacy — both load
+// expo-modules-core's EventEmitter which is unavailable under jsdom
+// jest. Audio-related tests override `uploadAsync` on a per-test
+// basis; this default just keeps the imports resolvable.
+jest.mock("expo-file-system", () => ({
+  __esModule: true,
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: false }),
+  uploadAsync: jest.fn(),
+  FileSystemUploadType: { MULTIPART: 1 },
+}));
+jest.mock("expo-file-system/legacy", () => ({
+  __esModule: true,
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: false }),
+  uploadAsync: jest.fn(),
+  FileSystemUploadType: { MULTIPART: 1 },
+}));
+
 // Mock expo-secure-store
 jest.mock("expo-secure-store", () => ({
   getItemAsync: jest.fn().mockResolvedValue(null),
