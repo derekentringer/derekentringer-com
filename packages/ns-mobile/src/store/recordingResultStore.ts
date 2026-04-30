@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { Platform } from "react-native";
-import * as FileSystem from "expo-file-system";
+// Use the legacy entry point: in SDK 54 the top-level
+// `expo-file-system` re-exports went to a partially-broken
+// migration path (getInfoAsync throws on file:// URIs that the
+// legacy API handles fine). The legacy surface is supported
+// through the SDK's deprecation cycle.
+import * as FileSystem from "expo-file-system/legacy";
 import {
   structureTranscript,
   transcribeChunk,
@@ -108,25 +113,31 @@ export async function processRecording(
       uri,
       mode,
     );
-    // Sanity check: confirm the audio file actually exists before
-    // we hand it to FormData. expo-audio's recorder.uri is
-    // sometimes captured before the OS finalizes the file —
-    // surfacing that here is much clearer than a downstream
-    // "Network Error" from axios.
-    const info = await FileSystem.getInfoAsync(uri).catch(() => null);
-    console.log("[recording] file info", info);
-    if (!info?.exists) {
-      patch(sessionId, {
-        status: "failed",
-        errorMessage:
-          "Audio file is missing — the recorder didn't produce a saved file.",
-      });
-      return;
+    // Best-effort sanity check on the file. Don't fail the
+    // pipeline if `getInfoAsync` itself throws — older legacy /
+    // newer-API edge cases trip on it but the upload may still
+    // succeed (RN's XHR reads the URI directly).
+    let infoSize: number | undefined;
+    try {
+      const info = await FileSystem.getInfoAsync(uri);
+      console.log("[recording] file info", info);
+      if (info.exists && "size" in info) {
+        infoSize = info.size as number;
+      } else if (!info.exists) {
+        patch(sessionId, {
+          status: "failed",
+          errorMessage:
+            "Audio file is missing — the recorder didn't produce a saved file.",
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn("[recording] getInfoAsync failed, continuing", e);
     }
 
     // Step 1: Whisper transcription via the same chunk endpoint
     // the chunk-loop plan would have used. Single chunk, index 0.
-    console.log("[recording] uploading chunk size=%s", info.size);
+    console.log("[recording] uploading chunk size=%s", infoSize ?? "unknown");
     const transcription = await transcribeChunk(
       uri,
       mime,
