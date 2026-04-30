@@ -947,7 +947,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   // POST /ai/chat-history — append chat messages
   fastify.post<{
     Body: {
-      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[];
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown; createdAt?: string }[];
     };
   }>(
     "/chat-history",
@@ -973,6 +973,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                   meetingData: {},
                   noteCards: {},
                   confirmation: {},
+                  createdAt: { type: "string", format: "date-time" },
                 },
               },
             },
@@ -994,7 +995,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   // could wipe history if the user refreshed between the two calls.
   fastify.put<{
     Body: {
-      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[];
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown; createdAt?: string }[];
     };
   }>(
     "/chat-history",
@@ -1022,6 +1023,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                   meetingData: {},
                   noteCards: {},
                   confirmation: {},
+                  createdAt: { type: "string", format: "date-time" },
                 },
               },
             },

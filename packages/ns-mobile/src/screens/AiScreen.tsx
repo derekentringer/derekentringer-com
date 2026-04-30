@@ -120,6 +120,9 @@ import {
 } from "@/lib/linkifyCitations";
 import { ChatBubbleEnter } from "@/components/ChatBubbleEnter";
 import { MeetingSummaryCard } from "@/components/notes/MeetingSummaryCard";
+import { formatChatTimestamp } from "@/lib/time";
+
+const nowIso = () => new Date().toISOString();
 import useRecordingResultStore, {
   type RecordingSummary,
 } from "@/store/recordingResultStore";
@@ -145,7 +148,9 @@ interface PersistedMeetingData {
   noteId?: string;
   noteTitle?: string;
   errorMessage?: string;
-  relatedNotes?: RecordingSummary["relatedNotes"];
+  // Persisted as `relevantNotes` (not `relatedNotes`) to match the
+  // shape web/desktop's AIAssistantPanel renders from chat history.
+  relevantNotes?: RecordingSummary["relatedNotes"];
 }
 
 interface Message {
@@ -170,6 +175,11 @@ interface Message {
    *  through chat history so a recording made on mobile shows up
    *  on web/desktop, and vice versa. */
   meetingData?: PersistedMeetingData;
+  /** ISO timestamp the message was first created. Stamped client-side
+   *  for new turns, hydrated from `r.createdAt` for round-tripped
+   *  rows. Drives the modern-chat-style relative-time label rendered
+   *  under each bubble. */
+  createdAt?: string;
 }
 
 // ─── Hydration helpers (Phase A.5) ────────────────────────────────
@@ -199,6 +209,7 @@ function rowsToMessages(rows: ChatMessageData[]): Message[] {
           role: "meeting-summary",
           content: r.content ?? "",
           meetingData: md,
+          createdAt: r.createdAt,
         };
       }
       if (r.role !== "user" && r.role !== "assistant") return null;
@@ -233,6 +244,7 @@ function rowsToMessages(rows: ChatMessageData[]): Message[] {
         sources: r.sources as QASource[] | undefined,
         noteCards: r.noteCards as NoteCard[] | undefined,
         confirmation,
+        createdAt: r.createdAt,
       };
     })
     .filter((m): m is Message => m !== null)
@@ -273,6 +285,7 @@ function messagesToRows(messages: Message[]): ChatMessageData[] {
       noteCards: m.noteCards,
       confirmation,
       meetingData: m.meetingData,
+      createdAt: m.createdAt,
     };
   });
 }
@@ -315,6 +328,14 @@ export function AiScreen() {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<FlatList>(null);
+  // Re-render the chat timestamps every 30s so "Just now" rolls
+  // forward to "1min ago" without forcing a manual refresh. The
+  // tick is unused beyond triggering the re-render.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const openNote = useCallback(
     (noteId: string) => {
@@ -498,13 +519,14 @@ export function AiScreen() {
           noteId: s.noteId,
           noteTitle: s.noteTitle,
           errorMessage: s.errorMessage,
-          relatedNotes: s.relatedNotes ?? [],
+          relevantNotes: s.relatedNotes ?? [],
         };
         if (idx === undefined) {
           next.push({
             role: "meeting-summary",
             content: "",
             meetingData: persisted,
+            createdAt: nowIso(),
           });
           changed = true;
         } else {
@@ -542,7 +564,7 @@ export function AiScreen() {
     if (parsed) {
       setInput("");
       // Show the user's command in the chat for context.
-      setMessages((prev) => [...prev, { role: "user", content: question }]);
+      setMessages((prev) => [...prev, { role: "user", content: question, createdAt: nowIso() }]);
       try {
         const result = await parsed.command.execute(parsed.args, {
           clearChat: () => {
@@ -565,6 +587,7 @@ export function AiScreen() {
             role: "assistant",
             content: result.text,
             noteCards: result.noteCards,
+            createdAt: nowIso(),
           },
         ]);
       } catch (err) {
@@ -572,7 +595,7 @@ export function AiScreen() {
           err instanceof Error ? err.message : "Command failed.";
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: message, failed: true },
+          { role: "assistant", content: message, failed: true, createdAt: nowIso() },
         ]);
       }
       return;
@@ -583,8 +606,8 @@ export function AiScreen() {
 
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: question },
-      { role: "assistant", content: "" },
+      { role: "user", content: question, createdAt: nowIso() },
+      { role: "assistant", content: "", createdAt: nowIso() },
     ]);
 
     const controller = new AbortController();
@@ -717,8 +740,9 @@ export function AiScreen() {
                   pendings: [event.confirmation],
                   status: "pending",
                 },
+                createdAt: nowIso(),
               });
-              updated.push({ role: "assistant", content: "" });
+              updated.push({ role: "assistant", content: "", createdAt: nowIso() });
             }
           }
           return updated;
@@ -890,34 +914,54 @@ export function AiScreen() {
           }}
           renderItem={({ item, index: displayIdx }) => {
             const messageIndex = messages.length - 1 - displayIdx;
-            if (item.role === "meeting-summary" && item.meetingData) {
-              const md = item.meetingData;
-              return (
+            const timestamp = item.createdAt
+              ? formatChatTimestamp(item.createdAt)
+              : "";
+            const tsAlign =
+              item.role === "user"
+                ? styles.timestampRight
+                : styles.timestampLeft;
+            const body =
+              item.role === "meeting-summary" && item.meetingData ? (
                 <MeetingSummaryCard
                   summary={{
-                    sessionId: md.sessionId,
+                    sessionId: item.meetingData.sessionId,
                     createdAt: "",
-                    mode: md.mode,
-                    status: md.status,
-                    transcript: md.transcript,
-                    noteId: md.noteId,
-                    noteTitle: md.noteTitle,
-                    errorMessage: md.errorMessage,
-                    relatedNotes: md.relatedNotes,
+                    mode: item.meetingData.mode,
+                    status: item.meetingData.status,
+                    transcript: item.meetingData.transcript,
+                    noteId: item.meetingData.noteId,
+                    noteTitle: item.meetingData.noteTitle,
+                    errorMessage: item.meetingData.errorMessage,
+                    relatedNotes: item.meetingData.relevantNotes,
                   }}
                   onOpenNote={(noteId) => openNote(noteId)}
                 />
+              ) : (
+                <MessageBubble
+                  message={item}
+                  messageIndex={messageIndex}
+                  isStreaming={isStreaming}
+                  onOpenNote={openNote}
+                  onConfirmApply={handleConfirmApply}
+                  onConfirmDiscard={handleConfirmDiscard}
+                />
               );
-            }
             return (
-              <MessageBubble
-                message={item}
-                messageIndex={messageIndex}
-                isStreaming={isStreaming}
-                onOpenNote={openNote}
-                onConfirmApply={handleConfirmApply}
-                onConfirmDiscard={handleConfirmDiscard}
-              />
+              <View>
+                {body}
+                {timestamp ? (
+                  <Text
+                    style={[
+                      styles.timestamp,
+                      tsAlign,
+                      { color: themeColors.muted },
+                    ]}
+                  >
+                    {timestamp}
+                  </Text>
+                ) : null}
+              </View>
             );
           }}
           contentContainerStyle={styles.list}
@@ -1442,7 +1486,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 14, textAlign: "center" },
   emptyHint: { fontSize: 12, textAlign: "center", opacity: 0.6 },
   list: { padding: spacing.md, gap: spacing.sm },
-  bubbleRow: { flexDirection: "row", marginBottom: spacing.sm },
+  bubbleRow: { flexDirection: "row" },
   bubble: {
     // Desktop's chat bubble is `rounded-lg` (8px) + `px-2.5 py-1.5`
     // — match the geometry so the visual weight is the same.
@@ -1539,4 +1583,12 @@ const styles = StyleSheet.create({
   },
   askBtnText: { fontSize: 14, fontWeight: "500" },
   stopBtnText: { fontSize: 14 },
+  timestamp: {
+    fontSize: 10,
+    marginTop: 2,
+    paddingHorizontal: spacing.xs,
+    opacity: 0.7,
+  },
+  timestampLeft: { alignSelf: "flex-start" },
+  timestampRight: { alignSelf: "flex-end" },
 });

@@ -12,6 +12,9 @@ import { serializeChatToMarkdown, defaultChatTitle } from "../lib/chatExport.ts"
 import { CodeBlock } from "./CodeBlock.tsx";
 import { ConfirmationCard } from "./ConfirmationCard.tsx";
 import { ChatBubbleEnter } from "./ChatBubbleEnter.tsx";
+import { formatChatTimestamp } from "../lib/time.ts";
+
+const nowIso = () => new Date().toISOString();
 
 const ASSISTANT_TIPS = [
   // Search & discover
@@ -337,6 +340,11 @@ interface Message {
   // chat shows a Retry button that re-fires the preceding user
   // question with full Phase A history.
   failed?: boolean;
+  /** ISO timestamp the message was first created. Stamped client-side
+   *  for new turns, hydrated from `r.createdAt` for round-tripped
+   *  rows. Drives the modern-chat-style relative-time label rendered
+   *  under each bubble. */
+  createdAt?: string;
 }
 
 /** Phase C.4: a single card can hold multiple same-toolName pendings so
@@ -466,6 +474,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Re-render the chat timestamps every 30s so "Just now" rolls
+  // forward to "1min ago" without forcing a manual refresh. The
+  // tick is unused beyond triggering the re-render.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -530,6 +546,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       meetingData,
       noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
       confirmation: (r.confirmation as ConfirmationState | undefined) ?? undefined,
+      createdAt: r.createdAt,
     };
   }
 
@@ -646,6 +663,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         m.confirmation && m.confirmation.status !== "applying"
           ? m.confirmation
           : undefined,
+      // Forward the original createdAt so cross-device hydration
+      // shows each bubble's real authoring time. Without this the
+      // server's snapshot-replace would re-stamp every row with
+      // `now()`, making every message look "Just now" on the other
+      // device after an SSE refetch.
+      createdAt: m.createdAt,
     }))).catch(() => {}).finally(() => {
       setTimeout(() => { isSavingRef.current = false; }, 500);
     });
@@ -746,6 +769,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               sessionId,
               status: "processing",
             },
+            createdAt: nowIso(),
           },
         ]);
       }
@@ -1082,14 +1106,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     // Keep focus so the user can immediately type another command.
     // See handleAsk below for why this is deferred past the render.
     requestAnimationFrame(() => inputRef.current?.focus());
-    setMessages((prev) => [...prev, { role: "user", content: `${cmd.command.usage.split(" ")[0]} ${cmd.args}`.trim() }]);
+    setMessages((prev) => [...prev, { role: "user", content: `${cmd.command.usage.split(" ")[0]} ${cmd.args}`.trim(), createdAt: nowIso() }]);
     try {
       const result: CommandResult = await cmd.command.execute(cmd.args, commandCtx);
       if (!result.silent) {
-        setMessages((prev) => [...prev, { role: "assistant", content: result.text, noteCards: result.noteCards }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: result.text, noteCards: result.noteCards, createdAt: nowIso() }]);
       }
     } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Command failed." }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: "Command failed.", createdAt: nowIso() }]);
     }
     return true;
   }
@@ -1125,7 +1149,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     setInput("");
     setAutocompleteItems([]);
     setHistoryIndex(null);
-    setMessages((prev) => [...prev, { role: "user", content: question }]);
+    setMessages((prev) => [...prev, { role: "user", content: question, createdAt: nowIso() }]);
     // Keep focus on the input so the user can type the next message
     // without reaching for the mouse. Deferred past the current
     // render cycle because `performAsk` immediately flips
@@ -1167,7 +1191,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "", sources: [] },
+      { role: "assistant", content: "", sources: [], createdAt: nowIso() },
     ]);
 
     try {
@@ -1240,8 +1264,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 role: "assistant",
                 content: "",
                 confirmation: { pendings: [event.confirmation], status: "pending" },
+                createdAt: nowIso(),
               });
-              updated.push({ role: "assistant", content: "" });
+              updated.push({ role: "assistant", content: "", createdAt: nowIso() });
             }
           }
           return updated;
@@ -1284,6 +1309,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             role: "assistant",
             content: "Something went wrong. Please try again.",
             failed: true,
+            createdAt: nowIso(),
           });
         }
         return updated;
@@ -1684,8 +1710,8 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           </div>
         )}
         {messages.map((msg, i) => (
+          <div key={i} className="flex flex-col gap-0.5">
           <ChatBubbleEnter
-            key={i}
             align={msg.role === "user" ? "right" : "left"}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
@@ -2070,6 +2096,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               </div>
             )}
           </ChatBubbleEnter>
+          {msg.createdAt && (
+            <div className={`flex px-1 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <span className="text-[10px] text-muted-foreground/60 select-none">
+                {formatChatTimestamp(msg.createdAt)}
+              </span>
+            </div>
+          )}
+          </div>
         ))}
         {/* Inline "thinking" bubble — replaces the previous header
             indicator so the live tool activity sits at the bottom of
@@ -2117,11 +2151,11 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             onClick={() => {
               const history = buildHistoryForClaude(messages);
               setInput("");
-              setMessages((prev) => [...prev, { role: "user", content: "Catch me up on this meeting" }]);
+              setMessages((prev) => [...prev, { role: "user", content: "Catch me up on this meeting", createdAt: nowIso() }]);
               setIsStreaming(true);
               const controller = new AbortController();
               abortRef.current = controller;
-              setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
+              setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [], createdAt: nowIso() }]);
               (async () => {
                 try {
                   for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript, undefined, history, autoApprove)) {
