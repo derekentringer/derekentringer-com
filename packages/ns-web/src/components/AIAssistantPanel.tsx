@@ -491,11 +491,26 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   // Phase E follow-up: confirmation state is persisted for terminal
   // statuses (applied/discarded/failed) so those cards survive refresh.
   function rowToMessage(r: ChatMessageData): Message {
+    // Cards saved by the mobile client before the
+    // `relevantNotes`/`transcript` defaults landed could omit
+    // those fields entirely. The card renderer below dereferences
+    // both directly (`.length`, `.trim()`), so coerce missing
+    // fields to empty values here rather than guarding every
+    // call site.
+    let meetingData =
+      (r.meetingData as MeetingSummaryData | undefined) ?? undefined;
+    if (meetingData) {
+      meetingData = {
+        ...meetingData,
+        relevantNotes: meetingData.relevantNotes ?? [],
+        transcript: meetingData.transcript ?? "",
+      };
+    }
     return {
       role: r.role as Message["role"],
       content: r.content,
       sources: (r.sources as QASource[] | undefined) ?? undefined,
-      meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+      meetingData,
       noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
       confirmation: (r.confirmation as ConfirmationState | undefined) ?? undefined,
     };

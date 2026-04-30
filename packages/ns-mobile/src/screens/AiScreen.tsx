@@ -485,15 +485,20 @@ export function AiScreen() {
       }
       for (const s of summaries) {
         const idx = indexBySession.get(s.sessionId);
+        // Defaults aligned with web/desktop's `MeetingSummaryData`:
+        // their renderers read `meetingData.relevantNotes.length`
+        // and `meetingData.transcript.trim()` directly, so emitting
+        // `undefined` for those fields crashes the AIAssistantPanel
+        // when the card hits another device through chat history.
         const persisted: PersistedMeetingData = {
           sessionId: s.sessionId,
           mode: s.mode,
           status: s.status,
-          transcript: s.transcript,
+          transcript: s.transcript ?? "",
           noteId: s.noteId,
           noteTitle: s.noteTitle,
           errorMessage: s.errorMessage,
-          relatedNotes: s.relatedNotes,
+          relatedNotes: s.relatedNotes ?? [],
         };
         if (idx === undefined) {
           next.push({

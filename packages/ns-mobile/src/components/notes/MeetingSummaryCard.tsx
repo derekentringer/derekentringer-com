@@ -304,13 +304,15 @@ export function MeetingSummaryCard({
       ) : null}
 
       {/* Related notes collapsible — mirrors web's PILL_LIMIT=5
-          + "Show N more" pattern. Hidden when no notes were
-          surfaced during recording. */}
+          + "Show N more" pattern. Default open so the user
+          immediately sees the pgvector matches without an extra
+          tap. Hidden when no notes were surfaced. */}
       {summary.relatedNotes && summary.relatedNotes.length > 0 ? (
         <Disclosure
           label="Related notes"
           themeColorMuted={themeColors.muted}
           themeColorForeground={themeColors.foreground}
+          defaultOpen
         >
           <RelatedNotesList
             notes={summary.relatedNotes}
