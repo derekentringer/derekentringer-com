@@ -180,7 +180,7 @@ describe("ai api client (mobile)", () => {
   });
 
   describe("transcribeChunk", () => {
-    it("POSTs multipart with sessionId/chunkIndex and returns the chunk text", async () => {
+    it("POSTs FormData with sessionId/chunkIndex and returns the chunk text", async () => {
       mockPost.mockResolvedValue({
         data: { sessionId: "sess-1", chunkIndex: 2, text: "hello world" },
       });
@@ -195,9 +195,10 @@ describe("ai api client (mobile)", () => {
       const [path, body, opts] = mockPost.mock.calls[0];
       expect(path).toBe("/ai/transcribe-chunk");
       expect(body).toBeInstanceOf(FormData);
-      expect((opts as { headers: Record<string, string> }).headers["Content-Type"]).toBe(
-        "multipart/form-data",
-      );
+      // Content-Type is intentionally NOT set — the axios request
+      // interceptor strips the default JSON header for FormData so
+      // RN's XHR layer can add the multipart boundary.
+      expect(opts).toBeUndefined();
       expect(result).toEqual({
         sessionId: "sess-1",
         chunkIndex: 2,
@@ -207,7 +208,7 @@ describe("ai api client (mobile)", () => {
   });
 
   describe("transcribeAudio", () => {
-    it("POSTs multipart with mode + optional folderId", async () => {
+    it("POSTs FormData with mode + optional folderId (no manual Content-Type)", async () => {
       mockPost.mockResolvedValue({
         data: { title: "T", content: "C", tags: ["a"] },
       });
@@ -218,13 +219,11 @@ describe("ai api client (mobile)", () => {
         "memo",
         "f1",
       );
-      expect(mockPost).toHaveBeenCalledWith(
-        "/ai/transcribe",
-        expect.any(FormData),
-        expect.objectContaining({
-          headers: { "Content-Type": "multipart/form-data" },
-        }),
-      );
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      const [path, body, opts] = mockPost.mock.calls[0];
+      expect(path).toBe("/ai/transcribe");
+      expect(body).toBeInstanceOf(FormData);
+      expect(opts).toBeUndefined();
       expect(result.title).toBe("T");
       expect(result.tags).toEqual(["a"]);
     });

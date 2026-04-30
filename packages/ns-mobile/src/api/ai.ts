@@ -289,10 +289,12 @@ export async function transcribeChunk(
     mimeType,
     { sessionId, chunkIndex: String(chunkIndex) },
   );
+  // No explicit Content-Type — the axios request interceptor
+  // strips the default JSON Content-Type for FormData payloads so
+  // RN's XHR layer sets `multipart/form-data; boundary=…` itself.
   const response = await api.post<TranscribeChunkResult>(
     "/ai/transcribe-chunk",
     form,
-    { headers: { "Content-Type": "multipart/form-data" } },
   );
   return response.data;
 }
@@ -315,10 +317,12 @@ export async function transcribeAudio(
     mimeType,
     extras,
   );
+  // See `transcribeChunk` above — interceptor handles Content-Type
+  // for FormData; explicit override here would suppress the
+  // multipart boundary.
   const response = await api.post<TranscribeResult>(
     "/ai/transcribe",
     form,
-    { headers: { "Content-Type": "multipart/form-data" } },
   );
   return response.data;
 }

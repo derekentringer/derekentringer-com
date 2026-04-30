@@ -66,6 +66,15 @@ api.interceptors.request.use(async (config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
+  // FormData uploads (e.g. /ai/transcribe-chunk multipart audio):
+  // delete the inherited application/json Content-Type so RN's
+  // XMLHttpRequest layer can set `multipart/form-data;
+  // boundary=…` itself. If we leave a manual `multipart/form-data`
+  // here, axios skips the boundary parameter and Fastify's
+  // multipart parser rejects the request as malformed.
+  if (config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+  }
   return config;
 });
 
