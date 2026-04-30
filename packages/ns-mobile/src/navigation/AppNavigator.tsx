@@ -19,6 +19,7 @@ import { AiScreen } from "@/screens/AiScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { TrashScreen } from "@/screens/TrashScreen";
 import { TrashNoteDetailScreen } from "@/screens/TrashNoteDetailScreen";
+import { RecordingScreen } from "@/screens/RecordingScreen";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { useThemeColors } from "@/theme/colors";
 import { colors } from "@/theme";
@@ -71,6 +72,11 @@ function DashboardNavigator() {
         name="NoteEditor"
         component={NoteEditorScreen}
         options={{ title: "Editor" }}
+      />
+      <DashboardStack.Screen
+        name="Recording"
+        component={RecordingScreen}
+        options={{ title: "New Recording" }}
       />
     </DashboardStack.Navigator>
   );
