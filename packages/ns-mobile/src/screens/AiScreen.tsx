@@ -133,8 +133,23 @@ interface ItemResult {
   error?: string;
 }
 
+/** Per-message subset of `RecordingSummary` that the chat panel
+ *  renders. Persists alongside user / assistant turns so meeting
+ *  cards round-trip cross-device the same way they do on
+ *  web/desktop. */
+interface PersistedMeetingData {
+  sessionId: string;
+  mode: RecordingSummary["mode"];
+  status: RecordingSummary["status"];
+  transcript?: string;
+  noteId?: string;
+  noteTitle?: string;
+  errorMessage?: string;
+  relatedNotes?: RecordingSummary["relatedNotes"];
+}
+
 interface Message {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "meeting-summary";
   content: string;
   sources?: QASource[];
   noteCards?: NoteCard[];
@@ -151,6 +166,10 @@ interface Message {
     errorMessage?: string;
     itemResults?: ItemResult[];
   };
+  /** Phase C.1.2 follow-up: meeting-summary cards round-trip
+   *  through chat history so a recording made on mobile shows up
+   *  on web/desktop, and vice versa. */
+  meetingData?: PersistedMeetingData;
 }
 
 // ─── Hydration helpers (Phase A.5) ────────────────────────────────
@@ -169,9 +188,19 @@ interface PersistedConfirmation {
 function rowsToMessages(rows: ChatMessageData[]): Message[] {
   return rows
     .map<Message | null>((r) => {
-      // We only round-trip user / assistant. meeting-summary is a
-      // future-shape (mobile doesn't surface them yet — defer to
-      // Phase C audio recording follow-up).
+      // Phase C.1.2 follow-up: meeting-summary now round-trips so
+      // a recording made on any device shows up everywhere via
+      // the same /ai/chat-history path that user/assistant turns
+      // use.
+      if (r.role === "meeting-summary") {
+        const md = r.meetingData as PersistedMeetingData | undefined;
+        if (!md || !md.sessionId) return null;
+        return {
+          role: "meeting-summary",
+          content: r.content ?? "",
+          meetingData: md,
+        };
+      }
       if (r.role !== "user" && r.role !== "assistant") return null;
       const conf = r.confirmation as PersistedConfirmation | undefined;
       let confirmation: Message["confirmation"];
@@ -243,6 +272,7 @@ function messagesToRows(messages: Message[]): ChatMessageData[] {
       sources: m.sources,
       noteCards: m.noteCards,
       confirmation,
+      meetingData: m.meetingData,
     };
   });
 }
@@ -430,34 +460,71 @@ export function AiScreen() {
     prevStreamingRef.current = isStreaming;
   }, [isStreaming, persistNow]);
 
-  // Recording summary cards live in their own zustand store so
-  // the post-stop pipeline can update them while the user is on
-  // any tab. We append them after the chat messages so they show
-  // up at the bottom of the conversation, in the order they were
-  // started.
+  // Recording summary cards live in `recordingResultStore` while
+  // a session is being processed (transcribing → structuring).
+  // Once the pipeline finishes (completed / failed), we mirror
+  // the entry into a `meeting-summary` message so the existing
+  // chat-history persistence carries it cross-device — same
+  // pattern web/desktop use. The store entry stays around but
+  // rendering branches on the matching message's status, so
+  // there's no double-render.
   const summaries = useRecordingResultStore((s) => s.summaries);
 
-  type ListItem =
-    | { kind: "message"; message: Message; messageIndex: number }
-    | { kind: "summary"; summary: RecordingSummary };
+  // Mirror store summaries into messages: append on first sight,
+  // patch on subsequent updates, deduplicate by sessionId.
+  useEffect(() => {
+    if (!historyLoadedRef.current) return;
+    if (summaries.length === 0) return;
+    setMessages((prev) => {
+      let changed = false;
+      const next = [...prev];
+      const indexBySession = new Map<string, number>();
+      for (let i = 0; i < next.length; i++) {
+        const md = next[i].meetingData;
+        if (md?.sessionId) indexBySession.set(md.sessionId, i);
+      }
+      for (const s of summaries) {
+        const idx = indexBySession.get(s.sessionId);
+        const persisted: PersistedMeetingData = {
+          sessionId: s.sessionId,
+          mode: s.mode,
+          status: s.status,
+          transcript: s.transcript,
+          noteId: s.noteId,
+          noteTitle: s.noteTitle,
+          errorMessage: s.errorMessage,
+          relatedNotes: s.relatedNotes,
+        };
+        if (idx === undefined) {
+          next.push({
+            role: "meeting-summary",
+            content: "",
+            meetingData: persisted,
+          });
+          changed = true;
+        } else {
+          const existing = next[idx].meetingData;
+          if (
+            JSON.stringify(existing) !== JSON.stringify(persisted)
+          ) {
+            next[idx] = { ...next[idx], meetingData: persisted };
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [summaries]);
 
-  // The chat uses an inverted FlatList — `data` is the unified
-  // list reversed, so the newest item is at the visual bottom and
+  // The chat uses an inverted FlatList — `data` is messages
+  // reversed, so the newest item is at the visual bottom and
   // the scroll position is naturally anchored there. Streaming
   // text growing the latest bubble keeps that bubble's bottom
-  // pinned to the viewport bottom for free. No scrollToEnd /
-  // onContentSizeChange / measurement-race plumbing needed.
-  const reversedItems = useMemo<ListItem[]>(() => {
-    const items: ListItem[] = messages.map((m, i) => ({
-      kind: "message",
-      message: m,
-      messageIndex: i,
-    }));
-    for (const s of summaries) {
-      items.push({ kind: "summary", summary: s });
-    }
-    return items.reverse();
-  }, [messages, summaries]);
+  // pinned to the viewport bottom for free.
+  const reversedMessages = useMemo(
+    () => [...messages].reverse(),
+    [messages],
+  );
 
 
   const handleSend = useCallback(async () => {
@@ -756,6 +823,9 @@ export function AiScreen() {
     if (isStreaming) abortRef.current?.abort();
     setMessages([]);
     lastSavedRef.current = "[]";
+    // Drop the recording summary store too so the next mirror
+    // pass doesn't repopulate cleared meeting cards.
+    useRecordingResultStore.getState().clearAll();
     // Wipe server history too so a refresh doesn't bring it back.
     clearServerChatHistory().catch(() => {});
   }, [isStreaming]);
@@ -802,30 +872,42 @@ export function AiScreen() {
       ) : (
         <FlatList
           ref={listRef}
-          data={reversedItems}
+          data={reversedMessages}
           inverted
-          // Stable keys: messages key by their original index;
-          // summaries by sessionId. Mixing both prevents the
-          // virtualization remount-the-world behaviour we saw
-          // when keys shift on append.
-          keyExtractor={(item) =>
-            item.kind === "message"
-              ? `msg-${item.messageIndex}`
-              : `sum-${item.summary.sessionId}`
-          }
-          renderItem={({ item }) => {
-            if (item.kind === "summary") {
+          // Display index counts from newest (0) to oldest. For
+          // meeting-summary messages we key by sessionId so they
+          // stay stable across cross-device refetches; everything
+          // else keys by original-array index.
+          keyExtractor={(item, displayIdx) => {
+            const sid = item.meetingData?.sessionId;
+            if (item.role === "meeting-summary" && sid) return `sum-${sid}`;
+            return `msg-${messages.length - 1 - displayIdx}`;
+          }}
+          renderItem={({ item, index: displayIdx }) => {
+            const messageIndex = messages.length - 1 - displayIdx;
+            if (item.role === "meeting-summary" && item.meetingData) {
+              const md = item.meetingData;
               return (
                 <MeetingSummaryCard
-                  summary={item.summary}
+                  summary={{
+                    sessionId: md.sessionId,
+                    createdAt: "",
+                    mode: md.mode,
+                    status: md.status,
+                    transcript: md.transcript,
+                    noteId: md.noteId,
+                    noteTitle: md.noteTitle,
+                    errorMessage: md.errorMessage,
+                    relatedNotes: md.relatedNotes,
+                  }}
                   onOpenNote={(noteId) => openNote(noteId)}
                 />
               );
             }
             return (
               <MessageBubble
-                message={item.message}
-                messageIndex={item.messageIndex}
+                message={item}
+                messageIndex={messageIndex}
                 isStreaming={isStreaming}
                 onOpenNote={openNote}
                 onConfirmApply={handleConfirmApply}
