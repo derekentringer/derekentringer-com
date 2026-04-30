@@ -110,6 +110,12 @@ export function RecordingScreen({ navigation }: Props) {
   const startedAtRef = useRef<number | null>(null);
   const accumulatedRef = useRef(0);
   const pulse = useRef(new Animated.Value(0)).current;
+  // Tracks whether we've explicitly stopped the recorder. Once
+  // stopped, the native AudioRecorder object is released and any
+  // further property access (`recorder.isRecording`, `recorder.uri`)
+  // throws "Cannot use shared object that was already released".
+  // The unmount cleanup checks this before touching the recorder.
+  const stoppedRef = useRef(false);
 
   // Rolling buffer of normalized 0..1 mic levels driving the
   // waveform strip. Initialized to all-zero so the bars sit flat
@@ -203,8 +209,17 @@ export function RecordingScreen({ navigation }: Props) {
   useEffect(() => {
     return () => {
       // Best-effort cleanup if the screen is dismissed mid-record.
-      if (recorder.isRecording) {
-        recorder.stop().catch(() => undefined);
+      // After an explicit stop the recorder is released and any
+      // property access throws — `stoppedRef` short-circuits the
+      // post-stop unmount path. The try/catch is belt-and-braces
+      // for the dismissed-mid-record case.
+      if (stoppedRef.current) return;
+      try {
+        if (recorder.isRecording) {
+          recorder.stop().catch(() => undefined);
+        }
+      } catch {
+        /* recorder already released */
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,30 +268,19 @@ export function RecordingScreen({ navigation }: Props) {
     } catch {
       // ignore — fall through to cleanup
     }
-    const uri = recorder.uri;
-    // C.1.1 keeps the post-stop flow minimal: surface the saved
-    // file path. C.1.3 will replace this with the AI-structured
-    // review-and-save screen.
-    Alert.alert(
-      "Recording saved",
-      uri ?? "No audio file was produced.",
-      [
-        {
-          text: "OK",
-          onPress: () => navigation.goBack(),
-        },
-      ],
-    );
+    stoppedRef.current = true;
+    // C.1.1 returns straight to the dashboard. C.1.3 will route
+    // the user to the AI-structured review/save screen instead.
+    navigation.goBack();
   };
 
   const handleCancel = async () => {
-    if (recorderState.isRecording || recorderState.isRecording === false) {
-      try {
-        await recorder.stop();
-      } catch {
-        /* ignore */
-      }
+    try {
+      await recorder.stop();
+    } catch {
+      /* ignore */
     }
+    stoppedRef.current = true;
     navigation.goBack();
   };
 
