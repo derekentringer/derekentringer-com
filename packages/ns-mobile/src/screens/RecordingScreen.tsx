@@ -24,7 +24,13 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { DashboardStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
-import { transcribeChunk, type AudioMode } from "@/api/ai";
+import {
+  structureTranscript,
+  transcribeChunk,
+  type AudioMode,
+} from "@/api/ai";
+import { createNoteLocal } from "@/lib/noteStore";
+import { notifyLocalChange } from "@/lib/syncEngine";
 import {
   buildChunkEntry,
   buildErrorChunk,
@@ -138,10 +144,16 @@ export function RecordingScreen({ navigation }: Props) {
   // Transcription state — see the file header for why this is a
   // single post-stop request rather than a chunk loop.
   const sessionIdRef = useRef<string | null>(null);
-  const pendingUploadsRef = useRef<Set<Promise<unknown>>>(new Set());
   const transcriptScrollRef = useRef<ScrollView>(null);
   const [transcript, setTranscript] = useState<ChunkEntry[]>([]);
-  const [isFinishing, setIsFinishing] = useState(false);
+  // Drives the post-stop status copy + control disable: idle (mid-
+  // record), transcribing (Whisper), structuring (Claude), then
+  // navigation back. `idle` after `done` simply means we're back
+  // before the screen pops.
+  const [finishStage, setFinishStage] = useState<
+    "idle" | "transcribing" | "structuring"
+  >("idle");
+  const isFinishing = finishStage !== "idle";
 
   // Rolling buffer of normalized 0..1 mic levels driving the
   // waveform strip. Initialized to all-zero so the bars sit flat
@@ -253,40 +265,43 @@ export function RecordingScreen({ navigation }: Props) {
 
   // ─── Transcription ──────────────────────────────────────────
 
-  const trackUpload = useCallback((p: Promise<unknown>) => {
-    pendingUploadsRef.current.add(p);
-    void p.finally(() => pendingUploadsRef.current.delete(p));
-  }, []);
-
-  const uploadFullRecording = useCallback(async (uri: string) => {
-    const sessionId = sessionIdRef.current;
-    if (!sessionId) return;
-    const { mime, extension } = chunkMimeForPlatform(Platform.OS);
-    try {
-      // Single chunk (index 0) covers the entire recording. Reuses
-      // the same endpoint the chunk-loop plan would have used so
-      // C.1.5's retry-from-saved-file path stays one code path.
-      const result = await transcribeChunk(
-        uri,
-        mime,
-        extension,
-        sessionId,
-        0,
-      );
-      const entry = buildChunkEntry(result.text, 0);
-      if (entry) {
-        setTranscript((prev) => [...prev, entry]);
-      }
-    } catch {
-      setTranscript((prev) => [...prev, buildErrorChunk(0)]);
-    } finally {
+  /**
+   * Whisper transcription on the full recording. Returns the raw
+   * transcript text (empty string on failure or empty Whisper
+   * response). Pushes a ChunkEntry into the on-screen transcript
+   * so the user sees the result in the card before navigation.
+   */
+  const transcribeRecording = useCallback(
+    async (uri: string): Promise<string> => {
+      const sessionId = sessionIdRef.current;
+      if (!sessionId) return "";
+      const { mime, extension } = chunkMimeForPlatform(Platform.OS);
       try {
-        await FileSystem.deleteAsync(uri, { idempotent: true });
+        const result = await transcribeChunk(
+          uri,
+          mime,
+          extension,
+          sessionId,
+          0,
+        );
+        const entry = buildChunkEntry(result.text, 0);
+        if (entry) {
+          setTranscript((prev) => [...prev, entry]);
+        }
+        return result.text ?? "";
       } catch {
-        /* ignore */
+        setTranscript((prev) => [...prev, buildErrorChunk(0)]);
+        return "";
+      } finally {
+        try {
+          await FileSystem.deleteAsync(uri, { idempotent: true });
+        } catch {
+          /* ignore */
+        }
       }
-    }
-  }, []);
+    },
+    [],
+  );
 
   // Auto-scroll the transcript to the bottom as new entries land.
   useEffect(() => {
@@ -338,13 +353,12 @@ export function RecordingScreen({ navigation }: Props) {
 
   const handleStop = async () => {
     if (isFinishing) return;
-    setIsFinishing(true);
+    setFinishStage("transcribing");
 
     // Stop the recorder and capture its file URI. After stop,
     // expo-audio releases the native AudioRecorder — DO NOT call
-    // any further methods on `recorder`. We can still read `.uri`
-    // synchronously immediately after `stop()` resolves; this is
-    // a cached value, not a fresh native query.
+    // any further methods on `recorder`. `recorder.uri` is a
+    // cached value safe to read synchronously after stop resolves.
     let finalUri: string | null = null;
     try {
       await recorder.stop();
@@ -353,18 +367,69 @@ export function RecordingScreen({ navigation }: Props) {
       /* ignore */
     }
 
-    if (finalUri) {
-      trackUpload(uploadFullRecording(finalUri));
+    if (!finalUri) {
+      stoppedRef.current = true;
+      navigation.goBack();
+      return;
     }
 
-    // Wait for the upload + transcription before flipping
-    // `stoppedRef` and navigating, so the user briefly sees the
-    // transcript text in the card. C.1.3 will route to a review
-    // screen instead of `goBack()`.
-    await Promise.allSettled([...pendingUploadsRef.current]);
+    // Step 1: Whisper transcription.
+    const rawTranscript = await transcribeRecording(finalUri);
+
+    // Step 2: AI structuring → title / content / tags. Falls back
+    // to the raw transcript as content if structuring fails (e.g.
+    // server error, no Anthropic key) so we still produce a usable
+    // note. If we have no transcript at all, skip structuring.
+    let structured: { title: string; content: string; tags: string[] };
+    if (rawTranscript.trim().length === 0) {
+      structured = { title: "Untitled Recording", content: "", tags: [] };
+    } else {
+      setFinishStage("structuring");
+      try {
+        const result = await structureTranscript(rawTranscript, mode!);
+        structured = {
+          title: result.title || "Untitled Recording",
+          content: result.content || rawTranscript,
+          tags: result.tags ?? [],
+        };
+      } catch {
+        structured = {
+          title: "Untitled Recording",
+          content: rawTranscript,
+          tags: [],
+        };
+      }
+    }
+
+    // Step 3: create the note locally — sync push happens via the
+    // outbox queue.
+    let createdId: string | null = null;
+    try {
+      const note = await createNoteLocal({
+        title: structured.title,
+        content: structured.content,
+        tags: structured.tags,
+        audioMode: mode!,
+      });
+      createdId = note.id;
+      notifyLocalChange();
+    } catch {
+      Alert.alert(
+        "Couldn't save recording",
+        "The transcript was generated but the note couldn't be saved locally.",
+      );
+    }
 
     stoppedRef.current = true;
-    navigation.goBack();
+    setFinishStage("idle");
+
+    // Step 4: route to the new note's editor if it was created;
+    // otherwise just go back.
+    if (createdId) {
+      navigation.replace("NoteEditor", { noteId: createdId });
+    } else {
+      navigation.goBack();
+    }
   };
 
   const handleCancel = async () => {
@@ -509,11 +574,13 @@ export function RecordingScreen({ navigation }: Props) {
             ]}
           />
           <Text style={[styles.statusLabel, { color: themeColors.muted }]}>
-            {isFinishing
-              ? "Finishing transcription…"
-              : recorderState.isRecording
-                ? "Recording"
-                : "Paused"}
+            {finishStage === "transcribing"
+              ? "Transcribing audio…"
+              : finishStage === "structuring"
+                ? "Structuring transcript…"
+                : recorderState.isRecording
+                  ? "Recording"
+                  : "Paused"}
           </Text>
         </View>
         <Text style={[styles.elapsed, { color: themeColors.foreground }]}>
@@ -546,11 +613,13 @@ export function RecordingScreen({ navigation }: Props) {
               <Text
                 style={[styles.transcriptHint, { color: themeColors.muted }]}
               >
-                {isFinishing
-                  ? "Transcribing…"
-                  : recorderState.isRecording
-                    ? "Recording — transcript appears after Stop"
-                    : "Paused"}
+                {finishStage === "transcribing"
+                  ? "Transcribing audio…"
+                  : finishStage === "structuring"
+                    ? "Structuring with AI…"
+                    : recorderState.isRecording
+                      ? "Recording — transcript appears after Stop"
+                      : "Paused"}
               </Text>
             ) : (
               <Text
@@ -643,7 +712,11 @@ export function RecordingScreen({ navigation }: Props) {
             color="#0f1117"
           />
           <Text style={styles.primaryButtonText}>
-            {isFinishing ? "Finishing…" : "Stop"}
+            {finishStage === "transcribing"
+              ? "Transcribing…"
+              : finishStage === "structuring"
+                ? "Structuring…"
+                : "Stop"}
           </Text>
         </Pressable>
       </View>
