@@ -15,20 +15,31 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
+import * as Crypto from "expo-crypto";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { DashboardStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
-import type { AudioMode } from "@/api/ai";
+import { type AudioMode } from "@/api/ai";
+import useRecordingResultStore, {
+  processRecording,
+} from "@/store/recordingResultStore";
 
-// Phase C.1.1 (mobile parity audio recording — foundation):
-// full-screen recording surface with a mode picker on entry +
-// record / pause / stop controls. The chunked Whisper pipeline
-// and AI structuring on stop land in C.1.2 / C.1.3 — this slice
-// just wires expo-audio, the permission flow, and the in-app
-// presentation so the rest can layer on top without touching the
-// shell.
+// Phase C.1.2 — recording shell + post-stop handoff:
+// - Records one continuous audio session via expo-audio.
+// - On Stop, hands off to the recordingResultStore: pushes a
+//   `transcribing` summary entry then fires the
+//   `processRecording` pipeline (transcribe → structure →
+//   create-note) FIRE-AND-FORGET, then immediately navigates to
+//   the AI tab where a card surfaces progress.
+// - The user can navigate freely while the pipeline runs — it's
+//   not bound to this screen's lifecycle.
+// - True live-during-recording chunking would need a different
+//   audio library: expo-audio's `stop()` finalizes the native
+//   AudioRecorder, so the 20s stop+restart loop we tried throws
+//   "1st argument cannot be cast to AudioRecorder (received
+//   Integer)" on the second prepare. Punted to a follow-up.
 
 interface ModeDef {
   key: AudioMode;
@@ -96,6 +107,7 @@ const METERING_INTERVAL_MS = 80;
 // effectively silent for this UI; above 0dB is clipped.
 const SILENCE_FLOOR_DB = -60;
 
+
 type Props = NativeStackScreenProps<DashboardStackParamList, "Recording">;
 
 export function RecordingScreen({ navigation }: Props) {
@@ -116,6 +128,11 @@ export function RecordingScreen({ navigation }: Props) {
   // throws "Cannot use shared object that was already released".
   // The unmount cleanup checks this before touching the recorder.
   const stoppedRef = useRef(false);
+  // sessionId is generated on record-start and threaded through
+  // both the chunk upload (server reorders by it) and the meeting-
+  // summary card on AiScreen.
+  const sessionIdRef = useRef<string | null>(null);
+  const [isStopping, setIsStopping] = useState(false);
 
   // Rolling buffer of normalized 0..1 mic levels driving the
   // waveform strip. Initialized to all-zero so the bars sit flat
@@ -251,6 +268,7 @@ export function RecordingScreen({ navigation }: Props) {
     setMode(selected);
     accumulatedRef.current = 0;
     setElapsedMs(0);
+    sessionIdRef.current = Crypto.randomUUID();
     recorder.record();
   };
 
@@ -263,15 +281,36 @@ export function RecordingScreen({ navigation }: Props) {
   };
 
   const handleStop = async () => {
+    if (isStopping) return;
+    setIsStopping(true);
+
+    let finalUri: string | null = null;
     try {
       await recorder.stop();
+      finalUri = recorder.uri ?? null;
     } catch {
-      // ignore — fall through to cleanup
+      /* ignore */
     }
+
     stoppedRef.current = true;
-    // C.1.1 returns straight to the dashboard. C.1.3 will route
-    // the user to the AI-structured review/save screen instead.
+
+    const sessionId = sessionIdRef.current;
+    if (finalUri && sessionId && mode) {
+      // Push the "transcribing" card into the AI panel BEFORE
+      // navigating, so the chat shows it the moment the user
+      // lands there. The pipeline runs fire-and-forget — the
+      // user can navigate freely while it processes.
+      useRecordingResultStore.getState().start(sessionId, mode);
+      void processRecording(sessionId, finalUri, mode);
+    }
+
+    // Pop the recording screen, then switch to the AI tab. The
+    // user lands on AiScreen with the new card visible. Grabbing
+    // the parent reference before goBack so it's still valid
+    // afterwards.
+    const parent = navigation.getParent();
     navigation.goBack();
+    parent?.navigate("AI" as never);
   };
 
   const handleCancel = async () => {
@@ -427,7 +466,12 @@ export function RecordingScreen({ navigation }: Props) {
       <View style={styles.controls}>
         <Pressable
           onPress={handleCancel}
-          style={[styles.secondaryButton, { borderColor: themeColors.border }]}
+          disabled={isStopping}
+          style={[
+            styles.secondaryButton,
+            { borderColor: themeColors.border },
+            isStopping && { opacity: 0.5 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Cancel recording"
         >
@@ -444,7 +488,12 @@ export function RecordingScreen({ navigation }: Props) {
         </Pressable>
         <Pressable
           onPress={handlePauseResume}
-          style={[styles.secondaryButton, { borderColor: themeColors.border }]}
+          disabled={isStopping}
+          style={[
+            styles.secondaryButton,
+            { borderColor: themeColors.border },
+            isStopping && { opacity: 0.5 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel={recorderState.isRecording ? "Pause" : "Resume"}
         >
@@ -461,9 +510,11 @@ export function RecordingScreen({ navigation }: Props) {
         </Pressable>
         <Pressable
           onPress={handleStop}
+          disabled={isStopping}
           style={[
             styles.primaryButton,
             { backgroundColor: themeColors.primary },
+            isStopping && { opacity: 0.6 },
           ]}
           accessibilityRole="button"
           accessibilityLabel="Stop recording"
@@ -538,8 +589,8 @@ const styles = StyleSheet.create({
   recordingBody: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.lg,
+    justifyContent: "flex-start",
+    gap: spacing.md,
   },
   waveform: {
     flexDirection: "row",

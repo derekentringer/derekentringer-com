@@ -119,6 +119,10 @@ import {
   type CitationToken,
 } from "@/lib/linkifyCitations";
 import { ChatBubbleEnter } from "@/components/ChatBubbleEnter";
+import { MeetingSummaryCard } from "@/components/notes/MeetingSummaryCard";
+import useRecordingResultStore, {
+  type RecordingSummary,
+} from "@/store/recordingResultStore";
 import type { AiStackParamList } from "@/navigation/types";
 import type { QASource } from "@derekentringer/ns-shared";
 
@@ -280,7 +284,7 @@ export function AiScreen() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
-  const listRef = useRef<FlatList<Message>>(null);
+  const listRef = useRef<FlatList>(null);
 
   const openNote = useCallback(
     (noteId: string) => {
@@ -426,15 +430,34 @@ export function AiScreen() {
     prevStreamingRef.current = isStreaming;
   }, [isStreaming, persistNow]);
 
-  // The chat uses an inverted FlatList — `data` is messages
-  // reversed, so the newest item is at the visual bottom and the
-  // scroll position is naturally anchored there. New items
-  // prepended to the data (i.e. appended to messages) render at
-  // the bottom without any manual scroll-to-end, and streaming
+  // Recording summary cards live in their own zustand store so
+  // the post-stop pipeline can update them while the user is on
+  // any tab. We append them after the chat messages so they show
+  // up at the bottom of the conversation, in the order they were
+  // started.
+  const summaries = useRecordingResultStore((s) => s.summaries);
+
+  type ListItem =
+    | { kind: "message"; message: Message; messageIndex: number }
+    | { kind: "summary"; summary: RecordingSummary };
+
+  // The chat uses an inverted FlatList — `data` is the unified
+  // list reversed, so the newest item is at the visual bottom and
+  // the scroll position is naturally anchored there. Streaming
   // text growing the latest bubble keeps that bubble's bottom
   // pinned to the viewport bottom for free. No scrollToEnd /
   // onContentSizeChange / measurement-race plumbing needed.
-  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+  const reversedItems = useMemo<ListItem[]>(() => {
+    const items: ListItem[] = messages.map((m, i) => ({
+      kind: "message",
+      message: m,
+      messageIndex: i,
+    }));
+    for (const s of summaries) {
+      items.push({ kind: "summary", summary: s });
+    }
+    return items.reverse();
+  }, [messages, summaries]);
 
 
   const handleSend = useCallback(async () => {
@@ -757,7 +780,7 @@ export function AiScreen() {
     <View
       style={[styles.container, { backgroundColor: themeColors.background }]}
     >
-      {messages.length === 0 ? (
+      {messages.length === 0 && summaries.length === 0 ? (
         // Empty-state parity with ns-web's AIAssistantPanel:
         // chat-bubble icon at 32px / muted-foreground/40, "Your AI
         // Assistant" title, and the same description string.
@@ -779,22 +802,30 @@ export function AiScreen() {
       ) : (
         <FlatList
           ref={listRef}
-          data={reversedMessages}
+          data={reversedItems}
           inverted
-          // The display index counts from newest (0) to oldest;
-          // the original-array index is its mirror. Keying by the
-          // original index keeps each message's identity stable
-          // when new ones are appended (otherwise FlatList sees
-          // every item shift down by one and remounts the world).
-          keyExtractor={(_, displayIdx) =>
-            `msg-${messages.length - 1 - displayIdx}`
+          // Stable keys: messages key by their original index;
+          // summaries by sessionId. Mixing both prevents the
+          // virtualization remount-the-world behaviour we saw
+          // when keys shift on append.
+          keyExtractor={(item) =>
+            item.kind === "message"
+              ? `msg-${item.messageIndex}`
+              : `sum-${item.summary.sessionId}`
           }
-          renderItem={({ item, index: displayIdx }) => {
-            const messageIndex = messages.length - 1 - displayIdx;
+          renderItem={({ item }) => {
+            if (item.kind === "summary") {
+              return (
+                <MeetingSummaryCard
+                  summary={item.summary}
+                  onOpenNote={(noteId) => openNote(noteId)}
+                />
+              );
+            }
             return (
               <MessageBubble
-                message={item}
-                messageIndex={messageIndex}
+                message={item.message}
+                messageIndex={item.messageIndex}
                 isStreaming={isStreaming}
                 onOpenNote={openNote}
                 onConfirmApply={handleConfirmApply}

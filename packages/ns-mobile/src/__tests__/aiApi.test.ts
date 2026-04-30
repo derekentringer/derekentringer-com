@@ -24,6 +24,13 @@ jest.mock("../services/api", () => ({
   tokenManager: {
     getAccessToken: () => mockGetAccessToken(),
   },
+  API_BASE_URL: "http://api.test",
+}));
+
+jest.mock("expo-file-system/legacy", () => ({
+  __esModule: true,
+  uploadAsync: jest.fn(),
+  FileSystemUploadType: { MULTIPART: 1 },
 }));
 
 // jest.mock factories are hoisted above imports, so the FakeEventSource
@@ -180,10 +187,25 @@ describe("ai api client (mobile)", () => {
   });
 
   describe("transcribeChunk", () => {
-    it("POSTs multipart with sessionId/chunkIndex and returns the chunk text", async () => {
-      mockPost.mockResolvedValue({
-        data: { sessionId: "sess-1", chunkIndex: 2, text: "hello world" },
+    it("uploads via expo-file-system multipart (not axios FormData)", async () => {
+      // Audio uploads bypass axios because RN's FormData polyfill
+      // chokes on multi-MB files; verify we never call mockPost
+      // for these requests.
+      mockPost.mockClear();
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("expo-file-system/legacy") as {
+        uploadAsync: jest.Mock;
+        FileSystemUploadType: { MULTIPART: number };
+      };
+      fs.uploadAsync.mockResolvedValueOnce({
+        status: 200,
+        body: JSON.stringify({
+          sessionId: "sess-1",
+          chunkIndex: 2,
+          text: "hello world",
+        }),
       });
+
       const result = await transcribeChunk(
         "file:///tmp/chunk.wav",
         "audio/wav",
@@ -191,40 +213,61 @@ describe("ai api client (mobile)", () => {
         "sess-1",
         2,
       );
-      expect(mockPost).toHaveBeenCalledTimes(1);
-      const [path, body, opts] = mockPost.mock.calls[0];
-      expect(path).toBe("/ai/transcribe-chunk");
-      expect(body).toBeInstanceOf(FormData);
-      expect((opts as { headers: Record<string, string> }).headers["Content-Type"]).toBe(
-        "multipart/form-data",
-      );
+
+      expect(mockPost).not.toHaveBeenCalled();
+      expect(fs.uploadAsync).toHaveBeenCalledTimes(1);
+      const [url, fileUri, opts] = fs.uploadAsync.mock.calls[0];
+      expect(url).toMatch(/\/ai\/transcribe-chunk$/);
+      expect(fileUri).toBe("file:///tmp/chunk.wav");
+      expect(opts.parameters).toEqual({ sessionId: "sess-1", chunkIndex: "2" });
+      expect(opts.fieldName).toBe("file");
+      expect(opts.mimeType).toBe("audio/wav");
+      expect(opts.headers.Authorization).toBe("Bearer test-token");
       expect(result).toEqual({
         sessionId: "sess-1",
         chunkIndex: 2,
         text: "hello world",
       });
     });
+
+    it("throws with the server message on non-2xx upload", async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("expo-file-system/legacy") as {
+        uploadAsync: jest.Mock;
+      };
+      fs.uploadAsync.mockResolvedValueOnce({
+        status: 400,
+        body: JSON.stringify({ message: "Unsupported audio type" }),
+      });
+      await expect(
+        transcribeChunk("file:///tmp/x.wav", "audio/wav", "wav", "s", 0),
+      ).rejects.toThrow("Unsupported audio type");
+    });
   });
 
   describe("transcribeAudio", () => {
-    it("POSTs multipart with mode + optional folderId", async () => {
-      mockPost.mockResolvedValue({
-        data: { title: "T", content: "C", tags: ["a"] },
+    it("uploads via expo-file-system multipart with mode + folderId", async () => {
+      mockPost.mockClear();
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("expo-file-system/legacy") as {
+        uploadAsync: jest.Mock;
+      };
+      fs.uploadAsync.mockResolvedValueOnce({
+        status: 200,
+        body: JSON.stringify({ title: "T", content: "C", tags: ["a"] }),
       });
       const result = await transcribeAudio(
         "file:///tmp/rec.m4a",
-        "audio/m4a",
+        "audio/mp4",
         "m4a",
         "memo",
         "f1",
       );
-      expect(mockPost).toHaveBeenCalledWith(
-        "/ai/transcribe",
-        expect.any(FormData),
-        expect.objectContaining({
-          headers: { "Content-Type": "multipart/form-data" },
-        }),
-      );
+      expect(mockPost).not.toHaveBeenCalled();
+      const [url, fileUri, opts] = fs.uploadAsync.mock.calls[0];
+      expect(url).toMatch(/\/ai\/transcribe$/);
+      expect(fileUri).toBe("file:///tmp/rec.m4a");
+      expect(opts.parameters).toEqual({ mode: "memo", folderId: "f1" });
       expect(result.title).toBe("T");
       expect(result.tags).toEqual(["a"]);
     });

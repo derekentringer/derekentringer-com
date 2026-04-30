@@ -14,7 +14,7 @@
 // progress events). It supports POST + custom headers.
 import EventSource from "react-native-sse";
 import type { QASource } from "@derekentringer/ns-shared";
-import api, { tokenManager } from "../services/api";
+import api, { tokenManager, API_BASE_URL } from "../services/api";
 
 // ─── Types — kept verbatim from desktop/web for protocol parity ───
 
@@ -229,6 +229,8 @@ export async function suggestTags(noteId: string): Promise<string[]> {
 
 // ─── Audio transcription + structuring (Phase C.1) ─────────────────
 
+import * as FileSystem from "expo-file-system/legacy";
+
 /** Mode mirrors desktop's `audioMode` field: dictates how the AI
  *  structures the transcript on save. Mobile surfaces all four
  *  modes — meeting mode produces an action-items + attendees +
@@ -249,33 +251,78 @@ export interface TranscribeResult {
   tags: string[];
 }
 
-/** Build a multipart `FormData` body that React Native can POST.
- *  The `uri` here is the local file path returned by expo-audio
- *  (e.g. `file:///…/recording.m4a`). RN's `FormData` accepts the
- *  `{ uri, name, type }` shape and sends the file as multipart. */
-function buildAudioFormData(
-  uri: string,
-  name: string,
+/**
+ * Upload an audio file via `FileSystem.uploadAsync` (multipart,
+ * native streaming). RN's JS-side `FormData` polyfill chokes on
+ * multi-megabyte files — the request leaves axios with a
+ * "Network Error" before it reaches the server. expo-file-system's
+ * native uploader streams the file directly from disk via a
+ * platform multipart implementation, which handles long
+ * recordings without choking.
+ *
+ * Caller passes the auth header explicitly because we bypass the
+ * axios interceptor stack here.
+ */
+async function uploadAudioMultipart<T>(
+  endpoint: string,
+  fileUri: string,
+  fileName: string,
   mimeType: string,
-  extras: Record<string, string> = {},
-): FormData {
-  const form = new FormData();
-  form.append("file", {
-    uri,
-    name,
-    type: mimeType,
-    // RN's FormData typings don't quite match the web spec — the
-    // cast keeps TS happy without changing the runtime payload.
-  } as unknown as Blob);
-  for (const [k, v] of Object.entries(extras)) {
-    form.append(k, v);
+  parameters: Record<string, string>,
+): Promise<T> {
+  const accessToken = tokenManager.getAccessToken();
+  if (!accessToken) {
+    throw new Error("Not authenticated");
   }
-  return form;
+  const result = await FileSystem.uploadAsync(
+    `${API_BASE_URL}${endpoint}`,
+    fileUri,
+    {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType,
+      parameters,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "X-Client-Type": "mobile",
+      },
+      // `httpMethod`'s default is POST; explicit for clarity.
+      // Native upload library passes the file's actual filename
+      // through to the multipart `filename=` directive.
+    },
+  );
+  if (result.status < 200 || result.status >= 300) {
+    let serverMessage: string | undefined;
+    try {
+      const parsed = JSON.parse(result.body) as { message?: string };
+      serverMessage = parsed.message;
+    } catch {
+      /* body wasn't JSON */
+    }
+    const err = new Error(
+      serverMessage ?? `Upload failed: HTTP ${result.status}`,
+    ) as Error & {
+      response?: { status: number; data?: { message?: string } };
+      code?: string;
+    };
+    err.response = {
+      status: result.status,
+      data: serverMessage ? { message: serverMessage } : undefined,
+    };
+    throw err;
+  }
+  // The body is JSON for both /ai/transcribe-chunk and
+  // /ai/transcribe — server returns `{ sessionId, chunkIndex, text }`
+  // or `{ title, content, tags, ... }`.
+  return JSON.parse(result.body) as T;
 }
 
-/** Send one ~20s slice to the server's chunk endpoint. Caller is
+/** Send one slice to the server's chunk endpoint. Caller is
  *  responsible for tracking `sessionId` (stable across the
- *  recording) and incrementing `chunkIndex`. */
+ *  recording) and incrementing `chunkIndex`. Streams via
+ *  expo-file-system rather than axios + FormData to avoid the
+ *  RN JS FormData polyfill choking on large multipart bodies. */
 export async function transcribeChunk(
   uri: string,
   mimeType: string,
@@ -283,18 +330,13 @@ export async function transcribeChunk(
   sessionId: string,
   chunkIndex: number,
 ): Promise<TranscribeChunkResult> {
-  const form = buildAudioFormData(
+  return uploadAudioMultipart<TranscribeChunkResult>(
+    "/ai/transcribe-chunk",
     uri,
     `chunk-${chunkIndex}.${extension}`,
     mimeType,
     { sessionId, chunkIndex: String(chunkIndex) },
   );
-  const response = await api.post<TranscribeChunkResult>(
-    "/ai/transcribe-chunk",
-    form,
-    { headers: { "Content-Type": "multipart/form-data" } },
-  );
-  return response.data;
 }
 
 /** One-shot transcription of a complete audio file. Useful when
@@ -307,24 +349,21 @@ export async function transcribeAudio(
   mode: AudioMode,
   folderId?: string,
 ): Promise<TranscribeResult> {
-  const extras: Record<string, string> = { mode };
-  if (folderId) extras.folderId = folderId;
-  const form = buildAudioFormData(
+  const parameters: Record<string, string> = { mode };
+  if (folderId) parameters.folderId = folderId;
+  return uploadAudioMultipart<TranscribeResult>(
+    "/ai/transcribe",
     uri,
     `recording.${extension}`,
     mimeType,
-    extras,
+    parameters,
   );
-  const response = await api.post<TranscribeResult>(
-    "/ai/transcribe",
-    form,
-    { headers: { "Content-Type": "multipart/form-data" } },
-  );
-  return response.data;
 }
 
 /** Run AI structuring on an already-transcribed string — used
- *  after the chunk pipeline has assembled the full transcript. */
+ *  after the chunk pipeline has assembled the full transcript.
+ *  No explicit timeout: long transcripts can take Claude tens of
+ *  seconds and we don't want to cap recording length. */
 export async function structureTranscript(
   transcript: string,
   mode: AudioMode,
