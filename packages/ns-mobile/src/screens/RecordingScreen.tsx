@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -15,20 +17,32 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
+import * as FileSystem from "expo-file-system";
+import * as Crypto from "expo-crypto";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { DashboardStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
-import type { AudioMode } from "@/api/ai";
+import { transcribeChunk, type AudioMode } from "@/api/ai";
+import {
+  buildChunkEntry,
+  buildErrorChunk,
+  chunkMimeForPlatform,
+  type ChunkEntry,
+} from "@/lib/audioChunks";
 
-// Phase C.1.1 (mobile parity audio recording — foundation):
-// full-screen recording surface with a mode picker on entry +
-// record / pause / stop controls. The chunked Whisper pipeline
-// and AI structuring on stop land in C.1.2 / C.1.3 — this slice
-// just wires expo-audio, the permission flow, and the in-app
-// presentation so the rest can layer on top without touching the
-// shell.
+// Phase C.1.2 layers a chunked Whisper pipeline + live transcript
+// on top of the C.1.1 recording shell:
+// - Every CHUNK_INTERVAL_MS the chunk loop stops the recorder,
+//   reads its file URI, restarts recording (to minimize the
+//   inter-chunk gap), then uploads the just-captured slice to
+//   /ai/transcribe-chunk in the background.
+// - Returned chunk text appends to a transcript array rendered in
+//   a scroll-to-bottom view between the waveform and the controls.
+// - Per-chunk failures surface inline as muted "[transcription
+//   failed]" entries; the recording itself continues. C.1.5 will
+//   add full retry-from-saved-file on stop.
 
 interface ModeDef {
   key: AudioMode;
@@ -96,6 +110,11 @@ const METERING_INTERVAL_MS = 80;
 // effectively silent for this UI; above 0dB is clipped.
 const SILENCE_FLOOR_DB = -60;
 
+// 20s chunk cadence — matches desktop. Long enough that Whisper
+// has useful context; short enough that the live transcript feels
+// near-realtime.
+const CHUNK_INTERVAL_MS = 20_000;
+
 type Props = NativeStackScreenProps<DashboardStackParamList, "Recording">;
 
 export function RecordingScreen({ navigation }: Props) {
@@ -116,6 +135,16 @@ export function RecordingScreen({ navigation }: Props) {
   // throws "Cannot use shared object that was already released".
   // The unmount cleanup checks this before touching the recorder.
   const stoppedRef = useRef(false);
+  // Chunk pipeline state — see the file header comment for the
+  // overall flow.
+  const sessionIdRef = useRef<string | null>(null);
+  const chunkIndexRef = useRef(0);
+  const chunkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isRotatingRef = useRef(false);
+  const pendingUploadsRef = useRef<Set<Promise<unknown>>>(new Set());
+  const transcriptScrollRef = useRef<ScrollView>(null);
+  const [transcript, setTranscript] = useState<ChunkEntry[]>([]);
+  const [isFinishing, setIsFinishing] = useState(false);
 
   // Rolling buffer of normalized 0..1 mic levels driving the
   // waveform strip. Initialized to all-zero so the bars sit flat
@@ -213,6 +242,10 @@ export function RecordingScreen({ navigation }: Props) {
       // property access throws — `stoppedRef` short-circuits the
       // post-stop unmount path. The try/catch is belt-and-braces
       // for the dismissed-mid-record case.
+      if (chunkIntervalRef.current) {
+        clearInterval(chunkIntervalRef.current);
+        chunkIntervalRef.current = null;
+      }
       if (stoppedRef.current) return;
       try {
         if (recorder.isRecording) {
@@ -224,6 +257,108 @@ export function RecordingScreen({ navigation }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ─── Chunk pipeline ─────────────────────────────────────────
+
+  const trackUpload = useCallback((p: Promise<unknown>) => {
+    pendingUploadsRef.current.add(p);
+    void p.finally(() => pendingUploadsRef.current.delete(p));
+  }, []);
+
+  const uploadChunk = useCallback(
+    async (uri: string, index: number) => {
+      const sessionId = sessionIdRef.current;
+      if (!sessionId) return;
+      const { mime, extension } = chunkMimeForPlatform(Platform.OS);
+      try {
+        const result = await transcribeChunk(
+          uri,
+          mime,
+          extension,
+          sessionId,
+          index,
+        );
+        const entry = buildChunkEntry(result.text, index);
+        if (entry) {
+          setTranscript((prev) => [...prev, entry]);
+        }
+      } catch {
+        setTranscript((prev) => [...prev, buildErrorChunk(index)]);
+      } finally {
+        // Best-effort cleanup of the local audio file. Sandbox
+        // eviction would catch this eventually, but a long
+        // recording can pile up 200+ files.
+        try {
+          await FileSystem.deleteAsync(uri, { idempotent: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [],
+  );
+
+  const rotateChunk = useCallback(async () => {
+    // Re-entry guard: if a previous rotation is still in flight
+    // (slow stop or slow prepare), skip this tick rather than
+    // double-rotating.
+    if (isRotatingRef.current) return;
+    if (stoppedRef.current) return;
+    if (!recorderState.isRecording) return;
+
+    isRotatingRef.current = true;
+    try {
+      let uri: string | null = null;
+      try {
+        await recorder.stop();
+        uri = recorder.uri ?? null;
+      } catch {
+        return;
+      }
+      const idx = chunkIndexRef.current;
+      chunkIndexRef.current = idx + 1;
+
+      // Restart the recorder immediately so the audio gap between
+      // chunks is as close to the prepare+record latency as we
+      // can get. The upload runs in the background; we don't
+      // await it here.
+      try {
+        await recorder.prepareToRecordAsync();
+        recorder.record();
+      } catch {
+        /* recorder restart failed — chunk loop will try again on next tick */
+      }
+
+      if (uri) {
+        trackUpload(uploadChunk(uri, idx));
+      }
+    } finally {
+      isRotatingRef.current = false;
+    }
+  }, [recorder, recorderState.isRecording, trackUpload, uploadChunk]);
+
+  const startChunkLoop = useCallback(() => {
+    if (chunkIntervalRef.current) return;
+    chunkIntervalRef.current = setInterval(() => {
+      void rotateChunk();
+    }, CHUNK_INTERVAL_MS);
+  }, [rotateChunk]);
+
+  const stopChunkLoop = useCallback(() => {
+    if (chunkIntervalRef.current) {
+      clearInterval(chunkIntervalRef.current);
+      chunkIntervalRef.current = null;
+    }
+  }, []);
+
+  // Auto-scroll the transcript to the bottom as new chunks land.
+  useEffect(() => {
+    if (transcript.length === 0) return;
+    const id = setTimeout(() => {
+      transcriptScrollRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+    return () => clearTimeout(id);
+  }, [transcript.length]);
 
   const requestPermission = async (): Promise<boolean> => {
     if (hasPermission === true) return true;
@@ -251,35 +386,63 @@ export function RecordingScreen({ navigation }: Props) {
     setMode(selected);
     accumulatedRef.current = 0;
     setElapsedMs(0);
+    sessionIdRef.current = Crypto.randomUUID();
+    chunkIndexRef.current = 0;
+    setTranscript([]);
     recorder.record();
+    startChunkLoop();
   };
 
   const handlePauseResume = async () => {
     if (recorderState.isRecording) {
+      stopChunkLoop();
       recorder.pause();
     } else if (mode) {
       recorder.record();
+      startChunkLoop();
     }
   };
 
   const handleStop = async () => {
+    if (isFinishing) return;
+    setIsFinishing(true);
+    stopChunkLoop();
+
+    // Final chunk: stop the recorder and upload whatever audio
+    // accumulated since the last rotation.
+    let finalUri: string | null = null;
     try {
       await recorder.stop();
+      finalUri = recorder.uri ?? null;
     } catch {
-      // ignore — fall through to cleanup
+      /* ignore */
     }
+    if (finalUri) {
+      const idx = chunkIndexRef.current;
+      chunkIndexRef.current = idx + 1;
+      trackUpload(uploadChunk(finalUri, idx));
+    }
+
+    // Wait for every in-flight chunk upload before returning.
+    // Ensures `stoppedRef` doesn't flip until uploads are done so
+    // the unmount cleanup race we fixed in C.1.1 stays fixed.
+    await Promise.allSettled([...pendingUploadsRef.current]);
+
     stoppedRef.current = true;
-    // C.1.1 returns straight to the dashboard. C.1.3 will route
-    // the user to the AI-structured review/save screen instead.
+    // C.1.3 will route to the AI-structured review/save screen.
     navigation.goBack();
   };
 
   const handleCancel = async () => {
+    stopChunkLoop();
     try {
       await recorder.stop();
     } catch {
       /* ignore */
     }
+    // Drop in-flight uploads on the floor — this is "discard"
+    // semantically. Their `.finally` will still run and clean up
+    // the local files.
     stoppedRef.current = true;
     navigation.goBack();
   };
@@ -416,18 +579,87 @@ export function RecordingScreen({ navigation }: Props) {
             ]}
           />
           <Text style={[styles.statusLabel, { color: themeColors.muted }]}>
-            {recorderState.isRecording ? "Recording" : "Paused"}
+            {isFinishing
+              ? "Finishing transcription…"
+              : recorderState.isRecording
+                ? "Recording"
+                : "Paused"}
           </Text>
         </View>
         <Text style={[styles.elapsed, { color: themeColors.foreground }]}>
           {formatElapsed(elapsedMs)}
         </Text>
+
+        <View
+          style={[
+            styles.transcriptCard,
+            {
+              backgroundColor: themeColors.card,
+              borderColor: themeColors.border,
+            },
+          ]}
+        >
+          <Text
+            style={[styles.transcriptLabel, { color: themeColors.muted }]}
+          >
+            Live Transcript
+          </Text>
+          <ScrollView
+            ref={transcriptScrollRef}
+            style={styles.transcriptScroll}
+            contentContainerStyle={styles.transcriptContent}
+            onContentSizeChange={() =>
+              transcriptScrollRef.current?.scrollToEnd({ animated: true })
+            }
+          >
+            {transcript.length === 0 ? (
+              <Text
+                style={[styles.transcriptHint, { color: themeColors.muted }]}
+              >
+                {recorderState.isRecording
+                  ? "Listening…"
+                  : isFinishing
+                    ? "Wrapping up…"
+                    : "Paused"}
+              </Text>
+            ) : (
+              <Text
+                style={[
+                  styles.transcriptBody,
+                  { color: themeColors.foreground },
+                ]}
+              >
+                {transcript.map((entry, i) => (
+                  <Text
+                    key={`${entry.index}-${i}`}
+                    style={
+                      entry.status === "error"
+                        ? {
+                            color: themeColors.muted,
+                            fontStyle: "italic",
+                          }
+                        : undefined
+                    }
+                  >
+                    {entry.text}
+                    {i < transcript.length - 1 ? " " : ""}
+                  </Text>
+                ))}
+              </Text>
+            )}
+          </ScrollView>
+        </View>
       </View>
 
       <View style={styles.controls}>
         <Pressable
           onPress={handleCancel}
-          style={[styles.secondaryButton, { borderColor: themeColors.border }]}
+          disabled={isFinishing}
+          style={[
+            styles.secondaryButton,
+            { borderColor: themeColors.border },
+            isFinishing && { opacity: 0.5 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Cancel recording"
         >
@@ -444,7 +676,12 @@ export function RecordingScreen({ navigation }: Props) {
         </Pressable>
         <Pressable
           onPress={handlePauseResume}
-          style={[styles.secondaryButton, { borderColor: themeColors.border }]}
+          disabled={isFinishing}
+          style={[
+            styles.secondaryButton,
+            { borderColor: themeColors.border },
+            isFinishing && { opacity: 0.5 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel={recorderState.isRecording ? "Pause" : "Resume"}
         >
@@ -461,9 +698,11 @@ export function RecordingScreen({ navigation }: Props) {
         </Pressable>
         <Pressable
           onPress={handleStop}
+          disabled={isFinishing}
           style={[
             styles.primaryButton,
             { backgroundColor: themeColors.primary },
+            isFinishing && { opacity: 0.6 },
           ]}
           accessibilityRole="button"
           accessibilityLabel="Stop recording"
@@ -473,7 +712,9 @@ export function RecordingScreen({ navigation }: Props) {
             size={22}
             color="#0f1117"
           />
-          <Text style={styles.primaryButtonText}>Stop</Text>
+          <Text style={styles.primaryButtonText}>
+            {isFinishing ? "Finishing…" : "Stop"}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -538,8 +779,8 @@ const styles = StyleSheet.create({
   recordingBody: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.lg,
+    justifyContent: "flex-start",
+    gap: spacing.md,
   },
   waveform: {
     flexDirection: "row",
@@ -574,6 +815,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.4,
     textTransform: "uppercase",
+  },
+  transcriptCard: {
+    width: "100%",
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.md,
+  },
+  transcriptLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: spacing.xs,
+  },
+  transcriptScroll: {
+    flex: 1,
+  },
+  transcriptContent: {
+    paddingBottom: spacing.xs,
+  },
+  transcriptBody: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  transcriptHint: {
+    fontSize: 13,
+    fontStyle: "italic",
   },
   controls: {
     flexDirection: "row",
