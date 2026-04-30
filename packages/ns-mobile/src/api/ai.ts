@@ -273,6 +273,14 @@ function buildAudioFormData(
   return form;
 }
 
+// Audio uploads + Whisper round-trip can run minutes long for
+// multi-minute recordings (Whisper itself takes ~30s for a 5-min
+// clip). Axios's default timeout of 0 is "never" but RN's XHR
+// can drop the connection on slow paths — set an explicit 5-min
+// ceiling so the request waits patiently instead of failing
+// "Network Error" mid-Whisper.
+const AUDIO_TIMEOUT_MS = 5 * 60 * 1000;
+
 /** Send one ~20s slice to the server's chunk endpoint. Caller is
  *  responsible for tracking `sessionId` (stable across the
  *  recording) and incrementing `chunkIndex`. */
@@ -295,6 +303,7 @@ export async function transcribeChunk(
   const response = await api.post<TranscribeChunkResult>(
     "/ai/transcribe-chunk",
     form,
+    { timeout: AUDIO_TIMEOUT_MS },
   );
   return response.data;
 }
@@ -319,10 +328,12 @@ export async function transcribeAudio(
   );
   // See `transcribeChunk` above — interceptor handles Content-Type
   // for FormData; explicit override here would suppress the
-  // multipart boundary.
+  // multipart boundary. Same long timeout for the same Whisper-
+  // round-trip reason.
   const response = await api.post<TranscribeResult>(
     "/ai/transcribe",
     form,
+    { timeout: AUDIO_TIMEOUT_MS },
   );
   return response.data;
 }
@@ -334,9 +345,12 @@ export async function structureTranscript(
   mode: AudioMode,
   folderId?: string,
 ): Promise<TranscribeResult> {
+  // Claude calls for long meeting transcripts can take ~30s+ —
+  // share the same 5-min ceiling.
   const response = await api.post<TranscribeResult>(
     "/ai/structure-transcript",
     { transcript, mode, folderId },
+    { timeout: AUDIO_TIMEOUT_MS },
   );
   return response.data;
 }

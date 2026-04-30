@@ -180,7 +180,7 @@ describe("ai api client (mobile)", () => {
   });
 
   describe("transcribeChunk", () => {
-    it("POSTs FormData with sessionId/chunkIndex and returns the chunk text", async () => {
+    it("POSTs FormData with sessionId/chunkIndex + long timeout", async () => {
       mockPost.mockResolvedValue({
         data: { sessionId: "sess-1", chunkIndex: 2, text: "hello world" },
       });
@@ -195,10 +195,16 @@ describe("ai api client (mobile)", () => {
       const [path, body, opts] = mockPost.mock.calls[0];
       expect(path).toBe("/ai/transcribe-chunk");
       expect(body).toBeInstanceOf(FormData);
-      // Content-Type is intentionally NOT set — the axios request
-      // interceptor strips the default JSON header for FormData so
-      // RN's XHR layer can add the multipart boundary.
-      expect(opts).toBeUndefined();
+      // Long explicit timeout for Whisper round-trip; Content-Type
+      // intentionally NOT set — the axios request interceptor
+      // strips the default JSON header for FormData so RN's XHR
+      // layer can add the multipart boundary.
+      expect((opts as { timeout: number }).timeout).toBeGreaterThanOrEqual(
+        60_000,
+      );
+      expect(
+        (opts as { headers?: Record<string, string> }).headers,
+      ).toBeUndefined();
       expect(result).toEqual({
         sessionId: "sess-1",
         chunkIndex: 2,
@@ -208,7 +214,7 @@ describe("ai api client (mobile)", () => {
   });
 
   describe("transcribeAudio", () => {
-    it("POSTs FormData with mode + optional folderId (no manual Content-Type)", async () => {
+    it("POSTs FormData with mode + optional folderId + long timeout", async () => {
       mockPost.mockResolvedValue({
         data: { title: "T", content: "C", tags: ["a"] },
       });
@@ -223,14 +229,16 @@ describe("ai api client (mobile)", () => {
       const [path, body, opts] = mockPost.mock.calls[0];
       expect(path).toBe("/ai/transcribe");
       expect(body).toBeInstanceOf(FormData);
-      expect(opts).toBeUndefined();
+      expect((opts as { timeout: number }).timeout).toBeGreaterThanOrEqual(
+        60_000,
+      );
       expect(result.title).toBe("T");
       expect(result.tags).toEqual(["a"]);
     });
   });
 
   describe("structureTranscript", () => {
-    it("POSTs JSON transcript + mode + optional folderId", async () => {
+    it("POSTs JSON transcript + mode + optional folderId + long timeout", async () => {
       mockPost.mockResolvedValue({
         data: { title: "T", content: "C", tags: [] },
       });
@@ -239,11 +247,17 @@ describe("ai api client (mobile)", () => {
         "lecture",
         "f1",
       );
-      expect(mockPost).toHaveBeenCalledWith("/ai/structure-transcript", {
+      expect(mockPost).toHaveBeenCalledTimes(1);
+      const [path, body, opts] = mockPost.mock.calls[0];
+      expect(path).toBe("/ai/structure-transcript");
+      expect(body).toEqual({
         transcript: "Some transcript text",
         mode: "lecture",
         folderId: "f1",
       });
+      expect((opts as { timeout: number }).timeout).toBeGreaterThanOrEqual(
+        60_000,
+      );
       expect(result.title).toBe("T");
     });
 
@@ -252,7 +266,9 @@ describe("ai api client (mobile)", () => {
         data: { title: "T", content: "C", tags: [] },
       });
       await structureTranscript("hi", "memo");
-      expect(mockPost).toHaveBeenCalledWith("/ai/structure-transcript", {
+      const [path, body] = mockPost.mock.calls[0];
+      expect(path).toBe("/ai/structure-transcript");
+      expect(body).toEqual({
         transcript: "hi",
         mode: "memo",
       });

@@ -161,10 +161,30 @@ export async function processRecording(
       noteTitle: note.title,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    // Surface as much axios detail as we can — "Network Error"
+    // alone leaves us guessing whether it was a timeout, a 4xx,
+    // or a connection drop. Axios errors carry `.code` + a
+    // possible `.response.status` we'd otherwise lose.
+    const axiosErr = err as {
+      message?: string;
+      code?: string;
+      response?: { status?: number; data?: { message?: string } };
+    };
+    const serverMsg = axiosErr?.response?.data?.message;
+    const status = axiosErr?.response?.status;
+    const code = axiosErr?.code;
+    const baseMessage =
+      err instanceof Error ? err.message : "Unknown error";
+    const detail = [
+      serverMsg ?? baseMessage,
+      status ? `HTTP ${status}` : null,
+      code ? `(${code})` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
     patch(sessionId, {
       status: "failed",
-      errorMessage: message,
+      errorMessage: detail || baseMessage,
     });
   } finally {
     // Best-effort cleanup of the local audio file.
