@@ -16,6 +16,7 @@ import {
   useAudioRecorderState,
 } from "expo-audio";
 import * as Crypto from "expo-crypto";
+import * as FileSystem from "expo-file-system/legacy";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { DashboardStackParamList } from "@/navigation/types";
@@ -272,14 +273,6 @@ export function RecordingScreen({ navigation }: Props) {
     recorder.record();
   };
 
-  const handlePauseResume = async () => {
-    if (recorderState.isRecording) {
-      recorder.pause();
-    } else if (mode) {
-      recorder.record();
-    }
-  };
-
   const handleStop = async () => {
     if (isStopping) return;
     setIsStopping(true);
@@ -313,14 +306,50 @@ export function RecordingScreen({ navigation }: Props) {
     parent?.navigate("AI" as never);
   };
 
-  const handleCancel = async () => {
-    try {
-      await recorder.stop();
-    } catch {
-      /* ignore */
-    }
-    stoppedRef.current = true;
-    navigation.goBack();
+  const handleCancel = () => {
+    Alert.alert(
+      "Discard recording?",
+      "Your recording and transcript will be lost.",
+      [
+        { text: "Keep recording", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: async () => {
+            // Capture the URI BEFORE stop, since on Android expo-audio
+            // releases the recorder on stop and `recorder.uri` access
+            // throws afterwards. iOS reports the URI on the recorder
+            // object after stop, but reading it pre-stop is safe on
+            // both platforms.
+            const uri = (() => {
+              try {
+                return recorder.uri ?? null;
+              } catch {
+                return null;
+              }
+            })();
+            try {
+              await recorder.stop();
+            } catch {
+              /* ignore */
+            }
+            stoppedRef.current = true;
+            // Delete the partial audio file so cancelled sessions
+            // don't leak storage. processRecording handles the file
+            // for the success path; this is the equivalent for the
+            // discard path.
+            if (uri) {
+              try {
+                await FileSystem.deleteAsync(uri, { idempotent: true });
+              } catch {
+                /* ignore */
+              }
+            }
+            navigation.goBack();
+          },
+        },
+      ],
+    );
   };
 
   const formatElapsed = (ms: number) => {
@@ -484,28 +513,6 @@ export function RecordingScreen({ navigation }: Props) {
             style={[styles.secondaryButtonText, { color: themeColors.foreground }]}
           >
             Cancel
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={handlePauseResume}
-          disabled={isStopping}
-          style={[
-            styles.secondaryButton,
-            { borderColor: themeColors.border },
-            isStopping && { opacity: 0.5 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={recorderState.isRecording ? "Pause" : "Resume"}
-        >
-          <MaterialCommunityIcons
-            name={recorderState.isRecording ? "pause" : "play"}
-            size={22}
-            color={themeColors.foreground}
-          />
-          <Text
-            style={[styles.secondaryButtonText, { color: themeColors.foreground }]}
-          >
-            {recorderState.isRecording ? "Pause" : "Resume"}
           </Text>
         </Pressable>
         <Pressable

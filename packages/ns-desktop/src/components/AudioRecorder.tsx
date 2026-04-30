@@ -52,6 +52,11 @@ export interface AudioRecordingState {
   liveTranscript: string;
   sessionId: string;
   onStop: () => void;
+  /** Discard the in-progress recording without producing a note.
+   *  The recorder is stopped and resources are released, but the
+   *  post-stop processing pipeline (transcribe → structure → note
+   *  create) is skipped so the chat shows no orphaned card. */
+  onCancel: () => void;
 }
 
 /** Self-contained snapshot of a recording session, handed to a detached
@@ -640,6 +645,16 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       setElapsed(0);
       setLiveTranscript("");
 
+      // Cancel path: skip the post-stop processing pipeline. The
+      // native WAV bytes returned by `stop_meeting_recording` and
+      // the in-memory snapshot are dropped; no card, no transcribe
+      // upload, no note created. The Rust side has already deleted
+      // its temp file in the same `invoke`, so nothing leaks.
+      if (cancelledRef.current) {
+        cancelledRef.current = false;
+        return;
+      }
+
       startProcessing(snapshot);
     } catch (err) {
       cleanup();
@@ -675,6 +690,19 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
       };
 
       recorder.onstop = () => {
+        // Cancel path: drop the audio chunks, abort any in-flight
+        // chunk transcription, and skip the post-stop processing
+        // pipeline. The MediaStream / MediaRecorder are still cleaned
+        // up via `cleanup()` so the mic light goes off.
+        if (cancelledRef.current) {
+          cancelledRef.current = false;
+          cleanup();
+          setState("idle");
+          setElapsed(0);
+          setLiveTranscript("");
+          return;
+        }
+
         const blobType = recorder.mimeType || "audio/webm";
         const audioBlob = new Blob(chunksRef.current, { type: blobType });
         // Capture transcript — try ref map first, fall back to state ref
@@ -773,6 +801,13 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerKey]);
 
+  // When set, the next stop-driven `onstop` (mic) or post-meeting
+  // finalize (meeting mode) skips the post-stop processing pipeline.
+  // Set by handleCancel right before stop() so the audio is dropped
+  // instead of producing a "Meeting Ended" card the user explicitly
+  // discarded.
+  const cancelledRef = useRef(false);
+
   const handleStop = useCallback(() => {
     if (isMeetingRef.current) {
       handleMeetingStop();
@@ -796,6 +831,11 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
     }
   }, []);
 
+  const handleCancel = useCallback(() => {
+    cancelledRef.current = true;
+    handleStop();
+  }, [handleStop]);
+
   // Notify parent of recording state changes
   useEffect(() => {
     if (state === "idle") {
@@ -810,9 +850,10 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         liveTranscript,
         sessionId: sessionIdRef.current,
         onStop: handleStop,
+        onCancel: handleCancel,
       });
     }
-  }, [state, elapsed, mode, audioLevel, liveTranscript, handleStop, onRecordingStateChange]);
+  }, [state, elapsed, mode, audioLevel, liveTranscript, handleStop, handleCancel, onRecordingStateChange]);
 
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPressRef = useRef(false);
