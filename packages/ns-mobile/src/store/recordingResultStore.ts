@@ -102,8 +102,31 @@ export async function processRecording(
   const { mime, extension } = chunkMimeForPlatform(Platform.OS);
 
   try {
+    console.log(
+      "[recording] start session=%s uri=%s mode=%s",
+      sessionId,
+      uri,
+      mode,
+    );
+    // Sanity check: confirm the audio file actually exists before
+    // we hand it to FormData. expo-audio's recorder.uri is
+    // sometimes captured before the OS finalizes the file —
+    // surfacing that here is much clearer than a downstream
+    // "Network Error" from axios.
+    const info = await FileSystem.getInfoAsync(uri).catch(() => null);
+    console.log("[recording] file info", info);
+    if (!info?.exists) {
+      patch(sessionId, {
+        status: "failed",
+        errorMessage:
+          "Audio file is missing — the recorder didn't produce a saved file.",
+      });
+      return;
+    }
+
     // Step 1: Whisper transcription via the same chunk endpoint
     // the chunk-loop plan would have used. Single chunk, index 0.
+    console.log("[recording] uploading chunk size=%s", info.size);
     const transcription = await transcribeChunk(
       uri,
       mime,
@@ -112,6 +135,10 @@ export async function processRecording(
       0,
     );
     const rawTranscript = (transcription.text ?? "").trim();
+    console.log(
+      "[recording] transcription length=%s",
+      rawTranscript.length,
+    );
 
     if (rawTranscript.length === 0) {
       patch(sessionId, {
@@ -137,7 +164,8 @@ export async function processRecording(
         content: result.content || rawTranscript,
         tags: result.tags ?? [],
       };
-    } catch {
+    } catch (e) {
+      console.warn("[recording] structuring failed, using raw transcript", e);
       structured = {
         title: "Untitled Recording",
         content: rawTranscript,
@@ -154,6 +182,7 @@ export async function processRecording(
       audioMode: mode,
     });
     notifyLocalChange();
+    console.log("[recording] note created id=%s title=%s", note.id, note.title);
 
     patch(sessionId, {
       status: "completed",
@@ -161,6 +190,7 @@ export async function processRecording(
       noteTitle: note.title,
     });
   } catch (err) {
+    console.warn("[recording] pipeline failed", err);
     // Surface as much axios detail as we can — "Network Error"
     // alone leaves us guessing whether it was a timeout, a 4xx,
     // or a connection drop. Axios errors carry `.code` + a
