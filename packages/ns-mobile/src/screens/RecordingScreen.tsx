@@ -73,6 +73,9 @@ const RECORDING_OPTIONS = {
   extension: ".m4a",
   sampleRate: 16000,
   numberOfChannels: 1,
+  // Enable mic-level metering so `useAudioRecorderState` exposes
+  // a `metering` value (in dB) that drives the live waveform.
+  isMeteringEnabled: true,
   ios: {
     ...RecordingPresets.HIGH_QUALITY.ios,
     extension: ".wav",
@@ -83,6 +86,16 @@ const RECORDING_OPTIONS = {
   },
 };
 
+// Number of bars across the waveform strip + the polling cadence
+// for `useAudioRecorderState`. 80ms ≈ 12 samples per second; with
+// 40 bars we get ~3.3s of history rolling left. Tuned for "feels
+// responsive" without churning JS state at 60fps.
+const WAVEFORM_BARS = 40;
+const METERING_INTERVAL_MS = 80;
+// Map metering dB → normalized 0..1. Mic input below -60dB is
+// effectively silent for this UI; above 0dB is clipped.
+const SILENCE_FLOOR_DB = -60;
+
 type Props = NativeStackScreenProps<DashboardStackParamList, "Recording">;
 
 export function RecordingScreen({ navigation }: Props) {
@@ -92,11 +105,44 @@ export function RecordingScreen({ navigation }: Props) {
   const [elapsedMs, setElapsedMs] = useState(0);
 
   const recorder = useAudioRecorder(RECORDING_OPTIONS);
-  const recorderState = useAudioRecorderState(recorder);
+  const recorderState = useAudioRecorderState(recorder, METERING_INTERVAL_MS);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const accumulatedRef = useRef(0);
   const pulse = useRef(new Animated.Value(0)).current;
+
+  // Rolling buffer of normalized 0..1 mic levels driving the
+  // waveform strip. Initialized to all-zero so the bars sit flat
+  // before the first poll. New samples push to the right; the
+  // oldest falls off the left, producing the scrolling effect.
+  const [levels, setLevels] = useState<number[]>(() =>
+    new Array(WAVEFORM_BARS).fill(0),
+  );
+
+  useEffect(() => {
+    if (!recorderState.isRecording) return;
+    const m = recorderState.metering;
+    if (typeof m !== "number") return;
+    // expo-audio reports metering in dB. Map -60..0 → 0..1, clamp.
+    const normalized = Math.max(
+      0,
+      Math.min(1, (m - SILENCE_FLOOR_DB) / -SILENCE_FLOOR_DB),
+    );
+    setLevels((prev) => {
+      const next = prev.slice(1);
+      next.push(normalized);
+      return next;
+    });
+  }, [recorderState.metering, recorderState.isRecording]);
+
+  // Reset the strip when the user toggles back to the mode picker
+  // or stops, so the next session starts from a flat baseline
+  // instead of inheriting the previous run's tail.
+  useEffect(() => {
+    if (!recorderState.isRecording && !recorderState.canRecord) {
+      setLevels(new Array(WAVEFORM_BARS).fill(0));
+    }
+  }, [recorderState.isRecording, recorderState.canRecord]);
 
   // Pulsing red dot while recording — visual signal that the mic
   // is hot. Loops between two opacity values via Animated.timing.
@@ -333,22 +379,44 @@ export function RecordingScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.recordingBody}>
-        <Animated.View
-          style={[
-            styles.recDot,
-            {
-              opacity: pulseOpacity,
-              backgroundColor: recorderState.isRecording
-                ? themeColors.destructive
-                : themeColors.muted,
-            },
-          ]}
-        />
+        <View style={styles.waveform}>
+          {levels.map((level, i) => (
+            <View
+              key={i}
+              style={[
+                styles.waveformBar,
+                {
+                  // Floor of 3px so the bar is still a visible line
+                  // when the mic is silent; max ~64px for clear
+                  // peaks. Quieter colour when paused.
+                  height: 3 + level * 61,
+                  backgroundColor: recorderState.isRecording
+                    ? themeColors.primary
+                    : themeColors.muted,
+                  opacity: recorderState.isRecording ? 1 : 0.4,
+                },
+              ]}
+            />
+          ))}
+        </View>
+        <View style={styles.statusRow}>
+          <Animated.View
+            style={[
+              styles.recDot,
+              {
+                opacity: pulseOpacity,
+                backgroundColor: recorderState.isRecording
+                  ? themeColors.destructive
+                  : themeColors.muted,
+              },
+            ]}
+          />
+          <Text style={[styles.statusLabel, { color: themeColors.muted }]}>
+            {recorderState.isRecording ? "Recording" : "Paused"}
+          </Text>
+        </View>
         <Text style={[styles.elapsed, { color: themeColors.foreground }]}>
           {formatElapsed(elapsedMs)}
-        </Text>
-        <Text style={[styles.statusLabel, { color: themeColors.muted }]}>
-          {recorderState.isRecording ? "Recording" : "Paused"}
         </Text>
       </View>
 
@@ -467,13 +535,31 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
+    gap: spacing.lg,
+  },
+  waveform: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 80,
+    gap: 3,
+    width: "100%",
+    paddingHorizontal: spacing.md,
+  },
+  waveformBar: {
+    flex: 1,
+    minWidth: 2,
+    borderRadius: 2,
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   recDot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    marginBottom: spacing.md,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   elapsed: {
     fontSize: 56,
