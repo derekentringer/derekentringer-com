@@ -32,17 +32,21 @@ import {
   type ChunkEntry,
 } from "@/lib/audioChunks";
 
-// Phase C.1.2 layers a chunked Whisper pipeline + live transcript
-// on top of the C.1.1 recording shell:
-// - Every CHUNK_INTERVAL_MS the chunk loop stops the recorder,
-//   reads its file URI, restarts recording (to minimize the
-//   inter-chunk gap), then uploads the just-captured slice to
-//   /ai/transcribe-chunk in the background.
-// - Returned chunk text appends to a transcript array rendered in
-//   a scroll-to-bottom view between the waveform and the controls.
-// - Per-chunk failures surface inline as muted "[transcription
-//   failed]" entries; the recording itself continues. C.1.5 will
-//   add full retry-from-saved-file on stop.
+// Phase C.1.2 — Whisper transcription + transcript view:
+// - Records one continuous audio session; on Stop, uploads the
+//   full file to /ai/transcribe-chunk and renders the returned
+//   text in the transcript card.
+// - The original C.1.2 plan was a 20s stop+restart chunk loop for
+//   live-during-recording text, but expo-audio's `stop()` finalizes
+//   and releases the native AudioRecorder — calling
+//   `prepareToRecordAsync()` after stop throws "1st argument
+//   cannot be cast to AudioRecorder (received Integer)" because
+//   the JS handle has been invalidated. The hook returns a single
+//   recorder for the component's lifetime, so true live chunking
+//   would require a different audio library. Punted to a future
+//   sub-phase.
+// - C.1.3 will route the transcribed text into an AI structuring
+//   pass + review/save screen.
 
 interface ModeDef {
   key: AudioMode;
@@ -110,10 +114,6 @@ const METERING_INTERVAL_MS = 80;
 // effectively silent for this UI; above 0dB is clipped.
 const SILENCE_FLOOR_DB = -60;
 
-// 20s chunk cadence — matches desktop. Long enough that Whisper
-// has useful context; short enough that the live transcript feels
-// near-realtime.
-const CHUNK_INTERVAL_MS = 20_000;
 
 type Props = NativeStackScreenProps<DashboardStackParamList, "Recording">;
 
@@ -135,12 +135,9 @@ export function RecordingScreen({ navigation }: Props) {
   // throws "Cannot use shared object that was already released".
   // The unmount cleanup checks this before touching the recorder.
   const stoppedRef = useRef(false);
-  // Chunk pipeline state — see the file header comment for the
-  // overall flow.
+  // Transcription state — see the file header for why this is a
+  // single post-stop request rather than a chunk loop.
   const sessionIdRef = useRef<string | null>(null);
-  const chunkIndexRef = useRef(0);
-  const chunkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isRotatingRef = useRef(false);
   const pendingUploadsRef = useRef<Set<Promise<unknown>>>(new Set());
   const transcriptScrollRef = useRef<ScrollView>(null);
   const [transcript, setTranscript] = useState<ChunkEntry[]>([]);
@@ -242,10 +239,6 @@ export function RecordingScreen({ navigation }: Props) {
       // property access throws — `stoppedRef` short-circuits the
       // post-stop unmount path. The try/catch is belt-and-braces
       // for the dismissed-mid-record case.
-      if (chunkIntervalRef.current) {
-        clearInterval(chunkIntervalRef.current);
-        chunkIntervalRef.current = null;
-      }
       if (stoppedRef.current) return;
       try {
         if (recorder.isRecording) {
@@ -258,105 +251,44 @@ export function RecordingScreen({ navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── Chunk pipeline ─────────────────────────────────────────
+  // ─── Transcription ──────────────────────────────────────────
 
   const trackUpload = useCallback((p: Promise<unknown>) => {
     pendingUploadsRef.current.add(p);
     void p.finally(() => pendingUploadsRef.current.delete(p));
   }, []);
 
-  const uploadChunk = useCallback(
-    async (uri: string, index: number) => {
-      const sessionId = sessionIdRef.current;
-      if (!sessionId) return;
-      const { mime, extension } = chunkMimeForPlatform(Platform.OS);
-      try {
-        const result = await transcribeChunk(
-          uri,
-          mime,
-          extension,
-          sessionId,
-          index,
-        );
-        const entry = buildChunkEntry(result.text, index);
-        if (entry) {
-          setTranscript((prev) => [...prev, entry]);
-        }
-      } catch {
-        setTranscript((prev) => [...prev, buildErrorChunk(index)]);
-      } finally {
-        // Best-effort cleanup of the local audio file. Sandbox
-        // eviction would catch this eventually, but a long
-        // recording can pile up 200+ files.
-        try {
-          await FileSystem.deleteAsync(uri, { idempotent: true });
-        } catch {
-          /* ignore */
-        }
-      }
-    },
-    [],
-  );
-
-  const rotateChunk = useCallback(async () => {
-    // Re-entry guard: if a previous rotation is still in flight
-    // (slow stop or slow prepare), skip this tick rather than
-    // double-rotating.
-    if (isRotatingRef.current) return;
-    if (stoppedRef.current) return;
-    // Read the LIVE recorder state via the getter on the stable
-    // recorder object — `recorderState.isRecording` is React state
-    // captured by closure at the render where this callback was
-    // built, which can lag the actual recorder when the chunk
-    // interval was started in the same tick as `recorder.record()`.
-    if (!recorder.isRecording) return;
-
-    isRotatingRef.current = true;
+  const uploadFullRecording = useCallback(async (uri: string) => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId) return;
+    const { mime, extension } = chunkMimeForPlatform(Platform.OS);
     try {
-      let uri: string | null = null;
-      try {
-        await recorder.stop();
-        uri = recorder.uri ?? null;
-      } catch {
-        return;
+      // Single chunk (index 0) covers the entire recording. Reuses
+      // the same endpoint the chunk-loop plan would have used so
+      // C.1.5's retry-from-saved-file path stays one code path.
+      const result = await transcribeChunk(
+        uri,
+        mime,
+        extension,
+        sessionId,
+        0,
+      );
+      const entry = buildChunkEntry(result.text, 0);
+      if (entry) {
+        setTranscript((prev) => [...prev, entry]);
       }
-      const idx = chunkIndexRef.current;
-      chunkIndexRef.current = idx + 1;
-
-      // Restart the recorder immediately so the audio gap between
-      // chunks is as close to the prepare+record latency as we
-      // can get. The upload runs in the background; we don't
-      // await it here.
-      try {
-        await recorder.prepareToRecordAsync();
-        recorder.record();
-      } catch {
-        /* recorder restart failed — chunk loop will try again on next tick */
-      }
-
-      if (uri) {
-        trackUpload(uploadChunk(uri, idx));
-      }
+    } catch {
+      setTranscript((prev) => [...prev, buildErrorChunk(0)]);
     } finally {
-      isRotatingRef.current = false;
-    }
-  }, [recorder, trackUpload, uploadChunk]);
-
-  const startChunkLoop = useCallback(() => {
-    if (chunkIntervalRef.current) return;
-    chunkIntervalRef.current = setInterval(() => {
-      void rotateChunk();
-    }, CHUNK_INTERVAL_MS);
-  }, [rotateChunk]);
-
-  const stopChunkLoop = useCallback(() => {
-    if (chunkIntervalRef.current) {
-      clearInterval(chunkIntervalRef.current);
-      chunkIntervalRef.current = null;
+      try {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      } catch {
+        /* ignore */
+      }
     }
   }, []);
 
-  // Auto-scroll the transcript to the bottom as new chunks land.
+  // Auto-scroll the transcript to the bottom as new entries land.
   useEffect(() => {
     if (transcript.length === 0) return;
     const id = setTimeout(() => {
@@ -392,29 +324,27 @@ export function RecordingScreen({ navigation }: Props) {
     accumulatedRef.current = 0;
     setElapsedMs(0);
     sessionIdRef.current = Crypto.randomUUID();
-    chunkIndexRef.current = 0;
     setTranscript([]);
     recorder.record();
-    startChunkLoop();
   };
 
   const handlePauseResume = async () => {
     if (recorderState.isRecording) {
-      stopChunkLoop();
       recorder.pause();
     } else if (mode) {
       recorder.record();
-      startChunkLoop();
     }
   };
 
   const handleStop = async () => {
     if (isFinishing) return;
     setIsFinishing(true);
-    stopChunkLoop();
 
-    // Final chunk: stop the recorder and upload whatever audio
-    // accumulated since the last rotation.
+    // Stop the recorder and capture its file URI. After stop,
+    // expo-audio releases the native AudioRecorder — DO NOT call
+    // any further methods on `recorder`. We can still read `.uri`
+    // synchronously immediately after `stop()` resolves; this is
+    // a cached value, not a fresh native query.
     let finalUri: string | null = null;
     try {
       await recorder.stop();
@@ -422,32 +352,27 @@ export function RecordingScreen({ navigation }: Props) {
     } catch {
       /* ignore */
     }
+
     if (finalUri) {
-      const idx = chunkIndexRef.current;
-      chunkIndexRef.current = idx + 1;
-      trackUpload(uploadChunk(finalUri, idx));
+      trackUpload(uploadFullRecording(finalUri));
     }
 
-    // Wait for every in-flight chunk upload before returning.
-    // Ensures `stoppedRef` doesn't flip until uploads are done so
-    // the unmount cleanup race we fixed in C.1.1 stays fixed.
+    // Wait for the upload + transcription before flipping
+    // `stoppedRef` and navigating, so the user briefly sees the
+    // transcript text in the card. C.1.3 will route to a review
+    // screen instead of `goBack()`.
     await Promise.allSettled([...pendingUploadsRef.current]);
 
     stoppedRef.current = true;
-    // C.1.3 will route to the AI-structured review/save screen.
     navigation.goBack();
   };
 
   const handleCancel = async () => {
-    stopChunkLoop();
     try {
       await recorder.stop();
     } catch {
       /* ignore */
     }
-    // Drop in-flight uploads on the floor — this is "discard"
-    // semantically. Their `.finally` will still run and clean up
-    // the local files.
     stoppedRef.current = true;
     navigation.goBack();
   };
@@ -621,10 +546,10 @@ export function RecordingScreen({ navigation }: Props) {
               <Text
                 style={[styles.transcriptHint, { color: themeColors.muted }]}
               >
-                {recorderState.isRecording
-                  ? "Listening…"
-                  : isFinishing
-                    ? "Wrapping up…"
+                {isFinishing
+                  ? "Transcribing…"
+                  : recorderState.isRecording
+                    ? "Recording — transcript appears after Stop"
                     : "Paused"}
               </Text>
             ) : (
