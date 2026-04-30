@@ -92,6 +92,7 @@ import {
   transcribeChunk,
   transcribeAudio,
   structureTranscript,
+  fetchMeetingContext,
 } from "../api/ai";
 
 beforeEach(() => {
@@ -299,6 +300,43 @@ describe("ai api client (mobile)", () => {
       expect(mockPost).toHaveBeenCalledWith("/ai/structure-transcript", {
         transcript: "hi",
         mode: "memo",
+      });
+    });
+  });
+
+  describe("fetchMeetingContext", () => {
+    it("POSTs the transcript and returns relevant notes", async () => {
+      mockPost.mockResolvedValue({
+        data: {
+          relevantNotes: [
+            {
+              id: "n1",
+              title: "Notes from yesterday",
+              snippet: "agreed to refactor",
+              score: 0.91,
+              updatedAt: "2026-04-30T00:00:00Z",
+            },
+          ],
+        },
+      });
+      const result = await fetchMeetingContext("we should refactor the api");
+      expect(mockPost).toHaveBeenCalledWith("/ai/meeting-context", {
+        transcript: "we should refactor the api",
+        excludeNoteIds: undefined,
+        threshold: undefined,
+      });
+      expect(result.relevantNotes).toHaveLength(1);
+      expect(result.relevantNotes[0].id).toBe("n1");
+      expect(result.relevantNotes[0].score).toBeCloseTo(0.91);
+    });
+
+    it("forwards excludeNoteIds + threshold when provided", async () => {
+      mockPost.mockResolvedValue({ data: { relevantNotes: [] } });
+      await fetchMeetingContext("hi", ["a", "b"], 0.5);
+      expect(mockPost).toHaveBeenCalledWith("/ai/meeting-context", {
+        transcript: "hi",
+        excludeNoteIds: ["a", "b"],
+        threshold: 0.5,
       });
     });
   });
