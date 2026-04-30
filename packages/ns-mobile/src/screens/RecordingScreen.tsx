@@ -304,7 +304,12 @@ export function RecordingScreen({ navigation }: Props) {
     // double-rotating.
     if (isRotatingRef.current) return;
     if (stoppedRef.current) return;
-    if (!recorderState.isRecording) return;
+    // Read the LIVE recorder state via the getter on the stable
+    // recorder object — `recorderState.isRecording` is React state
+    // captured by closure at the render where this callback was
+    // built, which can lag the actual recorder when the chunk
+    // interval was started in the same tick as `recorder.record()`.
+    if (!recorder.isRecording) return;
 
     isRotatingRef.current = true;
     try {
@@ -335,7 +340,7 @@ export function RecordingScreen({ navigation }: Props) {
     } finally {
       isRotatingRef.current = false;
     }
-  }, [recorder, recorderState.isRecording, trackUpload, uploadChunk]);
+  }, [recorder, trackUpload, uploadChunk]);
 
   const startChunkLoop = useCallback(() => {
     if (chunkIntervalRef.current) return;
