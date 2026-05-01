@@ -761,18 +761,8 @@ export function NotesPage() {
     }
   }
 
-  function handleDashboardStartRecording() {
-    const recordBtn = document.querySelector<HTMLButtonElement>('[title^="Record audio"]');
-    if (recordBtn) {
-      recordBtn.click();
-    }
-  }
-
-  function handleDashboardImportFile() {
-    const importBtn = document.querySelector<HTMLButtonElement>('[title="Import"]');
-    if (importBtn) {
-      importBtn.click();
-    }
+  function handleDashboardStartRecording(mode: AudioMode) {
+    setRecordTrigger({ mode, key: Date.now() });
   }
 
   // --- Resizable panels ---
@@ -4800,7 +4790,6 @@ export function NotesPage() {
               onSelectNote={handleDashboardSelectNote}
               onCreateNote={handleCreate}
               onStartRecording={handleDashboardStartRecording}
-              onImportFile={handleDashboardImportFile}
               audioNotesEnabled={aiSettings.masterAiEnabled && aiSettings.audioNotes}
             />
           </div>

@@ -111,11 +111,16 @@ const SILENCE_FLOOR_DB = -60;
 
 type Props = NativeStackScreenProps<DashboardStackParamList, "Recording">;
 
-export function RecordingScreen({ navigation }: Props) {
+export function RecordingScreen({ navigation, route }: Props) {
   const themeColors = useThemeColors();
   const [mode, setMode] = useState<AudioMode | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  // Quick Actions on the dashboard route here with a preselected
+  // mode. When present, skip the picker on the very first render
+  // and jump straight into requestPermission + record.
+  const presetMode = route.params?.mode ?? null;
+  const presetTriggeredRef = useRef(false);
 
   const recorder = useAudioRecorder(RECORDING_OPTIONS);
   const recorderState = useAudioRecorderState(recorder, METERING_INTERVAL_MS);
@@ -272,6 +277,21 @@ export function RecordingScreen({ navigation }: Props) {
     sessionIdRef.current = Crypto.randomUUID();
     recorder.record();
   };
+
+  // Preset-mode auto-start: when the dashboard's Quick Actions
+  // navigated us here with a `mode` param, kick off recording on
+  // first render and skip the in-screen picker. The ref guards
+  // against re-firing on re-renders or fast back-and-forth nav.
+  useEffect(() => {
+    if (!presetMode) return;
+    if (presetTriggeredRef.current) return;
+    presetTriggeredRef.current = true;
+    void handleSelectMode(presetMode);
+    // handleSelectMode is stable enough — its closure is fine for
+    // a one-shot effect, and listing it in deps would make every
+    // mode-state flip re-fire the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetMode]);
 
   const handleStop = async () => {
     if (isStopping) return;

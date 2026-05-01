@@ -3,12 +3,16 @@ import type { Note } from "@derekentringer/shared/ns";
 import { fetchDashboardData } from "../api/notes.ts";
 import { DashboardNoteCard } from "./DashboardNoteCard.tsx";
 import { DashboardSection } from "./DashboardSection.tsx";
+import type { AudioMode } from "../hooks/useAiSettings.ts";
 
 interface DashboardProps {
   onSelectNote: (noteId: string) => void;
   onCreateNote: () => void;
-  onStartRecording: () => void;
-  onImportFile: () => void;
+  /** Caller passes the recording mode so the dashboard can wire
+   *  separate Meeting / Lecture / Memo / Verbatim tiles directly
+   *  to `recordTrigger` without going through a generic "open the
+   *  recorder" button. */
+  onStartRecording: (mode: AudioMode) => void;
   audioNotesEnabled: boolean;
   refreshKey?: number;
 }
@@ -23,7 +27,6 @@ export function Dashboard({
   onSelectNote,
   onCreateNote,
   onStartRecording,
-  onImportFile,
   audioNotesEnabled,
   refreshKey = 0,
 }: DashboardProps) {
@@ -61,7 +64,7 @@ export function Dashboard({
         <div>
           <div className="h-4 w-24 bg-subtle rounded mb-2" />
           <div className="flex gap-3">
-            {[1, 2, 3].map((i) => (
+            {[1, 2].map((i) => (
               <div key={i} className="bg-card rounded-md border border-border p-4 min-w-[100px] flex flex-col items-center gap-2">
                 <div className="w-5 h-5 bg-subtle rounded" />
                 <div className="h-3 w-14 bg-subtle rounded" />
@@ -134,8 +137,10 @@ export function Dashboard({
       {/* Quick Actions */}
       <div>
         <h2 className="text-sm font-semibold text-foreground mb-2">Quick Actions</h2>
-        <div className="flex gap-3">
-          {/* New Note */}
+        <div className="flex gap-3 flex-wrap">
+          {/* New Note — always available, even when AI / Audio
+              Notes are off. Sits first so the no-AI-tools case
+              still surfaces a useful action. */}
           <button
             onClick={onCreateNote}
             className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
@@ -158,59 +163,105 @@ export function Dashboard({
             <span className="text-xs text-foreground">New Note</span>
           </button>
 
-          {/* New Recording */}
-          <button
-            onClick={audioNotesEnabled ? onStartRecording : undefined}
-            className={`bg-card rounded-md border border-border p-4 flex flex-col items-center gap-2 min-w-[100px] transition-colors ${
-              audioNotesEnabled
-                ? "hover:border-primary/50 cursor-pointer"
-                : "opacity-40 cursor-not-allowed"
-            }`}
-            disabled={!audioNotesEnabled}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-primary"
-            >
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" />
-              <line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-            <span className="text-xs text-foreground">New Recording</span>
-          </button>
+          {/* Meeting / Lecture / Memo / Verbatim — only when Audio
+              Notes is on. Each tile fires `onStartRecording(mode)`
+              which the parent forwards to `recordTrigger` so the
+              recorder starts in the right preset. */}
+          {audioNotesEnabled && (
+            <>
+              <button
+                onClick={() => onStartRecording("meeting")}
+                className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-primary"
+                >
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                <span className="text-xs text-foreground">Meeting</span>
+              </button>
 
-          {/* Import File */}
-          <button
-            onClick={onImportFile}
-            className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-primary"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            <span className="text-xs text-foreground">Import File</span>
-          </button>
+              <button
+                onClick={() => onStartRecording("lecture")}
+                className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-primary"
+                >
+                  <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+                  <path d="M6 12v5c3 3 9 3 12 0v-5" />
+                </svg>
+                <span className="text-xs text-foreground">Lecture</span>
+              </button>
+
+              <button
+                onClick={() => onStartRecording("memo")}
+                className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-primary"
+                >
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+                <span className="text-xs text-foreground">Memo</span>
+              </button>
+
+              <button
+                onClick={() => onStartRecording("verbatim")}
+                className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-primary"
+                >
+                  <path d="M3 21c3-3 6-6 6-9a4 4 0 0 0-8 0c0 3 3 6 2 9z" />
+                  <path d="M14 21c3-3 6-6 6-9a4 4 0 0 0-8 0c0 3 3 6 2 9z" />
+                </svg>
+                <span className="text-xs text-foreground">Verbatim</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 

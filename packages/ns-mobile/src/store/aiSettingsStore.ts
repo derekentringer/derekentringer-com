@@ -24,6 +24,16 @@ export interface AiSettings {
   masterAiEnabled: boolean;
   /** Q&A chat panel toggle. */
   qaAssistant: boolean;
+  /** "Summarize" command on the note action menu. */
+  summarize: boolean;
+  /** Tag-suggestion button surfaced from the editor. */
+  tagSuggestions: boolean;
+  /** Audio Notes — gates the dashboard Quick Actions recording row,
+   *  the recording screen's mode picker, and the AI tab's recording
+   *  pipeline. Mobile records mic-only; the web/desktop "recording
+   *  source" sub-options aren't applicable here so this is a single
+   *  boolean. */
+  audioNotes: boolean;
   /** Per-tool bypass-the-confirmation-gate flags. */
   autoApprove: AutoApproveSettings;
 }
@@ -42,6 +52,9 @@ const DEFAULT_AUTO_APPROVE: AutoApproveSettings = {
 const DEFAULT_SETTINGS: AiSettings = {
   masterAiEnabled: true,
   qaAssistant: true,
+  summarize: false,
+  tagSuggestions: false,
+  audioNotes: false,
   autoApprove: DEFAULT_AUTO_APPROVE,
 };
 
@@ -70,6 +83,14 @@ function parseSettings(raw: string | null): AiSettings {
           : true,
       qaAssistant:
         typeof parsed.qaAssistant === "boolean" ? parsed.qaAssistant : true,
+      summarize:
+        typeof parsed.summarize === "boolean" ? parsed.summarize : false,
+      tagSuggestions:
+        typeof parsed.tagSuggestions === "boolean"
+          ? parsed.tagSuggestions
+          : false,
+      audioNotes:
+        typeof parsed.audioNotes === "boolean" ? parsed.audioNotes : false,
       autoApprove: parseAutoApprove(parsed.autoApprove),
     };
   } catch {
@@ -85,6 +106,9 @@ interface AiSettingsActions {
   hydrate: () => Promise<void>;
   setMasterAiEnabled: (v: boolean) => void;
   setQaAssistant: (v: boolean) => void;
+  setSummarize: (v: boolean) => void;
+  setTagSuggestions: (v: boolean) => void;
+  setAudioNotes: (v: boolean) => void;
   setAutoApprove: (key: keyof AutoApproveSettings, v: boolean) => void;
 }
 
@@ -113,6 +137,21 @@ const useAiSettingsStore = create<AiSettingsState & AiSettingsActions>()(
       void persist(get());
     },
 
+    setSummarize: (v) => {
+      set({ summarize: v });
+      void persist(get());
+    },
+
+    setTagSuggestions: (v) => {
+      set({ tagSuggestions: v });
+      void persist(get());
+    },
+
+    setAudioNotes: (v) => {
+      set({ audioNotes: v });
+      void persist(get());
+    },
+
     setAutoApprove: (key, v) => {
       set({ autoApprove: { ...get().autoApprove, [key]: v } });
       void persist(get());
@@ -124,6 +163,9 @@ async function persist(state: AiSettingsState) {
   const payload: AiSettings = {
     masterAiEnabled: state.masterAiEnabled,
     qaAssistant: state.qaAssistant,
+    summarize: state.summarize,
+    tagSuggestions: state.tagSuggestions,
+    audioNotes: state.audioNotes,
     autoApprove: state.autoApprove,
   };
   try {
