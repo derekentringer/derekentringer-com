@@ -1435,7 +1435,7 @@ describe("AudioRecorder — meeting-mode transcription", () => {
   it("controlRef.retry re-runs processing for a failed session", async () => {
     const onNoteCreated = vi.fn();
     const onNoteFailed = vi.fn();
-    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void } | null> = { current: null };
+    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void; hasSnapshot: (id: string) => boolean } | null> = { current: null };
 
     // Fail first, succeed on retry.
     mockTranscribeAudio
@@ -1507,7 +1507,7 @@ describe("AudioRecorder — meeting-mode transcription", () => {
   it("controlRef.discard drops snapshot so retry is a no-op afterwards", async () => {
     const onNoteCreated = vi.fn();
     const onNoteFailed = vi.fn();
-    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void } | null> = { current: null };
+    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void; hasSnapshot: (id: string) => boolean } | null> = { current: null };
 
     mockTranscribeAudio.mockReset().mockRejectedValueOnce(new Error("oops"));
 
@@ -1579,7 +1579,7 @@ describe("AudioRecorder — meeting-mode transcription", () => {
   // Phase 3: onInFlightCountChange tracks detached task population.
   it("onInFlightCountChange reports start → settle → discard transitions", async () => {
     const onInFlightCountChange = vi.fn();
-    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void } | null> = { current: null };
+    const controlRef: React.MutableRefObject<{ retry: (id: string) => void; discard: (id: string) => void; hasSnapshot: (id: string) => boolean } | null> = { current: null };
 
     // First session succeeds; second session fails.
     mockTranscribeAudio

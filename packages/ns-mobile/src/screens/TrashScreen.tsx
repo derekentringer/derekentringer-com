@@ -131,7 +131,7 @@ export function TrashScreen({ navigation }: Props) {
           <View style={styles.headerButton}>
             <MaterialCommunityIcons
               name="trash-can-outline"
-              size={22}
+              size={24}
               color={themeColors.destructive}
               onPress={handleEmptyTrash}
               accessibilityRole="button"
@@ -217,7 +217,10 @@ const styles = StyleSheet.create({
   emptyContainer: {
     flex: 1,
   },
+  // Material Design 3 top-app-bar action item: 24 dp glyph
+  // centered inside a 48 dp touch target via 12 dp padding.
+  // Source: https://m3.material.io/components/top-app-bar/specs
   headerButton: {
-    padding: spacing.xs,
+    padding: 12,
   },
 });

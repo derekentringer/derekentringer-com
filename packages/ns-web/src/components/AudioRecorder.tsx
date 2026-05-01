@@ -88,6 +88,12 @@ interface AudioRecorderProps {
 export interface AudioRecorderControl {
   retry: (sessionId: string) => void;
   discard: (sessionId: string) => void;
+  /** Returns true when a SessionSnapshot for this sessionId is
+   *  still in memory — i.e. retry can do something useful. False
+   *  for cross-device chat-hydrated cards (we never had the
+   *  snapshot) and for prior-session failed cards after a page
+   *  reload (snapshotsRef is in-memory only). */
+  hasSnapshot: (sessionId: string) => boolean;
 }
 
 function generateSessionId(): string {
@@ -270,6 +276,8 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
         }
         snapshotsRef.current.delete(sessionId);
       },
+      hasSnapshot: (sessionId: string) =>
+        snapshotsRef.current.has(sessionId),
     };
     return () => {
       if (controlRef) controlRef.current = null;

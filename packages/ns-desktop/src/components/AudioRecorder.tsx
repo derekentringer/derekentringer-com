@@ -116,6 +116,12 @@ export interface AudioRecorderControl {
   /** Drop the snapshot for a session. Called by the parent when the user
    *  clicks Discard on a failed card. */
   discard: (sessionId: string) => void;
+  /** Returns true when a SessionSnapshot for this sessionId is
+   *  still in memory — i.e. retry can do something useful. False
+   *  for cross-device chat-hydrated cards (we never had the
+   *  snapshot) and for prior-session failed cards after a window
+   *  reload (snapshotsRef is in-memory only). */
+  hasSnapshot: (sessionId: string) => boolean;
 }
 
 export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecordingSourceChange, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless, controlRef, onInFlightCountChange }: AudioRecorderProps) {
@@ -443,6 +449,8 @@ export function AudioRecorder({ defaultMode, folderId, recordingSource, onRecord
         }
         snapshotsRef.current.delete(sessionId);
       },
+      hasSnapshot: (sessionId: string) =>
+        snapshotsRef.current.has(sessionId),
     };
     return () => {
       if (controlRef) controlRef.current = null;

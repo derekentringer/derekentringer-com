@@ -4894,6 +4894,9 @@ export function NotesPage() {
                     activeSessionId={recordingState?.sessionId}
                     onAudioRetry={handleAudioRetry}
                     onAudioDiscard={handleAudioDiscard}
+                    canAudioRetry={(sessionId) =>
+                      audioControlRef.current?.hasSnapshot(sessionId) ?? false
+                    }
                     autoApprove={aiSettings.autoApprove}
                     focusNonce={aiFocusNonce}
                     onNoteContentRewritten={({ noteId, newContent }) => {

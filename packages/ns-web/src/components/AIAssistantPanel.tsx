@@ -419,6 +419,13 @@ interface AIAssistantPanelProps {
   activeSessionId?: string;
   onAudioRetry?: (sessionId: string) => void;
   onAudioDiscard?: (sessionId: string) => void;
+  /** When provided, the failed-card Retry button only renders
+   *  for sessions where this returns true. Without it, Retry
+   *  shows on every failed card — including cross-device hydrated
+   *  cards and prior-session cards after a page reload — even
+   *  though the underlying handler silently no-ops when the
+   *  snapshot is gone. */
+  canAudioRetry?: (sessionId: string) => boolean;
   /** Phase C.5: per-tool auto-approve for destructive actions. */
   autoApprove?: {
     deleteNote: boolean;
@@ -439,7 +446,7 @@ interface AIAssistantPanelProps {
   onNoteContentRewritten?: (opts: { noteId: string; newContent: string }) => void;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove, focusNonce, onNoteContentRewritten }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, canAudioRetry, autoApprove, focusNonce, onNoteContentRewritten }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -1699,7 +1706,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                       </div>
                     </div>
                     <div className="flex gap-1.5 mt-1.5">
-                      {msg.meetingData.sessionId && onAudioRetry && (
+                      {msg.meetingData.sessionId &&
+                        onAudioRetry &&
+                        (!canAudioRetry || canAudioRetry(msg.meetingData.sessionId)) && (
                         <button
                           onClick={() => handleRetryClick(msg.meetingData!.sessionId!)}
                           className="px-2 py-1 rounded-md border border-border hover:border-primary/50 text-[11px] text-foreground hover:bg-accent transition-colors cursor-pointer"
