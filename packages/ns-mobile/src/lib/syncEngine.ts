@@ -2,6 +2,7 @@ import * as Crypto from "expo-crypto";
 import NetInfo from "@react-native-community/netinfo";
 import { AppState, type AppStateStatus } from "react-native";
 import { tokenManager, tokenStorage } from "@/services/api";
+import useSyncStore from "@/store/syncStore";
 import {
   readSyncQueue,
   removeSyncQueueEntries,
@@ -156,6 +157,15 @@ export async function initSyncEngine(
   netInfoUnsubscribe = NetInfo.addEventListener((state) => {
     const wasOnline = isOnline;
     isOnline = !!state.isConnected && !!state.isInternetReachable;
+    // Mirror the connection class onto the store so wifi-only
+    // features (image upload queue) can react without subscribing
+    // to NetInfo themselves.
+    const store = useSyncStore.getState();
+    if (state.type === "wifi") store.setConnectionType("wifi");
+    else if (state.type === "cellular") store.setConnectionType("cellular");
+    else if (state.type === "none") store.setConnectionType("none");
+    else if (state.type === "unknown") store.setConnectionType("unknown");
+    else store.setConnectionType("other");
 
     if (!isOnline) {
       setStatus("offline");

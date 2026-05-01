@@ -34,6 +34,12 @@ export interface AiSettings {
    *  source" sub-options aren't applicable here so this is a single
    *  boolean. */
   audioNotes: boolean;
+  /** Phase D — restrict image uploads to wifi only. When ON and the
+   *  device is on cellular, picked images are silently queued in
+   *  the local `images` table with `sync_status='pending_upload'`;
+   *  the sync engine drains them when wifi reconnects. Default ON
+   *  to protect cellular data plans. */
+  imageUploadsWifiOnly: boolean;
   /** Per-tool bypass-the-confirmation-gate flags. */
   autoApprove: AutoApproveSettings;
 }
@@ -55,6 +61,7 @@ const DEFAULT_SETTINGS: AiSettings = {
   summarize: false,
   tagSuggestions: false,
   audioNotes: false,
+  imageUploadsWifiOnly: true,
   autoApprove: DEFAULT_AUTO_APPROVE,
 };
 
@@ -91,6 +98,10 @@ function parseSettings(raw: string | null): AiSettings {
           : false,
       audioNotes:
         typeof parsed.audioNotes === "boolean" ? parsed.audioNotes : false,
+      imageUploadsWifiOnly:
+        typeof parsed.imageUploadsWifiOnly === "boolean"
+          ? parsed.imageUploadsWifiOnly
+          : true,
       autoApprove: parseAutoApprove(parsed.autoApprove),
     };
   } catch {
@@ -109,6 +120,7 @@ interface AiSettingsActions {
   setSummarize: (v: boolean) => void;
   setTagSuggestions: (v: boolean) => void;
   setAudioNotes: (v: boolean) => void;
+  setImageUploadsWifiOnly: (v: boolean) => void;
   setAutoApprove: (key: keyof AutoApproveSettings, v: boolean) => void;
 }
 
@@ -152,6 +164,11 @@ const useAiSettingsStore = create<AiSettingsState & AiSettingsActions>()(
       void persist(get());
     },
 
+    setImageUploadsWifiOnly: (v) => {
+      set({ imageUploadsWifiOnly: v });
+      void persist(get());
+    },
+
     setAutoApprove: (key, v) => {
       set({ autoApprove: { ...get().autoApprove, [key]: v } });
       void persist(get());
@@ -166,6 +183,7 @@ async function persist(state: AiSettingsState) {
     summarize: state.summarize,
     tagSuggestions: state.tagSuggestions,
     audioNotes: state.audioNotes,
+    imageUploadsWifiOnly: state.imageUploadsWifiOnly,
     autoApprove: state.autoApprove,
   };
   try {

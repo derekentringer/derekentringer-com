@@ -14,6 +14,7 @@ import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Clipboard from "expo-clipboard";
 import Markdown from "react-native-markdown-display";
+import { markdownRules } from "@/lib/markdownRules";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -500,7 +501,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
             still surfaced in the title/tags/dates header above. */}
         <View style={styles.content}>
           {note.content ? (
-            <Markdown style={mdStyles} onLinkPress={handleLinkPress}>
+            <Markdown style={mdStyles} rules={markdownRules} onLinkPress={handleLinkPress}>
               {renderedContent}
             </Markdown>
           ) : (
