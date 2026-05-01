@@ -125,6 +125,8 @@ import { formatChatTimestamp } from "@/lib/time";
 const nowIso = () => new Date().toISOString();
 import useRecordingResultStore, {
   type RecordingSummary,
+  retryRecording,
+  discardRecording,
 } from "@/store/recordingResultStore";
 import type { AiStackParamList } from "@/navigation/types";
 import type { QASource } from "@derekentringer/ns-shared";
@@ -366,6 +368,13 @@ export function AiScreen() {
   // chat SSE channel).
   const fetchStartedRef = useRef(false);
   const historyLoadedRef = useRef(false);
+  // Mirror of `historyLoadedRef` as state so effects that gate on
+  // history-loaded can re-run when hydration completes. Without
+  // this, a recording-summary that lands in the store BEFORE the
+  // chat-history fetch settles would be missed by the mirror
+  // effect and never appear in the chat — the user would wait for
+  // the next summaries change to see the card.
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const lastSavedRef = useRef<string>("");
   const isSavingRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -401,6 +410,7 @@ export function AiScreen() {
       })
       .finally(() => {
         historyLoadedRef.current = true;
+        setHistoryLoaded(true);
       });
   }, []);
 
@@ -491,10 +501,24 @@ export function AiScreen() {
   // there's no double-render.
   const summaries = useRecordingResultStore((s) => s.summaries);
 
+  // Lookup map for the renderItem path: lets each meeting card
+  // check whether the live store still has an `audioUri` for its
+  // session (which gates the Retry button). Cross-device hydrated
+  // cards don't have a matching summary, so Retry stays hidden
+  // for them.
+  const summariesById = useMemo(() => {
+    const map = new Map<string, RecordingSummary>();
+    for (const s of summaries) map.set(s.sessionId, s);
+    return map;
+  }, [summaries]);
+
   // Mirror store summaries into messages: append on first sight,
-  // patch on subsequent updates, deduplicate by sessionId.
+  // patch on subsequent updates, deduplicate by sessionId. Gates
+  // on `historyLoaded` (state, not ref) so the effect re-runs the
+  // moment hydration completes — covers the race where a stop
+  // pushes a summary into the store before chat-history settles.
   useEffect(() => {
-    if (!historyLoadedRef.current) return;
+    if (!historyLoaded) return;
     if (summaries.length === 0) return;
     setMessages((prev) => {
       let changed = false;
@@ -541,7 +565,7 @@ export function AiScreen() {
       }
       return changed ? next : prev;
     });
-  }, [summaries]);
+  }, [summaries, historyLoaded]);
 
   // The chat uses an inverted FlatList — `data` is messages
   // reversed, so the newest item is at the visual bottom and
@@ -859,6 +883,42 @@ export function AiScreen() {
     clearServerChatHistory().catch(() => {});
   }, [isStreaming]);
 
+  // Retry a failed meeting card. Optimistically flips the bubble
+  // back to "transcribing" so the bouncing-dots state is visible
+  // immediately; the store's retryRecording then re-fires the
+  // pipeline against the saved audio file.
+  const handleAudioRetry = useCallback((sessionId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.role === "meeting-summary" && m.meetingData?.sessionId === sessionId
+          ? {
+              ...m,
+              meetingData: {
+                ...m.meetingData!,
+                status: "transcribing",
+                errorMessage: undefined,
+              },
+            }
+          : m,
+      ),
+    );
+    void retryRecording(sessionId);
+  }, []);
+
+  // Discard a failed card. Removes the message locally; the
+  // persistence loop syncs the removal to chat history so the
+  // card disappears across devices on next refetch. The store's
+  // discardRecording also deletes the local audio file.
+  const handleAudioDiscard = useCallback((sessionId: string) => {
+    setMessages((prev) =>
+      prev.filter(
+        (m) =>
+          !(m.role === "meeting-summary" && m.meetingData?.sessionId === sessionId),
+      ),
+    );
+    void discardRecording(sessionId);
+  }, []);
+
   // Mount Clear in the navigator header so we don't render a second
   // "AI Assistant" title inside the screen. Hidden until there's
   // something to clear.
@@ -921,6 +981,9 @@ export function AiScreen() {
               item.role === "user"
                 ? styles.timestampRight
                 : styles.timestampLeft;
+            const liveSummary = item.meetingData?.sessionId
+              ? summariesById.get(item.meetingData.sessionId)
+              : undefined;
             const body =
               item.role === "meeting-summary" && item.meetingData ? (
                 <MeetingSummaryCard
@@ -936,6 +999,9 @@ export function AiScreen() {
                     relatedNotes: item.meetingData.relevantNotes,
                   }}
                   onOpenNote={(noteId) => openNote(noteId)}
+                  onRetry={handleAudioRetry}
+                  onDiscard={handleAudioDiscard}
+                  canRetry={!!liveSummary?.audioUri}
                 />
               ) : (
                 <MessageBubble

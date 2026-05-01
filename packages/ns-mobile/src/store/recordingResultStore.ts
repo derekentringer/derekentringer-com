@@ -62,6 +62,12 @@ export interface RecordingSummary {
   noteId?: string;
   noteTitle?: string;
   errorMessage?: string;
+  /** Local file:// URI of the recorded audio. Kept around for
+   *  the failed-card Retry action so the user can re-run the
+   *  pipeline against the same audio without re-recording. Only
+   *  set on the device that did the recording — cross-device
+   *  hydrated cards never have it. */
+  audioUri?: string;
 }
 
 interface RecordingResultState {
@@ -118,6 +124,12 @@ export async function processRecording(
 ): Promise<void> {
   const { patch } = useRecordingResultStore.getState();
   const { mime, extension } = chunkMimeForPlatform(Platform.OS);
+
+  // Stamp the audio URI on the summary up front so the failed-card
+  // Retry button can re-fire `processRecording` against the same
+  // file. Cleared on the success path below; retained on every
+  // failure path so the user can retry.
+  patch(sessionId, { audioUri: uri });
 
   try {
     console.log(
@@ -234,7 +246,18 @@ export async function processRecording(
       status: "completed",
       noteId: note.id,
       noteTitle: note.title,
+      // Clear the URI now that the note is persisted. The audio
+      // file is about to be deleted below; keeping a stale URI
+      // would let Retry re-run against a missing file.
+      audioUri: undefined,
     });
+    // Success path: clean up the local audio file.
+    try {
+      await FileSystem.deleteAsync(uri, { idempotent: true });
+    } catch {
+      /* ignore */
+    }
+    return;
   } catch (err) {
     console.warn("[recording] pipeline failed", err);
     // Surface as much axios detail as we can — "Network Error"
@@ -262,10 +285,41 @@ export async function processRecording(
       status: "failed",
       errorMessage: detail || baseMessage,
     });
-  } finally {
-    // Best-effort cleanup of the local audio file.
+    // Failure path: keep the audio file on disk so the user's
+    // Retry button can re-fire the pipeline against the same URI.
+    // Discard removes it; if neither happens, the next successful
+    // recording from this session will replace the file (sessions
+    // are uuid-keyed, so leftovers from prior failures stay until
+    // the user explicitly Discards or the OS clears app cache).
+  }
+}
+
+/** Re-run `processRecording` against the saved audio file for a
+ *  failed session. Flips the card back to `transcribing` so the
+ *  bouncing-dots state is visible while the new run is in flight.
+ *  No-op if the session no longer has an `audioUri` (e.g. the user
+ *  Discarded, or the card came in via cross-device chat history). */
+export async function retryRecording(sessionId: string): Promise<void> {
+  const { summaries, patch } = useRecordingResultStore.getState();
+  const summary = summaries.find((s) => s.sessionId === sessionId);
+  if (!summary || !summary.audioUri) return;
+  patch(sessionId, {
+    status: "transcribing",
+    errorMessage: undefined,
+  });
+  await processRecording(sessionId, summary.audioUri, summary.mode);
+}
+
+/** Drop the failed card from the local store and delete the
+ *  associated audio file (if any). The persistence loop will sync
+ *  the message removal to chat history. */
+export async function discardRecording(sessionId: string): Promise<void> {
+  const { summaries, remove } = useRecordingResultStore.getState();
+  const summary = summaries.find((s) => s.sessionId === sessionId);
+  remove(sessionId);
+  if (summary?.audioUri) {
     try {
-      await FileSystem.deleteAsync(uri, { idempotent: true });
+      await FileSystem.deleteAsync(summary.audioUri, { idempotent: true });
     } catch {
       /* ignore */
     }

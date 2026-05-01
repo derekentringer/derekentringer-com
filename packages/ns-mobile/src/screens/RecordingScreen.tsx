@@ -293,37 +293,56 @@ export function RecordingScreen({ navigation, route }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetMode]);
 
-  const handleStop = async () => {
+  const handleStop = () => {
     if (isStopping) return;
     setIsStopping(true);
 
-    let finalUri: string | null = null;
-    try {
-      await recorder.stop();
-      finalUri = recorder.uri ?? null;
-    } catch {
-      /* ignore */
-    }
-
-    stoppedRef.current = true;
-
     const sessionId = sessionIdRef.current;
-    if (finalUri && sessionId && mode) {
-      // Push the "transcribing" card into the AI panel BEFORE
-      // navigating, so the chat shows it the moment the user
-      // lands there. The pipeline runs fire-and-forget — the
-      // user can navigate freely while it processes.
-      useRecordingResultStore.getState().start(sessionId, mode);
-      void processRecording(sessionId, finalUri, mode);
-    }
+    const recordingMode = mode;
 
-    // Pop the recording screen, then switch to the AI tab. The
-    // user lands on AiScreen with the new card visible. Grabbing
-    // the parent reference before goBack so it's still valid
-    // afterwards.
+    // Push the "transcribing" card and switch tabs IMMEDIATELY so
+    // the user lands on the AI Assistant with the new card visible
+    // — no flash of the recording screen lingering for 1–3s while
+    // `recorder.stop()` flushes.
+    //
+    // CRITICAL: do NOT call `navigation.goBack()` here. expo-audio's
+    // `useAudioRecorder` ties the underlying native recorder to this
+    // screen's lifecycle. If we pop while stop is still flushing, the
+    // hook's cleanup releases the recorder and the file is never
+    // finalized — the user sees "Recorder didn't produce a saved
+    // file." We pop AFTER stop resolves below, by which point the
+    // user is already on the AI tab.
+    if (sessionId && recordingMode) {
+      useRecordingResultStore.getState().start(sessionId, recordingMode);
+    }
     const parent = navigation.getParent();
-    navigation.goBack();
     parent?.navigate("AI" as never);
+
+    void (async () => {
+      let finalUri: string | null = null;
+      try {
+        await recorder.stop();
+        finalUri = recorder.uri ?? null;
+      } catch {
+        /* ignore */
+      }
+      stoppedRef.current = true;
+
+      if (finalUri && sessionId && recordingMode) {
+        void processRecording(sessionId, finalUri, recordingMode);
+      } else if (sessionId) {
+        useRecordingResultStore.getState().patch(sessionId, {
+          status: "failed",
+          errorMessage: "Recorder didn't produce a saved file.",
+        });
+      }
+
+      // Now safe to pop — the native recorder has finished
+      // flushing and released its file handle. The user is already
+      // on the AI tab; this just clears the recording screen off
+      // the Dashboard stack so a return visit shows DashboardHome.
+      navigation.goBack();
+    })();
   };
 
   const handleCancel = () => {

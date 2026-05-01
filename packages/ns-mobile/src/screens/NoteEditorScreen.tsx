@@ -192,7 +192,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
           >
             <MaterialCommunityIcons
               name={isPreview ? "pencil" : "eye"}
-              size={22}
+              size={24}
               color={themeColors.foreground}
             />
           </Pressable>
@@ -204,7 +204,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
           >
             <MaterialCommunityIcons
               name="dots-vertical"
-              size={22}
+              size={24}
               color={themeColors.foreground}
             />
           </Pressable>
@@ -832,13 +832,18 @@ const styles = StyleSheet.create({
   loadingContainer: {
     padding: spacing.md,
   },
+  // Material Design 3 top-app-bar action item: 24 dp glyph
+  // centered inside a 48 dp touch target via 12 dp padding.
+  // The 12 dp internal padding on each button already produces
+  // the right visual separation, so the inter-button gap is 0.
+  // Source: https://m3.material.io/components/top-app-bar/specs
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: 0,
   },
   headerButton: {
-    padding: spacing.xs,
+    padding: 12,
   },
   statusBar: {
     paddingHorizontal: spacing.md,

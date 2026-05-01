@@ -3381,6 +3381,9 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                     activeSessionId={recordingState?.sessionId}
                     onAudioRetry={handleAudioRetry}
                     onAudioDiscard={handleAudioDiscard}
+                    canAudioRetry={(sessionId) =>
+                      audioControlRef.current?.hasSnapshot(sessionId) ?? false
+                    }
                     autoApprove={settings.autoApprove}
                     focusNonce={aiFocusNonce}
                     onNoteContentRewritten={({ noteId, newContent }) => {

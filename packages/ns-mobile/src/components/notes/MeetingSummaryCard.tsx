@@ -37,6 +37,17 @@ const RECORDING_ENDED_LABELS: Record<RecordingSummary["mode"], string> = {
 export interface MeetingSummaryCardProps {
   summary: RecordingSummary;
   onOpenNote: (noteId: string) => void;
+  /** Retry the post-stop pipeline for a failed card. Optional —
+   *  hide the Retry button when missing (e.g. cross-device
+   *  hydrated cards have no local audio file to retry against). */
+  onRetry?: (sessionId: string) => void;
+  /** Drop the failed card from the chat + delete the local audio
+   *  file. Optional — same reasoning as `onRetry`. */
+  onDiscard?: (sessionId: string) => void;
+  /** When false, the Retry button is hidden. Lets AiScreen gate
+   *  Retry on whether the live store still has an `audioUri` for
+   *  this session (cross-device hydration won't). */
+  canRetry?: boolean;
 }
 
 /** Tap-to-toggle disclosure row matching web's <details>/<summary>
@@ -222,6 +233,9 @@ function BouncingDots({ color }: { color: string }) {
 export function MeetingSummaryCard({
   summary,
   onOpenNote,
+  onRetry,
+  onDiscard,
+  canRetry = true,
 }: MeetingSummaryCardProps) {
   const themeColors = useThemeColors();
   const isFailed = summary.status === "failed";
@@ -250,39 +264,93 @@ export function MeetingSummaryCard({
       </View>
 
       {isFailed ? (
-        <View
-          style={[
-            styles.errorBox,
-            {
-              backgroundColor: `${themeColors.destructive}14`,
-              borderColor: `${themeColors.destructive}66`,
-            },
-          ]}
-        >
-          <MaterialCommunityIcons
-            name="alert-circle-outline"
-            size={12}
-            color={themeColors.destructive}
-            style={styles.errorIcon}
-          />
-          <View style={styles.errorTextWrap}>
-            <Text
-              style={[
-                styles.errorTitle,
-                { color: themeColors.destructive },
-              ]}
-            >
-              Couldn&apos;t create note
-            </Text>
-            {summary.errorMessage ? (
+        <>
+          <View
+            style={[
+              styles.errorBox,
+              {
+                backgroundColor: `${themeColors.destructive}14`,
+                borderColor: `${themeColors.destructive}66`,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="alert-circle-outline"
+              size={12}
+              color={themeColors.destructive}
+              style={styles.errorIcon}
+            />
+            <View style={styles.errorTextWrap}>
               <Text
-                style={[styles.errorBody, { color: themeColors.muted }]}
+                style={[
+                  styles.errorTitle,
+                  { color: themeColors.destructive },
+                ]}
               >
-                {summary.errorMessage}
+                Couldn&apos;t create note
               </Text>
-            ) : null}
+              {summary.errorMessage ? (
+                <Text
+                  style={[styles.errorBody, { color: themeColors.muted }]}
+                >
+                  {summary.errorMessage}
+                </Text>
+              ) : null}
+            </View>
           </View>
-        </View>
+          {(canRetry && onRetry) || onDiscard ? (
+            <View style={styles.errorActions}>
+              {canRetry && onRetry ? (
+                <Pressable
+                  onPress={() => onRetry(summary.sessionId)}
+                  style={({ pressed }) => [
+                    styles.errorButton,
+                    {
+                      borderColor: pressed
+                        ? `${themeColors.primary}80`
+                        : themeColors.border,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry recording"
+                >
+                  <Text
+                    style={[
+                      styles.errorButtonText,
+                      { color: themeColors.foreground },
+                    ]}
+                  >
+                    Retry
+                  </Text>
+                </Pressable>
+              ) : null}
+              {onDiscard ? (
+                <Pressable
+                  onPress={() => onDiscard(summary.sessionId)}
+                  style={({ pressed }) => [
+                    styles.errorButton,
+                    {
+                      borderColor: pressed
+                        ? `${themeColors.destructive}80`
+                        : themeColors.border,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Discard recording"
+                >
+                  <Text
+                    style={[
+                      styles.errorButtonText,
+                      { color: themeColors.muted },
+                    ]}
+                  >
+                    Discard
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+        </>
       ) : isCompleted ? (
         <Pressable
           onPress={() => onOpenNote(summary.noteId!)}
@@ -431,6 +499,21 @@ const styles = StyleSheet.create({
   },
   errorBody: {
     fontSize: 11,
+  },
+  errorActions: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 6,
+  },
+  errorButton: {
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  errorButtonText: {
+    fontSize: 11,
+    fontWeight: "500",
   },
   disclosureSummary: {
     flexDirection: "row",

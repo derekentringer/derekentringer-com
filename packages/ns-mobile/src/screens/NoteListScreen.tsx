@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from "react";
+import React, { useState, useCallback, useRef, useMemo, useLayoutEffect } from "react";
 import {
   View,
   TextInput,
@@ -107,6 +107,60 @@ export function NoteListScreen({ navigation }: Props) {
 
   const hasActiveFilters = !!folderId || selectedTags.length > 0;
 
+  // Mount Sort / Folder / Tags as compact icon buttons in the
+  // navigator header, right-aligned next to the "Notes" title.
+  // Tints flip to `primary` when the corresponding filter is
+  // active. Tap clears the body filter row entirely; the user
+  // adjusts everything from inside the bottom-sheet pickers.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={styles.headerRow}>
+          <Pressable
+            onPress={() => sortSheetRef.current?.present()}
+            accessibilityRole="button"
+            accessibilityLabel="Sort"
+            style={styles.headerIconBtn}
+          >
+            <MaterialCommunityIcons
+              name="sort"
+              size={24}
+              color={themeColors.foreground}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => folderSheetRef.current?.present()}
+            accessibilityRole="button"
+            accessibilityLabel="Folder"
+            style={styles.headerIconBtn}
+          >
+            <MaterialCommunityIcons
+              name="folder-outline"
+              size={24}
+              color={folderId ? themeColors.primary : themeColors.foreground}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => tagSheetRef.current?.present()}
+            accessibilityRole="button"
+            accessibilityLabel="Tags"
+            style={styles.headerIconBtn}
+          >
+            <MaterialCommunityIcons
+              name="tag-outline"
+              size={24}
+              color={
+                selectedTags.length > 0
+                  ? themeColors.primary
+                  : themeColors.foreground
+              }
+            />
+          </Pressable>
+        </View>
+      ),
+    });
+  }, [navigation, folderId, selectedTags.length, themeColors]);
+
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       {/* Search bar */}
@@ -150,93 +204,6 @@ export function NoteListScreen({ navigation }: Props) {
             </Pressable>
           ) : null}
         </View>
-      </View>
-
-      {/* Filter bar */}
-      <View style={styles.filterRow}>
-        <Pressable
-          style={[
-            styles.filterButton,
-            { borderColor: themeColors.border },
-            folderId && { borderColor: themeColors.primary },
-          ]}
-          onPress={() => folderSheetRef.current?.present()}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="folder-outline"
-            size={16}
-            color={folderId ? themeColors.primary : themeColors.muted}
-          />
-          <Text
-            style={[
-              styles.filterLabel,
-              { color: folderId ? themeColors.primary : themeColors.muted },
-            ]}
-          >
-            Folder
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[
-            styles.filterButton,
-            { borderColor: themeColors.border },
-            selectedTags.length > 0 && { borderColor: themeColors.primary },
-          ]}
-          onPress={() => tagSheetRef.current?.present()}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="tag-outline"
-            size={16}
-            color={
-              selectedTags.length > 0 ? themeColors.primary : themeColors.muted
-            }
-          />
-          <Text
-            style={[
-              styles.filterLabel,
-              {
-                color:
-                  selectedTags.length > 0
-                    ? themeColors.primary
-                    : themeColors.muted,
-              },
-            ]}
-          >
-            Tags{selectedTags.length > 0 ? ` (${selectedTags.length})` : ""}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.filterButton, { borderColor: themeColors.border }]}
-          onPress={() => sortSheetRef.current?.present()}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="sort"
-            size={16}
-            color={themeColors.muted}
-          />
-          <Text style={[styles.filterLabel, { color: themeColors.muted }]}>
-            Sort
-          </Text>
-        </Pressable>
-
-        {hasActiveFilters ? (
-          <Pressable
-            onPress={() => {
-              setFolderId(undefined);
-              setSelectedTags([]);
-            }}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.clearFilters, { color: themeColors.primary }]}>
-              Clear
-            </Text>
-          </Pressable>
-        ) : null}
       </View>
 
       {/* Selected tags chips */}
@@ -362,6 +329,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
+  },
+  // Material Design 3 top-app-bar action item: 24 dp glyph
+  // centered inside a 48 dp touch target via 12 dp padding.
+  // The 12 dp internal padding on each button already produces
+  // the right visual separation, so the inter-button gap is 0.
+  // Source: https://m3.material.io/components/top-app-bar/specs
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 0,
+  },
+  headerIconBtn: {
+    padding: 12,
   },
   filterButton: {
     flexDirection: "row",
