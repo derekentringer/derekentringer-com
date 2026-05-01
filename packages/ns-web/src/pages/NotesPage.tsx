@@ -1138,18 +1138,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }
 
-  function handleDashboardStartRecording() {
-    const recordBtn = document.querySelector<HTMLButtonElement>('[title^="Record audio"]');
-    if (recordBtn) {
-      recordBtn.click();
-    }
-  }
-
-  function handleDashboardImportFile() {
-    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"][accept*=".md"]');
-    if (fileInput) {
-      fileInput.click();
-    }
+  function handleDashboardStartRecording(mode: AudioMode) {
+    setRecordTrigger({ mode, key: Date.now() });
   }
 
   const handleSave = useCallback(async () => {
@@ -3284,7 +3274,6 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               onSelectNote={handleDashboardSelectNote}
               onCreateNote={handleCreate}
               onStartRecording={handleDashboardStartRecording}
-              onImportFile={handleDashboardImportFile}
               audioNotesEnabled={settings.masterAiEnabled && settings.audioNotes}
             />
           </div>

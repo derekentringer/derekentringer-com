@@ -247,9 +247,15 @@ function AiSettingsSection() {
   const styles = makeStyles(themeColors);
   const masterAiEnabled = useAiSettingsStore((s) => s.masterAiEnabled);
   const qaAssistant = useAiSettingsStore((s) => s.qaAssistant);
+  const summarize = useAiSettingsStore((s) => s.summarize);
+  const tagSuggestions = useAiSettingsStore((s) => s.tagSuggestions);
+  const audioNotes = useAiSettingsStore((s) => s.audioNotes);
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const setMasterAiEnabled = useAiSettingsStore((s) => s.setMasterAiEnabled);
   const setQaAssistant = useAiSettingsStore((s) => s.setQaAssistant);
+  const setSummarize = useAiSettingsStore((s) => s.setSummarize);
+  const setTagSuggestions = useAiSettingsStore((s) => s.setTagSuggestions);
+  const setAudioNotes = useAiSettingsStore((s) => s.setAudioNotes);
   const setAutoApprove = useAiSettingsStore((s) => s.setAutoApprove);
 
   const renderToggle = (
@@ -326,6 +332,15 @@ function AiSettingsSection() {
       {masterAiEnabled &&
         renderToggle("AI Assistant chat", qaAssistant, setQaAssistant,
           "Q&A panel + slash commands.")}
+      {masterAiEnabled &&
+        renderToggle("Summarize", summarize, setSummarize,
+          "Action-menu command that turns the open note into a TL;DR.")}
+      {masterAiEnabled &&
+        renderToggle("Tag suggestions", tagSuggestions, setTagSuggestions,
+          "Suggests tags for the open note based on its content.")}
+      {masterAiEnabled &&
+        renderToggle("Audio Notes", audioNotes, setAudioNotes,
+          "Dashboard recording shortcuts (Meeting / Lecture / Memo / Verbatim) plus the AI tab's recording pipeline.")}
       {showAutoApprove && (
         <>
           <View style={styles.autoApproveBlock}>

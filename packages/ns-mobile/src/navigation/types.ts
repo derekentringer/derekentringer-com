@@ -11,7 +11,10 @@ export type DashboardStackParamList = {
   DashboardHome: undefined;
   NoteDetail: { noteId: string };
   NoteEditor: { noteId?: string };
-  Recording: undefined;
+  /** Optional `mode` skips the in-screen picker and starts that
+   *  recording mode immediately. Used by the Quick Actions buttons
+   *  on the Dashboard. */
+  Recording: { mode?: "meeting" | "lecture" | "memo" | "verbatim" } | undefined;
 };
 
 export type AiStackParamList = {

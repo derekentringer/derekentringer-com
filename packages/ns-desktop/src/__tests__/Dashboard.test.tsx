@@ -61,15 +61,13 @@ const audioNotes: Note[] = [
 describe("Dashboard", () => {
   let onSelectNote: (noteId: string) => void;
   let onCreateNote: () => void;
-  let onStartRecording: () => void;
-  let onImportFile: () => void;
+  let onStartRecording: (mode: "meeting" | "lecture" | "memo" | "verbatim") => void;
 
   beforeEach(() => {
     vi.clearAllMocks();
     onSelectNote = vi.fn();
     onCreateNote = vi.fn();
     onStartRecording = vi.fn();
-    onImportFile = vi.fn();
 
     mockFetchRecent.mockResolvedValue(recentNotes);
     mockFetchFavorites.mockResolvedValue(favoriteNotes);
@@ -82,7 +80,6 @@ describe("Dashboard", () => {
         onSelectNote={onSelectNote}
         onCreateNote={onCreateNote}
         onStartRecording={onStartRecording}
-        onImportFile={onImportFile}
         audioNotesEnabled={true}
       />,
     );
@@ -103,7 +100,6 @@ describe("Dashboard", () => {
         onSelectNote={onSelectNote}
         onCreateNote={onCreateNote}
         onStartRecording={onStartRecording}
-        onImportFile={onImportFile}
         audioNotesEnabled={true}
       />,
     );
@@ -116,23 +112,23 @@ describe("Dashboard", () => {
     expect(onCreateNote).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onStartRecording when Record quick action clicked", async () => {
+  it("calls onStartRecording('meeting') when Meeting quick action clicked", async () => {
     render(
       <Dashboard
         onSelectNote={onSelectNote}
         onCreateNote={onCreateNote}
         onStartRecording={onStartRecording}
-        onImportFile={onImportFile}
         audioNotesEnabled={true}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getByText("New Recording")).toBeInTheDocument();
+      expect(screen.getByText("Meeting")).toBeInTheDocument();
     });
 
-    await userEvent.click(screen.getByText("New Recording"));
+    await userEvent.click(screen.getByText("Meeting"));
     expect(onStartRecording).toHaveBeenCalledTimes(1);
+    expect(onStartRecording).toHaveBeenCalledWith("meeting");
   });
 
   it("calls onSelectNote with noteId when a note card is clicked", async () => {
@@ -141,7 +137,6 @@ describe("Dashboard", () => {
         onSelectNote={onSelectNote}
         onCreateNote={onCreateNote}
         onStartRecording={onStartRecording}
-        onImportFile={onImportFile}
         audioNotesEnabled={true}
       />,
     );
@@ -161,7 +156,6 @@ describe("Dashboard", () => {
         onSelectNote={onSelectNote}
         onCreateNote={onCreateNote}
         onStartRecording={onStartRecording}
-        onImportFile={onImportFile}
         audioNotesEnabled={false}
       />,
     );
@@ -183,7 +177,6 @@ describe("Dashboard", () => {
         onSelectNote={onSelectNote}
         onCreateNote={onCreateNote}
         onStartRecording={onStartRecording}
-        onImportFile={onImportFile}
         audioNotesEnabled={true}
       />,
     );
@@ -210,7 +203,6 @@ describe("Dashboard", () => {
         onSelectNote={onSelectNote}
         onCreateNote={onCreateNote}
         onStartRecording={onStartRecording}
-        onImportFile={onImportFile}
         audioNotesEnabled={true}
       />,
     );
@@ -219,22 +211,98 @@ describe("Dashboard", () => {
     expect(skeleton).toBeInTheDocument();
   });
 
-  it("calls onImportFile when Import File quick action clicked", async () => {
+  it("does not render the Import File quick action", async () => {
     render(
       <Dashboard
         onSelectNote={onSelectNote}
         onCreateNote={onCreateNote}
         onStartRecording={onStartRecording}
-        onImportFile={onImportFile}
         audioNotesEnabled={true}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Import File")).toBeInTheDocument();
+      expect(screen.getByText("Quick Actions")).toBeInTheDocument();
     });
 
-    await userEvent.click(screen.getByText("Import File"));
-    expect(onImportFile).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Import File")).not.toBeInTheDocument();
+  });
+
+  it("orders Quick Actions as New Note, then mode-specific recording tiles", async () => {
+    render(
+      <Dashboard
+        onSelectNote={onSelectNote}
+        onCreateNote={onCreateNote}
+        onStartRecording={onStartRecording}
+        audioNotesEnabled={true}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Meeting")).toBeInTheDocument();
+    });
+
+    const newNote = screen.getByText("New Note");
+    const meeting = screen.getByText("Meeting");
+    const lecture = screen.getByText("Lecture");
+    const memo = screen.getByText("Memo");
+    const verbatim = screen.getByText("Verbatim");
+    expect(newNote.compareDocumentPosition(meeting)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(meeting.compareDocumentPosition(lecture)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(lecture.compareDocumentPosition(memo)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(memo.compareDocumentPosition(verbatim)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("hides recording quick actions when audioNotesEnabled is false", async () => {
+    render(
+      <Dashboard
+        onSelectNote={onSelectNote}
+        onCreateNote={onCreateNote}
+        onStartRecording={onStartRecording}
+        audioNotesEnabled={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("New Note")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("Meeting")).not.toBeInTheDocument();
+    expect(screen.queryByText("Lecture")).not.toBeInTheDocument();
+    expect(screen.queryByText("Memo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verbatim")).not.toBeInTheDocument();
+  });
+
+  it("calls onStartRecording with the matching mode for each tile", async () => {
+    render(
+      <Dashboard
+        onSelectNote={onSelectNote}
+        onCreateNote={onCreateNote}
+        onStartRecording={onStartRecording}
+        audioNotesEnabled={true}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Meeting")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Meeting"));
+    await userEvent.click(screen.getByText("Lecture"));
+    await userEvent.click(screen.getByText("Memo"));
+    await userEvent.click(screen.getByText("Verbatim"));
+
+    expect(onStartRecording).toHaveBeenNthCalledWith(1, "meeting");
+    expect(onStartRecording).toHaveBeenNthCalledWith(2, "lecture");
+    expect(onStartRecording).toHaveBeenNthCalledWith(3, "memo");
+    expect(onStartRecording).toHaveBeenNthCalledWith(4, "verbatim");
   });
 });
