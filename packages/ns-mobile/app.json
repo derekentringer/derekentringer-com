@@ -19,7 +19,9 @@
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": ["audio"],
+        "NSPhotoLibraryUsageDescription": "Allow NoteSync to read photos from your library so you can attach them to your notes.",
+        "NSCameraUsageDescription": "Allow NoteSync to use the camera so you can take a photo and attach it to a note."
       }
     },
     "android": {
@@ -38,6 +40,13 @@
         {
           "microphonePermission": "Allow NoteSync to access your microphone so you can record voice memos.",
           "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow NoteSync to read photos from your library so you can attach them to your notes.",
+          "cameraPermission": "Allow NoteSync to use the camera so you can take a photo and attach it to a note."
         }
       ]
     ]

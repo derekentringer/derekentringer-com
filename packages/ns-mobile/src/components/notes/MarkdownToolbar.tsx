@@ -31,11 +31,16 @@ interface MarkdownToolbarProps {
    *  button is hidden so consumers that don't surface AI actions
    *  see the toolbar unchanged. */
   onAiPress?: () => void;
+  /** Optional handler for the image-plus button. When provided
+   *  the button is rendered at the end of the toolbar (Phase D:
+   *  opens the image picker sheet). Hidden when omitted. */
+  onImagePress?: () => void;
 }
 
 export function MarkdownToolbar({
   onAction,
   onAiPress,
+  onImagePress,
 }: MarkdownToolbarProps) {
   const themeColors = useThemeColors();
 
@@ -82,6 +87,23 @@ export function MarkdownToolbar({
             />
           </Pressable>
         ))}
+        {onImagePress ? (
+          <Pressable
+            onPress={onImagePress}
+            style={({ pressed }) => [
+              styles.button,
+              pressed && { backgroundColor: `${themeColors.primary}1A` },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Insert image"
+          >
+            <MaterialCommunityIcons
+              name="image-plus"
+              size={22}
+              color={themeColors.foreground}
+            />
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );

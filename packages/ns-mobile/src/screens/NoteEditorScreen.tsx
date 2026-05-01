@@ -14,6 +14,7 @@ import {
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Markdown from "react-native-markdown-display";
+import { markdownRules } from "@/lib/markdownRules";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { NotesStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
@@ -37,11 +38,19 @@ import { FolderPicker } from "@/components/notes/FolderPicker";
 import { MarkdownToolbar } from "@/components/notes/MarkdownToolbar";
 import { TagInput } from "@/components/notes/TagInput";
 import { type AiActionKey } from "@/components/notes/AiActionsSheet";
+import {
+  ImagePickerSheet,
+  type ImagePickerSource,
+} from "@/components/notes/ImagePickerSheet";
 import { SummaryBanner } from "@/components/notes/SummaryBanner";
 import {
   summarizeNote as apiSummarizeNote,
   suggestTags as apiSuggestTags,
 } from "@/api/ai";
+import { uploadImage } from "@/api/images";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import useAiSettingsStore from "@/store/aiSettingsStore";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import {
   toggleBold,
@@ -87,6 +96,41 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const contentRef = useRef<TextInput>(null);
   const selectionRef = useRef({ start: 0, end: 0 });
   const folderSheetRef = useRef<BottomSheetModal>(null);
+  const imageSheetRef = useRef<BottomSheetModal>(null);
+  // Tracks whether the content TextInput was focused when the
+  // image-picker sheet was opened. If yes and the user dismisses
+  // the sheet without picking, refocus so the keyboard slides
+  // back up where they left off.
+  const editorWasFocusedRef = useRef(false);
+  // Set to `true` on the picker-flow path (`handleImagePick`) so
+  // the sheet's onDismiss can tell apart "user picked an image
+  // → sheet closes → don't refocus, the picker is taking over"
+  // from "user tapped the backdrop → refocus the editor".
+  const pickInProgressRef = useRef(false);
+  const editorScrollRef = useRef<ScrollView>(null);
+  const previewScrollRef = useRef<ScrollView>(null);
+  // Show the scroll-to-top FAB once the user is past ~200px of
+  // scroll. Tracked separately for editor + preview so each scroll
+  // view's FAB matches its own offset.
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const SCROLL_TOP_THRESHOLD = 200;
+  // Manual sticky-toolbar machinery. RN's `stickyHeaderIndices`
+  // breaks Pressable touch handling on Android with the new arch
+  // (taps in the pinned toolbar simply don't fire). Instead we
+  // track the toolbar's original Y position via `onLayout` and
+  // the scroll position via `onScroll`; when scrollY passes the
+  // toolbar's top, we render a SECOND copy as an absolutely-
+  // positioned overlay floating at the top of the editor. The
+  // overlay isn't a sticky-header child, so its Pressables fire
+  // normally.
+  const [toolbarY, setToolbarY] = useState<number | null>(null);
+  const [showStickyToolbar, setShowStickyToolbar] = useState(false);
+  const [imagePickerBusy, setImagePickerBusy] =
+    useState<ImagePickerSource | null>(null);
+  const connectionType = useSyncStore((s) => s.connectionType);
+  const imageUploadsWifiOnly = useAiSettingsStore(
+    (s) => s.imageUploadsWifiOnly,
+  );
 
   const { data: noteData, isLoading } = useNote(noteId ?? "");
   const deleteNoteMutation = useDeleteNote();
@@ -404,6 +448,133 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     }
   }, [noteId, aiBusyKey, flush, tags, updateNoteMutation]);
 
+  // Phase D — pick an image from the camera roll or take a new one,
+  // resize via expo-image-manipulator, upload to R2 via the existing
+  // /images/upload endpoint, and insert a markdown image reference
+  // at the cursor. D.1 happy path only — D.2 will add the offline
+  // queue + cache layer.
+  const insertImageMarkdownAtCursor = useCallback(
+    (url: string, altText: string) => {
+      const { start, end } = selectionRef.current;
+      const snippet = `![${altText}](${url})`;
+      const before = displayValue.slice(0, start);
+      const after = displayValue.slice(end);
+      // Ensure newline padding — markdown image refs render as a
+      // block element when surrounded by blank lines, which is the
+      // common "image on its own line" intent.
+      const needsLeading = before.length > 0 && !before.endsWith("\n");
+      const needsTrailing = after.length > 0 && !after.startsWith("\n");
+      const inserted =
+        (needsLeading ? "\n" : "") + snippet + (needsTrailing ? "\n" : "");
+      const nextBody = before + inserted + after;
+      const nextContent =
+        propertiesMode === "panel" && hasFrontmatter
+          ? serializeFrontmatter(parsed.metadata, nextBody, parsed.unknownFields)
+          : nextBody;
+      setContent(nextContent);
+      const newPos = start + inserted.length;
+      selectionRef.current = { start: newPos, end: newPos };
+      setTimeout(() => {
+        contentRef.current?.setNativeProps({
+          selection: { start: newPos, end: newPos },
+        });
+      }, 50);
+    },
+    [displayValue, propertiesMode, hasFrontmatter, parsed],
+  );
+
+  const handleImagePick = useCallback(
+    async (source: ImagePickerSource) => {
+      if (imagePickerBusy) return;
+      // Mark the pick path so the sheet's onDismiss skips
+      // refocusing the editor — the camera / library picker is
+      // about to take over the screen.
+      pickInProgressRef.current = true;
+      setImagePickerBusy(source);
+      try {
+        // Note must exist server-side before we can attach an
+        // image to it. Flush any pending edits first so the
+        // server sees the freshest copy + the note ID is allocated.
+        await flush();
+        if (!noteId) {
+          Alert.alert("Image", "Please add some content first so the note is saved.");
+          return;
+        }
+
+        // Permissions
+        const perm =
+          source === "camera"
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert(
+            source === "camera" ? "Camera permission needed" : "Photo library permission needed",
+            "Please enable access in Settings to attach images to your notes.",
+          );
+          return;
+        }
+
+        // Launch picker. `mediaTypes: ["images"]` excludes video.
+        const result =
+          source === "camera"
+            ? await ImagePicker.launchCameraAsync({
+                mediaTypes: ["images"],
+                quality: 1,
+              })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                quality: 1,
+              });
+        if (result.canceled || result.assets.length === 0) return;
+        const asset = result.assets[0];
+
+        // Resize + recompress to JPEG. Long-edge cap of 2048 keeps
+        // a 12MP photo under 1MB and protects RN from OOM mid-
+        // base64 on the server analyzeImage path.
+        const manipulated = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [{ resize: { width: 2048 } }],
+          { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+        );
+
+        // Wi-Fi-only check. When ON and we're on cellular, queue
+        // the upload (D.2 will land the persistent queue; for D.1
+        // we surface a one-line notice and skip the upload).
+        const isWifi = connectionType === "wifi";
+        if (imageUploadsWifiOnly && !isWifi) {
+          Alert.alert(
+            "Wi-Fi only",
+            "This image will upload when you're back on Wi-Fi.",
+          );
+          // TODO(D.2): persist to pending_uploads and insert a
+          // local placeholder URL at the cursor.
+          return;
+        }
+
+        const uploaded = await uploadImage({
+          uri: manipulated.uri,
+          noteId,
+          mimeType: "image/jpeg",
+        });
+
+        insertImageMarkdownAtCursor(uploaded.r2Url, "");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Image upload failed.";
+        Alert.alert("Image", message);
+      } finally {
+        setImagePickerBusy(null);
+      }
+    },
+    [
+      imagePickerBusy,
+      flush,
+      noteId,
+      connectionType,
+      imageUploadsWifiOnly,
+      insertImageMarkdownAtCursor,
+    ],
+  );
+
   const handleAiSummaryDelete = useCallback(() => {
     if (!noteId) return;
     Alert.alert(
@@ -525,26 +696,33 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
-      {/* Status line */}
-      <View style={styles.statusBar}>
-        <Text style={[styles.statusText, { color: isSaving ? themeColors.muted : error ? themeColors.error : themeColors.muted }]}>
-          {isSaving ? "Saving..." : error ? "Save failed" : isOnline ? "Saved" : "Saved locally"}
-          {noteData ? ` · Created ${formatCreatedDate(noteData.createdAt)} · Modified ${formatModifiedDate(noteData.updatedAt)}` : ""}
-        </Text>
-      </View>
-
       {isPreview ? (
         <ScrollView
+          ref={previewScrollRef}
           style={styles.previewScroll}
           contentContainerStyle={styles.previewContent}
+          onScroll={(e) =>
+            setShowScrollTop(
+              e.nativeEvent.contentOffset.y > SCROLL_TOP_THRESHOLD,
+            )
+          }
+          scrollEventThrottle={64}
         >
+          {/* Status line — scrolls with the content (was previously
+              pinned above the ScrollView). */}
+          <View style={styles.statusBar}>
+            <Text style={[styles.statusText, { color: isSaving ? themeColors.muted : error ? themeColors.error : themeColors.muted }]}>
+              {isSaving ? "Saving..." : error ? "Save failed" : isOnline ? "Saved" : "Saved locally"}
+              {noteData ? ` · Created ${formatCreatedDate(noteData.createdAt)} · Modified ${formatModifiedDate(noteData.updatedAt)}` : ""}
+            </Text>
+          </View>
           {title ? (
             <Text style={[styles.previewTitle, { color: themeColors.foreground }]}>
               {title}
             </Text>
           ) : null}
           {content ? (
-            <Markdown style={mdStyles} onLinkPress={handleLinkPress}>
+            <Markdown style={mdStyles} rules={markdownRules} onLinkPress={handleLinkPress}>
               {resolveWikiLinks(stripFrontmatter(content), titleToIdMap)}
             </Markdown>
           ) : (
@@ -555,10 +733,27 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         </ScrollView>
       ) : (
         <ScrollView
+          ref={editorScrollRef}
           style={styles.editorScroll}
           contentContainerStyle={styles.editorContent}
           keyboardShouldPersistTaps="handled"
+          // No `stickyHeaderIndices` here — see manual-sticky
+          // machinery in state above. We sync an absolutely-
+          // positioned toolbar overlay to scrollY instead.
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            setShowScrollTop(y > SCROLL_TOP_THRESHOLD);
+            if (toolbarY !== null) setShowStickyToolbar(y >= toolbarY);
+          }}
+          scrollEventThrottle={64}
         >
+          {/* Status line (index 0) — scrolls with the content. */}
+          <View style={styles.statusBar}>
+            <Text style={[styles.statusText, { color: isSaving ? themeColors.muted : error ? themeColors.error : themeColors.muted }]}>
+              {isSaving ? "Saving..." : error ? "Save failed" : isOnline ? "Saved" : "Saved locally"}
+              {noteData ? ` · Created ${formatCreatedDate(noteData.createdAt)} · Modified ${formatModifiedDate(noteData.updatedAt)}` : ""}
+            </Text>
+          </View>
           {/* Title */}
           <TextInput
             style={[styles.titleInput, { color: themeColors.foreground }]}
@@ -629,8 +824,28 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               until Continue Writing / AI Rewrite (Phase B.3/B.4)
               land — Summarize + Suggest Tags moved to the header
               overflow menu. */}
-          <View style={styles.toolbarWrapper}>
-            <MarkdownToolbar onAction={handleToolbarAction} />
+          <View
+            style={styles.toolbarWrapper}
+            onLayout={(e) => {
+              // Layout y is relative to the ScrollView's content,
+              // so it matches the scroll offset directly.
+              setToolbarY(e.nativeEvent.layout.y);
+            }}
+          >
+            <MarkdownToolbar
+              onAction={handleToolbarAction}
+              onImagePress={() => {
+                // Match FolderPicker's pattern exactly — that one
+                // works reliably from this screen. Anything fancier
+                // (refs / RAF / conditional dismiss) was breaking
+                // the present() call.
+                editorWasFocusedRef.current =
+                  contentRef.current?.isFocused() ?? false;
+                pickInProgressRef.current = false;
+                Keyboard.dismiss();
+                imageSheetRef.current?.present();
+              }}
+            />
           </View>
 
           {/* Content. When propertiesMode === "panel" and the note
@@ -682,6 +897,77 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         onSelect={handleFolderSelect}
         mode="assign"
       />
+
+      <ImagePickerSheet
+        bottomSheetRef={imageSheetRef}
+        onPick={handleImagePick}
+        busyKey={imagePickerBusy}
+        onDismiss={() => {
+          // Sheet closed without picking — restore the keyboard
+          // so the user lands back where they were typing. Skip
+          // when a pick is in flight (the picker is taking over).
+          if (pickInProgressRef.current) return;
+          if (editorWasFocusedRef.current) {
+            setTimeout(() => contentRef.current?.focus(), 50);
+          }
+        }}
+      />
+
+      {/* Manual sticky toolbar overlay — only mounted while the
+          editor is in non-preview mode AND the user has scrolled
+          past the in-scroll toolbar's original position. Renders a
+          second MarkdownToolbar instance pinned to the top of the
+          editor area (below the navigator header) with the same
+          callbacks as the in-scroll toolbar. Avoids the Pressable-
+          inside-stickyHeader touch bug on the new arch. */}
+      {!isPreview && showStickyToolbar ? (
+        <View style={styles.stickyToolbarOverlay} pointerEvents="box-none">
+          {/* Use `stickyToolbarInner` instead of `toolbarWrapper` so
+              the overlay copy doesn't inherit the in-scroll
+              toolbar's `marginTop: spacing.sm`. The overlay should
+              sit flush against the top of the editor's content
+              area (just below the navigator header). */}
+          <View style={styles.stickyToolbarInner}>
+            <MarkdownToolbar
+              onAction={handleToolbarAction}
+              onImagePress={() => {
+                editorWasFocusedRef.current =
+                  contentRef.current?.isFocused() ?? false;
+                pickInProgressRef.current = false;
+                Keyboard.dismiss();
+                imageSheetRef.current?.present();
+              }}
+            />
+          </View>
+        </View>
+      ) : null}
+
+      {/* Scroll-to-top FAB — appears once the active ScrollView is
+          past ~200px. Tapping scrolls back to top of the active
+          (editor or preview) ScrollView. */}
+      {showScrollTop ? (
+        <Pressable
+          onPress={() => {
+            const ref = isPreview ? previewScrollRef : editorScrollRef;
+            ref.current?.scrollTo({ y: 0, animated: true });
+          }}
+          style={[
+            styles.scrollTopFab,
+            {
+              backgroundColor: themeColors.card,
+              borderColor: themeColors.border,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Scroll to top"
+        >
+          <MaterialCommunityIcons
+            name="chevron-up"
+            size={24}
+            color={themeColors.foreground}
+          />
+        </Pressable>
+      ) : null}
 
       {/* Header overflow menu — AI actions, frontmatter toggle
           (edit mode only) + delete. Mirrors NoteDetailScreen's
@@ -846,9 +1132,12 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   statusBar: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: 0,
+    // No paddingHorizontal — the parent ScrollView's
+    // `editorContent` / `previewContent` style already adds
+    // `paddingHorizontal: spacing.md`. Adding it again here when
+    // we moved the status line INTO the scroll caused a doubled
+    // left inset versus the title / toolbar / content below.
+    paddingBottom: spacing.xs,
     minHeight: 20,
   },
   statusText: {
@@ -872,6 +1161,39 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     marginHorizontal: -spacing.md,
     marginBottom: spacing.sm,
+  },
+  stickyToolbarOverlay: {
+    // Sits directly under the navigator header. The KeyboardAvoidingView
+    // is the parent; absolute positioning relative to it stacks the
+    // overlay above the scroll content without intercepting touches
+    // outside the toolbar (pointerEvents="box-none" on the wrapper).
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    elevation: 4,
+  },
+  stickyToolbarInner: {
+    // Mirrors `toolbarWrapper` but without the marginTop / marginBottom
+    // — the overlay sits flush at the top of the screen content.
+    marginHorizontal: 0,
+  },
+  scrollTopFab: {
+    position: "absolute",
+    right: spacing.md,
+    bottom: spacing.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   contentInput: {
     fontSize: 15,

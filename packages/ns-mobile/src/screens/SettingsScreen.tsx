@@ -250,12 +250,16 @@ function AiSettingsSection() {
   const summarize = useAiSettingsStore((s) => s.summarize);
   const tagSuggestions = useAiSettingsStore((s) => s.tagSuggestions);
   const audioNotes = useAiSettingsStore((s) => s.audioNotes);
+  const imageUploadsWifiOnly = useAiSettingsStore((s) => s.imageUploadsWifiOnly);
   const autoApprove = useAiSettingsStore((s) => s.autoApprove);
   const setMasterAiEnabled = useAiSettingsStore((s) => s.setMasterAiEnabled);
   const setQaAssistant = useAiSettingsStore((s) => s.setQaAssistant);
   const setSummarize = useAiSettingsStore((s) => s.setSummarize);
   const setTagSuggestions = useAiSettingsStore((s) => s.setTagSuggestions);
   const setAudioNotes = useAiSettingsStore((s) => s.setAudioNotes);
+  const setImageUploadsWifiOnly = useAiSettingsStore(
+    (s) => s.setImageUploadsWifiOnly,
+  );
   const setAutoApprove = useAiSettingsStore((s) => s.setAutoApprove);
 
   const renderToggle = (
@@ -341,6 +345,12 @@ function AiSettingsSection() {
       {masterAiEnabled &&
         renderToggle("Audio Notes", audioNotes, setAudioNotes,
           "Dashboard recording shortcuts (Meeting / Lecture / Memo / Verbatim) plus the AI tab's recording pipeline.")}
+      {renderToggle(
+        "Wi-Fi only image uploads",
+        imageUploadsWifiOnly,
+        setImageUploadsWifiOnly,
+        "On: pictures attached to notes wait for Wi-Fi before uploading. Off: uploads happen over cellular too.",
+      )}
       {showAutoApprove && (
         <>
           <View style={styles.autoApproveBlock}>

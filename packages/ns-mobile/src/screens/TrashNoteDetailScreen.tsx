@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Markdown from "react-native-markdown-display";
+import { markdownRules } from "@/lib/markdownRules";
 import * as Haptics from "expo-haptics";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SettingsStackParamList } from "@/navigation/types";
@@ -207,7 +208,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
         {/* Content */}
         <View style={styles.content}>
           {note.content ? (
-            <Markdown style={mdStyles}>{note.content}</Markdown>
+            <Markdown style={mdStyles} rules={markdownRules}>{note.content}</Markdown>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>
               No content

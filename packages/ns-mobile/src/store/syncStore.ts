@@ -2,10 +2,21 @@ import { create } from "zustand";
 import type { SyncRejection } from "@derekentringer/ns-shared";
 import type { SyncStatus } from "@/lib/syncEngine";
 
+/** Active network connection class. Mirrors the values
+ *  `@react-native-community/netinfo` reports. We only care about the
+ *  wifi vs not-wifi distinction for image-upload gating; bluetooth /
+ *  ethernet / vpn / wimax all collapse to "other". */
+export type ConnectionType = "wifi" | "cellular" | "none" | "other" | "unknown";
+
 interface SyncState {
   status: SyncStatus;
   error: string | null;
   isOnline: boolean;
+  /** Phase D — connection class. Defaults to `"unknown"` until the
+   *  first NetInfo event lands. Lets feature code (image upload's
+   *  wifi-only setting, future bandwidth-aware syncs) decide whether
+   *  to auto-flush over cellular. */
+  connectionType: ConnectionType;
   rejections: SyncRejection[];
   rejectionActions: {
     forcePush: ((changeIds: string[]) => Promise<void>) | null;
@@ -22,6 +33,7 @@ interface SyncState {
 interface SyncActions {
   setStatus: (status: SyncStatus, error: string | null) => void;
   setIsOnline: (isOnline: boolean) => void;
+  setConnectionType: (connectionType: ConnectionType) => void;
   setRejections: (
     rejections: SyncRejection[],
     forcePush: (changeIds: string[]) => Promise<void>,
@@ -37,6 +49,7 @@ const useSyncStore = create<SyncState & SyncActions>()((set) => ({
   status: "idle",
   error: null,
   isOnline: true,
+  connectionType: "unknown",
   rejections: [],
   rejectionActions: { forcePush: null, discard: null },
   lastSyncedAt: null,
@@ -50,6 +63,8 @@ const useSyncStore = create<SyncState & SyncActions>()((set) => ({
   },
 
   setIsOnline: (isOnline) => set({ isOnline }),
+
+  setConnectionType: (connectionType) => set({ connectionType }),
 
   setRejections: (rejections, forcePush, discard) =>
     set({ rejections, rejectionActions: { forcePush, discard } }),
