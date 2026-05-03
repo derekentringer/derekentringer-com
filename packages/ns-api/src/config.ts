@@ -50,6 +50,31 @@ export function loadConfig(): Config {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
     voyageApiKey: process.env.VOYAGE_API_KEY || "",
     openaiApiKey: process.env.OPENAI_API_KEY || "",
+    // Whisper provider — `openai` (default), `groq`, or `custom`.
+    // Groq hosts whisper-large-v3-turbo on LPU hardware and is
+    // ~6.7× cheaper than OpenAI's $0.006/min while running the
+    // same model. `custom` lets us point at any Whisper-compatible
+    // endpoint (e.g. self-hosted whisper.cpp behind an HTTP shim)
+    // by setting WHISPER_API_URL + WHISPER_API_KEY + WHISPER_MODEL
+    // explicitly. Defaults preserve current behavior so existing
+    // deployments keep working.
+    whisperProvider:
+      (process.env.WHISPER_PROVIDER as Config["whisperProvider"]) || "openai",
+    whisperApiUrl:
+      process.env.WHISPER_API_URL ||
+      (process.env.WHISPER_PROVIDER === "groq"
+        ? "https://api.groq.com/openai/v1/audio/transcriptions"
+        : "https://api.openai.com/v1/audio/transcriptions"),
+    whisperApiKey:
+      process.env.WHISPER_API_KEY ||
+      (process.env.WHISPER_PROVIDER === "groq"
+        ? process.env.GROQ_API_KEY || ""
+        : process.env.OPENAI_API_KEY || ""),
+    whisperModel:
+      process.env.WHISPER_MODEL ||
+      (process.env.WHISPER_PROVIDER === "groq"
+        ? "whisper-large-v3-turbo"
+        : "whisper-1"),
     resendApiKey: process.env.RESEND_API_KEY || "",
     appUrl: process.env.APP_URL || "http://localhost:3005",
     r2AccountId: process.env.R2_ACCOUNT_ID || "",
@@ -75,6 +100,16 @@ export interface Config {
   anthropicApiKey: string;
   voyageApiKey: string;
   openaiApiKey: string;
+  /** Whisper inference provider. Switch via WHISPER_PROVIDER. */
+  whisperProvider: "openai" | "groq" | "custom";
+  /** Whisper-compatible HTTP endpoint. Set explicitly for "custom". */
+  whisperApiUrl: string;
+  /** Bearer token for the Whisper endpoint. Falls back to
+   *  OPENAI_API_KEY for openai and GROQ_API_KEY for groq when
+   *  WHISPER_API_KEY is unset. */
+  whisperApiKey: string;
+  /** Model id sent in the multipart `model` field. */
+  whisperModel: string;
   resendApiKey: string;
   appUrl: string;
   r2AccountId: string;

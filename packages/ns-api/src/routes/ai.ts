@@ -710,7 +710,18 @@ export default async function aiRoutes(fastify: FastifyInstance) {
           { sessionId, chunkIndex, fileSize: file.buffer.length, mimetype: file.mimetype },
           "Transcribing audio chunk",
         );
-        text = await transcribeAudio(file.buffer, file.filename);
+        // Use the chunked variant so an oversized single-chunk
+        // upload (mobile sends one big chunk for the whole
+        // recording at stop-time) gets split by the audio chunker
+        // before it hits Whisper's 25 MB / request cap. For small
+        // live chunks (~20s clips on web/desktop) the chunker is
+        // a no-op since `splitAudioIfNeeded` returns the buffer
+        // unchanged when it's under MAX_CHUNK_SIZE.
+        text = await transcribeAudioChunked(
+          file.buffer,
+          file.filename,
+          request.log,
+        );
       } catch (err) {
         request.log.error(err, "Chunk transcription failed");
         const message = err instanceof Error ? err.message : "Transcription failed";

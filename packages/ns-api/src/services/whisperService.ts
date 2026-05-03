@@ -1,7 +1,11 @@
 import { loadConfig } from "../config.js";
 import { splitAudioIfNeeded } from "./audioChunker.js";
 
-const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions";
+// Endpoint + model + auth come from config so we can swap Whisper
+// hosts without redeploying logic. Same Whisper model file across
+// OpenAI, Groq, and self-hosted whisper.cpp shims; only the host
+// and model id change. Cost lever: Groq runs whisper-large-v3-turbo
+// at ~$0.0009/min vs OpenAI's $0.006/min for the same audio.
 const WHISPER_TIMEOUT_MS = 300_000; // 5 minutes per chunk
 const MAX_PARALLEL_CHUNKS = 3;
 const MAX_RETRIES = 2;
@@ -37,12 +41,12 @@ export async function transcribeAudio(
 
     const formData = new FormData();
     formData.append("file", new Blob([new Uint8Array(audioBuffer)]), filename);
-    formData.append("model", "whisper-1");
+    formData.append("model", config.whisperModel);
 
-    const response = await fetch(WHISPER_API_URL, {
+    const response = await fetch(config.whisperApiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.openaiApiKey}`,
+        Authorization: `Bearer ${config.whisperApiKey}`,
       },
       body: formData,
       signal: AbortSignal.timeout(WHISPER_TIMEOUT_MS),
