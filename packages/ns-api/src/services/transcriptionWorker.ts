@@ -126,54 +126,48 @@ export function kickDispatcher(): void {
 
 async function dispatchPass(): Promise<void> {
   if (!workerDeps) return;
-  while (runningJobs.size < MAX_CONCURRENT_GLOBAL) {
-    // Pull a generous candidate window so we have options when
-    // some users are at their per-user cap.
-    const candidates = await findPendingJobs(MAX_CONCURRENT_GLOBAL * 4);
-    let claimedThisPass = false;
+  if (runningJobs.size >= MAX_CONCURRENT_GLOBAL) return;
 
-    for (const job of candidates) {
-      if (runningJobs.size >= MAX_CONCURRENT_GLOBAL) break;
-      if (runningJobs.has(job.id)) continue;
+  // One findPendingJobs call per dispatch — claims as many slots
+  // as we can fill from this candidate window, then returns. The
+  // next kickDispatcher (fired from a completing job's `.finally`
+  // or a new POST /transcribe-jobs) will fetch fresh candidates
+  // and re-evaluate per-user counts based on then-current
+  // in-memory state.
+  const candidates = await findPendingJobs(MAX_CONCURRENT_GLOBAL * 4);
+  for (const job of candidates) {
+    if (runningJobs.size >= MAX_CONCURRENT_GLOBAL) break;
+    if (runningJobs.has(job.id)) continue;
 
-      // Per-user cap — count in-memory only. Database state may
-      // disagree if another worker process exists (we don't have
-      // those in v1, but the in-memory count is conservative).
-      const userActive = countRunningForUser(job.userId);
-      if (userActive >= MAX_CONCURRENT_PER_USER) continue;
+    // Per-user cap — count in-memory only. Database state may
+    // disagree if another worker process exists (we don't have
+    // those in v1, but the in-memory count is conservative).
+    const userActive = countRunningForUser(job.userId);
+    if (userActive >= MAX_CONCURRENT_PER_USER) continue;
 
-      // Claim by patching status. Race-safe enough for v1 (single
-      // worker process); a multi-worker future would need
-      // SELECT ... FOR UPDATE SKIP LOCKED.
-      const nextStatus =
-        job.status === "structuring" ? "structuring" : "transcribing";
-      try {
-        if (nextStatus !== job.status) {
-          await patchJob(job.id, { status: nextStatus });
-        }
-      } catch (err) {
-        workerDeps.log.warn({ err, jobId: job.id }, "Phase H claim failed");
-        continue;
+    // Claim by patching status. Race-safe enough for v1 (single
+    // worker process); a multi-worker future would need
+    // SELECT ... FOR UPDATE SKIP LOCKED.
+    const nextStatus =
+      job.status === "structuring" ? "structuring" : "transcribing";
+    try {
+      if (nextStatus !== job.status) {
+        await patchJob(job.id, { status: nextStatus });
       }
-
-      // Fire and forget — runJob updates the row + emits SSE on its
-      // own. The .finally clause keeps `runningJobs` accurate.
-      const claimed = { ...job, status: nextStatus };
-      const promise = runJob(claimed).finally(() => {
-        runningJobs.delete(job.id);
-        // Slot freed up — wake the dispatcher in case more work
-        // is queued.
-        kickDispatcher();
-      });
-      runningJobs.set(job.id, { userId: job.userId, promise });
-      claimedThisPass = true;
+    } catch (err) {
+      workerDeps.log.warn({ err, jobId: job.id }, "Phase H claim failed");
+      continue;
     }
 
-    // If we couldn't claim anything this pass (every pending row
-    // is either already running or its user is at cap), bail.
-    // The next kickDispatcher call after a job completes will
-    // re-evaluate.
-    if (!claimedThisPass) break;
+    // Fire and forget — runJob updates the row + emits SSE on its
+    // own. The .finally clause keeps `runningJobs` accurate and
+    // re-kicks the dispatcher to claim the freed slot.
+    const claimed = { ...job, status: nextStatus };
+    const promise = runJob(claimed).finally(() => {
+      runningJobs.delete(job.id);
+      kickDispatcher();
+    });
+    runningJobs.set(job.id, { userId: job.userId, promise });
   }
 }
 
