@@ -3,6 +3,7 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
+  GetObjectCommand,
 } from "@aws-sdk/client-s3";
 import { loadConfig } from "../config.js";
 
@@ -80,5 +81,58 @@ export async function deleteImages(r2Keys: string[]): Promise<void> {
         Quiet: true,
       },
     }),
+  );
+}
+
+// Phase H — generic R2 helpers used by transcription audio, which
+// shares the same bucket as images (different key prefix). Audio
+// objects live under `audio/{userId}/{sessionId}.{ext}`. Keyed by
+// sessionId (not jobId) because Retry reuses the same session and
+// re-points at the same R2 object — saves an upload on Retry.
+
+export function buildAudioR2Key(
+  userId: string,
+  sessionId: string,
+  ext: string,
+): string {
+  return `audio/${userId}/${sessionId}.${ext}`;
+}
+
+export async function uploadAudio(
+  buffer: Buffer,
+  r2Key: string,
+  mimeType: string,
+): Promise<void> {
+  const client = getClient();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: getBucketName(),
+      Key: r2Key,
+      Body: buffer,
+      ContentType: mimeType,
+    }),
+  );
+}
+
+export async function fetchAudio(r2Key: string): Promise<Buffer> {
+  const client = getClient();
+  const result = await client.send(
+    new GetObjectCommand({ Bucket: getBucketName(), Key: r2Key }),
+  );
+  if (!result.Body) {
+    throw new Error(`R2 object not found: ${r2Key}`);
+  }
+  // Body is a Readable stream; collect into a Buffer.
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of result.Body as AsyncIterable<Uint8Array>) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function deleteAudio(r2Key: string): Promise<void> {
+  const client = getClient();
+  await client.send(
+    new DeleteObjectCommand({ Bucket: getBucketName(), Key: r2Key }),
   );
 }

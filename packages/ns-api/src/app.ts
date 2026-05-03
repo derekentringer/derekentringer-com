@@ -8,6 +8,7 @@ import authPlugin from "@derekentringer/shared/auth";
 import { loadConfig } from "./config.js";
 import { getPrisma } from "./lib/prisma.js";
 import { createSseHub, type SseHub } from "./lib/sseHub.js";
+import { initTranscriptionWorker } from "./services/transcriptionWorker.js";
 import { cleanupExpiredTokens } from "./store/refreshTokenStore.js";
 import { purgeOldTrash } from "./store/noteStore.js";
 import { getTrashRetentionDays } from "./store/settingStore.js";
@@ -43,6 +44,13 @@ export function buildApp(opts?: BuildAppOptions) {
 
   const sseHub = createSseHub();
   app.decorate("sseHub", sseHub);
+
+  // Phase H — wire the in-process transcription worker. The
+  // worker is currently a stub (kickDispatcher is a no-op); the
+  // real dispatch loop lands in step 3. Initializing here lets
+  // the REST endpoints' `kickDispatcher()` calls become no-ops
+  // safely until then.
+  initTranscriptionWorker({ sseHub, log: app.log });
 
   app.register(cookie);
   app.register(cors, {
