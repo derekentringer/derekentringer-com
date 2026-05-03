@@ -46,6 +46,18 @@ export interface SyncEngineCallbacks {
    *  `fetchChatHistory` (the in-flight write guard prevents the
    *  echo loop). */
   onChatChanged?: () => void;
+  /** Phase H — fires on `event: transcription-job` SSE messages.
+   *  Payload is the job's terminal-status delta
+   *  (`completed` / `failed`). The recordingResultStore patches
+   *  the matching summary by jobId so the meeting card flips
+   *  from `transcribing` to its terminal state. */
+  onTranscriptionJob?: (payload: {
+    jobId: string;
+    sessionId: string;
+    status: string;
+    noteId?: string;
+    errorMessage?: string;
+  }) => void;
 }
 
 // ─── Constants ─────────────────────────────────────────────
@@ -76,6 +88,9 @@ let statusCallback: SyncEngineCallbacks["onStatusChange"] | null = null;
 let dataChangedCallback: SyncEngineCallbacks["onDataChanged"] | null = null;
 let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
 let chatChangedCallback: SyncEngineCallbacks["onChatChanged"] | null = null;
+let transcriptionJobCallback:
+  | SyncEngineCallbacks["onTranscriptionJob"]
+  | null = null;
 
 // SSE state
 let sseXhr: XMLHttpRequest | null = null;
@@ -150,6 +165,7 @@ export async function initSyncEngine(
   dataChangedCallback = callbacks.onDataChanged;
   syncRejectionsCallback = callbacks.onSyncRejections ?? null;
   chatChangedCallback = callbacks.onChatChanged ?? null;
+  transcriptionJobCallback = callbacks.onTranscriptionJob ?? null;
 
   await getOrCreateDeviceId();
 
@@ -225,6 +241,7 @@ export function destroySyncEngine(): void {
   dataChangedCallback = null;
   syncRejectionsCallback = null;
   chatChangedCallback = null;
+  transcriptionJobCallback = null;
   syncInProgress = false;
   deviceId = null;
   backoffMs = 1000;
@@ -324,10 +341,36 @@ async function connectSse(): Promise<void> {
         if (line.startsWith("event: ")) {
           currentEvent = line.slice(7).trim();
         } else if (line.startsWith("data: ")) {
+          const dataPayload = line.slice(6);
           if (currentEvent === "sync") {
             triggerSync();
           } else if (currentEvent === "chat") {
             chatChangedCallback?.();
+          } else if (currentEvent === "transcription-job") {
+            // Phase H — terminal-status notification for a server
+            // transcription job. Payload is JSON
+            // `{ jobId, sessionId, status, noteId?, errorMessage? }`.
+            // Best-effort parse — malformed payloads are ignored
+            // since clients will reconcile via the GET endpoint
+            // on next launch.
+            try {
+              const parsed = JSON.parse(dataPayload) as {
+                jobId: string;
+                sessionId: string;
+                status: string;
+                noteId?: string;
+                errorMessage?: string;
+              };
+              transcriptionJobCallback?.(parsed);
+              // Server creates the Note row directly; nudge the
+              // sync engine so the device pulls the new note row
+              // shortly after the SSE event.
+              if (parsed.status === "completed") {
+                triggerSync();
+              }
+            } catch {
+              /* malformed event payload — ignore */
+            }
           }
           currentEvent = "";
         } else if (line === "") {

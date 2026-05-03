@@ -248,6 +248,16 @@ function AuthenticatedApp() {
             // history; nudge AiScreen to re-run fetchChatHistory.
             useSyncStore.getState().bumpChatRefresh();
           },
+          onTranscriptionJob: (payload) => {
+            // Phase H — server emitted a terminal-status update
+            // for a transcription job. Patch the matching local
+            // summary so the meeting card flips out of its
+            // "transcribing" state.
+            const { applyTranscriptionJobEvent } = require(
+              "@/store/recordingResultStore",
+            ) as typeof import("@/store/recordingResultStore");
+            applyTranscriptionJobEvent(payload);
+          },
         },
       );
     })();
