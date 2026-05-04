@@ -3,6 +3,7 @@ import {
   Animated,
   Easing,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -407,18 +408,20 @@ export function MeetingSummaryCard({
       ) : null}
 
       {/* Transcript collapsible — same `<details>`-style pattern
-          web uses, with a rough word count in the summary label. */}
+          web uses, with a rough word count in the summary label.
+          Long transcripts scroll inside a 200px max-height
+          ScrollView. */}
       {summary.transcript && summary.transcript.trim().length > 0 ? (
         <Disclosure
           label={`View transcript (${Math.round(summary.transcript.length / 5)} words)`}
           themeColorMuted={themeColors.muted}
           themeColorForeground={themeColors.foreground}
         >
-          <Text
-            style={[styles.transcriptText, { color: themeColors.muted }]}
-          >
-            {summary.transcript}
-          </Text>
+          <ScrollView style={styles.transcriptScroll} nestedScrollEnabled>
+            <Text style={[styles.transcriptText, { color: themeColors.muted }]}>
+              {summary.transcript}
+            </Text>
+          </ScrollView>
         </Disclosure>
       ) : null}
     </View>
@@ -536,9 +539,11 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
     marginLeft: "auto",
   },
+  transcriptScroll: {
+    maxHeight: 200,
+  },
   transcriptText: {
     fontSize: 12,
     lineHeight: 18,
-    maxHeight: 200,
   },
 });

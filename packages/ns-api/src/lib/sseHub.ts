@@ -11,6 +11,14 @@ export interface SseHub {
   removeConnection(userId: string, stream: PassThrough): void;
   notify(userId: string, excludeDeviceId?: string): void;
   notifyChat(userId: string): void;
+  /** Phase H — broadcast a transcription-job state change to all
+   *  connected devices for this user. Payload is small JSON
+   *  containing `{ jobId, sessionId, status, noteId? }` so clients
+   *  can find the job in their local cache and update without an
+   *  extra GET. Emitted on terminal status only (completed /
+   *  failed) — interim status changes are exposed via the GET
+   *  endpoint if the client polls. */
+  notifyTranscriptionJob(userId: string, payload: object): void;
   cleanup(): void;
   /** Visible for testing */
   connectionCount(userId?: string): number;
@@ -120,6 +128,22 @@ export function createSseHub(): SseHub {
       for (const conn of userConns) {
         try {
           conn.stream.write("event: chat\ndata: {}\n\n");
+          conn.lastWrite = Date.now();
+        } catch {
+          conn.stream.end();
+          userConns.delete(conn);
+        }
+      }
+      if (userConns.size === 0) connections.delete(userId);
+    },
+
+    notifyTranscriptionJob(userId: string, payload: object) {
+      const userConns = connections.get(userId);
+      if (!userConns) return;
+      const data = JSON.stringify(payload);
+      for (const conn of userConns) {
+        try {
+          conn.stream.write(`event: transcription-job\ndata: ${data}\n\n`);
           conn.lastWrite = Date.now();
         } catch {
           conn.stream.end();

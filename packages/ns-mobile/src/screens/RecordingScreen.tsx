@@ -17,6 +17,7 @@ import {
 } from "expo-audio";
 import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system/legacy";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { DashboardStackParamList } from "@/navigation/types";
@@ -26,6 +27,12 @@ import { type AudioMode } from "@/api/ai";
 import useRecordingResultStore, {
   processRecording,
 } from "@/store/recordingResultStore";
+import { MicOnlyNoticeModal } from "@/components/notes/MicOnlyNoticeModal";
+
+// AsyncStorage flag for the "mobile is mic-only" notice. Once
+// dismissed with the checkbox the user never sees it again on this
+// device until they clear app data.
+const MIC_NOTICE_DISMISSED_KEY = "ns-mic-only-notice-dismissed";
 
 // Phase C.1.2 — recording shell + post-stop handoff:
 // - Records one continuous audio session via expo-audio.
@@ -263,7 +270,13 @@ export function RecordingScreen({ navigation, route }: Props) {
     return true;
   };
 
-  const handleSelectMode = async (selected: AudioMode) => {
+  // Phase H — mic-only notice gate. The modal is shown the first time
+  // the user starts a recording on this device (any mode). Subsequent
+  // starts skip straight to `startRecording` once the flag is set.
+  const [pendingMode, setPendingMode] = useState<AudioMode | null>(null);
+  const [showMicNotice, setShowMicNotice] = useState(false);
+
+  const startRecording = async (selected: AudioMode) => {
     const ok = await requestPermission();
     if (!ok) return;
     await setAudioModeAsync({
@@ -278,18 +291,41 @@ export function RecordingScreen({ navigation, route }: Props) {
     recorder.record();
   };
 
+  const handleSelectMode = async (selected: AudioMode) => {
+    const dismissed = await AsyncStorage.getItem(MIC_NOTICE_DISMISSED_KEY);
+    if (dismissed === "1") {
+      await startRecording(selected);
+      return;
+    }
+    setPendingMode(selected);
+    setShowMicNotice(true);
+  };
+
+  const handleMicNoticeConfirm = async (dontShowAgain: boolean) => {
+    if (dontShowAgain) {
+      try {
+        await AsyncStorage.setItem(MIC_NOTICE_DISMISSED_KEY, "1");
+      } catch {
+        /* storage unavailable — fall through, just won't persist */
+      }
+    }
+    setShowMicNotice(false);
+    const mode = pendingMode;
+    setPendingMode(null);
+    if (mode) await startRecording(mode);
+  };
+
   // Preset-mode auto-start: when the dashboard's Quick Actions
   // navigated us here with a `mode` param, kick off recording on
   // first render and skip the in-screen picker. The ref guards
   // against re-firing on re-renders or fast back-and-forth nav.
+  // Routes through `handleSelectMode` so the mic-only notice modal
+  // fires here too on the first run.
   useEffect(() => {
     if (!presetMode) return;
     if (presetTriggeredRef.current) return;
     presetTriggeredRef.current = true;
     void handleSelectMode(presetMode);
-    // handleSelectMode is stable enough — its closure is fine for
-    // a one-shot effect, and listing it in deps would make every
-    // mode-state flip re-fire the effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetMode]);
 
@@ -393,14 +429,41 @@ export function RecordingScreen({ navigation, route }: Props) {
 
   const formatElapsed = (ms: number) => {
     const total = Math.floor(ms / 1000);
-    const mm = Math.floor(total / 60)
-      .toString()
-      .padStart(2, "0");
-    const ss = (total % 60).toString().padStart(2, "0");
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    const ss = seconds.toString().padStart(2, "0");
+    if (hours > 0) {
+      // Switch to H:MM:SS once we cross an hour so a 2-hour
+      // lecture doesn't read as "117:35".
+      const mm = minutes.toString().padStart(2, "0");
+      return `${hours}:${mm}:${ss}`;
+    }
+    const mm = minutes.toString().padStart(2, "0");
     return `${mm}:${ss}`;
   };
 
   if (!mode) {
+    // Preset-driven entry (Quick Actions): suppress the picker
+    // entirely. Render only the empty container + the mic-only modal
+    // (which is showing on top anyway). On modal confirm, mode flips
+    // to the preset and recording starts — the picker UI is never
+    // visible to the user.
+    if (presetMode) {
+      return (
+        <View
+          style={[
+            styles.container,
+            { backgroundColor: themeColors.background },
+          ]}
+        >
+          <MicOnlyNoticeModal
+            visible={showMicNotice}
+            onConfirm={handleMicNoticeConfirm}
+          />
+        </View>
+      );
+    }
     return (
       <View
         style={[
@@ -408,6 +471,10 @@ export function RecordingScreen({ navigation, route }: Props) {
           { backgroundColor: themeColors.background },
         ]}
       >
+        <MicOnlyNoticeModal
+          visible={showMicNotice}
+          onConfirm={handleMicNoticeConfirm}
+        />
         <Text style={[styles.heading, { color: themeColors.foreground }]}>
           Choose a mode
         </Text>
@@ -488,6 +555,25 @@ export function RecordingScreen({ navigation, route }: Props) {
           {modeDef?.label}
         </Text>
       </View>
+
+      {/* Capture-source badge — mobile is mic-only because iOS
+          AVAudioRecorder and Android MediaRecorder both restrict third-
+          party apps to the microphone (no system/call audio access).
+          Only shown while a mode is selected (recording in progress). */}
+      {mode ? (
+        <View
+          style={[
+            styles.captureBadge,
+            { backgroundColor: `${themeColors.primary}26` },
+          ]}
+        >
+          <Text
+            style={[styles.captureBadgeText, { color: themeColors.primary }]}
+          >
+            Mic Capture
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.recordingBody}>
         <View style={styles.waveform}>
@@ -573,6 +659,10 @@ export function RecordingScreen({ navigation, route }: Props) {
           <Text style={styles.primaryButtonText}>Stop</Text>
         </Pressable>
       </View>
+      <MicOnlyNoticeModal
+        visible={showMicNotice}
+        onConfirm={handleMicNoticeConfirm}
+      />
     </View>
   );
 }
@@ -630,6 +720,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  captureBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: -spacing.lg + 2,
+    marginBottom: spacing.lg,
+  },
+  captureBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   recordingBody: {

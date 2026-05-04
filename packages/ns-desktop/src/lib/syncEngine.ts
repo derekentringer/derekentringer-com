@@ -119,12 +119,28 @@ export interface SyncEngineCallbacks {
     discard: (changeIds: string[]) => Promise<void>,
   ) => void;
   onChatChanged?: () => void;
+  /** Phase H — fires when the server emits an SSE
+   *  `transcription-job` event for this user (job state change
+   *  on a recording uploaded from this or another device). */
+  onTranscriptionJob?: (payload: TranscriptionJobSseEvent) => void;
+}
+
+/** Payload shape emitted by the server's SSE `transcription-job`
+ *  event. Worker only emits on terminal status (completed/failed). */
+export interface TranscriptionJobSseEvent {
+  jobId: string;
+  sessionId: string;
+  status: "pending" | "transcribing" | "structuring" | "completed" | "failed";
+  noteId?: string;
+  noteTitle?: string;
+  errorMessage?: string;
 }
 
 let noteRemoteDeletedCallback: ((noteId: string) => void) | null = null;
 let folderRemoteDeletedCallback: ((folderId: string, folderName: string, parentId: string | null) => void) | null = null;
 let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
 let chatChangedCallback: (() => void) | null = null;
+let transcriptionJobCallback: ((payload: TranscriptionJobSseEvent) => void) | null = null;
 
 export async function initSyncEngine(callbacks: SyncEngineCallbacks): Promise<void> {
   statusCallback = callbacks.onStatusChange;
@@ -134,6 +150,7 @@ export async function initSyncEngine(callbacks: SyncEngineCallbacks): Promise<vo
   folderRemoteDeletedCallback = callbacks.onFolderRemoteDeleted ?? null;
   syncRejectionsCallback = callbacks.onSyncRejections ?? null;
   chatChangedCallback = callbacks.onChatChanged ?? null;
+  transcriptionJobCallback = callbacks.onTranscriptionJob ?? null;
 
   await getOrCreateDeviceId();
 
@@ -304,10 +321,20 @@ async function connectSse(): Promise<void> {
         if (line.startsWith("event: ")) {
           currentEvent = line.slice(7).trim();
         } else if (line.startsWith("data: ")) {
+          const data = line.slice(6);
           if (currentEvent === "sync") {
             triggerSync();
           } else if (currentEvent === "chat") {
             chatChangedCallback?.();
+          } else if (currentEvent === "transcription-job") {
+            if (transcriptionJobCallback) {
+              try {
+                const payload = JSON.parse(data) as TranscriptionJobSseEvent;
+                transcriptionJobCallback(payload);
+              } catch {
+                /* ignore malformed payloads */
+              }
+            }
           }
           currentEvent = "";
         } else if (line === "") {

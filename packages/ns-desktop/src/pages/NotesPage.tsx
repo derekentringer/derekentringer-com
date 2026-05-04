@@ -181,8 +181,6 @@ import {
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AudioRecorder, type AudioRecordingState, type AudioRecorderControl } from "../components/AudioRecorder.tsx";
@@ -398,120 +396,24 @@ export function NotesPage() {
   // as a later retry success.
   const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
   const audioControlRef = useRef<AudioRecorderControl | null>(null);
-  // Phase 3: count of in-flight detached processing tasks. Drives the
-  // close-while-processing warning.
-  const [inFlightAudioCount, setInFlightAudioCount] = useState(0);
-  // Any audio work that would be lost on quit: active recording, the brief
-  // sync stop half (drain/flush/native release for meeting mode), or a
-  // detached processing task. Kept in a ref so the close-warning effect
-  // installs once on mount and reads the live value without tearing down.
-  const hasAudioWorkRef = useRef(false);
-  hasAudioWorkRef.current = recordingState !== null || inFlightAudioCount > 0;
-
-  // Set once the user has confirmed a quit-in-progress dialog. Any
-  // subsequent close-path event (onCloseRequested fired during Tauri's
-  // per-window cleanup after app.exit(0), beforeunload, etc.) must bail
-  // so the user isn't re-prompted for the same quit.
-  const quitApprovedRef = useRef(false);
-
-  // Sync the work flag to Rust so the native ExitRequested handler (which
-  // fires on macOS Cmd+Q — Cmd+Q bypasses window-level onCloseRequested
-  // entirely) can decide synchronously whether to prevent the exit.
-  useEffect(() => {
-    invoke("set_audio_work_state", { hasWork: hasAudioWorkRef.current }).catch(() => {});
-  }, [recordingState, inFlightAudioCount]);
-
-  // Listen for app-quit-requested event emitted by Rust after it has
-  // called `api.prevent_exit()`. Show the confirmation dialog and, if the
-  // user confirms, invoke `quit_app` which calls `app.exit(0)` on the
-  // Rust side.
-  useEffect(() => {
-    let unlistenFn: (() => void) | null = null;
-    let cancelled = false;
-    listen("app-quit-requested", async () => {
-      if (quitApprovedRef.current) return; // already approved; avoid re-prompt
-      const confirmed = await ask(
-        "A recording is in progress or still processing. " +
-          "Quitting now will discard it. Quit anyway?",
-        { title: "Recording in progress", kind: "warning" },
-      );
-      if (confirmed) {
-        quitApprovedRef.current = true;
-        await invoke("quit_app");
-      }
-    })
-      .then((unlisten) => {
-        if (cancelled) {
-          unlisten();
-        } else {
-          unlistenFn = unlisten;
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to listen for app-quit-requested:", err);
-      });
-    return () => {
-      cancelled = true;
-      if (unlistenFn) unlistenFn();
-    };
-  }, []);
-
-  useEffect(() => {
-    // Web / webview fallback — catches refresh, tab close, in-webview nav.
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (quitApprovedRef.current) return;
-      if (!hasAudioWorkRef.current) return;
-      e.preventDefault();
-      e.returnValue = ""; // Chrome/Edge require returnValue to be set.
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
-    // Tauri native window close — red X on all platforms + anything else
-    // that triggers a WM_CLOSE-style window close.
-    //
-    // Pattern: call preventDefault() SYNCHRONOUSLY before any await. Tauri
-    // does wait for the handler promise, but on some platforms the close
-    // races the dialog — preventing default first is the only reliable
-    // way to guarantee the close is halted. After the user confirms, we
-    // manually call win.close() (needs `core:window:allow-close` in
-    // capabilities). quitApprovedRef prevents a re-prompt if
-    // onCloseRequested fires again during Tauri's per-window cleanup
-    // after an app.exit(0) initiated by the app-quit-requested flow.
-    let unlistenFn: (() => void) | null = null;
-    let cancelled = false;
-    (async () => {
-      try {
-        const win = getCurrentWindow();
-        const unlisten = await win.onCloseRequested(async (event) => {
-          if (quitApprovedRef.current) return;
-          if (!hasAudioWorkRef.current) return;
-          event.preventDefault();
-          const confirmed = await ask(
-            "A recording is in progress or still processing. " +
-              "Quitting now will discard it. Quit anyway?",
-            { title: "Recording in progress", kind: "warning" },
-          );
-          if (confirmed) {
-            quitApprovedRef.current = true;
-            await win.close();
-          }
-        });
-        if (cancelled) {
-          unlisten();
-        } else {
-          unlistenFn = unlisten;
-        }
-      } catch (err) {
-        console.error("Failed to install Tauri close-requested guard:", err);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      if (unlistenFn) unlistenFn();
-    };
-  }, []);
+  // Phase H — last sessionId AudioRecorder cancelled. Forwarded to
+  // AIAssistantPanel so it can suppress the meeting card that the
+  // stop transition would otherwise insert (cancel produces no
+  // server-side job, so an orphan "processing" card would never resolve).
+  const [cancelledSessionId, setCancelledSessionId] = useState<string | null>(null);
+  // Phase H — sessions whose audio has been accepted by the server
+  // but whose transcription-job has not yet emitted a terminal SSE
+  // event. Mirrors ns-web's `pendingAudioJobsRef`.
+  const pendingAudioJobsRef = useRef<
+    Map<string, { jobId: string; capturedTranscript: string }>
+  >(new Map());
+  // Phase H — quit-guard plumbing removed. The server owns the
+  // post-stop pipeline (transcribe-jobs survive the app exiting), so
+  // the prior beforeunload + Tauri onCloseRequested + Rust ExitRequested
+  // dialogs are no longer needed. The Rust-side `set_audio_work_state`
+  // and `app-quit-requested` machinery still exists in src-tauri but is
+  // no-op'd from the JS side; cleaning up the Rust handlers is a
+  // follow-up.
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const [showGame, setShowGame] = useState(false);
 
@@ -956,6 +858,45 @@ export function NotesPage() {
         discardRef.current = discard;
       },
       onChatChanged: () => setChatRefreshKey((k) => k + 1),
+      onTranscriptionJob: async (payload) => {
+        const pending = pendingAudioJobsRef.current.get(payload.sessionId);
+        if (payload.status === "completed" && payload.noteId) {
+          pendingAudioJobsRef.current.delete(payload.sessionId);
+          try {
+            // Fetch from the server, NOT from local SQLite — the server-
+            // emitted "transcription-job" SSE arrives before (or racy
+            // with) the "sync" pull that would land the note in local
+            // SQLite. fetchNoteById returns null in that race window
+            // and silently skips the auto-open. handleAudioNoteCreated
+            // will upsert into local SQLite itself, so subsequent reads
+            // pick it up.
+            const resp = await apiFetch(`/notes/${payload.noteId}`);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            const note = data.note as Note | undefined;
+            if (note) {
+              await handleAudioNoteCreatedRef.current(
+                note,
+                payload.sessionId,
+                pending?.capturedTranscript,
+              );
+            }
+          } catch {
+            handleAudioNoteFailedRef.current(
+              payload.sessionId,
+              "Note not found after processing",
+            );
+          }
+          return;
+        }
+        if (payload.status === "failed") {
+          pendingAudioJobsRef.current.delete(payload.sessionId);
+          handleAudioNoteFailedRef.current(
+            payload.sessionId,
+            payload.errorMessage ?? "Transcription failed",
+          );
+        }
+      },
     }).catch((err) => console.error("Failed to init sync engine:", err));
 
     // Initialize local file watchers
@@ -1653,55 +1594,49 @@ export function NotesPage() {
     }
   }
 
-  async function handleAudioNoteCreated(serverNote: Note, sessionId: string, capturedTranscript?: string) {
+  async function handleAudioNoteCreated(serverNote: Note, sessionId: string, _capturedTranscript?: string) {
     try {
-      // Pull this session's context from the session-keyed map. May be absent
-      // if the session predated the recording-state subscription (test paths)
-      // — default to empty.
       const ctx = sessionContextsRef.current.get(sessionId) ?? {
         liveTranscript: "",
         relevantNotes: [],
         mode: "meeting",
       };
 
+      // Phase H — server already wrote the transcript and structured
+      // content. Only the "Related Notes Referenced" tail needs a
+      // client-side PATCH because that depends on the local
+      // meetingContext from this device's recording session.
       let finalNote = serverNote;
       const surfacedNotes = ctx.relevantNotes;
-      const liveText = capturedTranscript ?? ctx.liveTranscript;
-      const hasRefs = surfacedNotes.length > 0;
-      const hasLiveTranscript = liveText.trim().length > 0;
 
-      if (hasRefs || hasLiveTranscript) {
-        const patchData: { content?: string; transcript?: string } = {};
-
-        if (hasRefs) {
-          const referencesSection = "\n\n## Related Notes Referenced\n" +
-            surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
-          patchData.content = (serverNote.content || "") + referencesSection;
-        }
-
-        if (hasLiveTranscript) {
-          patchData.transcript = liveText;
-        }
-
-        // PATCH the server note directly (note doesn't exist locally yet)
+      if (surfacedNotes.length > 0) {
+        const referencesSection = "\n\n## Related Notes Referenced\n" +
+          surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
         try {
           const resp = await apiFetch(`/notes/${serverNote.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(patchData),
+            body: JSON.stringify({
+              content: (serverNote.content || "") + referencesSection,
+            }),
           });
           if (resp.ok) {
             const result = await resp.json();
             finalNote = result.note;
           }
         } catch {
-          // Non-fatal — use the note without extras
+          // Non-fatal — use the note without the references tail
         }
       }
 
-      // Now insert the final note (with wiki-links) into local SQLite
+      // Insert the final note into local SQLite. Dedupe in setNotes so
+      // a sync pull that landed the note before this handler doesn't
+      // produce a duplicate row in the in-memory list.
       await upsertNoteFromRemote(finalNote);
-      setNotes((prev) => [finalNote, ...prev]);
+      setNotes((prev) => {
+        const next = prev.filter((n) => n.id !== finalNote.id);
+        return [finalNote, ...next];
+      });
       openNoteAsTab(finalNote);
       await refreshSidebarData();
       loadNoteTitles();
@@ -1719,7 +1654,6 @@ export function NotesPage() {
       console.error("Failed to save audio note:", err);
       showError(`Failed to save audio note: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      // Drop the session context once we're done with it — success or error.
       sessionContextsRef.current.delete(sessionId);
     }
   }
@@ -1738,7 +1672,16 @@ export function NotesPage() {
   function handleAudioDiscard(sessionId: string) {
     audioControlRef.current?.discard(sessionId);
     sessionContextsRef.current.delete(sessionId);
+    pendingAudioJobsRef.current.delete(sessionId);
   }
+
+  // Phase H — live refs so the SSE effect (registered once at mount
+  // through initSyncEngine) can dispatch into the latest audio-note
+  // handlers without listing them as deps.
+  const handleAudioNoteCreatedRef = useRef(handleAudioNoteCreated);
+  const handleAudioNoteFailedRef = useRef(handleAudioNoteFailed);
+  handleAudioNoteCreatedRef.current = handleAudioNoteCreated;
+  handleAudioNoteFailedRef.current = handleAudioNoteFailed;
 
   async function handleDelete() {
     if (!selectedId) return;
@@ -3686,6 +3629,7 @@ export function NotesPage() {
           onFolderChange={(id) => setRecordingFolderId(id ?? null)}
           onStop={recordingState.onStop}
           onCancel={recordingState.onCancel}
+          isMeetingCapture={recordingState.isMeetingCapture}
         />
       )}
     </div>
@@ -4889,6 +4833,7 @@ export function NotesPage() {
                     relevantNotes={meetingContext.relevantNotes}
                     recordingMode={recordingState?.mode}
                     audioSessionResult={audioSessionResult}
+                    cancelledSessionId={cancelledSessionId ?? undefined}
                     activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                     chatRefreshKey={chatRefreshKey}
                     activeSessionId={recordingState?.sessionId}
@@ -5094,12 +5039,14 @@ export function NotesPage() {
         folderId={recordingFolderId ?? undefined}
         recordingSource={aiSettings.recordingSource}
         onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
-        onNoteCreated={handleAudioNoteCreated}
+        onJobAccepted={(sessionId, jobId, capturedTranscript) => {
+          pendingAudioJobsRef.current.set(sessionId, { jobId, capturedTranscript });
+        }}
+        onSessionCancelled={setCancelledSessionId}
         onNoteFailed={handleAudioNoteFailed}
         onError={showError}
         onRecordingStateChange={setRecordingState}
         controlRef={audioControlRef}
-        onInFlightCountChange={setInFlightAudioCount}
         onModeChange={(m) => updateAiSetting("audioMode", m)}
         triggerMode={recordTrigger?.mode}
         triggerKey={recordTrigger?.key}

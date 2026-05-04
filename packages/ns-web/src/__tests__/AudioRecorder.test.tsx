@@ -4,13 +4,20 @@ import { render, screen } from "@testing-library/react";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 
 vi.mock("../api/ai.ts", () => ({
-  transcribeAudio: vi.fn(),
+  transcribeChunk: vi.fn(),
+}));
+
+vi.mock("../api/transcriptionJobs.ts", () => ({
+  createTranscriptionJobWithAudio: vi.fn(),
+  createTranscriptionJobWithTranscript: vi.fn(),
+  retryTranscriptionJob: vi.fn(),
+  deleteTranscriptionJob: vi.fn(),
 }));
 
 describe("AudioRecorder", () => {
   const defaultProps = {
     defaultMode: "meeting" as const,
-    onNoteCreated: vi.fn(),
+    onJobAccepted: vi.fn(),
     onError: vi.fn(),
   };
 

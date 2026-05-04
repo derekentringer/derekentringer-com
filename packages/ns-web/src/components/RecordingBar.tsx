@@ -104,24 +104,55 @@ export function RecordingBar({ state, elapsed, mode, stream, folderId, folders, 
       />
 
       <div className="flex-1 flex items-center gap-4">
-        {/* Stop button with pulsing recording dot */}
-        <button
-          onClick={onStop}
-          className="flex items-center gap-1.5 h-full px-3 -mr-2 text-xs text-foreground hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
-          title="Stop recording"
-        >
-          <span className="relative flex h-2.5 w-2.5 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-destructive" />
-          </span>
-          <span>Stop</span>
-        </button>
+        {/* Cancel + Stop grouped together (mirrors mobile
+            RecordingScreen). The outer row uses `gap-4` for breathing
+            room around the rest of the controls; this inner pair sits
+            flush so they read as one transport-control cluster. */}
+        <div className="flex items-center h-full shrink-0">
+          {/* Cancel button — confirm before discarding to protect
+              against stray clicks killing a long recording. */}
+          <button
+            onClick={() => {
+              if (window.confirm("Discard this recording? Your audio and transcript will be lost.")) {
+                onCancel();
+              }
+            }}
+            className="flex items-center gap-1 h-full px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0"
+            title="Cancel recording"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+            <span>Cancel</span>
+          </button>
+
+          {/* Stop button with pulsing recording dot */}
+          <button
+            onClick={onStop}
+            className="flex items-center gap-1.5 h-full px-3 text-xs text-foreground hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
+            title="Stop recording"
+          >
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-destructive" />
+            </span>
+            <span>Stop</span>
+          </button>
+        </div>
 
         {/* Elapsed time */}
         <span className="text-xs text-foreground tabular-nums shrink-0">{formatTime(elapsed)}</span>
 
         {/* Mode label */}
         <span className="text-xs text-foreground shrink-0">{MODE_LABELS[mode]}</span>
+
+        {/* Mic-only badge — web can't capture system/tab audio. Custom
+            popover tooltip (group-hover + focus-within) instead of the
+            native `title` attribute, which has unreliable timing and is
+            often missed entirely on quick hovers. Click also toggles
+            for touch / keyboard users. */}
+        <MicOnlyBadge />
 
         {/* Folder picker */}
         {folders && onFolderChange && (
@@ -137,28 +168,59 @@ export function RecordingBar({ state, elapsed, mode, stream, folderId, folders, 
             ariaLabel="Recording folder"
           />
         )}
-
-        {/* Cancel button — confirm before discarding to protect
-            against stray clicks killing a long recording. */}
-        <button
-          onClick={() => {
-            if (window.confirm("Discard this recording? Your audio and transcript will be lost.")) {
-              onCancel();
-            }
-          }}
-          className="ml-auto flex items-center gap-1 h-full px-3 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer shrink-0"
-          title="Cancel recording"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-          <span>Cancel</span>
-        </button>
       </div>
 
       {/* Bottom border — static */}
       <div className="h-px w-full bg-border" />
+    </div>
+  );
+}
+
+/** Small primary-tinted badge that opens a popover explaining the
+ *  mic-only limitation. Hover or click toggles the popover; click
+ *  also handles touch / keyboard. */
+function MicOnlyBadge() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Click-outside dismiss for the click-to-toggle path.
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div
+      ref={ref}
+      className="relative shrink-0 inline-flex items-center"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-[10px] uppercase tracking-wider font-medium px-1.5 py-0.5 rounded bg-primary/15 text-primary cursor-help"
+        aria-expanded={open}
+        aria-label="Mic capture — what does this mean?"
+      >
+        Mic Capture
+      </button>
+      {open && (
+        <div
+          role="tooltip"
+          className="absolute top-full left-0 mt-1 w-72 z-20 px-3 py-2 rounded-md bg-card border border-border shadow-lg text-xs text-foreground leading-relaxed"
+        >
+          Web records your microphone only. Audio from other tabs
+          playing through your speakers will not be captured. Use the
+          desktop app for full system audio recording.
+        </div>
+      )}
     </div>
   );
 }
