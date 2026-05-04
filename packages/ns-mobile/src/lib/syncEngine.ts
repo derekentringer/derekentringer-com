@@ -276,6 +276,13 @@ function handleAppStateChange(nextState: AppStateStatus) {
     if (isOnline) {
       triggerSync();
       connectSse();
+      // Catch up on any `chat` SSE events that fired while the app
+      // was backgrounded — without this, server-side reconciles
+      // (e.g. orphan-card sweep flipping a stuck "processing" card
+      // to "failed") never reach AiScreen because the bump fires
+      // through the SSE listener that was paused. Mirrors the
+      // `triggerSync()` catch-up for regular sync.
+      chatChangedCallback?.();
     }
   } else if (nextState === "background" || nextState === "inactive") {
     disconnectSse();

@@ -179,6 +179,8 @@ import {
   type LocalFileStatus,
 } from "../lib/localFileService.ts";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { SettingsPage } from "./SettingsPage.tsx";
@@ -389,6 +391,45 @@ export function NotesPage() {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
+  // Tightly-scoped close-guard: ONLY fires while a recording is
+  // actively capturing audio. Post-stop server-side processing survives
+  // app exit, so once the upload has been accepted the user can close
+  // freely. Mirrors the web `beforeunload` guard. Confirms via Tauri's
+  // native dialog and re-issues the close on confirm.
+  useEffect(() => {
+    if (!recordingState) return;
+    let unlistenFn: (() => void) | null = null;
+    let cancelled = false;
+    let confirmed = false;
+    (async () => {
+      try {
+        const win = getCurrentWindow();
+        const unlisten = await win.onCloseRequested(async (event) => {
+          if (confirmed) return;
+          event.preventDefault();
+          const ok = await ask(
+            "A recording is in progress. Closing now will discard the audio you've captured. Close anyway?",
+            { title: "Recording in progress", kind: "warning" },
+          );
+          if (ok) {
+            confirmed = true;
+            await win.close();
+          }
+        });
+        if (cancelled) {
+          unlisten();
+        } else {
+          unlistenFn = unlisten;
+        }
+      } catch (err) {
+        console.error("Failed to install close-guard:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (unlistenFn) unlistenFn();
+    };
+  }, [recordingState]);
   // Phase 2: unified success/failure result for the AI assistant panel to
   // match against a meeting-summary card by sessionId. Each new result
   // increments the identity of the prop so the panel's effect re-fires for
@@ -4735,6 +4776,7 @@ export function NotesPage() {
               onCreateNote={handleCreate}
               onStartRecording={handleDashboardStartRecording}
               audioNotesEnabled={aiSettings.masterAiEnabled && aiSettings.audioNotes}
+              recorderState={recordingState?.state ?? "idle"}
             />
           </div>
         )}
