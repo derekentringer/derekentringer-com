@@ -4,6 +4,7 @@ import { fetchDashboardData } from "../api/notes.ts";
 import { DashboardNoteCard } from "./DashboardNoteCard.tsx";
 import { DashboardSection } from "./DashboardSection.tsx";
 import type { AudioMode } from "../hooks/useAiSettings.ts";
+import type { RecorderState } from "./AudioRecorder.tsx";
 
 interface DashboardProps {
   onSelectNote: (noteId: string) => void;
@@ -14,6 +15,10 @@ interface DashboardProps {
    *  recorder" button. */
   onStartRecording: (mode: AudioMode) => void;
   audioNotesEnabled: boolean;
+  /** Disables the Meeting / Lecture / Memo / Verbatim Quick Action
+   *  tiles when a recording is already active. Without this the
+   *  user can fire a second `onStartRecording` mid-session. */
+  recorderState?: RecorderState;
   refreshKey?: number;
 }
 
@@ -28,8 +33,10 @@ export function Dashboard({
   onCreateNote,
   onStartRecording,
   audioNotesEnabled,
+  recorderState = "idle",
   refreshKey = 0,
 }: DashboardProps) {
+  const recordingActive = recorderState !== "idle";
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -171,7 +178,8 @@ export function Dashboard({
             <>
               <button
                 onClick={() => onStartRecording("meeting")}
-                className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
+                disabled={recordingActive}
+                className={`bg-card rounded-md border border-border p-4 flex flex-col items-center gap-2 min-w-[100px] transition-colors ${recordingActive ? "opacity-40 cursor-not-allowed" : "hover:border-primary/50 cursor-pointer"}`}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -195,7 +203,8 @@ export function Dashboard({
 
               <button
                 onClick={() => onStartRecording("lecture")}
-                className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
+                disabled={recordingActive}
+                className={`bg-card rounded-md border border-border p-4 flex flex-col items-center gap-2 min-w-[100px] transition-colors ${recordingActive ? "opacity-40 cursor-not-allowed" : "hover:border-primary/50 cursor-pointer"}`}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -217,7 +226,8 @@ export function Dashboard({
 
               <button
                 onClick={() => onStartRecording("memo")}
-                className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
+                disabled={recordingActive}
+                className={`bg-card rounded-md border border-border p-4 flex flex-col items-center gap-2 min-w-[100px] transition-colors ${recordingActive ? "opacity-40 cursor-not-allowed" : "hover:border-primary/50 cursor-pointer"}`}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -241,7 +251,8 @@ export function Dashboard({
 
               <button
                 onClick={() => onStartRecording("verbatim")}
-                className="bg-card rounded-md border border-border hover:border-primary/50 p-4 flex flex-col items-center gap-2 cursor-pointer min-w-[100px] transition-colors"
+                disabled={recordingActive}
+                className={`bg-card rounded-md border border-border p-4 flex flex-col items-center gap-2 min-w-[100px] transition-colors ${recordingActive ? "opacity-40 cursor-not-allowed" : "hover:border-primary/50 cursor-pointer"}`}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
