@@ -341,6 +341,14 @@ export function AiScreen() {
 
   const openNote = useCallback(
     (noteId: string) => {
+      // Push NoteDetail onto the AI tab's own stack so the back
+      // button returns to the AI Assistant naturally. We tried
+      // parent.navigate("Notes", ...) earlier to flip the bottom-
+      // nav highlight to Notes while viewing — but that orphans
+      // the back stack (NotesList wasn't in the history, so back
+      // popped out of the tabs entirely). Keeping the note in the
+      // AI stack is the more honest navigation: bottom nav stays
+      // on AI because the user is still in the AI flow.
       navigation.navigate("NoteDetail", { noteId });
     },
     [navigation],
@@ -474,6 +482,13 @@ export function AiScreen() {
         if (json === lastSavedRef.current) return;
         lastSavedRef.current = json;
         setMessages(loaded);
+        // If the remote chat was cleared from another device, drop
+        // the local recording-summary store too. Otherwise the
+        // summaries-mirror effect re-injects local meeting cards
+        // and the empty-state placeholder never shows.
+        if (loaded.length === 0) {
+          useRecordingResultStore.getState().clearAll();
+        }
       })
       .catch(() => {
         // Non-fatal; next bump will retry.
