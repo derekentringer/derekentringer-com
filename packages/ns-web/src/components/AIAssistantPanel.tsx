@@ -417,6 +417,9 @@ interface AIAssistantPanelProps {
   chatRefreshKey?: number;
   /** sessionId of the currently-recording session. */
   activeSessionId?: string;
+  /** Most-recent sessionId that AudioRecorder cancelled. Used to suppress
+   *  meeting-card insertion on the matching stop transition. */
+  cancelledSessionId?: string;
   onAudioRetry?: (sessionId: string) => void;
   onAudioDiscard?: (sessionId: string) => void;
   /** When provided, the failed-card Retry button only renders
@@ -446,7 +449,7 @@ interface AIAssistantPanelProps {
   onNoteContentRewritten?: (opts: { noteId: string; newContent: string }) => void;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, canAudioRetry, autoApprove, focusNonce, onNoteContentRewritten }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, cancelledSessionId, onAudioRetry, onAudioDiscard, canAudioRetry, autoApprove, focusNonce, onNoteContentRewritten }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -491,25 +494,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const fetchStartedRef = useRef(false);
   const historyLoadedRef = useRef(false);
 
-  // Phase 2 chat-load repaint: snapshots are in-memory only, so a persisted
-  // "processing" card loaded from server history is stale — the run that
-  // would have enriched it is gone. Repaint as "failed" with a helpful
-  // message and no retry (no snapshot to retry from).
-  function repaintStaleProcessingCards(rows: Message[]): Message[] {
-    return rows.map((m) => {
-      if (m.role !== "meeting-summary") return m;
-      const md = m.meetingData;
-      if (!md || md.status !== "processing") return m;
-      return {
-        ...m,
-        meetingData: {
-          ...md,
-          status: "failed" as const,
-          errorMessage: "Recording lost on refresh — the note couldn't be generated.",
-        },
-      };
-    });
-  }
+  // Phase H removed the chat-load repaint that flipped "processing"
+  // cards to "failed" on refresh. With server-managed transcription
+  // jobs, a "processing" card persisted to chat history represents a
+  // server-side job still in flight — not a stale local snapshot. The
+  // SSE `transcription-job` event delivers the terminal status (and
+  // its real server-side error message) when the job actually finishes.
 
   // Phase E follow-up: confirmation state is persisted for terminal
   // statuses (applied/discarded/failed) so those cards survive refresh.
@@ -565,7 +555,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
         const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
-        setMessages(repaintStaleProcessingCards(loaded));
+        setMessages(loaded);
         // Seed prompt history from the hydrated chat so Up-arrow
         // works immediately after a page refresh.
         promptHistoryRef.current = loaded
@@ -595,7 +585,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (isSavingRef.current) return; // Skip refetch triggered by our own save
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = repaintStaleProcessingCards(stripEmptyPlaceholders(rows.map(rowToMessage)));
+        const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
         setMessages(loaded);
         lastSavedRef.current = JSON.stringify(loaded);
       } else {
@@ -719,17 +709,41 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const prevRecordingRef = useRef(isRecording);
   const prevRecordingModeRef = useRef(recordingMode);
   const prevSessionIdRef = useRef<string | undefined>(undefined);
+  // AudioRecorder clears its live transcript at stop time and the cleared
+  // value reaches us in the same React batch as `isRecording=false`, so by
+  // the time this effect runs the transcript prop is already "". Mirror
+  // every non-empty value into a ref while recording so we can recover
+  // the last meaningful transcript at stop.
+  const lastLiveTranscriptRef = useRef("");
+  const lastRelevantNotesRef = useRef<MeetingContextNote[]>([]);
+  useEffect(() => {
+    if (isRecording && (liveTranscript?.length ?? 0) > 0) {
+      lastLiveTranscriptRef.current = liveTranscript ?? "";
+    }
+  }, [liveTranscript, isRecording]);
+  useEffect(() => {
+    if (isRecording && relevantNotes && relevantNotes.length > 0) {
+      lastRelevantNotesRef.current = relevantNotes;
+    }
+  }, [relevantNotes, isRecording]);
   useEffect(() => {
     if (isRecording) {
       prevRecordingModeRef.current = recordingMode;
       prevSessionIdRef.current = activeSessionId;
     }
     if (prevRecordingRef.current && !isRecording) {
-      // Recording just stopped — capture the meeting context.
-      const notes = relevantNotes ?? [];
-      const transcript = liveTranscript ?? "";
+      // Recording just stopped. Read transcript/notes from the
+      // last-seen refs because AudioRecorder wipes both in the same
+      // React batch as `isRecording=false`. Skip card insertion only
+      // when AudioRecorder explicitly told us this stop was a cancel
+      // (cancel produces no server-side job, so an orphan "processing"
+      // card would never resolve). Memo recordings often have empty
+      // live transcripts at stop time — that's not a reason to skip.
       const sessionId = prevSessionIdRef.current;
-      if (notes.length > 0 || transcript.trim().length > 0) {
+      const wasCancelled = sessionId && cancelledSessionId === sessionId;
+      if (!wasCancelled) {
+        const notes = lastRelevantNotesRef.current;
+        const transcript = lastLiveTranscriptRef.current;
         setMessages((prev) => [
           ...prev,
           {
@@ -746,9 +760,29 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           },
         ]);
       }
+      lastLiveTranscriptRef.current = "";
+      lastRelevantNotesRef.current = [];
     }
     prevRecordingRef.current = isRecording;
-  }, [isRecording, relevantNotes, liveTranscript, recordingMode, activeSessionId]);
+  }, [isRecording, relevantNotes, liveTranscript, recordingMode, activeSessionId, cancelledSessionId]);
+
+  // Defensive cleanup: when AudioRecorder reports a cancellation,
+  // also REMOVE any meeting-summary card with that sessionId from
+  // the chat (belt-and-braces with the insertion gate above). The
+  // existing chat persist effect will then save the orphan-free
+  // state back to the server so the cancelled card doesn't reappear
+  // on the next chat-history reload.
+  useEffect(() => {
+    if (!cancelledSessionId) return;
+    setMessages((prev) => {
+      const filtered = prev.filter(
+        (m) =>
+          !(m.role === "meeting-summary" &&
+            m.meetingData?.sessionId === cancelledSessionId),
+      );
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [cancelledSessionId]);
 
   // Apply the session result (success or failure) to the matching card.
   useEffect(() => {
@@ -1486,11 +1520,15 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         )}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {/* Live recording card — sticky at top */}
+      {/* Messages — `pb-2 px-2` (no `pt-`) so the sticky recording
+          card sits flush with the panel header. `space-y-2` between
+          siblings keeps the rest of the chat well-spaced. */}
+      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
+        {/* Live recording card — sticky at panel top, flush with panel
+            left/right edges while recording. `-mx-2` cancels the parent's
+            horizontal padding so the card spans edge-to-edge. */}
         {isRecording && (
-          <div className="sticky top-0 z-10 w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
+          <div className="sticky top-0 z-10 -mx-2 bg-card border-b border-border p-3 animate-fade-in">
             <div className="flex items-center gap-1.5 mb-2">
               <span className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />

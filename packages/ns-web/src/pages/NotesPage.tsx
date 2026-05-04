@@ -85,6 +85,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.tsx";
 import { BacklinksPanel } from "../components/BacklinksPanel.tsx";
 import { TrashPanel } from "../components/TrashPanel.tsx";
 import { connectSseStream } from "../api/sse.ts";
+import type { TranscriptionJobSseEvent } from "../api/transcriptionJobs.ts";
 import { Dashboard } from "../components/Dashboard.tsx";
 import { SidebarTabs, type SidebarPanel } from "../components/SidebarTabs.tsx";
 import { stripMarkdown } from "../lib/stripMarkdown.ts";
@@ -318,22 +319,17 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
   const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
   const audioControlRef = useRef<AudioRecorderControl | null>(null);
-  // Phase 3: any audio work that would be lost on quit — active recording,
-  // the brief sync stop half, or a detached processing task. Kept in a ref
-  // so the beforeunload effect installs once and reads the live value.
-  const [inFlightAudioCount, setInFlightAudioCount] = useState(0);
-  const hasAudioWorkRef = useRef(false);
-  hasAudioWorkRef.current = recordingState !== null || inFlightAudioCount > 0;
-
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!hasAudioWorkRef.current) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, []);
+  // Phase H — last sessionId AudioRecorder cancelled. Forwarded to
+  // AIAssistantPanel so it can suppress the meeting card that the
+  // stop transition would otherwise insert.
+  const [cancelledSessionId, setCancelledSessionId] = useState<string | null>(null);
+  // Phase H — sessions whose audio has been accepted by the server but
+  // whose transcription-job has not yet emitted a terminal SSE event.
+  // Keyed by sessionId; tracks the captured transcript so we can apply
+  // the "Related Notes Referenced" tail when the note arrives.
+  const pendingAudioJobsRef = useRef<
+    Map<string, { jobId: string; capturedTranscript: string }>
+  >(new Map());
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
   // Recording folder — captures active folder when recording starts, independent of sidebar browsing
@@ -811,7 +807,46 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       setSyncError(null);
     };
 
-    sseConn = connectSseStream(handleSyncEvent, handleSseError, handleSseConnect, () => setChatRefreshKey((k) => k + 1));
+    const handleTranscriptionJobEvent = async (payload: TranscriptionJobSseEvent) => {
+      const pending = pendingAudioJobsRef.current.get(payload.sessionId);
+      if (payload.status === "completed" && payload.noteId) {
+        pendingAudioJobsRef.current.delete(payload.sessionId);
+        try {
+          const note = await fetchNote(payload.noteId);
+          if (note) {
+            await handleAudioNoteCreatedRef.current(
+              note,
+              payload.sessionId,
+              pending?.capturedTranscript,
+            );
+          }
+        } catch {
+          handleAudioNoteFailedRef.current(
+            payload.sessionId,
+            "Note not found after processing",
+          );
+        }
+        // Cross-device parity: refresh notes list so anything that
+        // landed server-side without our knowledge appears.
+        handleSyncEvent();
+        return;
+      }
+      if (payload.status === "failed") {
+        pendingAudioJobsRef.current.delete(payload.sessionId);
+        handleAudioNoteFailedRef.current(
+          payload.sessionId,
+          payload.errorMessage ?? "Transcription failed",
+        );
+      }
+    };
+
+    sseConn = connectSseStream(
+      handleSyncEvent,
+      handleSseError,
+      handleSseConnect,
+      () => setChatRefreshKey((k) => k + 1),
+      handleTranscriptionJobEvent,
+    );
 
     // Fallback poll at 120s (safety net if SSE drops silently)
     const FALLBACK_POLL_MS = 120_000;
@@ -2056,41 +2091,41 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }
 
-  async function handleAudioNoteCreated(note: Note, sessionId: string, capturedTranscript?: string) {
+  async function handleAudioNoteCreated(note: Note, sessionId: string, _capturedTranscript?: string) {
     const ctx = sessionContextsRef.current.get(sessionId) ?? {
       liveTranscript: "",
       relevantNotes: [],
       mode: "meeting",
     };
     const surfacedNotes = ctx.relevantNotes;
-    const liveText = capturedTranscript ?? ctx.liveTranscript;
     const hasRefs = surfacedNotes.length > 0;
-    const hasLiveTranscript = liveText.trim().length > 0;
+
+    // Phase H — the server already wrote the transcript and structured
+    // content. The only remaining client-side tweak is the
+    // "Related Notes Referenced" tail, which depends on the local
+    // meetingContext that lived in this tab during the recording.
+    const upsertNote = (n: Note) =>
+      setNotes((prev) => {
+        const next = prev.filter((x) => x.id !== n.id);
+        return [n, ...next];
+      });
 
     try {
-      if (hasRefs || hasLiveTranscript) {
-        const updateData: { content?: string; transcript?: string } = {};
-
-        if (hasRefs) {
-          const referencesSection = "\n\n## Related Notes Referenced\n" +
-            surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
-          updateData.content = (note.content || "") + referencesSection;
-        }
-
-        if (hasLiveTranscript) {
-          updateData.transcript = liveText;
-        }
-
+      if (hasRefs) {
+        const referencesSection = "\n\n## Related Notes Referenced\n" +
+          surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
         try {
-          const updated = await updateNote(note.id, updateData);
-          setNotes((prev) => [updated, ...prev]);
+          const updated = await updateNote(note.id, {
+            content: (note.content || "") + referencesSection,
+          });
+          upsertNote(updated);
           openNoteAsTab(updated);
         } catch {
-          setNotes((prev) => [note, ...prev]);
+          upsertNote(note);
           openNoteAsTab(note);
         }
       } else {
-        setNotes((prev) => [note, ...prev]);
+        upsertNote(note);
         openNoteAsTab(note);
       }
       loadFolders();
@@ -2122,7 +2157,15 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   function handleAudioDiscard(sessionId: string) {
     audioControlRef.current?.discard(sessionId);
     sessionContextsRef.current.delete(sessionId);
+    pendingAudioJobsRef.current.delete(sessionId);
   }
+
+  // Phase H — live refs so the SSE effect (installed once at mount)
+  // can dispatch to the latest handlers without listing them as deps.
+  const handleAudioNoteCreatedRef = useRef(handleAudioNoteCreated);
+  const handleAudioNoteFailedRef = useRef(handleAudioNoteFailed);
+  handleAudioNoteCreatedRef.current = handleAudioNoteCreated;
+  handleAudioNoteFailedRef.current = handleAudioNoteFailed;
 
   // Clear UI state when switching notes
   useEffect(() => {
@@ -3376,6 +3419,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                     relevantNotes={meetingContext.relevantNotes}
                     recordingMode={recordingState?.mode}
                     audioSessionResult={audioSessionResult}
+                    cancelledSessionId={cancelledSessionId ?? undefined}
                     activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                     chatRefreshKey={chatRefreshKey}
                     activeSessionId={recordingState?.sessionId}
@@ -3469,12 +3513,14 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         headless
         defaultMode={settings.audioMode}
         folderId={recordingFolderId ?? undefined}
-        onNoteCreated={handleAudioNoteCreated}
+        onJobAccepted={(sessionId, jobId, capturedTranscript) => {
+          pendingAudioJobsRef.current.set(sessionId, { jobId, capturedTranscript });
+        }}
+        onSessionCancelled={setCancelledSessionId}
         onNoteFailed={handleAudioNoteFailed}
         onError={showError}
         onRecordingStateChange={setRecordingState}
         controlRef={audioControlRef}
-        onInFlightCountChange={setInFlightAudioCount}
         onModeChange={(m) => updateAiSetting("audioMode", m)}
         triggerMode={recordTrigger?.mode}
         triggerKey={recordTrigger?.key}

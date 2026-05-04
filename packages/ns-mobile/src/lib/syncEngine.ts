@@ -56,6 +56,7 @@ export interface SyncEngineCallbacks {
     sessionId: string;
     status: string;
     noteId?: string;
+    noteTitle?: string;
     errorMessage?: string;
   }) => void;
 }
@@ -359,6 +360,7 @@ async function connectSse(): Promise<void> {
                 sessionId: string;
                 status: string;
                 noteId?: string;
+                noteTitle?: string;
                 errorMessage?: string;
               };
               transcriptionJobCallback?.(parsed);

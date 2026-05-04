@@ -266,6 +266,13 @@ async function runJob(job: PrismaTranscriptionJob): Promise<void> {
       sessionId: completed.sessionId,
       status: "completed",
       noteId: note.id,
+      // Phase H — include the structured title so the meeting
+      // card on the originating device can flip from "Untitled
+      // Recording" to the AI-generated title without waiting for
+      // the sync pull to bring the Note row down. The synced
+      // Note row remains the canonical source for the title;
+      // this is just a fast-path label for the card.
+      noteTitle: note.title,
     });
 
     log.info(

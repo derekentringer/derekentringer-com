@@ -286,6 +286,7 @@ export function applyTranscriptionJobEvent(payload: {
   sessionId: string;
   status: string;
   noteId?: string;
+  noteTitle?: string;
   errorMessage?: string;
 }): void {
   const { summaries, patch } = useRecordingResultStore.getState();
@@ -298,8 +299,10 @@ export function applyTranscriptionJobEvent(payload: {
     patch(summary.sessionId, {
       status: "completed",
       noteId: payload.noteId,
-      // Note title comes via the synced Note row; the card just
-      // shows the noteId-driven open-note pill.
+      // Server includes the AI-generated title so the card flips
+      // from "Untitled Recording" to the real title without
+      // waiting for the sync pull to bring the Note row down.
+      noteTitle: payload.noteTitle,
       audioUri: undefined,
     });
   } else if (payload.status === "failed") {

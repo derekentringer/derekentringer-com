@@ -1,8 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { AudioMode } from "../hooks/useAiSettings.ts";
-import type { Note } from "@derekentringer/shared/ns";
-import { transcribeAudio, transcribeChunk } from "../api/ai.ts";
-import { apiFetch } from "../api/client.ts";
+import { transcribeChunk } from "../api/ai.ts";
+import {
+  createTranscriptionJobWithAudio,
+  createTranscriptionJobWithTranscript,
+  deleteTranscriptionJob,
+  retryTranscriptionJob,
+  type UploadProgress,
+} from "../api/transcriptionJobs.ts";
+import { MicOnlyNoticeModal } from "./MicOnlyNoticeModal.tsx";
 
 const MODE_LABELS: Record<AudioMode, string> = {
   meeting: "Meeting",
@@ -14,6 +20,22 @@ const MODE_LABELS: Record<AudioMode, string> = {
 const MODES: AudioMode[] = ["meeting", "lecture", "memo", "verbatim"];
 const MAX_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
 const CHUNK_INTERVAL_MS = 20_000; // Send a chunk every 20 seconds
+// localStorage flag for the "this is mic-only on web" notice. Once
+// dismissed with the checkbox the user never sees it again on this
+// device until they clear browser storage.
+const MIC_NOTICE_DISMISSED_KEY = "ns-mic-only-notice-dismissed";
+// Phase H — when the live transcript is this long at stop time, we
+// skip the audio upload and let the server use the prebuilt text
+// directly (saves Whisper $$ + upload time). Threshold matches the
+// mobile/desktop fast-path heuristic.
+const PREBUILT_TRANSCRIPT_MIN_CHARS = 100;
+
+function inferExtension(mimeType: string): string {
+  if (mimeType.includes("webm")) return "webm";
+  if (mimeType.includes("mp4")) return "m4a";
+  if (mimeType.includes("ogg")) return "ogg";
+  return "webm";
+}
 
 const PREFERRED_MIME_TYPES = [
   "audio/webm;codecs=opus",
@@ -49,9 +71,9 @@ export interface AudioRecordingState {
 }
 
 /** Self-contained snapshot of a recording session, handed to a detached
- *  processing task. Contains everything needed to transcribe/PATCH without
- *  reading component refs — so a new recording can safely start while this
- *  session's task is still in flight. */
+ *  upload task. Contains everything needed to call /ai/transcribe-jobs
+ *  without reading component refs — so a new recording can safely start
+ *  while this session's task is still in flight. */
 interface SessionSnapshot {
   sessionId: string;
   mode: AudioMode;
@@ -63,15 +85,35 @@ interface SessionSnapshot {
 interface AudioRecorderProps {
   defaultMode: AudioMode;
   folderId?: string;
-  /** Fired when a detached processing task finishes successfully. sessionId
-   *  identifies which recording this note came from — needed because multiple
-   *  processing tasks can be in flight concurrently. */
-  onNoteCreated: (note: Note, sessionId: string, liveTranscript?: string) => void;
+  /** Phase H — fires when the server has accepted the upload and a
+   *  TranscriptionJob row exists. The note isn't ready yet; the meeting
+   *  card should transition from "uploading" to "processing" and wait
+   *  for the SSE `transcription-job` completion event (handled in
+   *  NotesPage). `capturedTranscript` is forwarded so NotesPage can
+   *  apply post-processing tweaks (e.g. relevant-notes append) once
+   *  the note arrives. */
+  onJobAccepted?: (
+    sessionId: string,
+    jobId: string,
+    capturedTranscript: string,
+  ) => void;
+  /** Phase H — upload progress for the audio path (XHR-driven). Not
+   *  fired for the prebuilt-transcript fast path since there's no
+   *  meaningful upload window. */
+  onUploadProgress?: (sessionId: string, progress: UploadProgress) => void;
   /** Immediate capture-path errors (mic denied). No session exists yet. */
   onError: (message: string) => void;
-  /** Fired when a detached processing task fails. Parents that leave this
-   *  unset still get a toast via `onError`. */
+  /** Fires when the upload itself fails (network error, server reject).
+   *  Server-side processing failures arrive separately via the SSE
+   *  `transcription-job` event in NotesPage and route through the same
+   *  failure UI. */
   onNoteFailed?: (sessionId: string, message: string) => void;
+  /** Fires when the user cancels mid-recording. Carries the cancelled
+   *  session id so the parent can suppress / remove any meeting card
+   *  that the stop transition would otherwise produce — a cancel never
+   *  creates a server-side job, so an orphan "processing" card would
+   *  never resolve. */
+  onSessionCancelled?: (sessionId: string) => void;
   onRecordingStateChange?: (recordingState: AudioRecordingState | null) => void;
   onModeChange?: (mode: AudioMode) => void;
   /** When set, auto-starts recording with this mode. Change `triggerKey` to re-trigger. */
@@ -81,8 +123,6 @@ interface AudioRecorderProps {
   headless?: boolean;
   /** Phase 2: populated by the component with a `retry` / `discard` control. */
   controlRef?: React.MutableRefObject<AudioRecorderControl | null>;
-  /** Phase 3: fires whenever the in-flight processing-task count changes. */
-  onInFlightCountChange?: (count: number) => void;
 }
 
 export interface AudioRecorderControl {
@@ -100,7 +140,7 @@ function generateSessionId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, onNoteFailed, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless, controlRef, onInFlightCountChange }: AudioRecorderProps) {
+export function AudioRecorder({ defaultMode, folderId, onJobAccepted, onUploadProgress, onError, onNoteFailed, onSessionCancelled, onRecordingStateChange, onModeChange, triggerMode, triggerKey, headless, controlRef }: AudioRecorderProps) {
   const [state, setState] = useState<RecorderState>("idle");
   const [mode, setMode] = useState<AudioMode>(defaultMode);
   const [showModes, setShowModes] = useState(false);
@@ -115,20 +155,23 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modeRef = useRef(mode);
   const folderIdRef = useRef(folderId);
-  const onNoteCreatedRef = useRef(onNoteCreated);
+  const onJobAcceptedRef = useRef(onJobAccepted);
+  const onUploadProgressRef = useRef(onUploadProgress);
   const onErrorRef = useRef(onError);
   const onNoteFailedRef = useRef(onNoteFailed);
-  const onInFlightCountChangeRef = useRef(onInFlightCountChange);
+  const onSessionCancelledRef = useRef(onSessionCancelled);
   modeRef.current = mode;
   folderIdRef.current = folderId;
-  onNoteCreatedRef.current = onNoteCreated;
+  onJobAcceptedRef.current = onJobAccepted;
+  onUploadProgressRef.current = onUploadProgress;
   onErrorRef.current = onError;
   onNoteFailedRef.current = onNoteFailed;
-  onInFlightCountChangeRef.current = onInFlightCountChange;
+  onSessionCancelledRef.current = onSessionCancelled;
 
-  function emitInFlightCount() {
-    onInFlightCountChangeRef.current?.(inFlightTasksRef.current.size);
-  }
+  // Phase H — sessionId → jobId map populated when the server accepts
+  // the upload. Lets retry()/discard() decide whether to call the
+  // server-side endpoints (job exists) or re-upload (job missing).
+  const sessionToJobRef = useRef<Map<string, string>>(new Map());
 
   // Per-session AbortControllers for detached processing tasks. Aborted
   // on unmount so pending fetches don't run against a dead parent.
@@ -158,13 +201,41 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     }
   }, [showModes]);
 
+  // Mic-only notice gate. When the user has not dismissed it before,
+  // any path that would start recording instead opens the modal first.
+  // The modal calls `proceedAfterNotice` on confirm, which kicks off
+  // the real `handleRecord`.
+  const [showMicNotice, setShowMicNotice] = useState(false);
+
+  function requestRecord() {
+    if (state !== "idle") return;
+    if (localStorage.getItem(MIC_NOTICE_DISMISSED_KEY) === "1") {
+      handleRecordRef.current?.();
+      return;
+    }
+    setShowMicNotice(true);
+  }
+
+  function handleMicNoticeConfirm(dontShowAgain: boolean) {
+    if (dontShowAgain) {
+      try {
+        localStorage.setItem(MIC_NOTICE_DISMISSED_KEY, "1");
+      } catch {
+        /* storage unavailable — fall through, just won't persist */
+      }
+    }
+    setShowMicNotice(false);
+    handleRecordRef.current?.();
+  }
+
   // Auto-start recording when triggered from ribbon
   useEffect(() => {
     if (triggerKey && triggerMode && state === "idle") {
       setMode(triggerMode);
       onModeChange?.(triggerMode);
-      // Defer to next tick so mode state is set
-      requestAnimationFrame(() => handleRecordRef.current?.());
+      // Defer to next tick so mode state is set, then route through
+      // the same gate as direct clicks so the notice fires here too.
+      requestAnimationFrame(() => requestRecord());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerKey]);
@@ -193,8 +264,8 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     chunkIndexRef.current = 0;
   }, []);
 
-  // Cleanup on unmount — also abort every in-flight detached processing
-  // task so their fetches stop and their callbacks don't fire after unmount.
+  // Cleanup on unmount — also abort every in-flight detached upload
+  // task so their XHRs stop and their callbacks don't fire after unmount.
   useEffect(() => {
     return () => {
       cleanup();
@@ -203,41 +274,54 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       }
       inFlightTasksRef.current.clear();
       snapshotsRef.current.clear();
-      emitInFlightCount();
+      sessionToJobRef.current.clear();
     };
   }, [cleanup]);
 
-  // ─── Detached processing ────────────────────────────────────────────────
-  // Runs transcribe → PATCH → onNoteCreated/onNoteFailed. Takes a self-
-  // contained snapshot; reads no component refs except callback refs.
+  // ─── Detached upload (Phase H) ─────────────────────────────────────────
+  // Picks fast path (prebuilt transcript, no audio upload) when the live
+  // transcript is long enough to be useful; otherwise uploads the audio
+  // blob via XHR with progress events. Either way, the server creates a
+  // TranscriptionJob row and runs Whisper + structuring + note creation
+  // asynchronously. Completion arrives later via the SSE
+  // `transcription-job` event handled in NotesPage.
   async function processSession(snapshot: SessionSnapshot, signal: AbortSignal) {
-    const { sessionId, mode: snapMode, folderId: snapFolderId, capturedTranscript, audioBlob } = snapshot;
+    const { sessionId, mode: snapMode, capturedTranscript, audioBlob } = snapshot;
+    const trimmedTranscript = capturedTranscript.trim();
+    const useFastPath = trimmedTranscript.length >= PREBUILT_TRANSCRIPT_MIN_CHARS;
 
     try {
-      const result = await transcribeAudio(audioBlob, snapMode, snapFolderId);
-      if (signal.aborted) return;
-
-      if (capturedTranscript && capturedTranscript.trim().length > 0) {
-        try {
-          await apiFetch(`/notes/${result.note.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ transcript: capturedTranscript }),
+      const result = useFastPath
+        ? await createTranscriptionJobWithTranscript({
+            prebuiltTranscript: trimmedTranscript,
+            sessionId,
+            mode: snapMode,
+            signal,
+          })
+        : await createTranscriptionJobWithAudio({
+            audio: audioBlob,
+            filename: `recording-${sessionId}.${inferExtension(audioBlob.type)}`,
+            mimeType: audioBlob.type || "audio/webm",
+            sessionId,
+            mode: snapMode,
+            onProgress: (progress) => {
+              onUploadProgressRef.current?.(sessionId, progress);
+            },
             signal,
           });
-          result.note.transcript = capturedTranscript;
-        } catch {
-          // Non-fatal — note still created without transcript
-        }
-      }
-
       if (signal.aborted) return;
+
+      // Server now owns the job; drop the audio blob to free memory.
+      // The snapshot stays only to remember mode/folder/transcript for
+      // any post-completion UX hooks NotesPage wires up. Audio cannot
+      // be re-uploaded from this client without a fresh recording.
+      sessionToJobRef.current.set(sessionId, result.jobId);
       snapshotsRef.current.delete(sessionId);
-      onNoteCreatedRef.current(result.note, sessionId, capturedTranscript);
+      onJobAcceptedRef.current?.(sessionId, result.jobId, capturedTranscript);
     } catch (err) {
       if (signal.aborted) return;
-      const message = err instanceof Error ? err.message : "Transcription failed";
-      // Phase 2: snapshot stays for retry.
+      const message = err instanceof Error ? err.message : "Upload failed";
+      // Snapshot stays so retry() can re-upload.
       if (onNoteFailedRef.current) {
         onNoteFailedRef.current(sessionId, message);
       } else {
@@ -250,18 +334,30 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     snapshotsRef.current.set(snapshot.sessionId, snapshot);
     const controller = new AbortController();
     inFlightTasksRef.current.set(snapshot.sessionId, controller);
-    emitInFlightCount();
     processSession(snapshot, controller.signal).finally(() => {
       inFlightTasksRef.current.delete(snapshot.sessionId);
-      emitInFlightCount();
     });
   }
 
-  // Phase 2: expose retry/discard through a control ref.
+  // Phase 2 + Phase H: retry/discard control. After the server has
+  // accepted the upload (sessionToJobRef has a jobId), retry/discard
+  // hit the server-side job endpoints — there's no audio to re-upload
+  // because we dropped the local blob. Before upload acceptance the
+  // snapshot is still in memory and retry re-runs the upload.
   useEffect(() => {
     if (!controlRef) return;
     controlRef.current = {
-      retry: (sessionId: string) => {
+      retry: async (sessionId: string) => {
+        const jobId = sessionToJobRef.current.get(sessionId);
+        if (jobId) {
+          try {
+            await retryTranscriptionJob(jobId);
+          } catch (err) {
+            const m = err instanceof Error ? err.message : "Retry failed";
+            onNoteFailedRef.current?.(sessionId, m);
+          }
+          return;
+        }
         const snap = snapshotsRef.current.get(sessionId);
         if (!snap) return;
         const existing = inFlightTasksRef.current.get(sessionId);
@@ -271,13 +367,19 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
       discard: (sessionId: string) => {
         const existing = inFlightTasksRef.current.get(sessionId);
         if (existing) existing.abort();
-        if (inFlightTasksRef.current.delete(sessionId)) {
-          emitInFlightCount();
-        }
+        inFlightTasksRef.current.delete(sessionId);
         snapshotsRef.current.delete(sessionId);
+        const jobId = sessionToJobRef.current.get(sessionId);
+        if (jobId) {
+          sessionToJobRef.current.delete(sessionId);
+          // Best-effort — server-side delete failure shouldn't block the
+          // local UI from clearing the card.
+          deleteTranscriptionJob(jobId).catch(() => {});
+        }
       },
       hasSnapshot: (sessionId: string) =>
-        snapshotsRef.current.has(sessionId),
+        snapshotsRef.current.has(sessionId) ||
+        sessionToJobRef.current.has(sessionId),
     };
     return () => {
       if (controlRef) controlRef.current = null;
@@ -410,10 +512,17 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
         // `cleanup()` so the mic light goes off.
         if (cancelledRef.current) {
           cancelledRef.current = false;
+          // Capture sessionId before cleanup wipes it, then notify
+          // the parent so it can suppress the meeting card that the
+          // stop transition would otherwise insert.
+          const cancelledSessionId = sessionIdRef.current;
           cleanup();
           setState("idle");
           setElapsed(0);
           setLiveTranscript("");
+          if (cancelledSessionId) {
+            onSessionCancelledRef.current?.(cancelledSessionId);
+          }
           return;
         }
 
@@ -492,7 +601,7 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     if (state !== "idle") return;
     if (!didLongPressRef.current && !showModes) {
       handledByPointerRef.current = true;
-      handleRecord();
+      requestRecord();
     }
   }
 
@@ -503,7 +612,14 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
     }
   }
 
-  if (headless) return null;
+  if (headless) {
+    // Headless instances still need to render the gate modal so the
+    // ribbon-triggered record path can prompt the user before opening
+    // the mic. Modal uses fixed positioning, so the empty wrapper is fine.
+    return showMicNotice ? (
+      <MicOnlyNoticeModal onConfirm={handleMicNoticeConfirm} />
+    ) : null;
+  }
 
   // Idle state — click to record, long-press for mode selector
   return (
@@ -514,7 +630,7 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
         onPointerLeave={state === "idle" ? handlePointerLeave : undefined}
         onClick={state === "recording" ? handleStop : state === "idle" ? () => {
           if (handledByPointerRef.current) { handledByPointerRef.current = false; return; }
-          if (!showModes) handleRecord();
+          if (!showModes) requestRecord();
         } : undefined}
         className={`flex items-center justify-center w-7 h-7 rounded transition-colors cursor-pointer select-none ${
           state === "recording"
@@ -566,6 +682,9 @@ export function AudioRecorder({ defaultMode, folderId, onNoteCreated, onError, o
             </button>
           ))}
         </div>
+      )}
+      {showMicNotice && (
+        <MicOnlyNoticeModal onConfirm={handleMicNoticeConfirm} />
       )}
     </div>
   );

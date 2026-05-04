@@ -385,4 +385,58 @@ describe("SSE client (connectSseStream)", () => {
     conn.disconnect();
     randomSpy.mockRestore();
   });
+
+  it("parses transcription-job events and forwards JSON payload", async () => {
+    const payload = {
+      jobId: "job-123",
+      sessionId: "sess-abc",
+      status: "completed" as const,
+      noteId: "note-xyz",
+      noteTitle: "My recorded note",
+    };
+    const stream = createMockStream([
+      "event: connected\ndata: {}\n\n",
+      `event: transcription-job\ndata: ${JSON.stringify(payload)}\n\n`,
+    ]);
+    mockFetch.mockResolvedValue({ ok: true, body: stream });
+
+    const onTranscriptionJobEvent = vi.fn();
+    const conn = connectSseStream(
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      onTranscriptionJobEvent,
+    );
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(onTranscriptionJobEvent).toHaveBeenCalledTimes(1);
+    expect(onTranscriptionJobEvent).toHaveBeenCalledWith(payload);
+
+    conn.disconnect();
+  });
+
+  it("ignores malformed transcription-job payloads", async () => {
+    const stream = createMockStream([
+      "event: connected\ndata: {}\n\n",
+      "event: transcription-job\ndata: not-json\n\n",
+    ]);
+    mockFetch.mockResolvedValue({ ok: true, body: stream });
+
+    const onTranscriptionJobEvent = vi.fn();
+    const conn = connectSseStream(
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      onTranscriptionJobEvent,
+    );
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(onTranscriptionJobEvent).not.toHaveBeenCalled();
+
+    conn.disconnect();
+  });
 });
