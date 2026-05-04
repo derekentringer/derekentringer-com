@@ -14,7 +14,7 @@ import { transcribeAudio, transcribeAudioChunked } from "../services/whisperServ
 import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
-import { getChatHistory, appendChatMessages, clearChatHistory, replaceChatMessages } from "../store/chatStore.js";
+import { getChatHistory, appendChatMessages, clearChatHistory, replaceChatMessages, reconcileOrphanMeetingCards } from "../store/chatStore.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
 import { getImagesByNoteIds } from "../store/imageStore.js";
 import {
@@ -959,11 +959,19 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // GET /ai/chat-history — fetch chat messages for the current user
+  // GET /ai/chat-history — fetch chat messages for the current user.
+  // Self-heal orphan "processing" meeting-summary cards (no matching
+  // transcription_jobs row, older than the grace window) on the way
+  // out, and fan out a `chat` SSE event to other connected devices
+  // when any orphan was actually rewritten so they refetch.
   fastify.get(
     "/chat-history",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const userId = request.user.sub;
+      const reconciled = await reconcileOrphanMeetingCards(userId);
+      if (reconciled > 0) {
+        fastify.sseHub.notifyChat(userId);
+      }
       const messages = await getChatHistory(userId);
       return reply.send({ messages });
     },
