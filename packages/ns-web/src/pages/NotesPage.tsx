@@ -317,6 +317,21 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
+  // Tightly-scoped beforeunload guard: ONLY fires while a recording is
+  // actively capturing audio (mic open). Post-stop server-side
+  // processing survives navigation, so once the upload has been
+  // accepted the user can navigate freely. Without this, hitting the
+  // browser back button or refreshing mid-recording silently kills
+  // the active capture.
+  useEffect(() => {
+    if (!recordingState) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [recordingState]);
   const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
   const audioControlRef = useRef<AudioRecorderControl | null>(null);
   // Phase H — last sessionId AudioRecorder cancelled. Forwarded to
@@ -3318,6 +3333,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               onCreateNote={handleCreate}
               onStartRecording={handleDashboardStartRecording}
               audioNotesEnabled={settings.masterAiEnabled && settings.audioNotes}
+              recorderState={recordingState?.state ?? "idle"}
             />
           </div>
         )}
