@@ -9,7 +9,12 @@ import {
   TextInput,
   StyleSheet,
 } from "react-native";
-import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import {
+  BottomSheetModal,
+  BottomSheetView,
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import type { FolderInfo } from "@derekentringer/ns-shared";
@@ -497,12 +502,27 @@ export function FolderPicker({
         snapPoints={["50%", "80%"]}
         backgroundStyle={{ backgroundColor: themeColors.background }}
         handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
+        backdropComponent={(props: BottomSheetBackdropProps) => (
+          <BottomSheetBackdrop
+            {...props}
+            disappearsOnIndex={-1}
+            appearsOnIndex={0}
+            pressBehavior="close"
+          />
+        )}
       >
         <BottomSheetView style={styles.content}>
           <View style={styles.header}>
-            <Text style={[styles.title, { color: themeColors.foreground }]}>
-              Folder
-            </Text>
+            <View style={styles.titleRow}>
+              <MaterialCommunityIcons
+                name="folder-outline"
+                size={20}
+                color={themeColors.primary}
+              />
+              <Text style={[styles.title, { color: themeColors.foreground }]}>
+                Folder
+              </Text>
+            </View>
             <Pressable
               style={[styles.newFolderButton, { backgroundColor: `${themeColors.primary}1A` }]}
               onPress={handleCreateFolder}
@@ -553,6 +573,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
   title: {
     fontSize: 17,

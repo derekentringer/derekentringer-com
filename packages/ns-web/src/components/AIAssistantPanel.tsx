@@ -1520,15 +1520,19 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         )}
       </div>
 
-      {/* Messages — `pb-2 px-2` (no `pt-`) so the sticky recording
-          card sits flush with the panel header. `space-y-2` between
-          siblings keeps the rest of the chat well-spaced. */}
-      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
+      {/* Messages — `py-2 px-2` so non-recording cards have top
+          breathing room. The sticky recording card uses `-mt-2` to
+          cancel the parent's top padding and sit flush with the panel
+          header during recording. `space-y-2` between siblings keeps
+          the rest of the chat well-spaced. */}
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2">
         {/* Live recording card — sticky at panel top, flush with panel
-            left/right edges while recording. `-mx-2` cancels the parent's
-            horizontal padding so the card spans edge-to-edge. */}
+            left/right + top edges while recording. `-mx-2` cancels the
+            parent's horizontal padding so the card spans edge-to-edge;
+            `-mt-2` cancels the parent's top padding so the card is
+            flush with the header. */}
         {isRecording && (
-          <div className="sticky top-0 z-10 -mx-2 bg-card border-b border-border p-3 animate-fade-in">
+          <div className="sticky top-0 z-10 -mx-2 -mt-2 bg-card border-b border-border p-3 animate-fade-in">
             <div className="flex items-center gap-1.5 mb-2">
               <span className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />

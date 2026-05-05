@@ -8,7 +8,12 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import {
+  BottomSheetModal,
+  BottomSheetView,
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NoteVersion } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
@@ -133,11 +138,26 @@ export function VersionHistorySheet({
       snapPoints={["60%", "90%"]}
       backgroundStyle={{ backgroundColor: themeColors.background }}
       handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
+      backdropComponent={(props: BottomSheetBackdropProps) => (
+        <BottomSheetBackdrop
+          {...props}
+          disappearsOnIndex={-1}
+          appearsOnIndex={0}
+          pressBehavior="close"
+        />
+      )}
     >
       <BottomSheetView style={styles.content}>
-        <Text style={[styles.title, { color: themeColors.foreground }]}>
-          Version History
-        </Text>
+        <View style={styles.header}>
+          <MaterialCommunityIcons
+            name="history"
+            size={20}
+            color={themeColors.primary}
+          />
+          <Text style={[styles.title, { color: themeColors.foreground }]}>
+            Version History
+          </Text>
+        </View>
 
         {isLoading ? (
           <ActivityIndicator
@@ -167,11 +187,16 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingBottom: spacing.lg,
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
   title: {
     fontSize: 17,
     fontWeight: "600",
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
   },
   list: {
     paddingHorizontal: spacing.md,

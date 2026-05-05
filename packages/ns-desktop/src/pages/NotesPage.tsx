@@ -4482,7 +4482,10 @@ export function NotesPage() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     handleSave();
-                    editorRef.current?.focus();
+                    // Jump past the hidden frontmatter so the cursor
+                    // lands on the first visible body line instead of
+                    // inside the YAML block (where it'd be invisible).
+                    editorRef.current?.focusBody();
                   }
                 }}
                 placeholder="Note title"
