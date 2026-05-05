@@ -105,7 +105,7 @@ export function AiActionsSheet({
         <View style={styles.header}>
           <MaterialCommunityIcons
             name="auto-fix"
-            size={18}
+            size={20}
             color={themeColors.primary}
           />
           <Text style={[styles.title, { color: themeColors.foreground }]}>
@@ -191,8 +191,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   title: {
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "600",
   },
   row: {
     flexDirection: "row",

@@ -172,13 +172,25 @@ export function SyncIssuesSheet({ bottomSheetRef }: Props) {
       backgroundStyle={{ backgroundColor: themeColors.background }}
       handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
       backdropComponent={(props) => (
-        <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} />
+        <BottomSheetBackdrop
+          {...props}
+          disappearsOnIndex={-1}
+          appearsOnIndex={0}
+          pressBehavior="close"
+        />
       )}
     >
       <BottomSheetView style={styles.container}>
-        <Text style={[styles.title, { color: themeColors.foreground }]}>
-          Sync Issues ({rejections.length})
-        </Text>
+        <View style={styles.header}>
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={20}
+            color={themeColors.primary}
+          />
+          <Text style={[styles.title, { color: themeColors.foreground }]}>
+            Sync Issues ({rejections.length})
+          </Text>
+        </View>
 
         {rejections.length > 1 ? (
           <View style={styles.bulkActions}>
@@ -215,10 +227,15 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: spacing.md,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     marginBottom: spacing.sm,
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: "600",
   },
   bulkActions: {
     flexDirection: "row",
