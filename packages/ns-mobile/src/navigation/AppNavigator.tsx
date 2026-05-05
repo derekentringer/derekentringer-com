@@ -10,6 +10,7 @@ import useAuthStore from "@/store/authStore";
 import useSyncStore from "@/store/syncStore";
 import useAiSettingsStore from "@/store/aiSettingsStore";
 import useEditorSettingsStore from "@/store/editorSettingsStore";
+import useDashboardSettingsStore from "@/store/dashboardSettingsStore";
 import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
@@ -229,6 +230,10 @@ function AuthenticatedApp() {
       // Hydrate editor settings (frontmatter show/hide toggle) so
       // the editor opens in the user's last-chosen mode.
       void useEditorSettingsStore.getState().hydrate();
+      // Hydrate dashboard settings (speed-dial FAB + Quick Actions
+      // visibility) so the dashboard renders in the user's last-
+      // chosen layout on first paint.
+      void useDashboardSettingsStore.getState().hydrate();
       // Initialize local database first — must complete before any queries fire
       await initDatabase();
       // Phase A.0: normalize any drifted folder isLocalFile flag to match its

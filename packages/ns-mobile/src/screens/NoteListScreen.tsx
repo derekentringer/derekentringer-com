@@ -27,11 +27,25 @@ import { SortPicker } from "@/components/notes/SortPicker";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ErrorCard } from "@/components/common/ErrorCard";
+import {
+  SpeedDialFab,
+  type SpeedDialAction,
+} from "@/components/SpeedDialFab";
+import useAiSettingsStore from "@/store/aiSettingsStore";
+import useDashboardSettingsStore from "@/store/dashboardSettingsStore";
+import type { AudioMode } from "@/api/ai";
 
 type Props = NativeStackScreenProps<NotesStackParamList, "NotesList">;
 
 export function NoteListScreen({ navigation }: Props) {
   const themeColors = useThemeColors();
+
+  const masterAiEnabled = useAiSettingsStore((s) => s.masterAiEnabled);
+  const audioNotesEnabled = useAiSettingsStore((s) => s.audioNotes);
+  const recordingShortcutsEnabled = masterAiEnabled && audioNotesEnabled;
+  const speedDialEnabled = useDashboardSettingsStore(
+    (s) => s.speedDialEnabled,
+  );
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -89,6 +103,51 @@ export function NoteListScreen({ navigation }: Props) {
     },
     [navigation],
   );
+
+  const handleNewNote = useCallback(() => {
+    navigation.navigate("NoteEditor", {});
+  }, [navigation]);
+
+  const handleStartRecording = useCallback(
+    (mode: AudioMode) => {
+      navigation.navigate("Recording", { mode });
+    },
+    [navigation],
+  );
+
+  // Same speed-dial gating as the Dashboard: expand into New Note +
+  // four recording modes only when the user has the speed-dial
+  // setting on AND audio recording features available.
+  const speedDialActions: SpeedDialAction[] =
+    speedDialEnabled && recordingShortcutsEnabled
+      ? [
+          { key: "newNote", label: "New Note", icon: "plus", onPress: handleNewNote },
+          {
+            key: "meeting",
+            label: "Meeting",
+            icon: "account-group-outline",
+            onPress: () => handleStartRecording("meeting"),
+          },
+          {
+            key: "lecture",
+            label: "Lecture",
+            icon: "school-outline",
+            onPress: () => handleStartRecording("lecture"),
+          },
+          {
+            key: "memo",
+            label: "Memo",
+            icon: "microphone-outline",
+            onPress: () => handleStartRecording("memo"),
+          },
+          {
+            key: "verbatim",
+            label: "Verbatim",
+            icon: "format-quote-close",
+            onPress: () => handleStartRecording("verbatim"),
+          },
+        ]
+      : [];
 
   const handleToggleTag = useCallback((tagName: string) => {
     setSelectedTags((prev) =>
@@ -265,15 +324,14 @@ export function NoteListScreen({ navigation }: Props) {
         />
       )}
 
-      {/* FAB */}
-      <Pressable
-        style={[styles.fab, { backgroundColor: themeColors.primary }]}
-        onPress={() => navigation.navigate("NoteEditor", {})}
-        accessibilityRole="button"
-        accessibilityLabel="Create new note"
-      >
-        <MaterialCommunityIcons name="plus" size={28} color="#000" />
-      </Pressable>
+      {/* FAB. Same speed-dial behavior as the Dashboard: when the
+          user enables speed-dial and audio recording is available,
+          tap "+" expands New Note + the four recording modes;
+          otherwise it's a plain "+" that creates a note. */}
+      <SpeedDialFab
+        primary={{ label: "New Note", icon: "plus", onPress: handleNewNote }}
+        actions={speedDialActions}
+      />
 
       {/* Bottom sheets */}
       <FolderPicker

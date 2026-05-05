@@ -22,7 +22,12 @@ import { DashboardNoteCard } from "@/components/notes/DashboardNoteCard";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { ErrorCard } from "@/components/common/ErrorCard";
 import { EmptyState } from "@/components/common/EmptyState";
+import {
+  SpeedDialFab,
+  type SpeedDialAction,
+} from "@/components/SpeedDialFab";
 import useAiSettingsStore from "@/store/aiSettingsStore";
+import useDashboardSettingsStore from "@/store/dashboardSettingsStore";
 import type { AudioMode } from "@/api/ai";
 
 type Props = NativeStackScreenProps<DashboardStackParamList, "DashboardHome">;
@@ -109,6 +114,12 @@ export function DashboardScreen({ navigation }: Props) {
   // the Audio Notes setting are on. Mirrors web/desktop's
   // `audioNotesEnabled = masterAiEnabled && settings.audioNotes`.
   const recordingShortcutsEnabled = masterAiEnabled && audioNotesEnabled;
+  const speedDialEnabled = useDashboardSettingsStore(
+    (s) => s.speedDialEnabled,
+  );
+  const quickActionsEnabled = useDashboardSettingsStore(
+    (s) => s.quickActionsEnabled,
+  );
   // Fixed per-tile width sized so MAX_TILES fit on the row at the
   // current screen width, but never below MIN_TILE_WIDTH so labels
   // stay legible. On very narrow phones the row wraps to a second
@@ -150,6 +161,48 @@ export function DashboardScreen({ navigation }: Props) {
     [navigation],
   );
 
+  // Speed-dial mini-actions. The user-facing rule:
+  //   • speed-dial ON + recordings enabled → expand into New Note +
+  //     four recording modes when the "+" FAB is tapped
+  //   • speed-dial OFF, OR recordings disabled → single "+" FAB
+  //     that runs New Note directly (no expansion ceremony for one
+  //     entry)
+  const speedDialActions: SpeedDialAction[] =
+    speedDialEnabled && recordingShortcutsEnabled
+      ? [
+          {
+            key: "newNote",
+            label: "New Note",
+            icon: "plus",
+            onPress: handleNewNote,
+          },
+          {
+            key: "meeting",
+            label: "Meeting",
+            icon: "account-group-outline",
+            onPress: () => handleStartRecording("meeting"),
+          },
+          {
+            key: "lecture",
+            label: "Lecture",
+            icon: "school-outline",
+            onPress: () => handleStartRecording("lecture"),
+          },
+          {
+            key: "memo",
+            label: "Memo",
+            icon: "microphone-outline",
+            onPress: () => handleStartRecording("memo"),
+          },
+          {
+            key: "verbatim",
+            label: "Verbatim",
+            icon: "format-quote-close",
+            onPress: () => handleStartRecording("verbatim"),
+          },
+        ]
+      : [];
+
   if (isLoading) {
     return (
       <View
@@ -190,30 +243,10 @@ export function DashboardScreen({ navigation }: Props) {
         style={[styles.container, { backgroundColor: themeColors.background }]}
       >
         <EmptyState message="No notes yet. Create your first note to get started!" />
-        <Pressable
-          style={[
-            styles.fab,
-            styles.fabSecondary,
-            { backgroundColor: themeColors.card, borderColor: themeColors.border },
-          ]}
-          onPress={() => navigation.navigate("Recording")}
-          accessibilityRole="button"
-          accessibilityLabel="Start recording"
-        >
-          <MaterialCommunityIcons
-            name="microphone"
-            size={26}
-            color={themeColors.foreground}
-          />
-        </Pressable>
-        <Pressable
-          style={[styles.fab, { backgroundColor: themeColors.primary }]}
-          onPress={() => navigation.navigate("NoteEditor", {})}
-          accessibilityRole="button"
-          accessibilityLabel="Create new note"
-        >
-          <MaterialCommunityIcons name="plus" size={28} color="#000" />
-        </Pressable>
+        <SpeedDialFab
+          primary={{ label: "New Note", icon: "plus", onPress: handleNewNote }}
+          actions={speedDialActions}
+        />
       </View>
     );
   }
@@ -232,57 +265,58 @@ export function DashboardScreen({ navigation }: Props) {
       >
         {/* Quick Actions — mirrors web/desktop's dashboard tiles.
             New Note always shows; Meeting / Lecture / Memo /
-            Verbatim only when Audio Notes is on. The whole row
-            collapses if AI features are off and there's nothing
-            useful to surface (just New Note remains). */}
-        <View style={styles.section}>
-          <Text
-            style={[styles.sectionTitle, { color: themeColors.foreground }]}
-          >
-            Quick Actions
-          </Text>
-          <View style={styles.quickActionsRow}>
-            <QuickActionTile
-              icon="plus"
-              label="New Note"
-              onPress={handleNewNote}
-              themeColors={themeColors}
-              width={quickActionTileWidth}
-            />
-            {recordingShortcutsEnabled ? (
-              <>
-                <QuickActionTile
-                  icon="account-group-outline"
-                  label="Meeting"
-                  onPress={() => handleStartRecording("meeting")}
-                  themeColors={themeColors}
-                  width={quickActionTileWidth}
-                />
-                <QuickActionTile
-                  icon="school-outline"
-                  label="Lecture"
-                  onPress={() => handleStartRecording("lecture")}
-                  themeColors={themeColors}
-                  width={quickActionTileWidth}
-                />
-                <QuickActionTile
-                  icon="microphone-outline"
-                  label="Memo"
-                  onPress={() => handleStartRecording("memo")}
-                  themeColors={themeColors}
-                  width={quickActionTileWidth}
-                />
-                <QuickActionTile
-                  icon="format-quote-close"
-                  label="Verbatim"
-                  onPress={() => handleStartRecording("verbatim")}
-                  themeColors={themeColors}
-                  width={quickActionTileWidth}
-                />
-              </>
-            ) : null}
+            Verbatim only when Audio Notes is on. Hidden when the
+            user turns the section off in Settings. */}
+        {quickActionsEnabled ? (
+          <View style={styles.section}>
+            <Text
+              style={[styles.sectionTitle, { color: themeColors.foreground }]}
+            >
+              Quick Actions
+            </Text>
+            <View style={styles.quickActionsRow}>
+              <QuickActionTile
+                icon="plus"
+                label="New Note"
+                onPress={handleNewNote}
+                themeColors={themeColors}
+                width={quickActionTileWidth}
+              />
+              {recordingShortcutsEnabled ? (
+                <>
+                  <QuickActionTile
+                    icon="account-group-outline"
+                    label="Meeting"
+                    onPress={() => handleStartRecording("meeting")}
+                    themeColors={themeColors}
+                    width={quickActionTileWidth}
+                  />
+                  <QuickActionTile
+                    icon="school-outline"
+                    label="Lecture"
+                    onPress={() => handleStartRecording("lecture")}
+                    themeColors={themeColors}
+                    width={quickActionTileWidth}
+                  />
+                  <QuickActionTile
+                    icon="microphone-outline"
+                    label="Memo"
+                    onPress={() => handleStartRecording("memo")}
+                    themeColors={themeColors}
+                    width={quickActionTileWidth}
+                  />
+                  <QuickActionTile
+                    icon="format-quote-close"
+                    label="Verbatim"
+                    onPress={() => handleStartRecording("verbatim")}
+                    themeColors={themeColors}
+                    width={quickActionTileWidth}
+                  />
+                </>
+              ) : null}
+            </View>
           </View>
-        </View>
+        ) : null}
 
         {/* Resume Editing hero card — same shape as web/desktop's
             top-of-dashboard "Resume Editing" section. Surfaces the
@@ -360,35 +394,15 @@ export function DashboardScreen({ navigation }: Props) {
         ) : null}
       </ScrollView>
 
-      {/* Recording FAB — secondary, sits to the left of the
-          primary "new note" FAB so the most-frequent action stays
-          in the canonical bottom-right slot. */}
-      <Pressable
-        style={[
-          styles.fab,
-          styles.fabSecondary,
-          { backgroundColor: themeColors.card, borderColor: themeColors.border },
-        ]}
-        onPress={() => navigation.navigate("Recording")}
-        accessibilityRole="button"
-        accessibilityLabel="Start recording"
-      >
-        <MaterialCommunityIcons
-          name="microphone"
-          size={26}
-          color={themeColors.foreground}
-        />
-      </Pressable>
-
-      {/* FAB */}
-      <Pressable
-        style={[styles.fab, { backgroundColor: themeColors.primary }]}
-        onPress={() => navigation.navigate("NoteEditor", {})}
-        accessibilityRole="button"
-        accessibilityLabel="Create new note"
-      >
-        <MaterialCommunityIcons name="plus" size={28} color="#000" />
-      </Pressable>
+      {/* Single FAB. When the user has speed-dial turned on AND has
+          recording features available, tapping the "+" expands a
+          mini-FAB column with New Note + the four recording modes
+          (Material 3 speed-dial pattern). Otherwise the FAB is a
+          plain "+" that creates a new note directly. */}
+      <SpeedDialFab
+        primary={{ label: "New Note", icon: "plus", onPress: handleNewNote }}
+        actions={speedDialActions}
+      />
     </View>
   );
 }

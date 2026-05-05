@@ -20,7 +20,6 @@ import * as FileSystem from "expo-file-system/legacy";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import type { DashboardStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { type AudioMode } from "@/api/ai";
@@ -116,7 +115,13 @@ const METERING_INTERVAL_MS = 80;
 const SILENCE_FLOOR_DB = -60;
 
 
-type Props = NativeStackScreenProps<DashboardStackParamList, "Recording">;
+// Stack-agnostic: RecordingScreen is mounted from both the Dashboard
+// and Notes stacks (both stacks declare an identical `Recording`
+// route). Typing against either single stack would be over-narrow.
+type RecordingParamList = {
+  Recording: { mode?: "meeting" | "lecture" | "memo" | "verbatim" } | undefined;
+};
+type Props = NativeStackScreenProps<RecordingParamList, "Recording">;
 
 export function RecordingScreen({ navigation, route }: Props) {
   const themeColors = useThemeColors();
