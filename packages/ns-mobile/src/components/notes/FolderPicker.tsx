@@ -4,11 +4,11 @@ import {
   Text,
   Pressable,
   FlatList,
-  Alert,
   Modal,
   TextInput,
   StyleSheet,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -317,6 +317,7 @@ export function FolderPicker({
   mode = "filter",
 }: FolderPickerProps) {
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
   const createFolder = useCreateFolder();
   const renameFolder = useRenameFolder();
   const deleteFolder = useDeleteFolder();
@@ -415,7 +416,7 @@ export function FolderPicker({
   const handleDeleteFromMenu = useCallback(() => {
     const item = actionMenu.item;
     if (!item?.id) return;
-    Alert.alert(
+    showAlert(
       "Delete Folder",
       `Delete "${item.name}"? Notes will be moved to the parent folder.`,
       [
@@ -440,7 +441,7 @@ export function FolderPicker({
         },
       ],
     );
-  }, [actionMenu.item, deleteFolder]);
+  }, [actionMenu.item, deleteFolder, showAlert]);
 
   const renderItem = useCallback(
     ({ item }: { item: FlatFolder }) => {

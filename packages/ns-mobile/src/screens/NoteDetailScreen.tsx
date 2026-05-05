@@ -4,12 +4,12 @@ import {
   Text,
   ScrollView,
   Pressable,
-  Alert,
   RefreshControl,
   ActivityIndicator,
   Animated,
   StyleSheet,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Clipboard from "expo-clipboard";
@@ -33,7 +33,7 @@ import {
   parseWikiLinkUrl,
 } from "@/lib/resolveWikiLinks";
 import { useBacklinks } from "@/hooks/useBacklinks";
-import { useVersions, useRestoreVersion } from "@/hooks/useVersions";
+import { useVersions } from "@/hooks/useVersions";
 import { BacklinksSection } from "@/components/notes/BacklinksSection";
 import { VersionHistorySheet } from "@/components/notes/VersionHistorySheet";
 import { ErrorCard } from "@/components/common/ErrorCard";
@@ -49,6 +49,7 @@ import { manualSync } from "@/lib/syncEngine";
 type Props = NativeStackScreenProps<NotesStackParamList, "NoteDetail">;
 
 export function NoteDetailScreen({ route, navigation }: Props) {
+  const showAlert = useAppAlert();
   const { noteId } = route.params;
   const themeColors = useThemeColors();
 
@@ -91,7 +92,6 @@ export function NoteDetailScreen({ route, navigation }: Props) {
 
   const deleteNote = useDeleteNote();
   const toggleFavorite = useToggleFavorite();
-  const restoreVersion = useRestoreVersion();
 
   const versionSheetRef = useRef<BottomSheetModal>(null);
   const [showOverflow, setShowOverflow] = useState(false);
@@ -170,9 +170,9 @@ export function NoteDetailScreen({ route, navigation }: Props) {
   }, [note, toggleFavorite]);
 
   const handleDelete = useCallback(() => {
-    Alert.alert(
+    showAlert(
       "Move to Trash",
-      "Move this note to Trash?",
+      note?.title?.trim() || "Untitled",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -185,7 +185,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
         },
       ],
     );
-  }, [noteId, deleteNote, navigation]);
+  }, [noteId, note, deleteNote, navigation, showAlert]);
 
   const handleCopyLink = useCallback(async () => {
     const url = `https://ns.derekentringer.com/notes/${noteId}`;
@@ -206,13 +206,11 @@ export function NoteDetailScreen({ route, navigation }: Props) {
     [navigation],
   );
 
-  const handleRestoreVersion = useCallback(
-    async (versionId: string) => {
-      await restoreVersion.mutateAsync({ noteId, versionId });
-      versionSheetRef.current?.dismiss();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const handleSelectVersion = useCallback(
+    (versionId: string) => {
+      navigation.push("NoteDiff", { noteId, versionId });
     },
-    [noteId, restoreVersion],
+    [noteId, navigation],
   );
 
   // Header actions
@@ -577,8 +575,9 @@ export function NoteDetailScreen({ route, navigation }: Props) {
         bottomSheetRef={versionSheetRef}
         versions={versionsData?.versions ?? []}
         isLoading={isLoadingVersions}
-        onRestore={handleRestoreVersion}
-        isRestoring={restoreVersion.isPending}
+        currentTitle={note?.title ?? ""}
+        currentContent={note?.content ?? ""}
+        onSelectVersion={handleSelectVersion}
       />
     </View>
   );

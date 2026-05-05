@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert,
   Animated,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import {
   AudioModule,
   IOSOutputFormat,
@@ -120,6 +120,7 @@ type Props = NativeStackScreenProps<DashboardStackParamList, "Recording">;
 
 export function RecordingScreen({ navigation, route }: Props) {
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
   const [mode, setMode] = useState<AudioMode | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -260,7 +261,7 @@ export function RecordingScreen({ navigation, route }: Props) {
     const result = await AudioModule.requestRecordingPermissionsAsync();
     if (!result.granted) {
       setHasPermission(false);
-      Alert.alert(
+      showAlert(
         "Microphone access required",
         "Enable microphone access in Settings to record voice memos.",
       );
@@ -382,7 +383,7 @@ export function RecordingScreen({ navigation, route }: Props) {
   };
 
   const handleCancel = () => {
-    Alert.alert(
+    showAlert(
       "Discard recording?",
       "Your recording and transcript will be lost.",
       [

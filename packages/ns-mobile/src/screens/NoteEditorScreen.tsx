@@ -5,12 +5,12 @@ import {
   TextInput,
   ScrollView,
   Pressable,
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Markdown from "react-native-markdown-display";
@@ -75,6 +75,7 @@ type Props = NativeStackScreenProps<NotesStackParamList, "NoteEditor">;
 export function NoteEditorScreen({ route, navigation }: Props) {
   const initialNoteId = route.params?.noteId;
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
 
   const [noteId, setNoteId] = useState(initialNoteId);
   const [title, setTitle] = useState("");
@@ -266,7 +267,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   }, [navigation, flush]);
 
   const handleDelete = useCallback(() => {
-    Alert.alert("Move to Trash", "Move this note to Trash?", [
+    showAlert("Move to Trash", title.trim() || "Untitled", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Move to Trash",
@@ -279,7 +280,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         },
       },
     ]);
-  }, [noteId, deleteNoteMutation, navigation]);
+  }, [noteId, title, deleteNoteMutation, navigation, showAlert]);
 
   const handleFolderSelect = useCallback(
     (selectedFolderId: string | undefined) => {
@@ -398,11 +399,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to generate summary.";
-      Alert.alert("AI Summary", message);
+      showAlert("AI Summary", message);
     } finally {
       setAiBusyKey(null);
     }
-  }, [noteId, aiBusyKey, flush, updateNoteMutation]);
+  }, [noteId, aiBusyKey, flush, updateNoteMutation, showAlert]);
 
   // Phase B.2: ask the API for tag suggestions for the current
   // note, dedupe against the existing tag list, and persist the
@@ -420,7 +421,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       await flush();
       const suggested = await apiSuggestTags(noteId);
       if (suggested.length === 0) {
-        Alert.alert(
+        showAlert(
           "AI Tags",
           "No tag suggestions returned. Try writing more content first.",
         );
@@ -428,7 +429,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       }
       const merged = Array.from(new Set([...tags, ...suggested]));
       if (merged.length === tags.length) {
-        Alert.alert(
+        showAlert(
           "AI Tags",
           "Suggested tags are already on this note.",
         );
@@ -442,11 +443,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to suggest tags.";
-      Alert.alert("AI Tags", message);
+      showAlert("AI Tags", message);
     } finally {
       setAiBusyKey(null);
     }
-  }, [noteId, aiBusyKey, flush, tags, updateNoteMutation]);
+  }, [noteId, aiBusyKey, flush, tags, updateNoteMutation, showAlert]);
 
   // Phase D — pick an image from the camera roll or take a new one,
   // resize via expo-image-manipulator, upload to R2 via the existing
@@ -497,7 +498,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         // server sees the freshest copy + the note ID is allocated.
         await flush();
         if (!noteId) {
-          Alert.alert("Image", "Please add some content first so the note is saved.");
+          showAlert("Image", "Please add some content first so the note is saved.");
           return;
         }
 
@@ -507,7 +508,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             ? await ImagePicker.requestCameraPermissionsAsync()
             : await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!perm.granted) {
-          Alert.alert(
+          showAlert(
             source === "camera" ? "Camera permission needed" : "Photo library permission needed",
             "Please enable access in Settings to attach images to your notes.",
           );
@@ -542,7 +543,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         // we surface a one-line notice and skip the upload).
         const isWifi = connectionType === "wifi";
         if (imageUploadsWifiOnly && !isWifi) {
-          Alert.alert(
+          showAlert(
             "Wi-Fi only",
             "This image will upload when you're back on Wi-Fi.",
           );
@@ -560,7 +561,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         insertImageMarkdownAtCursor(uploaded.r2Url, "");
       } catch (err) {
         const message = err instanceof Error ? err.message : "Image upload failed.";
-        Alert.alert("Image", message);
+        showAlert("Image", message);
       } finally {
         setImagePickerBusy(null);
       }
@@ -572,12 +573,13 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       connectionType,
       imageUploadsWifiOnly,
       insertImageMarkdownAtCursor,
+      showAlert,
     ],
   );
 
   const handleAiSummaryDelete = useCallback(() => {
     if (!noteId) return;
-    Alert.alert(
+    showAlert(
       "Delete Summary",
       "Delete this AI summary? This cannot be undone.",
       [
@@ -595,7 +597,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         },
       ],
     );
-  }, [noteId, updateNoteMutation]);
+  }, [noteId, updateNoteMutation, showAlert]);
 
   const mdStyles = useMemo(
     () => ({

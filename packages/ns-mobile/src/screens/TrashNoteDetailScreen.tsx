@@ -4,9 +4,9 @@ import {
   Text,
   ScrollView,
   Pressable,
-  Alert,
   StyleSheet,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Markdown from "react-native-markdown-display";
 import { markdownRules } from "@/lib/markdownRules";
@@ -25,6 +25,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, "TrashNoteDetail">;
 export function TrashNoteDetailScreen({ route, navigation }: Props) {
   const { note } = route.params;
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
 
   const { data: foldersData } = useFolders();
   const restoreNote = useRestoreNote();
@@ -40,7 +41,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
   }, [note.id, restoreNote, navigation]);
 
   const handlePermanentDelete = useCallback(() => {
-    Alert.alert(
+    showAlert(
       "Delete Permanently",
       `"${note.title || "Untitled"}" will be permanently deleted. This cannot be undone.`,
       [
@@ -56,7 +57,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
         },
       ],
     );
-  }, [note.id, note.title, permanentDelete, navigation]);
+  }, [note.id, note.title, permanentDelete, navigation, showAlert]);
 
   // Header actions
   useEffect(() => {
