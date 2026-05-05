@@ -5,12 +5,14 @@ export type NotesStackParamList = {
   NotesList: undefined;
   NoteDetail: { noteId: string };
   NoteEditor: { noteId?: string };
+  NoteDiff: { noteId: string; versionId: string };
 };
 
 export type DashboardStackParamList = {
   DashboardHome: undefined;
   NoteDetail: { noteId: string };
   NoteEditor: { noteId?: string };
+  NoteDiff: { noteId: string; versionId: string };
   /** Optional `mode` skips the in-screen picker and starts that
    *  recording mode immediately. Used by the Quick Actions buttons
    *  on the Dashboard. */
@@ -21,6 +23,7 @@ export type AiStackParamList = {
   AiHome: undefined;
   NoteDetail: { noteId: string };
   NoteEditor: { noteId?: string };
+  NoteDiff: { noteId: string; versionId: string };
 };
 
 export type SettingsStackParamList = {

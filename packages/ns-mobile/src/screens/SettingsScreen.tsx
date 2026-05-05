@@ -7,8 +7,8 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  Alert,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -30,6 +30,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, "SettingsHome">;
 
 export function SettingsScreen({ navigation }: Props) {
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const { data: trashCount } = useTrashCount();
@@ -45,7 +46,7 @@ export function SettingsScreen({ navigation }: Props) {
   });
 
   const handleLogout = () => {
-    Alert.alert("Log Out", "Are you sure you want to log out?", [
+    showAlert("Log Out", "Are you sure you want to log out?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Log Out",

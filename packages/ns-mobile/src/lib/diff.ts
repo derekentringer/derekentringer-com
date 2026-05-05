@@ -3,9 +3,8 @@ export interface DiffLine {
   text: string;
 }
 
-/**
- * LCS-based line diff. Returns an array of lines tagged as same, added, or removed.
- */
+/** LCS-based line diff. Mirrors ns-web/ns-desktop's `lib/diff.ts` so
+ *  unified-diff output is consistent across all three platforms. */
 export function diffLines(oldText: string, newText: string): DiffLine[] {
   const oldLines = oldText.split("\n");
   const newLines = newText.split("\n");
@@ -13,7 +12,6 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
   const m = oldLines.length;
   const n = newLines.length;
 
-  // Build LCS table
   const dp: number[][] = Array.from({ length: m + 1 }, () =>
     Array(n + 1).fill(0),
   );
@@ -28,7 +26,6 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
     }
   }
 
-  // Backtrack to produce diff
   const result: DiffLine[] = [];
   let i = m;
   let j = n;

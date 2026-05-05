@@ -6,6 +6,7 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
+  useWindowDimensions,
 } from "react-native";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
@@ -35,11 +36,13 @@ function QuickActionTile({
   label,
   onPress,
   themeColors,
+  width,
 }: {
   icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
   label: string;
   onPress: () => void;
   themeColors: ReturnType<typeof useThemeColors>;
+  width: number;
 }) {
   return (
     <Pressable
@@ -47,6 +50,7 @@ function QuickActionTile({
       style={({ pressed }) => [
         quickActionStyles.tile,
         {
+          width,
           backgroundColor: themeColors.card,
           borderColor: pressed ? `${themeColors.primary}80` : themeColors.border,
         },
@@ -65,14 +69,18 @@ function QuickActionTile({
   );
 }
 
+const QUICK_ACTIONS_GAP = 6;
+const QUICK_ACTIONS_MAX_TILES = 5;
+// Minimum tile width that keeps the longest label ("Verbatim") legible
+// at 10px font without truncation. Below this width the row wraps to
+// a second line rather than squeezing the labels.
+const QUICK_ACTIONS_MIN_TILE_WIDTH = 64;
+
 const quickActionStyles = StyleSheet.create({
-  // 5 tiles on a single row on phones as narrow as ~360dp — each
-  // tile flex-1 splits the available width evenly. No minWidth so
-  // they don't push past the edge; minHeight keeps the icon/label
-  // pair vertically centered when the column is squeezed.
+  // Each tile renders at a fixed width sized so MAX_TILES fit on a
+  // single row across the screen width. Fewer tiles stay
+  // left-justified at the same width rather than stretching.
   tile: {
-    flex: 1,
-    minWidth: 0,
     minHeight: 64,
     paddingHorizontal: 4,
     paddingVertical: spacing.sm,
@@ -91,6 +99,7 @@ const quickActionStyles = StyleSheet.create({
 
 export function DashboardScreen({ navigation }: Props) {
   const themeColors = useThemeColors();
+  const { width: screenWidth } = useWindowDimensions();
   const { data, isLoading, isError, refetch, isRefetching } = useDashboard();
   const { data: foldersData } = useFolders();
   const folders = foldersData?.folders ?? [];
@@ -100,6 +109,17 @@ export function DashboardScreen({ navigation }: Props) {
   // the Audio Notes setting are on. Mirrors web/desktop's
   // `audioNotesEnabled = masterAiEnabled && settings.audioNotes`.
   const recordingShortcutsEnabled = masterAiEnabled && audioNotesEnabled;
+  // Fixed per-tile width sized so MAX_TILES fit on the row at the
+  // current screen width, but never below MIN_TILE_WIDTH so labels
+  // stay legible. On very narrow phones the row wraps to a second
+  // line via flexWrap rather than squeezing labels into ellipses.
+  const quickActionTileWidth = Math.max(
+    QUICK_ACTIONS_MIN_TILE_WIDTH,
+    (screenWidth -
+      spacing.md * 2 -
+      QUICK_ACTIONS_GAP * (QUICK_ACTIONS_MAX_TILES - 1)) /
+      QUICK_ACTIONS_MAX_TILES,
+  );
 
   const resolveFolderName = useCallback(
     (note: Note) =>
@@ -227,6 +247,7 @@ export function DashboardScreen({ navigation }: Props) {
               label="New Note"
               onPress={handleNewNote}
               themeColors={themeColors}
+              width={quickActionTileWidth}
             />
             {recordingShortcutsEnabled ? (
               <>
@@ -235,24 +256,28 @@ export function DashboardScreen({ navigation }: Props) {
                   label="Meeting"
                   onPress={() => handleStartRecording("meeting")}
                   themeColors={themeColors}
+                  width={quickActionTileWidth}
                 />
                 <QuickActionTile
                   icon="school-outline"
                   label="Lecture"
                   onPress={() => handleStartRecording("lecture")}
                   themeColors={themeColors}
+                  width={quickActionTileWidth}
                 />
                 <QuickActionTile
                   icon="microphone-outline"
                   label="Memo"
                   onPress={() => handleStartRecording("memo")}
                   themeColors={themeColors}
+                  width={quickActionTileWidth}
                 />
                 <QuickActionTile
                   icon="format-quote-close"
                   label="Verbatim"
                   onPress={() => handleStartRecording("verbatim")}
                   themeColors={themeColors}
+                  width={quickActionTileWidth}
                 />
               </>
             ) : null}
@@ -393,12 +418,14 @@ const styles = StyleSheet.create({
   heroWrap: {
     paddingHorizontal: spacing.md,
   },
-  // Single-row layout: each tile is `flex: 1` so 5 tiles share the
-  // available width evenly on every phone size. No flex-wrap — we
-  // want the row to never break onto a second line.
+  // Each tile renders at a fixed width sized for 5 tiles to fit
+  // edge-to-edge; fewer tiles stay left-justified. On screens too
+  // narrow to fit 5 at the legible minimum, the row wraps so labels
+  // stay readable rather than squeezing onto a single line.
   quickActionsRow: {
     flexDirection: "row",
-    gap: 6,
+    flexWrap: "wrap",
+    gap: QUICK_ACTIONS_GAP,
     paddingHorizontal: spacing.md,
   },
   tileCell: {

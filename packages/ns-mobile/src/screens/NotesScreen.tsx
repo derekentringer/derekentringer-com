@@ -5,6 +5,7 @@ import { useThemeColors } from "@/theme/colors";
 import { NoteListScreen } from "./NoteListScreen";
 import { NoteDetailScreen } from "./NoteDetailScreen";
 import { NoteEditorScreen } from "./NoteEditorScreen";
+import { NoteDiffScreen } from "./NoteDiffScreen";
 
 const Stack = createNativeStackNavigator<NotesStackParamList>();
 
@@ -33,6 +34,11 @@ export function NotesScreen() {
         name="NoteEditor"
         component={NoteEditorScreen}
         options={{ title: "Editor" }}
+      />
+      <Stack.Screen
+        name="NoteDiff"
+        component={NoteDiffScreen}
+        options={{ title: "Compare Version" }}
       />
     </Stack.Navigator>
   );

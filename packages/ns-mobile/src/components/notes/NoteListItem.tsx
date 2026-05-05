@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import type { Note } from "@derekentringer/ns-shared";
+import { type Note, stripFrontmatter } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
 import { stripMarkdown } from "@/lib/markdown";
@@ -13,7 +13,7 @@ interface NoteListItemProps {
 
 export function NoteListItem({ note, onPress }: NoteListItemProps) {
   const themeColors = useThemeColors();
-  const preview = stripMarkdown(note.content || "").slice(0, 120);
+  const preview = stripMarkdown(stripFrontmatter(note.content || "")).slice(0, 120);
   const maxTags = 3;
   const visibleTags = note.tags.slice(0, maxTags);
   const overflowCount = note.tags.length - maxTags;

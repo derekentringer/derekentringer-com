@@ -534,7 +534,7 @@ async function pushChanges(id: string): Promise<void> {
     return order(a) - order(b);
   });
 
-  const payload: SyncPushRequest = { deviceId: id, changes };
+  const payload: SyncPushRequest = { deviceId: id, changes, origin: "desktop" };
 
   const response = await apiFetch("/sync/push", {
     method: "POST",
@@ -619,7 +619,7 @@ export async function forcePushChanges(deviceIdOverride: string, changeIds: stri
     });
   }
 
-  const payload: SyncPushRequest = { deviceId: id, changes };
+  const payload: SyncPushRequest = { deviceId: id, changes, origin: "desktop" };
   const response = await apiFetch("/sync/push", {
     method: "POST",
     body: JSON.stringify(payload),

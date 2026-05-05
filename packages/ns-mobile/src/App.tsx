@@ -10,6 +10,7 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppNavigator } from "@/navigation/AppNavigator";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { AppAlertProvider } from "@/components/AppAlertProvider";
 import { colors } from "@/theme";
 
 const queryClient = new QueryClient({
@@ -43,10 +44,12 @@ export default function App() {
         <SafeAreaProvider>
           <KeyboardProvider>
             <BottomSheetModalProvider>
-              <StatusBar style="auto" />
-              <ErrorBoundary>
-                <AppNavigator />
-              </ErrorBoundary>
+              <AppAlertProvider>
+                <StatusBar style="auto" />
+                <ErrorBoundary>
+                  <AppNavigator />
+                </ErrorBoundary>
+              </AppAlertProvider>
             </BottomSheetModalProvider>
           </KeyboardProvider>
         </SafeAreaProvider>

@@ -250,16 +250,17 @@ describe("NotesPage", () => {
     const noteButton = await screen.findByText("Test Note");
     await userEvent.click(noteButton);
 
-    // Click move-to-trash — first click shows confirmation
+    // Click move-to-trash — opens confirmation dialog
     const deleteButton = screen.getByLabelText("Move to Trash");
     await userEvent.click(deleteButton);
 
-    // Confirmation UI should appear
-    expect(screen.getByText("Move to Trash?")).toBeInTheDocument();
-    expect(screen.getByText("Yes")).toBeInTheDocument();
-
-    // Click confirm to actually delete
-    await userEvent.click(screen.getByText("Yes"));
+    // ConfirmDialog: title + confirm button both read "Move to Trash"
+    const candidates = await screen.findAllByText("Move to Trash");
+    const confirmBtn = candidates.find(
+      (el) => el.tagName === "BUTTON" && el.closest(".fixed.inset-0") !== null,
+    );
+    expect(confirmBtn).toBeDefined();
+    await userEvent.click(confirmBtn!);
 
     await waitFor(() => {
       expect(mockDeleteNote).toHaveBeenCalledWith("note-1");
@@ -1049,10 +1050,15 @@ describe("NotesPage", () => {
         expect(screen.getByLabelText("Close Test Note")).toBeInTheDocument();
       });
 
-      // Move the note to Trash
+      // Move the note to Trash via dialog
       const deleteButton = screen.getByLabelText("Move to Trash");
       await userEvent.click(deleteButton);
-      await userEvent.click(screen.getByText("Yes"));
+      const candidates = await screen.findAllByText("Move to Trash");
+      const confirmBtn = candidates.find(
+        (el) => el.tagName === "BUTTON" && el.closest(".fixed.inset-0") !== null,
+      );
+      expect(confirmBtn).toBeDefined();
+      await userEvent.click(confirmBtn!);
 
       // Tab should be removed
       await waitFor(() => {

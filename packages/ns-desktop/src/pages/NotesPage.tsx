@@ -1724,46 +1724,9 @@ export function NotesPage() {
   handleAudioNoteCreatedRef.current = handleAudioNoteCreated;
   handleAudioNoteFailedRef.current = handleAudioNoteFailed;
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!selectedId) return;
-
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-
-    try {
-      // For locally managed files: move to OS trash + hard-delete
-      const selectedNote = notes.find((n) => n.id === selectedId);
-      if (selectedNote?.isLocalFile) {
-        const localPath = await getNoteLocalPath(selectedId);
-        if (localPath && await fileExists(localPath)) {
-          suppressPath(localPath, 2000);
-          await moveToTrash(localPath);
-        }
-        enqueueSyncAction("delete", selectedId, "note").catch(() => {});
-        await hardDeleteNote(selectedId);
-      } else {
-        await softDeleteNote(selectedId);
-        setTrashCount((c) => c + 1);
-      }
-
-      if (selectedId === previewTabId) setPreviewTabId(null);
-      setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
-      tabNoteCacheRef.current.delete(selectedId);
-      setNotes((prev) => prev.filter((n) => n.id !== selectedId));
-      setFavoriteNotes((prev) => prev.filter((n) => n.id !== selectedId));
-      setSelectedId(null);
-      setTitle("");
-      setContent("");
-      setConfirmDelete(false);
-      await refreshSidebarData();
-      loadNoteTitles();
-      notifyLocalChange();
-    } catch (err) {
-      console.error("Failed to delete note:", err);
-      showError("Failed to delete note");
-    }
+    setConfirmDelete(true);
   }
 
   async function handleDeleteNote(noteId: string) {
@@ -4399,32 +4362,14 @@ export function NotesPage() {
                   </svg>
                 </button>
               )}
-              {confirmDelete ? (
-                <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-destructive">Move to Trash?</span>
-                  <button
-                    onClick={handleDelete}
-                    className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors cursor-pointer"
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="px-1.5 py-0.5 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    No
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={handleDelete}
-                  className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
-                  title="Move to Trash"
-                  aria-label="Move to Trash"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                </button>
-              )}
+              <button
+                onClick={handleDelete}
+                className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
+                title="Move to Trash"
+                aria-label="Move to Trash"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
             </div>
 
             {/* Breadcrumb + Title */}
@@ -4593,6 +4538,19 @@ export function NotesPage() {
                   setConfirmDeleteSummary(false);
                 }}
                 onCancel={() => setConfirmDeleteSummary(false)}
+              />
+            )}
+            {confirmDelete && selectedId && (
+              <ConfirmDialog
+                title="Move to Trash"
+                message={selectedNote?.title || "Untitled"}
+                confirmLabel="Move to Trash"
+                onConfirm={() => {
+                  const id = selectedId;
+                  setConfirmDelete(false);
+                  void handleDeleteNote(id);
+                }}
+                onCancel={() => setConfirmDelete(false)}
               />
             )}
             {/* Tag input — shown when tags exist, manually opened, or generating */}
@@ -4906,6 +4864,8 @@ export function NotesPage() {
                       onSelectVersion={setSelectedVersion}
                       selectedVersionId={selectedVersion?.id}
                       refreshKey={versionRefreshKey}
+                      currentTitle={title}
+                      currentContent={content}
                     />
                   ) : drawerTab === "toc" && selectedId ? (
                     <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />

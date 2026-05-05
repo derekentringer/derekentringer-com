@@ -2,10 +2,10 @@ import React, { useCallback } from "react";
 import {
   View,
   FlatList,
-  Alert,
   RefreshControl,
   StyleSheet,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -30,6 +30,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, "Trash">;
 
 export function TrashScreen({ navigation }: Props) {
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
   const {
     data: notes = [],
     isLoading,
@@ -59,7 +60,7 @@ export function TrashScreen({ navigation }: Props) {
   const handlePermanentDelete = useCallback(
     (noteId: string) => {
       const note = notes.find((n: Note) => n.id === noteId);
-      Alert.alert(
+      showAlert(
         "Delete Permanently",
         `"${note?.title || "Untitled"}" will be permanently deleted. This cannot be undone.`,
         [
@@ -83,11 +84,11 @@ export function TrashScreen({ navigation }: Props) {
         ],
       );
     },
-    [permanentDelete, notes],
+    [permanentDelete, notes, showAlert],
   );
 
   const handleEmptyTrash = useCallback(() => {
-    Alert.alert(
+    showAlert(
       "Empty Trash",
       `Permanently delete all ${notes.length} trashed notes? This cannot be undone.`,
       [
@@ -107,7 +108,7 @@ export function TrashScreen({ navigation }: Props) {
         },
       ],
     );
-  }, [emptyTrashMutation, notes.length]);
+  }, [emptyTrashMutation, notes.length, showAlert]);
 
   const handleRefresh = useCallback(async () => {
     await refetch();

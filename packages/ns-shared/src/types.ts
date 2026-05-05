@@ -185,6 +185,10 @@ export interface SyncCursor {
 export interface SyncPushRequest {
   deviceId: string;
   changes: SyncChange[];
+  /** Which client is pushing — used to tag the originating platform
+   *  on captured note versions ("web" / "mobile" / "desktop"). When
+   *  omitted, the server falls back to "web". */
+  origin?: string;
 }
 
 export interface SyncPullRequest {

@@ -45,6 +45,44 @@ export function relativeTime(dateStr: string): string {
   return `${years}y ago`;
 }
 
+/** Verbose relative-time ladder used by the version-history list.
+ *  Mirrors the format used on ns-web and ns-desktop's version
+ *  history so the same row reads the same on every platform. Goes
+ *  down to per-minute precision and never falls back to a raw
+ *  date — older versions roll up into weeks, months, then years. */
+export function relativeTimeVerbose(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = now - then;
+
+  if (diff < 0) return "just now";
+
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return minutes === 1 ? "1 min ago" : `${minutes} mins ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return hours === 1 ? "1 hr ago" : `${hours} hrs ago`;
+  }
+
+  const days = Math.floor(hours / 24);
+  if (days < 14) return days === 1 ? "1 day ago" : `${days} days ago`;
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 8) return `${weeks} wks ago`;
+
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} mos ago`;
+
+  const years = Math.floor(days / 365);
+  return years === 1 ? "1 yr ago" : `${years} yrs ago`;
+}
+
 /** Modern-chat-style timestamp ladder used by the AI Assistant
  *  screen. Mirrors the format used on ns-web and ns-desktop so
  *  the same message renders identically across platforms.

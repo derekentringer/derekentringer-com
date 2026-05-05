@@ -33,7 +33,7 @@ describe("captureVersion", () => {
     await captureVersion("n1", "Title", "Content");
 
     expect(mockPrisma.noteVersion.create).toHaveBeenCalledWith({
-      data: { noteId: "n1", title: "Title", content: "Content" },
+      data: { noteId: "n1", title: "Title", content: "Content", origin: "web" },
     });
   });
 
