@@ -1,4 +1,4 @@
-import type { Note } from "@derekentringer/ns-shared";
+import { type Note, stripFrontmatter } from "@derekentringer/ns-shared";
 
 interface DashboardNoteCardProps {
   note: Note;
@@ -68,7 +68,7 @@ function stripMarkdown(text: string): string {
 }
 
 export function DashboardNoteCard({ note, variant, onClick }: DashboardNoteCardProps) {
-  const contentPreview = stripMarkdown(note.content || "");
+  const contentPreview = stripMarkdown(stripFrontmatter(note.content || ""));
   const isHero = variant === "hero";
   const maxTags = 3;
   const visibleTags = note.tags.slice(0, maxTags);

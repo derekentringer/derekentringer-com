@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import type { Note } from "@derekentringer/ns-shared";
+import { type Note, stripFrontmatter } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
 import { stripMarkdown } from "@/lib/markdown";
@@ -26,7 +26,7 @@ export function DashboardNoteCard({ note, onPress, variant, compact, folderName 
     variant ?? (compact ? "compact" : "default");
   const isHero = effectiveVariant === "hero";
   const isCompact = effectiveVariant === "compact";
-  const preview = stripMarkdown(note.content || "");
+  const preview = stripMarkdown(stripFrontmatter(note.content || ""));
   const maxTags = isHero ? 4 : isCompact ? 2 : 3;
   const visibleTags = note.tags.slice(0, maxTags);
   const overflowCount = note.tags.length - maxTags;

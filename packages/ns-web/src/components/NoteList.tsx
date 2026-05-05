@@ -5,7 +5,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { NoteSearchResult } from "@derekentringer/shared/ns";
+import { type NoteSearchResult, stripFrontmatter } from "@derekentringer/shared/ns";
 import type { ExportFormat } from "../lib/importExport.ts";
 import { stripMarkdown } from "../lib/stripMarkdown.ts";
 import { SearchSnippet } from "./SearchSnippet.tsx";
@@ -74,7 +74,7 @@ function SortableNoteItem({
   const snippet = useMemo(() => {
     if (note.headline) return null; // search results use headline instead
     if (!note.content) return null;
-    return stripMarkdown(note.content, 80);
+    return stripMarkdown(stripFrontmatter(note.content), 80);
   }, [note.content, note.headline]);
 
   const relativeDate = useMemo(() => {
