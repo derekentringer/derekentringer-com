@@ -31,6 +31,13 @@ import { tags } from "@lezer/highlight";
 
 export interface MarkdownEditorHandle {
   focus: () => void;
+  /** Focuses the editor with the cursor placed on the first body
+   *  line — i.e. the line right after the YAML frontmatter block, if
+   *  one exists. Falls back to position 0 when there's no frontmatter.
+   *  Without this, `focus()` from the title input lands inside the
+   *  hidden frontmatter and the cursor is invisible until the user
+   *  starts typing. */
+  focusBody: () => void;
   insertBold: () => void;
   insertItalic: () => void;
   insertStrikethrough: () => void;
@@ -420,6 +427,22 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
+    focusBody: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      const FRONTMATTER_REGEX = /^---[ \t]*\n[\s\S]*?\n?---[ \t]*\n?/;
+      const head = view.state.doc.sliceString(
+        0,
+        Math.min(view.state.doc.length, 5000),
+      );
+      const match = head.match(FRONTMATTER_REGEX);
+      const pos = match ? match[0].length : 0;
+      view.dispatch({
+        selection: { anchor: pos, head: pos },
+        scrollIntoView: true,
+      });
+      view.focus();
+    },
     insertBold: () => {
       if (viewRef.current) wrapSelection(viewRef.current, "**");
     },
@@ -501,7 +524,9 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
             hideFm ? hideFrontmatterExt() : [],
           ),
           frontmatterHighlightCompartment.current.of(
-            hideFm ? [] : highlightFrontmatterExt(),
+            hideFm || viewMode === "editor" || viewMode === "live"
+              ? []
+              : highlightFrontmatterExt(),
           ),
           wordWrapCompartment.current.of(
             wordWrap ? EditorView.lineWrapping : [],
@@ -650,7 +675,12 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
     });
   }, [showLineNumbers, hideFm]);
 
-  // Toggle frontmatter visibility
+  // Toggle frontmatter visibility + highlight. Highlight is skipped
+  // in Editor and Live modes — those are the "writing" modes where
+  // YAML coloring on the title-block reads as visual noise. Split
+  // mode keeps the highlight so the source pane still distinguishes
+  // metadata from body.
+  const skipHighlight = viewMode === "editor" || viewMode === "live";
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -660,7 +690,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
           hideFm ? hideFrontmatterExt() : [],
         ),
         frontmatterHighlightCompartment.current.reconfigure(
-          hideFm ? [] : highlightFrontmatterExt(),
+          hideFm || skipHighlight ? [] : highlightFrontmatterExt(),
         ),
         // Swap line numbers gutter: offset gutter is in the fold extension,
         // standard lineNumbers() is used in source mode
@@ -675,7 +705,7 @@ export const MarkdownEditor = forwardRef(function MarkdownEditor(
         view.scrollDOM.scrollTop = 0;
       });
     }
-  }, [hideFm, showLineNumbers]);
+  }, [hideFm, showLineNumbers, skipHighlight]);
 
   // Toggle word wrap
   useEffect(() => {

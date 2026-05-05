@@ -1167,6 +1167,15 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
       // Re-fetch to ensure proper sort order
       loadNotes();
       setDashboardKey((k) => k + 1);
+      // Focus the title input and select "Untitled" so the user can
+      // type to replace it immediately. setTimeout lets React commit
+      // the new note + tab switch before we query for the input.
+      setTimeout(() => {
+        const titleInput = document.querySelector<HTMLInputElement>(
+          "[data-title-input]",
+        );
+        titleInput?.select();
+      }, 50);
     } catch {
       showError("Failed to create note");
     }
@@ -2994,6 +3003,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                 />
               </div>
               <input
+                data-title-input
                 type="text"
                 value={title}
                 onChange={(e) => {
@@ -3015,7 +3025,10 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     handleSave();
-                    editorRef.current?.focus();
+                    // Jump past the hidden frontmatter so the cursor
+                    // lands on the first visible body line instead of
+                    // inside the YAML block (where it'd be invisible).
+                    editorRef.current?.focusBody();
                   }
                 }}
                 placeholder="Note title"
