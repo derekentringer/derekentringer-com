@@ -18,6 +18,7 @@ import useSyncStore from "@/store/syncStore";
 import useAiSettingsStore, {
   type AutoApproveSettings,
 } from "@/store/aiSettingsStore";
+import useDashboardSettingsStore from "@/store/dashboardSettingsStore";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useTrashCount } from "@/hooks/useTrash";
@@ -190,6 +191,11 @@ export function SettingsScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Dashboard</Text>
+        <DashboardSettingsSection />
+      </View>
+
+      <View style={styles.section}>
         <Text style={styles.sectionTitle}>AI Assistant</Text>
         <AiSettingsSection />
       </View>
@@ -238,6 +244,69 @@ export function SettingsScreen({ navigation }: Props) {
 
       <SyncIssuesSheet bottomSheetRef={syncIssuesRef} />
     </ScrollView>
+  );
+}
+
+// ─── Dashboard Settings Section ──────────────────────────────────
+
+function DashboardSettingsSection() {
+  const themeColors = useThemeColors();
+  const styles = makeStyles(themeColors);
+  const speedDialEnabled = useDashboardSettingsStore(
+    (s) => s.speedDialEnabled,
+  );
+  const quickActionsEnabled = useDashboardSettingsStore(
+    (s) => s.quickActionsEnabled,
+  );
+  const setSpeedDialEnabled = useDashboardSettingsStore(
+    (s) => s.setSpeedDialEnabled,
+  );
+  const setQuickActionsEnabled = useDashboardSettingsStore(
+    (s) => s.setQuickActionsEnabled,
+  );
+
+  const renderToggle = (
+    label: string,
+    value: boolean,
+    onChange: (v: boolean) => void,
+    info?: string,
+  ) => (
+    <View style={styles.toggleRow} key={label}>
+      <View style={styles.toggleLabelWrap}>
+        <Text style={styles.menuRowText}>{label}</Text>
+        {info && (
+          <Text style={[styles.toggleInfo, { color: themeColors.muted }]}>
+            {info}
+          </Text>
+        )}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{
+          false: themeColors.mutedForeground,
+          true: themeColors.primary,
+        }}
+        thumbColor="#fff"
+      />
+    </View>
+  );
+
+  return (
+    <View>
+      {renderToggle(
+        "Show Quick Actions",
+        quickActionsEnabled,
+        setQuickActionsEnabled,
+        "Render the New Note + recording shortcuts row at the top of the Dashboard.",
+      )}
+      {renderToggle(
+        "Speed-dial FAB",
+        speedDialEnabled,
+        setSpeedDialEnabled,
+        "Tap the “+” button to expand New Note plus the four recording modes. Off keeps a single “+” FAB that creates a note.",
+      )}
+    </View>
   );
 }
 

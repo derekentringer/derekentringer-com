@@ -6,6 +6,7 @@ import { NoteListScreen } from "./NoteListScreen";
 import { NoteDetailScreen } from "./NoteDetailScreen";
 import { NoteEditorScreen } from "./NoteEditorScreen";
 import { NoteDiffScreen } from "./NoteDiffScreen";
+import { RecordingScreen } from "./RecordingScreen";
 
 const Stack = createNativeStackNavigator<NotesStackParamList>();
 
@@ -39,6 +40,11 @@ export function NotesScreen() {
         name="NoteDiff"
         component={NoteDiffScreen}
         options={{ title: "Compare Version" }}
+      />
+      <Stack.Screen
+        name="Recording"
+        component={RecordingScreen}
+        options={{ title: "New Recording" }}
       />
     </Stack.Navigator>
   );

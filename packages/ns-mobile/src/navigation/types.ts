@@ -6,6 +6,7 @@ export type NotesStackParamList = {
   NoteDetail: { noteId: string };
   NoteEditor: { noteId?: string };
   NoteDiff: { noteId: string; versionId: string };
+  Recording: { mode?: "meeting" | "lecture" | "memo" | "verbatim" } | undefined;
 };
 
 export type DashboardStackParamList = {
