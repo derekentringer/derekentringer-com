@@ -14,6 +14,7 @@ import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { NoteEditorScreen } from "@/screens/NoteEditorScreen";
+import { NoteDiffScreen } from "@/screens/NoteDiffScreen";
 import { NotesScreen } from "@/screens/NotesScreen";
 import { AiScreen } from "@/screens/AiScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
@@ -74,6 +75,11 @@ function DashboardNavigator() {
         options={{ title: "Editor" }}
       />
       <DashboardStack.Screen
+        name="NoteDiff"
+        component={NoteDiffScreen}
+        options={{ title: "Compare Version" }}
+      />
+      <DashboardStack.Screen
         name="Recording"
         component={RecordingScreen}
         options={{ title: "New Recording" }}
@@ -107,6 +113,11 @@ function AiNavigator() {
         name="NoteEditor"
         component={NoteEditorScreen}
         options={{ title: "Editor" }}
+      />
+      <AiStack.Screen
+        name="NoteDiff"
+        component={NoteDiffScreen}
+        options={{ title: "Compare Version" }}
       />
     </AiStack.Navigator>
   );

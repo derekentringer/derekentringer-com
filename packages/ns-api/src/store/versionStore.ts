@@ -7,6 +7,7 @@ export async function captureVersion(
   noteId: string,
   title: string,
   content: string,
+  origin: string = "web",
 ): Promise<void> {
   const prisma = getPrisma();
   const intervalMinutes = await getVersionIntervalMinutes();
@@ -28,7 +29,7 @@ export async function captureVersion(
 
   // Create new version
   await prisma.noteVersion.create({
-    data: { noteId, title, content },
+    data: { noteId, title, content, origin },
   });
 
   // Enforce cap — delete oldest versions beyond limit
@@ -50,7 +51,7 @@ export async function listVersions(
   userId: string,
   noteId: string,
   opts?: { page?: number; pageSize?: number },
-): Promise<{ versions: { id: string; noteId: string; title: string; content: string; createdAt: Date }[]; total: number }> {
+): Promise<{ versions: { id: string; noteId: string; title: string; content: string; origin: string; createdAt: Date }[]; total: number }> {
   const prisma = getPrisma();
 
   // Verify note belongs to user
@@ -82,7 +83,7 @@ export async function listVersions(
 export async function getVersion(
   userId: string,
   versionId: string,
-): Promise<{ id: string; noteId: string; title: string; content: string; createdAt: Date } | null> {
+): Promise<{ id: string; noteId: string; title: string; content: string; origin: string; createdAt: Date } | null> {
   const prisma = getPrisma();
   const version = await prisma.noteVersion.findUnique({
     where: { id: versionId },
@@ -96,6 +97,7 @@ export async function getVersion(
     noteId: version.noteId,
     title: version.title,
     content: version.content,
+    origin: version.origin,
     createdAt: version.createdAt,
   };
 }

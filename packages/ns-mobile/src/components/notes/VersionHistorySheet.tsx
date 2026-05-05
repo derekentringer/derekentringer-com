@@ -1,10 +1,8 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   View,
   Text,
   Pressable,
-  FlatList,
-  Alert,
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
@@ -12,124 +10,92 @@ import {
   BottomSheetModal,
   BottomSheetView,
   BottomSheetBackdrop,
+  BottomSheetFlatList,
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NoteVersion } from "@derekentringer/ns-shared";
-import { useThemeColors } from "@/theme/colors";
+import { useThemeColors, type ThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
-import { relativeTime } from "@/lib/time";
+import { relativeTimeVerbose } from "@/lib/time";
+import { diffLines, diffStats } from "@/lib/diff";
 
 interface VersionHistorySheetProps {
   bottomSheetRef: React.RefObject<BottomSheetModal | null>;
   versions: NoteVersion[];
   isLoading: boolean;
-  onRestore: (versionId: string) => void;
-  isRestoring: boolean;
+  /** Current note title — used for the diff stats summary on each
+   *  row. */
+  currentTitle: string;
+  /** Current note content — used for the diff stats summary on each
+   *  row. */
+  currentContent: string;
+  /** Tapping a row dismisses the sheet and asks the host screen to
+   *  open the diff view for that version. */
+  onSelectVersion: (versionId: string) => void;
+}
+
+function formatFullTimestamp(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleString();
+}
+
+function originLabel(origin: string): string {
+  if (!origin) return "Edit";
+  // Quick humanization: snake/kebab → Title Case.
+  return origin
+    .replace(/[_-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(" ");
 }
 
 export function VersionHistorySheet({
   bottomSheetRef,
   versions,
   isLoading,
-  onRestore,
-  isRestoring,
+  currentTitle,
+  currentContent,
+  onSelectVersion,
 }: VersionHistorySheetProps) {
   const themeColors = useThemeColors();
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const handleRestore = useCallback(
+  // Pre-compute diff stats for each version against the current
+  // note. Memoized so the FlatList row factory doesn't re-run the
+  // O(n*m) LCS on every render.
+  const statsByVersion = useMemo(() => {
+    const map = new Map<string, { added: number; removed: number }>();
+    for (const v of versions) {
+      const stats = diffStats(diffLines(v.content, currentContent));
+      map.set(v.id, stats);
+    }
+    return map;
+  }, [versions, currentContent]);
+
+  const handlePress = useCallback(
     (versionId: string) => {
-      Alert.alert(
-        "Restore Version",
-        "This will replace the current content with this version. Continue?",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Restore",
-            onPress: () => onRestore(versionId),
-          },
-        ],
-      );
+      bottomSheetRef.current?.dismiss();
+      onSelectVersion(versionId);
     },
-    [onRestore],
+    [bottomSheetRef, onSelectVersion],
   );
 
   const renderItem = useCallback(
     ({ item }: { item: NoteVersion }) => {
-      const isExpanded = expandedId === item.id;
-
+      const stats = statsByVersion.get(item.id) ?? { added: 0, removed: 0 };
+      const titleChanged = item.title !== currentTitle;
       return (
-        <View
-          style={[
-            styles.versionItem,
-            {
-              backgroundColor: themeColors.card,
-              borderColor: themeColors.border,
-            },
-          ]}
-        >
-          <Pressable
-            style={styles.versionHeader}
-            onPress={() => setExpandedId(isExpanded ? null : item.id)}
-            accessibilityRole="button"
-          >
-            <View style={styles.versionInfo}>
-              <Text style={[styles.versionTime, { color: themeColors.foreground }]}>
-                {relativeTime(item.createdAt)}
-              </Text>
-              <Text style={[styles.versionOrigin, { color: themeColors.muted }]}>
-                {item.origin}
-              </Text>
-            </View>
-            <MaterialCommunityIcons
-              name={isExpanded ? "chevron-up" : "chevron-down"}
-              size={20}
-              color={themeColors.muted}
-            />
-          </Pressable>
-
-          {isExpanded ? (
-            <View style={styles.expandedContent}>
-              <Text
-                style={[styles.versionTitle, { color: themeColors.foreground }]}
-              >
-                {item.title || "Untitled"}
-              </Text>
-              <Text
-                style={[styles.versionContent, { color: themeColors.muted }]}
-                numberOfLines={10}
-              >
-                {item.content || "(empty)"}
-              </Text>
-              <Pressable
-                style={[
-                  styles.restoreButton,
-                  { backgroundColor: themeColors.primary },
-                ]}
-                onPress={() => handleRestore(item.id)}
-                disabled={isRestoring}
-                accessibilityRole="button"
-              >
-                {isRestoring ? (
-                  <ActivityIndicator size="small" color={themeColors.background} />
-                ) : (
-                  <Text
-                    style={[
-                      styles.restoreText,
-                      { color: themeColors.background },
-                    ]}
-                  >
-                    Restore This Version
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
+        <VersionRow
+          version={item}
+          stats={stats}
+          titleChanged={titleChanged}
+          themeColors={themeColors}
+          onPress={() => handlePress(item.id)}
+        />
       );
     },
-    [expandedId, themeColors, handleRestore, isRestoring],
+    [statsByVersion, currentTitle, themeColors, handlePress],
   );
 
   return (
@@ -147,38 +113,154 @@ export function VersionHistorySheet({
         />
       )}
     >
-      <BottomSheetView style={styles.content}>
-        <View style={styles.header}>
-          <MaterialCommunityIcons
-            name="history"
-            size={20}
-            color={themeColors.primary}
-          />
-          <Text style={[styles.title, { color: themeColors.foreground }]}>
-            Version History
-          </Text>
-        </View>
-
-        {isLoading ? (
+      {isLoading ? (
+        <BottomSheetView style={styles.content}>
+          <View style={styles.header}>
+            <MaterialCommunityIcons
+              name="history"
+              size={20}
+              color={themeColors.primary}
+            />
+            <Text style={[styles.title, { color: themeColors.foreground }]}>
+              Version History
+            </Text>
+          </View>
           <ActivityIndicator
             size="large"
             color={themeColors.primary}
             style={styles.loader}
           />
-        ) : versions.length === 0 ? (
+        </BottomSheetView>
+      ) : versions.length === 0 ? (
+        <BottomSheetView style={styles.content}>
+          <View style={styles.header}>
+            <MaterialCommunityIcons
+              name="history"
+              size={20}
+              color={themeColors.primary}
+            />
+            <Text style={[styles.title, { color: themeColors.foreground }]}>
+              Version History
+            </Text>
+          </View>
           <Text style={[styles.emptyText, { color: themeColors.muted }]}>
             No versions available
           </Text>
-        ) : (
-          <FlatList
-            data={versions}
-            keyExtractor={(item) => item.id}
-            renderItem={renderItem}
-            contentContainerStyle={styles.list}
-          />
-        )}
-      </BottomSheetView>
+        </BottomSheetView>
+      ) : (
+        <BottomSheetFlatList
+          data={versions}
+          keyExtractor={(item: NoteVersion) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          ListHeaderComponent={
+            <View style={styles.header}>
+              <MaterialCommunityIcons
+                name="history"
+                size={20}
+                color={themeColors.primary}
+              />
+              <Text style={[styles.title, { color: themeColors.foreground }]}>
+                Version History
+              </Text>
+            </View>
+          }
+        />
+      )}
     </BottomSheetModal>
+  );
+}
+
+interface VersionRowProps {
+  version: NoteVersion;
+  stats: { added: number; removed: number };
+  titleChanged: boolean;
+  themeColors: ThemeColors;
+  onPress: () => void;
+}
+
+function VersionRow({
+  version,
+  stats,
+  titleChanged,
+  themeColors,
+  onPress,
+}: VersionRowProps) {
+  const noChanges = stats.added === 0 && stats.removed === 0;
+  return (
+    <Pressable
+      style={[
+        styles.versionItem,
+        {
+          backgroundColor: themeColors.card,
+          borderColor: themeColors.border,
+        },
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Compare version from ${formatFullTimestamp(version.createdAt)}`}
+    >
+      <View style={styles.versionInfo}>
+        <Text
+          style={[styles.versionTitle, { color: themeColors.foreground }]}
+          numberOfLines={1}
+        >
+          {version.title || "Untitled"}
+        </Text>
+        <Text
+          style={[styles.versionTimestamp, { color: themeColors.muted }]}
+          numberOfLines={1}
+        >
+          {formatFullTimestamp(version.createdAt)}
+          {"  ·  "}
+          {relativeTimeVerbose(version.createdAt)}
+        </Text>
+        <View style={styles.metaRow}>
+          <View
+            style={[
+              styles.originBadge,
+              { backgroundColor: themeColors.input, borderColor: themeColors.border },
+            ]}
+          >
+            <Text style={[styles.originText, { color: themeColors.muted }]}>
+              {originLabel(version.origin)}
+            </Text>
+          </View>
+          {titleChanged ? (
+            <View
+              style={[
+                styles.titleChangedBadge,
+                { backgroundColor: `${themeColors.warning}1A` },
+              ]}
+            >
+              <Text style={[styles.titleChangedText, { color: themeColors.warning }]}>
+                Title changed
+              </Text>
+            </View>
+          ) : null}
+          {noChanges ? (
+            <Text style={[styles.statsText, { color: themeColors.muted }]}>
+              No changes
+            </Text>
+          ) : (
+            <Text style={styles.statsText}>
+              {stats.added > 0 ? (
+                <Text style={{ color: "#4ade80" }}>+{stats.added}</Text>
+              ) : null}
+              {stats.added > 0 && stats.removed > 0 ? " " : null}
+              {stats.removed > 0 ? (
+                <Text style={{ color: "#f87171" }}>−{stats.removed}</Text>
+              ) : null}
+            </Text>
+          )}
+        </View>
+      </View>
+      <MaterialCommunityIcons
+        name="chevron-right"
+        size={20}
+        color={themeColors.muted}
+      />
+    </Pressable>
   );
 }
 
@@ -202,50 +284,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   versionItem: {
+    flexDirection: "row",
+    alignItems: "center",
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     marginBottom: spacing.sm,
-    overflow: "hidden",
-  },
-  versionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     padding: spacing.md,
+    gap: spacing.sm,
   },
   versionInfo: {
     flex: 1,
   },
-  versionTime: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  versionOrigin: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  expandedContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-  },
   versionTitle: {
     fontSize: 14,
     fontWeight: "600",
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  versionContent: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: spacing.sm,
+  versionTimestamp: {
+    fontSize: 12,
+    marginBottom: 6,
   },
-  restoreButton: {
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.sm,
+  metaRow: {
+    flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
   },
-  restoreText: {
-    fontSize: 14,
+  originBadge: {
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  originText: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  titleChangedBadge: {
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  titleChangedText: {
+    fontSize: 11,
     fontWeight: "600",
+  },
+  statsText: {
+    fontSize: 12,
+    fontWeight: "600",
+    fontFamily: "monospace",
   },
   loader: {
     marginTop: spacing.xl,
