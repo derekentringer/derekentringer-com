@@ -1039,9 +1039,6 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     setConfirmPermanentDelete(false);
     setLinkCopied(false);
     setSelectedVersion(null);
-    if (drawerMountedRef.current && qaOpen && drawerTab === "history") {
-      setQaOpen(false);
-    }
     navigate(`/notes/${note.id}`, { replace: true });
   }
 
@@ -1231,39 +1228,9 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     }
   }, [selectedId, isDirty, isSaving, title, content, loadNoteTitles, loadNotes, loadFavoriteNotes]);
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!selectedId) return;
-
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-
-    try {
-      // isLocalFile notes are hard-deleted server-side (+tombstone) and
-      // never touch the trash UI. Soft-deleted notes land in trash and
-      // increment the badge. Check the flag before the optimistic bump.
-      const target = notes.find((n) => n.id === selectedId)
-        ?? tabNoteCacheRef.current.get(selectedId);
-      const isHardDelete = target?.isLocalFile === true;
-
-      await deleteNote(selectedId);
-      if (selectedId === previewTabId) setPreviewTabId(null);
-      setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
-      setNotes((prev) => prev.filter((n) => n.id !== selectedId));
-      setFavoriteNotes((prev) => prev.filter((n) => n.id !== selectedId));
-      setSelectedId(null);
-      setTitle("");
-      setContent("");
-      setIsDirty(false);
-      setConfirmDelete(false);
-      if (!isHardDelete) setTrashTotal((prev) => prev + 1);
-      loadFolders();
-      loadNoteTitles();
-      navigate("/", { replace: true });
-    } catch {
-      showError("Failed to delete note");
-    }
+    setConfirmDelete(true);
   }
 
   async function handleDeleteNoteById(noteId: string) {
@@ -2941,32 +2908,14 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               </button>
-              {confirmDelete ? (
-                <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-destructive">Move to Trash?</span>
-                  <button
-                    onClick={handleDelete}
-                    className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors cursor-pointer"
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="px-1.5 py-0.5 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    No
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={handleDelete}
-                  className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
-                  title="Move to Trash"
-                  aria-label="Move to Trash"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                </button>
-              )}
+              <button
+                onClick={handleDelete}
+                className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
+                title="Move to Trash"
+                aria-label="Move to Trash"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
             </div>
 
             {/* Breadcrumb + Title */}
@@ -3119,6 +3068,19 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   setConfirmDeleteSummary(false);
                 }}
                 onCancel={() => setConfirmDeleteSummary(false)}
+              />
+            )}
+            {confirmDelete && selectedId && (
+              <ConfirmDialog
+                title="Move to Trash"
+                message={selectedNote?.title || "Untitled"}
+                confirmLabel="Move to Trash"
+                onConfirm={() => {
+                  const id = selectedId;
+                  setConfirmDelete(false);
+                  void handleDeleteNoteById(id);
+                }}
+                onCancel={() => setConfirmDelete(false)}
               />
             )}
 
@@ -3476,6 +3438,8 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                       onSelectVersion={setSelectedVersion}
                       selectedVersionId={selectedVersion?.id}
                       refreshKey={versionRefreshKey}
+                      currentTitle={title}
+                      currentContent={content}
                     />
                   ) : drawerTab === "toc" && selectedId ? (
                     <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
