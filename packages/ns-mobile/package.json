@@ -9,8 +9,8 @@
     "build": "echo 'Expo uses EAS Build — run eas build instead'",
     "type-check": "tsc --noEmit",
     "test": "jest --passWithNoTests",
-    "android": "expo run:android",
-    "ios": "expo run:ios"
+    "android": "node scripts/write-build-info.mjs && expo run:android",
+    "ios": "node scripts/write-build-info.mjs && expo run:ios"
   },
   "dependencies": {
     "@derekentringer/ns-shared": "*",

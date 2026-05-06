@@ -11,10 +11,9 @@ import type {
   TotpVerifySetupResponse,
 } from "@derekentringer/shared";
 import { createMobileTokenAdapter, STORAGE_KEYS } from "./mobileTokenAdapter";
+import { getApiBaseUrl } from "@/lib/devHost";
 
-export const API_BASE_URL = __DEV__
-  ? "http://localhost:3004"
-  : "https://ns-api.derekentringer.com";
+export const API_BASE_URL = getApiBaseUrl();
 
 const adapter = createMobileTokenAdapter();
 

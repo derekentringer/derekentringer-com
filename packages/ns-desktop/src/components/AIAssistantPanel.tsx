@@ -7,7 +7,7 @@ import { searchNotes, createNote, updateNote, softDeleteNote, fetchFolders, fetc
 import type { QASource } from "@derekentringer/ns-shared";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
-import { buildHistoryForClaude } from "../lib/chatHistory.ts";
+import { buildHistoryForAIAssistant } from "../lib/chatHistory.ts";
 import { serializeChatToMarkdown, defaultChatTitle } from "../lib/chatExport.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { ConfirmationCard } from "./ConfirmationCard.tsx";
@@ -1189,7 +1189,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     // Snapshot history BEFORE appending the new user question; Claude's
     // server-side handler adds the current question as the final user
     // turn. Text-only rehydration per Phase A design.
-    const history = buildHistoryForClaude(messages);
+    const history = buildHistoryForAIAssistant(messages);
 
     setInput("");
     setAutocompleteItems([]);
@@ -1223,7 +1223,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       return prev;
     });
     if (!question) return;
-    const history = buildHistoryForClaude(historyBase);
+    const history = buildHistoryForAIAssistant(historyBase);
     await performAsk(question, history);
   }
 
@@ -2196,7 +2196,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         {isRecording && hasTranscript && !isStreaming && (
           <button
             onClick={() => {
-              const history = buildHistoryForClaude(messages);
+              const history = buildHistoryForAIAssistant(messages);
               setInput("");
               setMessages((prev) => [...prev, { role: "user", content: "Catch me up on this meeting", createdAt: nowIso() }]);
               setIsStreaming(true);

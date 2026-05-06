@@ -34,6 +34,8 @@ export type SettingsStackParamList = {
   Security: undefined;
   TotpSetup: undefined;
   About: undefined;
+  ChangePassword: undefined;
+  TwoFactorAuth: undefined;
 };
 
 export type MainTabParamList = {

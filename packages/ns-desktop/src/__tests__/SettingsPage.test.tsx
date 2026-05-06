@@ -119,14 +119,14 @@ describe("SettingsPage", () => {
 
   it("renders font size slider", () => {
     renderSettingsPage();
-    expect(screen.getByLabelText("Editor font size")).toBeInTheDocument();
+    expect(screen.getByLabelText("Editor Font Size")).toBeInTheDocument();
   });
 
   it("renders accent color swatches", () => {
     renderSettingsPage();
-    expect(screen.getByRole("radiogroup", { name: "Accent color" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Accent Color" })).toBeInTheDocument();
     const swatches = screen.getAllByRole("radio").filter(
-      (el) => el.closest("[aria-label='Accent color']"),
+      (el) => el.closest("[aria-label='Accent Color']"),
     );
     expect(swatches.length).toBe(11);
   });
@@ -151,7 +151,7 @@ describe("SettingsPage", () => {
   it("renders default view mode radio group", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "Editor" }));
-    expect(screen.getByRole("radiogroup", { name: "Default view mode" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Default Editor View Mode" })).toBeInTheDocument();
     expect(screen.getByLabelText("Editor")).toBeInTheDocument();
     expect(screen.getByLabelText("Split")).toBeInTheDocument();
     expect(screen.getByLabelText("Preview")).toBeInTheDocument();
@@ -160,20 +160,20 @@ describe("SettingsPage", () => {
   it("renders line numbers and word wrap toggles", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "Editor" }));
-    expect(screen.getByText("Line numbers")).toBeInTheDocument();
-    expect(screen.getByText("Word wrap")).toBeInTheDocument();
+    expect(screen.getByText("Line Numbers")).toBeInTheDocument();
+    expect(screen.getByText("Word Wrap")).toBeInTheDocument();
   });
 
   it("renders auto-save delay select", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "Editor" }));
-    expect(screen.getByLabelText("Auto-save delay")).toBeInTheDocument();
+    expect(screen.getByLabelText("Note Auto-Save Delay")).toBeInTheDocument();
   });
 
   it("renders tab size radio group", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "Editor" }));
-    expect(screen.getByRole("radiogroup", { name: "Tab size" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Tab Size" })).toBeInTheDocument();
     expect(screen.getByLabelText("2 spaces")).toBeInTheDocument();
     expect(screen.getByLabelText("4 spaces")).toBeInTheDocument();
   });
@@ -189,7 +189,7 @@ describe("SettingsPage", () => {
   it("changing auto-save delay persists to localStorage", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "Editor" }));
-    const select = screen.getByLabelText("Auto-save delay");
+    const select = screen.getByLabelText("Note Auto-Save Delay");
     await userEvent.selectOptions(select, "2000");
     const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
     expect(stored.autoSaveDelay).toBe(2000);
@@ -249,7 +249,7 @@ describe("SettingsPage", () => {
     mockUser = { totpEnabled: false };
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "Security" }));
-    expect(screen.getByText("Two-factor authentication")).toBeInTheDocument();
+    expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument();
     expect(screen.getByText("Enable 2FA")).toBeInTheDocument();
   });
 
@@ -290,7 +290,7 @@ describe("SettingsPage", () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "Security" }));
     expect(screen.getByText("Enabled")).toBeInTheDocument();
-    expect(screen.getByText("Two-factor authentication")).toBeInTheDocument();
+    expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument();
   });
 
   it("shows Disable 2FA button when enabled", async () => {
@@ -376,19 +376,19 @@ describe("SettingsPage", () => {
   it("renders master AI toggle", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
-    expect(screen.getByText("Enable AI features")).toBeInTheDocument();
+    expect(screen.getByText("AI Features", { selector: "span" })).toBeInTheDocument();
   });
 
   it("renders inline completions toggle", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
-    expect(screen.getByText("Inline completions")).toBeInTheDocument();
+    expect(screen.getByText("AI Assistant Inline Completions")).toBeInTheDocument();
   });
 
   it("renders Continue writing toggle", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
-    expect(screen.getByText("Continue writing")).toBeInTheDocument();
+    expect(screen.getByText("Continue Writing")).toBeInTheDocument();
   });
 
   it("shows completion style radios when completions enabled", async () => {
@@ -399,9 +399,17 @@ describe("SettingsPage", () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
     expect(screen.getByRole("radiogroup", { name: "Completion style" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Continue writing")).toBeInTheDocument();
-    expect(screen.getByLabelText("Markdown assist")).toBeInTheDocument();
-    expect(screen.getByLabelText("Brief")).toBeInTheDocument();
+    // "Continue Writing" is also the label of a ToggleSwitch in this
+    // section, so query specifically for the radio role.
+    expect(
+      screen.getByRole("radio", { name: "Continue Writing" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Markdown Assist" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("radio", { name: "Brief" }),
+    ).toBeInTheDocument();
   });
 
   it("hides completion style radios when completions disabled", async () => {
@@ -423,13 +431,13 @@ describe("SettingsPage", () => {
   it("renders auto-tag suggestions toggle", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
-    expect(screen.getByText("Auto-tag suggestions")).toBeInTheDocument();
+    expect(screen.getByText("Auto-Tag Suggestions")).toBeInTheDocument();
   });
 
   it("renders select-and-rewrite toggle", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
-    expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
+    expect(screen.getByText("Select-and-Rewrite")).toBeInTheDocument();
   });
 
   it("displays AI Rewrite keyboard shortcut", async () => {
@@ -453,7 +461,7 @@ describe("SettingsPage", () => {
   it("renders Audio notes toggle", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
-    expect(screen.getByText("Audio notes")).toBeInTheDocument();
+    expect(screen.getByText("Audio Notes")).toBeInTheDocument();
   });
 
   it("shows recording source radios when audio notes enabled", async () => {
@@ -493,7 +501,7 @@ describe("SettingsPage", () => {
   it("renders AI assistant chat toggle", async () => {
     renderSettingsPage();
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
-    expect(screen.getByText("AI assistant chat")).toBeInTheDocument();
+    expect(screen.getByText("AI Assistant Chat")).toBeInTheDocument();
   });
 
   it("qaAssistant toggle is disabled when semanticSearch is off", async () => {
@@ -505,7 +513,7 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
     const toggles = screen.getAllByRole("switch");
     const qaToggle = toggles.find(
-      (t) => t.closest("label")?.textContent?.includes("AI assistant chat"),
+      (t) => t.closest("label")?.textContent?.includes("AI Assistant Chat"),
     );
     expect(qaToggle).toBeDefined();
     expect(qaToggle).toBeDisabled();
@@ -520,7 +528,7 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
     const toggles = screen.getAllByRole("switch");
     const qaToggle = toggles.find(
-      (t) => t.closest("label")?.textContent?.includes("AI assistant chat"),
+      (t) => t.closest("label")?.textContent?.includes("AI Assistant Chat"),
     );
     expect(qaToggle).toBeDefined();
     expect(qaToggle).not.toBeDisabled();
@@ -536,7 +544,7 @@ describe("SettingsPage", () => {
     // Find and click the semantic search toggle to turn it off
     const toggles = screen.getAllByRole("switch");
     const semanticToggle = toggles.find(
-      (t) => t.closest("label")?.textContent?.includes("Semantic search"),
+      (t) => t.closest("label")?.textContent?.includes("Semantic Search"),
     );
     expect(semanticToggle).toBeDefined();
     await userEvent.click(semanticToggle!);
@@ -549,7 +557,7 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "AI Features" }));
     const toggles = screen.getAllByRole("switch");
     const aiToggle = toggles.find(
-      (t) => t.closest("label")?.textContent?.includes("Enable AI features"),
+      (t) => t.closest("label")?.textContent?.includes("AI Features"),
     );
     expect(aiToggle).toBeDefined();
     await userEvent.click(aiToggle!);

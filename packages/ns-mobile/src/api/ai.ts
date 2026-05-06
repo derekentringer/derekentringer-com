@@ -15,6 +15,7 @@
 import EventSource from "react-native-sse";
 import type { QASource } from "@derekentringer/ns-shared";
 import api, { tokenManager, API_BASE_URL } from "../services/api";
+import { getApiBaseUrl } from "@/lib/devHost";
 
 // ─── Types — kept verbatim from desktop/web for protocol parity ───
 
@@ -77,9 +78,7 @@ export interface ChatMessageData {
 
 // ─── askQuestion (streaming) ──────────────────────────────────────
 
-const SSE_BASE_URL = __DEV__
-  ? "http://localhost:3004"
-  : "https://ns-api.derekentringer.com";
+const SSE_BASE_URL = getApiBaseUrl();
 
 /** Stream the assistant's reply for `question`. Yields each parsed
  *  SSE event in order. Caller iterates with `for await`. Pass an

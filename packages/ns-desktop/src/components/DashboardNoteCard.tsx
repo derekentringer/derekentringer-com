@@ -103,13 +103,13 @@ export function DashboardNoteCard({ note, variant, onClick }: DashboardNoteCardP
           {visibleTags.map((tag) => (
             <span
               key={tag}
-              className="inline-block text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary truncate max-w-[80px]"
+              className="ns-tag-pill inline-block text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary truncate max-w-[80px]"
             >
               {tag}
             </span>
           ))}
           {overflowCount > 0 && (
-            <span className="inline-block text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+            <span className="ns-tag-pill inline-block text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
               +{overflowCount}
             </span>
           )}

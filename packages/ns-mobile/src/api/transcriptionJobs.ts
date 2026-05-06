@@ -11,10 +11,9 @@
 import * as FileSystem from "expo-file-system/legacy";
 import api, { tokenManager } from "@/services/api";
 import type { AudioMode } from "./ai";
+import { getApiBaseUrl } from "@/lib/devHost";
 
-const API_BASE_URL = __DEV__
-  ? "http://localhost:3004"
-  : "https://ns-api.derekentringer.com";
+const API_BASE_URL = getApiBaseUrl();
 
 export type TranscriptionJobStatus =
   | "pending"

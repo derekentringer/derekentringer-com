@@ -6,6 +6,7 @@ import {
   RefreshControl,
   Pressable,
   Text,
+  Platform,
   StyleSheet,
 } from "react-native";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -185,6 +186,7 @@ export function NoteListScreen({ navigation }: Props) {
               name="sort"
               size={24}
               color={themeColors.foreground}
+              style={styles.headerIcon}
             />
           </Pressable>
           <Pressable
@@ -197,6 +199,7 @@ export function NoteListScreen({ navigation }: Props) {
               name="folder-outline"
               size={24}
               color={folderId ? themeColors.primary : themeColors.foreground}
+              style={styles.headerIcon}
             />
           </Pressable>
           <Pressable
@@ -213,6 +216,7 @@ export function NoteListScreen({ navigation }: Props) {
                   ? themeColors.primary
                   : themeColors.foreground
               }
+              style={styles.headerIcon}
             />
           </Pressable>
         </View>
@@ -396,10 +400,19 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 0,
+    ...Platform.select({ ios: { gap: 0 }, default: { gap: 4 } }),
   },
   headerIconBtn: {
-    padding: 12,
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
   filterButton: {
     flexDirection: "row",

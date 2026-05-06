@@ -4,6 +4,7 @@ import {
   Text,
   ScrollView,
   Pressable,
+  Platform,
   StyleSheet,
 } from "react-native";
 import { useAppAlert } from "@/components/AppAlertProvider";
@@ -74,6 +75,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
               name="restore"
               size={24}
               color={themeColors.success}
+              style={styles.headerIcon}
             />
           </Pressable>
           <Pressable
@@ -86,6 +88,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
               name="delete-forever"
               size={24}
               color={themeColors.destructive}
+              style={styles.headerIcon}
             />
           </Pressable>
         </View>
@@ -198,7 +201,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
                   { backgroundColor: `${themeColors.primary}1A` },
                 ]}
               >
-                <Text style={[styles.tagText, { color: themeColors.primary }]}>
+                <Text style={[styles.tagText, { color: themeColors.tagText }]}>
                   {tag}
                 </Text>
               </View>
@@ -237,10 +240,19 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 0,
+    ...Platform.select({ ios: { gap: 0 }, default: { gap: 4 } }),
   },
   headerButton: {
-    padding: 12,
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
   deletedBanner: {
     flexDirection: "row",

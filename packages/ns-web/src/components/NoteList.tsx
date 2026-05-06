@@ -140,7 +140,7 @@ function SortableNoteItem({
             <>
               <span className="text-[10px] text-muted-foreground">·</span>
               {note.tags.slice(0, 2).map((tag) => (
-                <span key={tag} className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
+                <span key={tag} className="ns-tag-pill text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
               ))}
               {note.tags.length > 2 && (
                 <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>

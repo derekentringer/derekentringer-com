@@ -80,7 +80,7 @@ export function NoteListItem({ note, onPress }: NoteListItemProps) {
                 ]}
               >
                 <Text
-                  style={[styles.tagText, { color: themeColors.primary }]}
+                  style={[styles.tagText, { color: themeColors.tagText }]}
                   numberOfLines={1}
                 >
                   {tag}
@@ -94,7 +94,7 @@ export function NoteListItem({ note, onPress }: NoteListItemProps) {
                   { backgroundColor: `${themeColors.primary}1A` },
                 ]}
               >
-                <Text style={[styles.tagText, { color: themeColors.primary }]}>
+                <Text style={[styles.tagText, { color: themeColors.tagText }]}>
                   +{overflowCount}
                 </Text>
               </View>

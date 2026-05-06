@@ -21,6 +21,8 @@ import { AiScreen } from "@/screens/AiScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { TrashScreen } from "@/screens/TrashScreen";
 import { TrashNoteDetailScreen } from "@/screens/TrashNoteDetailScreen";
+import { ChangePasswordScreen } from "@/screens/ChangePasswordScreen";
+import { TwoFactorAuthScreen } from "@/screens/TwoFactorAuthScreen";
 import { RecordingScreen } from "@/screens/RecordingScreen";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { useThemeColors } from "@/theme/colors";
@@ -31,9 +33,9 @@ import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { tokenStorage } from "@/services/api";
 import type { AiStackParamList, DashboardStackParamList, SettingsStackParamList } from "./types";
 
-const API_BASE_URL = __DEV__
-  ? "http://localhost:3004"
-  : "https://ns-api.derekentringer.com";
+import { getApiBaseUrl } from "@/lib/devHost";
+
+const API_BASE_URL = getApiBaseUrl();
 
 const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
@@ -149,6 +151,16 @@ function SettingsNavigator() {
         name="TrashNoteDetail"
         component={TrashNoteDetailScreen}
         options={{ title: "" }}
+      />
+      <SettingsStack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={{ title: "Change Password" }}
+      />
+      <SettingsStack.Screen
+        name="TwoFactorAuth"
+        component={TwoFactorAuthScreen}
+        options={{ title: "Two-Factor Authentication" }}
       />
     </SettingsStack.Navigator>
   );
