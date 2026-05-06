@@ -96,7 +96,7 @@ export function trimHistoryToBudget(
 }
 
 /** One call: serialize + trim. Convenience wrapper used by the panel. */
-export function buildHistoryForClaude(
+export function buildHistoryForAIAssistant(
   messages: InputMessage[],
   options?: { maxChars?: number; maxTurns?: number },
 ): ChatHistoryTurn[] {

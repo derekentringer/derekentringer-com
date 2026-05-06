@@ -1,24 +1,54 @@
-// Mirrors `packages/ns-{web,desktop}/src/hooks/useEditorSettings.ts`
-// for the parity slice we need on mobile right now: a persisted
-// `propertiesMode` toggle that controls whether YAML frontmatter is
-// shown ("source") or hidden ("panel") in the editor. Default
-// matches web — "panel" (hidden) — so a fresh mobile editor session
-// starts without the raw `--- ... ---` block in the way.
+// Mirrors the relevant slice of `useEditorSettings.ts` from
+// ns-web / ns-desktop. Storage key (`ns-editor-settings`) is shared
+// only conceptually — web/desktop persist via localStorage, mobile
+// via AsyncStorage — but the field names + valid-value sets stay in
+// lockstep so a future cross-platform sync of preferences is a
+// simple key-by-key copy.
 
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  type AccentColorPreset,
+  isAccentPreset,
+} from "@/lib/accentColors";
 
 export type PropertiesMode = "panel" | "source";
+export type ThemeMode = "dark" | "light" | "system" | "teams";
 
 export interface EditorSettings {
   propertiesMode: PropertiesMode;
+  /** Picks which color palette `useThemeColors()` returns. `system`
+   *  falls back to the OS preference via React Native's
+   *  `useColorScheme()`. */
+  theme: ThemeMode;
+  /** Chosen accent preset. Drives the `primary` color across the
+   *  entire app. */
+  accentColor: AccentColorPreset;
+  /** Hex stored when the user picks the `"custom"` accent. v1
+   *  doesn't expose a color picker on mobile yet, but the field
+   *  round-trips so an existing custom value set on web/desktop
+   *  syncs cleanly when the picker lands. */
+  customAccentColor: string;
+  /** Body-text font size used inside the note editor. Range
+   *  10–24 to match desktop/web. */
+  editorFontSize: number;
 }
 
 const STORAGE_KEY = "ns-editor-settings";
 
+const VALID_THEMES: ThemeMode[] = ["dark", "light", "system", "teams"];
+
 const DEFAULT_SETTINGS: EditorSettings = {
   propertiesMode: "panel",
+  theme: "system",
+  accentColor: "lime",
+  customAccentColor: "#d4e157",
+  editorFontSize: 14,
 };
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 function parseSettings(raw: string | null): EditorSettings {
   if (!raw) return DEFAULT_SETTINGS;
@@ -27,6 +57,23 @@ function parseSettings(raw: string | null): EditorSettings {
     return {
       propertiesMode:
         parsed.propertiesMode === "source" ? "source" : "panel",
+      theme:
+        typeof parsed.theme === "string" &&
+        VALID_THEMES.includes(parsed.theme as ThemeMode)
+          ? (parsed.theme as ThemeMode)
+          : DEFAULT_SETTINGS.theme,
+      accentColor: isAccentPreset(parsed.accentColor)
+        ? parsed.accentColor
+        : DEFAULT_SETTINGS.accentColor,
+      customAccentColor:
+        typeof parsed.customAccentColor === "string" &&
+        /^#[0-9a-fA-F]{6}$/.test(parsed.customAccentColor)
+          ? parsed.customAccentColor
+          : DEFAULT_SETTINGS.customAccentColor,
+      editorFontSize:
+        typeof parsed.editorFontSize === "number"
+          ? clamp(parsed.editorFontSize, 10, 24)
+          : DEFAULT_SETTINGS.editorFontSize,
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -41,6 +88,10 @@ interface EditorSettingsActions {
   hydrate: () => Promise<void>;
   setPropertiesMode: (v: PropertiesMode) => void;
   togglePropertiesMode: () => void;
+  setTheme: (v: ThemeMode) => void;
+  setAccentColor: (v: AccentColorPreset) => void;
+  setCustomAccentColor: (v: string) => void;
+  setEditorFontSize: (v: number) => void;
 }
 
 const useEditorSettingsStore = create<
@@ -70,11 +121,35 @@ const useEditorSettingsStore = create<
     set({ propertiesMode: next });
     void persist(get());
   },
+
+  setTheme: (v) => {
+    set({ theme: v });
+    void persist(get());
+  },
+
+  setAccentColor: (v) => {
+    set({ accentColor: v });
+    void persist(get());
+  },
+
+  setCustomAccentColor: (v) => {
+    set({ customAccentColor: v });
+    void persist(get());
+  },
+
+  setEditorFontSize: (v) => {
+    set({ editorFontSize: clamp(v, 10, 24) });
+    void persist(get());
+  },
 }));
 
 async function persist(state: EditorSettingsState) {
   const payload: EditorSettings = {
     propertiesMode: state.propertiesMode,
+    theme: state.theme,
+    accentColor: state.accentColor,
+    customAccentColor: state.customAccentColor,
+    editorFontSize: state.editorFontSize,
   };
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

@@ -2,13 +2,14 @@ import React, { useRef, useCallback } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   Pressable,
   ScrollView,
   StyleSheet,
   Switch,
 } from "react-native";
 import { useAppAlert } from "@/components/AppAlertProvider";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { BUILD_VERSION } from "@/buildInfo";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -19,7 +20,15 @@ import useAiSettingsStore, {
   type AutoApproveSettings,
 } from "@/store/aiSettingsStore";
 import useDashboardSettingsStore from "@/store/dashboardSettingsStore";
-import { useThemeColors } from "@/theme/colors";
+import useEditorSettingsStore, {
+  type ThemeMode,
+} from "@/store/editorSettingsStore";
+import {
+  ACCENT_PRESET_KEYS,
+  ACCENT_PRESETS,
+  type AccentColorPreset,
+} from "@/lib/accentColors";
+import { useThemeColors, useResolvedTheme } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useTrashCount } from "@/hooks/useTrash";
 import { manualSync } from "@/lib/syncEngine";
@@ -46,11 +55,11 @@ export function SettingsScreen({ navigation }: Props) {
     refetchInterval: 10_000,
   });
 
-  const handleLogout = () => {
-    showAlert("Log Out", "Are you sure you want to log out?", [
+  const handleLogout = useCallback(() => {
+    showAlert("Sign Out of Your Account", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
       {
-        text: "Log Out",
+        text: "Sign Out",
         style: "destructive",
         onPress: async () => {
           try {
@@ -61,7 +70,52 @@ export function SettingsScreen({ navigation }: Props) {
         },
       },
     ]);
-  };
+  }, [showAlert, logout]);
+
+  const handleChangePassword = useCallback(() => {
+    navigation.navigate("ChangePassword");
+  }, [navigation]);
+
+  const handleTwoFactorAuth = useCallback(() => {
+    navigation.navigate("TwoFactorAuth");
+  }, [navigation]);
+
+  const totpEnabled = user?.totpEnabled === true;
+
+  const handleResetSettings = useCallback(() => {
+    showAlert(
+      "Reset All Settings",
+      "This resets every appearance, editor, dashboard, and AI preference back to defaults. Your notes, account, and sync state are not affected.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: async () => {
+            // Mirror desktop/web's `localStorage.removeItem(...)` +
+            // reload pattern. Mobile clears AsyncStorage keys for
+            // every settings store, then re-hydrates so each store
+            // snaps back to its DEFAULT_SETTINGS.
+            try {
+              await AsyncStorage.multiRemove([
+                "ns-editor-settings",
+                "ns-ai-settings",
+                "ns-dashboard-settings",
+              ]);
+            } catch {
+              // Non-fatal — hydrate below will fall back to defaults.
+            }
+            await Promise.all([
+              useEditorSettingsStore.getState().hydrate(),
+              useAiSettingsStore.getState().hydrate(),
+              useDashboardSettingsStore.getState().hydrate(),
+            ]);
+            showAlert("Settings reset", "All preferences are back to defaults.");
+          },
+        },
+      ],
+    );
+  }, [showAlert]);
 
   const handleSyncNow = useCallback(() => {
     manualSync();
@@ -89,15 +143,30 @@ export function SettingsScreen({ navigation }: Props) {
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
+      {/* Section order mirrors desktop/web's IA: customization
+          (Appearance / Dashboard / AI) first because users tweak
+          those most often, then data state (Sync / Data), then
+          identity (My Account / Security) at the bottom. iOS-style
+          "Apple ID at top" doesn't fit here — NoteSync's account
+          surface is just email + password + 2FA. */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.card}>
-          <Text style={styles.label}>Email</Text>
-          <Text style={styles.value}>{user?.email ?? "—"}</Text>
-        </View>
+        <Text style={styles.sectionTitle}>Appearance</Text>
+        <AppearanceSettingsSection />
       </View>
 
-      {/* Sync section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Dashboard</Text>
+        <DashboardSettingsSection />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>AI Assistant</Text>
+        <AiSettingsSection />
+      </View>
+
+      {/* Sync section — kept above Data since the two are
+          conceptually paired and Sync surfaces the most actionable
+          state (pending changes, rejections). */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Sync</Text>
         <View style={styles.card}>
@@ -143,7 +212,7 @@ export function SettingsScreen({ navigation }: Props) {
         </View>
 
         <Pressable
-          style={[styles.menuRow, { marginTop: spacing.sm }]}
+          style={[styles.menuRow, { marginTop: spacing.xs }]}
           onPress={handleSyncNow}
           accessibilityRole="button"
           accessibilityLabel="Sync now"
@@ -163,7 +232,7 @@ export function SettingsScreen({ navigation }: Props) {
 
         {rejections.length > 0 ? (
           <Pressable
-            style={[styles.menuRow, { marginTop: spacing.sm }]}
+            style={[styles.menuRow, { marginTop: spacing.xs }]}
             onPress={() => syncIssuesRef.current?.present()}
             accessibilityRole="button"
             accessibilityLabel="View sync issues"
@@ -188,16 +257,6 @@ export function SettingsScreen({ navigation }: Props) {
             </View>
           </Pressable>
         ) : null}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Dashboard</Text>
-        <DashboardSettingsSection />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>AI Assistant</Text>
-        <AiSettingsSection />
       </View>
 
       <View style={styles.section}>
@@ -234,16 +293,359 @@ export function SettingsScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={handleLogout}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.logoutText}>Log Out</Text>
-      </TouchableOpacity>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>My Account</Text>
+        {/* Email rendered as a menu-row with the value on the right
+            so its height + padding match every other row in this
+            section. The earlier two-line stacked layout (label
+            above value) made this card taller than the rest and
+            broke the vertical rhythm. */}
+        <View style={styles.menuRow}>
+          <MaterialCommunityIcons
+            name="email-outline"
+            size={20}
+            color={themeColors.foreground}
+          />
+          <Text style={[styles.menuRowText, { flex: 0 }]}>Email</Text>
+          <Text
+            style={[styles.menuRowValue, { color: themeColors.muted }]}
+            numberOfLines={1}
+          >
+            {user?.email ?? "—"}
+          </Text>
+        </View>
+
+        <Pressable
+          style={[styles.menuRow, { marginTop: spacing.xs }]}
+          onPress={handleChangePassword}
+          accessibilityRole="button"
+          accessibilityLabel="Change Password"
+        >
+          <MaterialCommunityIcons
+            name="lock-outline"
+            size={20}
+            color={themeColors.foreground}
+          />
+          <Text style={styles.menuRowText}>Change Password</Text>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={themeColors.muted}
+            style={styles.menuRowChevron}
+          />
+        </Pressable>
+
+        <Pressable
+          style={[styles.menuRow, { marginTop: spacing.xs }]}
+          onPress={handleResetSettings}
+          accessibilityRole="button"
+          accessibilityLabel="Reset All Settings"
+        >
+          <MaterialCommunityIcons
+            name="restore"
+            size={20}
+            color={themeColors.foreground}
+          />
+          <Text style={styles.menuRowText}>Reset All Settings</Text>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={themeColors.muted}
+            style={styles.menuRowChevron}
+          />
+        </Pressable>
+
+        <Pressable
+          style={[styles.menuRow, { marginTop: spacing.xs }]}
+          onPress={handleLogout}
+          accessibilityRole="button"
+          accessibilityLabel="Sign Out of Your Account"
+        >
+          <MaterialCommunityIcons
+            name="logout"
+            size={20}
+            color={themeColors.destructive}
+          />
+          <Text style={[styles.menuRowText, { color: themeColors.destructive }]}>
+            Sign Out of Your Account
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Security section — sign-in factors live here, separate from
+          identity / data settings. Mirrors the Security tab in
+          desktop/web's SettingsPage. */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Security</Text>
+        <Pressable
+          style={styles.menuRow}
+          onPress={handleTwoFactorAuth}
+          accessibilityRole="button"
+          accessibilityLabel="Two-Factor Authentication"
+        >
+          <MaterialCommunityIcons
+            name="shield-key-outline"
+            size={20}
+            color={themeColors.foreground}
+          />
+          <Text style={styles.menuRowText}>Two-Factor Authentication</Text>
+          {totpEnabled ? (
+            <View
+              style={[
+                styles.enabledBadge,
+                { backgroundColor: `${themeColors.success}33` },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.enabledBadgeText,
+                  { color: themeColors.success },
+                ]}
+              >
+                Enabled
+              </Text>
+            </View>
+          ) : null}
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={themeColors.muted}
+            style={!totpEnabled ? styles.menuRowChevron : undefined}
+          />
+        </Pressable>
+      </View>
+
+      {/* About section — app metadata. Mirrors the web/desktop About
+          section minus the "What's New" / Release Notes affordance. */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>About</Text>
+        <View style={styles.menuRow}>
+          <MaterialCommunityIcons
+            name="information-outline"
+            size={20}
+            color={themeColors.foreground}
+          />
+          <Text style={[styles.menuRowText, { flex: 0 }]}>Version</Text>
+          <Text
+            style={[styles.menuRowValue, { color: themeColors.muted }]}
+            numberOfLines={1}
+          >
+            {BUILD_VERSION}
+          </Text>
+        </View>
+
+        <View style={[styles.menuRow, { marginTop: spacing.xs }]}>
+          <MaterialCommunityIcons
+            name="message-text-outline"
+            size={20}
+            color={themeColors.foreground}
+          />
+          <Text style={[styles.menuRowText, { flex: 0 }]}>Feedback</Text>
+          <Text
+            style={[styles.menuRowValue, { color: themeColors.muted }]}
+          >
+            Coming Soon
+          </Text>
+        </View>
+      </View>
 
       <SyncIssuesSheet bottomSheetRef={syncIssuesRef} />
     </ScrollView>
+  );
+}
+
+// ─── Appearance Settings Section ─────────────────────────────────
+
+const THEME_OPTIONS: { value: ThemeMode; label: string }[] = [
+  { value: "system", label: "System" },
+  { value: "dark", label: "Dark" },
+  { value: "light", label: "Light" },
+  { value: "teams", label: "Grey" },
+];
+
+const FONT_SIZE_MIN = 10;
+const FONT_SIZE_MAX = 24;
+const FONT_SIZE_STEP = 1;
+
+function AppearanceSettingsSection() {
+  const themeColors = useThemeColors();
+  const styles = makeStyles(themeColors);
+  const resolvedTheme = useResolvedTheme();
+  const theme = useEditorSettingsStore((s) => s.theme);
+  const accentColor = useEditorSettingsStore((s) => s.accentColor);
+  const editorFontSize = useEditorSettingsStore((s) => s.editorFontSize);
+  const setTheme = useEditorSettingsStore((s) => s.setTheme);
+  const setAccentColor = useEditorSettingsStore((s) => s.setAccentColor);
+  const setEditorFontSize = useEditorSettingsStore(
+    (s) => s.setEditorFontSize,
+  );
+
+  const decFont = useCallback(() => {
+    setEditorFontSize(Math.max(FONT_SIZE_MIN, editorFontSize - FONT_SIZE_STEP));
+  }, [editorFontSize, setEditorFontSize]);
+  const incFont = useCallback(() => {
+    setEditorFontSize(Math.min(FONT_SIZE_MAX, editorFontSize + FONT_SIZE_STEP));
+  }, [editorFontSize, setEditorFontSize]);
+
+  return (
+    <View>
+      {/* Theme card — title + description + chip row, all inside
+          one bordered card so the chips read as part of the same
+          control. */}
+      <View style={styles.appearanceCard}>
+        <View style={styles.appearanceCardHeader}>
+          <Text style={styles.menuRowText}>Theme</Text>
+          <Text style={[styles.toggleInfo, { color: themeColors.muted }]}>
+            "System" follows your device's light/dark setting
+          </Text>
+        </View>
+        <View style={styles.themeRow}>
+          {THEME_OPTIONS.map((opt) => {
+            const isActive = theme === opt.value;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => setTheme(opt.value)}
+                style={[
+                  styles.themeChip,
+                  {
+                    backgroundColor: isActive
+                      ? `${themeColors.primary}1A`
+                      : "transparent",
+                    borderColor: isActive
+                      ? themeColors.primary
+                      : themeColors.border,
+                  },
+                ]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={opt.label}
+              >
+                <Text
+                  style={[
+                    styles.themeChipText,
+                    {
+                      color: isActive
+                        ? themeColors.primary
+                        : themeColors.foreground,
+                    },
+                  ]}
+                >
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Accent color card — same pattern: header + swatch row
+          inside one card. The Teams theme overrides primary with
+          its own purple, so dim the swatches and surface a one-line
+          hint when active. */}
+      <View
+        style={[
+          styles.appearanceCard,
+          theme === "teams" && { opacity: 0.6 },
+        ]}
+      >
+        <View style={styles.appearanceCardHeader}>
+          <Text style={styles.menuRowText}>Accent Color</Text>
+          <Text style={[styles.toggleInfo, { color: themeColors.muted }]}>
+            {theme === "teams"
+              ? "Overridden while the Grey theme is active"
+              : "Used for the primary action color across the app"}
+          </Text>
+        </View>
+        <View style={styles.swatchRow}>
+          {ACCENT_PRESET_KEYS.map((key) => {
+            const swatchHex = ACCENT_PRESETS[key][resolvedTheme];
+            const isActive = accentColor === key;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => setAccentColor(key as AccentColorPreset)}
+                style={[
+                  styles.swatch,
+                  {
+                    backgroundColor: swatchHex,
+                    borderColor: isActive
+                      ? themeColors.foreground
+                      : "transparent",
+                  },
+                ]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`${key} accent`}
+              >
+                {isActive ? (
+                  <MaterialCommunityIcons
+                    name="check"
+                    size={16}
+                    color={resolvedTheme === "dark" ? "#000" : "#fff"}
+                  />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Editor font size — stepper */}
+      <View style={styles.toggleRow}>
+        <View style={styles.toggleLabelWrap}>
+          <Text style={styles.menuRowText}>Editor Font Size</Text>
+          <Text style={[styles.toggleInfo, { color: themeColors.muted }]}>
+            Body-text size inside the note editor
+          </Text>
+        </View>
+        <View style={styles.stepper}>
+          <Pressable
+            onPress={decFont}
+            disabled={editorFontSize <= FONT_SIZE_MIN}
+            style={[
+              styles.stepperButton,
+              {
+                borderColor: themeColors.border,
+                opacity: editorFontSize <= FONT_SIZE_MIN ? 0.4 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Decrease font size"
+          >
+            <MaterialCommunityIcons
+              name="minus"
+              size={16}
+              color={themeColors.foreground}
+            />
+          </Pressable>
+          <Text
+            style={[styles.stepperValue, { color: themeColors.foreground }]}
+          >
+            {editorFontSize}
+          </Text>
+          <Pressable
+            onPress={incFont}
+            disabled={editorFontSize >= FONT_SIZE_MAX}
+            style={[
+              styles.stepperButton,
+              {
+                borderColor: themeColors.border,
+                opacity: editorFontSize >= FONT_SIZE_MAX ? 0.4 : 1,
+              },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Increase font size"
+          >
+            <MaterialCommunityIcons
+              name="plus"
+              size={16}
+              color={themeColors.foreground}
+            />
+          </Pressable>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -298,13 +700,13 @@ function DashboardSettingsSection() {
         "Show Quick Actions",
         quickActionsEnabled,
         setQuickActionsEnabled,
-        "Render the New Note + recording shortcuts row at the top of the Dashboard.",
+        "Render the New Note and recording shortcuts row at the top of the Dashboard",
       )}
       {renderToggle(
-        "Speed-dial FAB",
+        "Speed-Dial FAB",
         speedDialEnabled,
         setSpeedDialEnabled,
-        "Tap the “+” button to expand New Note plus the four recording modes. Off keeps a single “+” FAB that creates a note.",
+        "Tap the “+” button to expand New Note plus the four recording modes. Off keeps a single “+” FAB that creates a note",
       )}
     </View>
   );
@@ -332,13 +734,29 @@ function AiSettingsSection() {
   );
   const setAutoApprove = useAiSettingsStore((s) => s.setAutoApprove);
 
-  const renderToggle = (
+  // Render a toggle row inside a grouped card. Drops the per-row
+  // border/background/marginBottom so multiple rows read as a
+  // single card with internal dividers, matching desktop's
+  // `SettingsGroup` look. Each row inside a card is divided from
+  // the next by a 1px hairline (rendered via `borderTopWidth` on
+  // every row except the first).
+  const renderGroupedToggle = (
     label: string,
     value: boolean,
     onChange: (v: boolean) => void,
     info?: string,
+    isFirst = false,
   ) => (
-    <View style={styles.toggleRow} key={label}>
+    <View
+      style={[
+        styles.aiGroupRow,
+        !isFirst && {
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: themeColors.border,
+        },
+      ]}
+      key={label}
+    >
       <View style={styles.toggleLabelWrap}>
         <Text style={styles.menuRowText}>{label}</Text>
         {info && (
@@ -350,10 +768,6 @@ function AiSettingsSection() {
       <Switch
         value={value}
         onValueChange={onChange}
-        // Off-state track was `themeColors.input` (#10121a in dark
-        // mode) which sat invisible against the card. Use the
-        // muted-foreground gray so the track reads as a track,
-        // not a floating thumb.
         trackColor={{
           false: themeColors.mutedForeground,
           true: themeColors.primary,
@@ -369,88 +783,142 @@ function AiSettingsSection() {
   const autoApproveLabels: Array<{ key: keyof AutoApproveSettings; label: string; info: string }> = [
     {
       key: "deleteNote",
-      label: "Move notes to Trash",
-      info: "Auto-approve `delete_note`. Notes go to Trash and can be restored until the trash auto-delete timer purges them.",
+      label: "Move Notes to Trash",
+      info: "Auto-approve `delete_note` calls. Notes go to Trash and can be restored until the trash auto-delete timer purges them",
     },
     {
       key: "deleteFolder",
-      label: "Delete folders",
-      info: "Auto-approve `delete_folder`. Notes inside become Unfiled.",
+      label: "Delete Folders",
+      info: "Auto-approve `delete_folder` calls. Notes inside become Unfiled",
     },
     {
       key: "updateNoteContent",
-      label: "Rewrite note content",
-      info: "Auto-approve `update_note_content`. Previous version stays in version history.",
+      label: "Rewrite Note Content",
+      info: "Auto-approve `update_note_content` calls. Previous version stays in version history",
     },
     {
       key: "renameNote",
-      label: "Rename notes",
-      info: "Auto-approve `rename_note`. Title only; content / folder / tags / id are unchanged.",
+      label: "Rename Notes",
+      info: "Auto-approve `rename_note` calls. Updates the note title only; content, folder, tags, etc are unchanged",
     },
     {
       key: "renameFolder",
-      label: "Rename folders",
-      info: "Auto-approve `rename_folder`.",
+      label: "Rename Folders",
+      info: "Auto-approve `rename_folder` calls",
     },
     {
       key: "renameTag",
-      label: "Rename tags",
-      info: "Auto-approve `rename_tag`. Affects every note using that tag.",
+      label: "Rename Tags",
+      info: "Auto-approve `rename_tag` calls. Affects every note using that tag",
     },
   ];
 
   return (
     <View>
-      {renderToggle("AI features", masterAiEnabled, setMasterAiEnabled,
-        "Master gate for all AI calls. Off disables the AI tab entirely.")}
-      {masterAiEnabled &&
-        renderToggle("AI Assistant chat", qaAssistant, setQaAssistant,
-          "Q&A panel + slash commands.")}
-      {masterAiEnabled &&
-        renderToggle("Summarize", summarize, setSummarize,
-          "Action-menu command that turns the open note into a TL;DR.")}
-      {masterAiEnabled &&
-        renderToggle("Tag suggestions", tagSuggestions, setTagSuggestions,
-          "Suggests tags for the open note based on its content.")}
-      {masterAiEnabled &&
-        renderToggle("Audio Notes", audioNotes, setAudioNotes,
-          "Dashboard recording shortcuts (Meeting / Lecture / Memo / Verbatim) plus the AI tab's recording pipeline.")}
-      {renderToggle(
-        "Wi-Fi only image uploads",
-        imageUploadsWifiOnly,
-        setImageUploadsWifiOnly,
-        "On: pictures attached to notes wait for Wi-Fi before uploading. Off: uploads happen over cellular too.",
-      )}
-      {showAutoApprove && (
-        <>
-          <View style={styles.autoApproveBlock}>
-            <Text
-              style={[
-                styles.autoApproveHeading,
-                { color: themeColors.muted },
-              ]}
-            >
-              Auto-approve destructive actions
-            </Text>
-            <Text
-              style={[
-                styles.autoApproveDescription,
-                { color: themeColors.muted },
-              ]}
-            >
-              When off, Claude waits for your confirmation. Enable sparingly.
-            </Text>
-          </View>
-          {autoApproveLabels.map(({ key, label, info }) =>
-            renderToggle(
-              label,
-              autoApprove[key],
-              (v) => setAutoApprove(key, v),
-              info,
-            ),
+      {/* Section order mirrors desktop: master gate → Note Analysis
+          → Search & Chat (with auto-approve sub-list) → Audio →
+          mobile-only Wi-Fi setting. Each card groups conceptually
+          related toggles, matching desktop's SettingsGroup layout. */}
+
+      {/* Master gate */}
+      <View style={styles.aiGroupCard}>
+        {renderGroupedToggle(
+          "AI Features",
+          masterAiEnabled,
+          setMasterAiEnabled,
+          "Master toggle for all AI features across the app",
+          true,
+        )}
+      </View>
+
+      {/* Note Analysis */}
+      {masterAiEnabled ? (
+        <View style={styles.aiGroupCard}>
+          {renderGroupedToggle(
+            "Summarize",
+            summarize,
+            setSummarize,
+            "Generate a short AI summary of your note",
+            true,
           )}
-        </>
-      )}
+          {renderGroupedToggle(
+            "Auto-Tag Suggestions",
+            tagSuggestions,
+            setTagSuggestions,
+            "Generate tags that are relevant to your note",
+          )}
+        </View>
+      ) : null}
+
+      {/* Search & Chat — AI Assistant chat plus the per-tool
+          auto-approve sub-card that only shows when the chat is
+          enabled. */}
+      {masterAiEnabled ? (
+        <View style={styles.aiGroupCard}>
+          {renderGroupedToggle(
+            "AI Assistant Chat",
+            qaAssistant,
+            setQaAssistant,
+            "Ask natural language questions about your notes. Requires semantic search to be enabled",
+            true,
+          )}
+          {showAutoApprove ? (
+            <View style={styles.autoApproveBlock}>
+              <Text
+                style={[
+                  styles.autoApproveHeading,
+                  { color: themeColors.muted },
+                ]}
+              >
+                Auto-Approve Destructive Actions
+              </Text>
+              <Text
+                style={[
+                  styles.autoApproveDescription,
+                  { color: themeColors.muted },
+                ]}
+              >
+                When disabled the AI Assistant waits for your confirmation
+              </Text>
+              {autoApproveLabels.map(({ key, label, info }, i) =>
+                renderGroupedToggle(
+                  label,
+                  autoApprove[key],
+                  (v) => setAutoApprove(key, v),
+                  info,
+                  i === 0,
+                ),
+              )}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* Audio */}
+      {masterAiEnabled ? (
+        <View style={styles.aiGroupCard}>
+          {renderGroupedToggle(
+            "Audio Notes",
+            audioNotes,
+            setAudioNotes,
+            "Record audio and transcribe it into a note using the AI Assistant",
+            true,
+          )}
+        </View>
+      ) : null}
+
+      {/* Mobile-specific bandwidth setting. Always visible — the
+          cellular/wifi distinction matters whether AI is on or off,
+          since image uploads happen on the same path. */}
+      <View style={styles.aiGroupCard}>
+        {renderGroupedToggle(
+          "Wi-Fi Only Image Uploads",
+          imageUploadsWifiOnly,
+          setImageUploadsWifiOnly,
+          "Images attached to notes wait for Wi-Fi before uploading",
+          true,
+        )}
+      </View>
     </View>
   );
 }
@@ -485,15 +953,6 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
       padding: spacing.md,
       borderWidth: 1,
       borderColor: themeColors.border,
-    },
-    label: {
-      color: themeColors.muted,
-      fontSize: 12,
-      marginBottom: spacing.xs,
-    },
-    value: {
-      color: themeColors.foreground,
-      fontSize: 16,
     },
     syncRow: {
       flexDirection: "row",
@@ -534,6 +993,30 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
       fontSize: 16,
       flex: 1,
     },
+    menuRowChevron: {
+      marginLeft: "auto",
+    },
+    // Right-aligned value text used by static rows (e.g. Email)
+    // alongside the menuRowText label. `flex: 1` claims the
+    // remaining row space and `textAlign: "right"` pushes the text
+    // to the trailing edge; `numberOfLines={1}` on the consumer
+    // truncates rather than wrapping a long email onto a second
+    // line and breaking the row's height.
+    menuRowValue: {
+      flex: 1,
+      fontSize: 14,
+      textAlign: "right",
+    },
+    enabledBadge: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: borderRadius.sm,
+      marginLeft: "auto",
+    },
+    enabledBadgeText: {
+      fontSize: 11,
+      fontWeight: "700",
+    },
     toggleRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -551,12 +1034,103 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
       fontSize: 11,
       marginTop: 2,
     },
-    // No divider — the section title carries enough visual
-    // separation. Inner padding aligns the heading + description
-    // with the toggle-row labels (which are inset by spacing.md).
-    autoApproveBlock: {
-      marginTop: spacing.sm,
+    appearanceCard: {
+      backgroundColor: themeColors.card,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      borderRadius: borderRadius.md,
       paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.sm,
+      marginBottom: spacing.xs,
+      gap: spacing.sm,
+    },
+    appearanceCardHeader: {
+      // Header text + description sit at the top of the card; the
+      // active control (chips / swatches) flows below.
+    },
+    themeRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
+    themeChip: {
+      // 4 chips per row on phones wide enough; flex-basis ~ 22%
+      // leaves room for the gap. flexGrow 1 lets the last row of
+      // wrapped chips fill any remaining space.
+      flexBasis: "22%",
+      flexGrow: 1,
+      borderWidth: 1,
+      borderRadius: borderRadius.md,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.xs,
+      alignItems: "center",
+    },
+    themeChipText: {
+      fontSize: 13,
+      fontWeight: "600",
+    },
+    swatchRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
+    swatch: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: 2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    stepper: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    stepperButton: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: 1,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    stepperValue: {
+      fontSize: 14,
+      fontWeight: "600",
+      minWidth: 24,
+      textAlign: "center",
+    },
+    // Wraps a group of related AI toggles into one bordered card,
+    // mirroring desktop's `SettingsGroup` look. Inner rows render
+    // without their own border/bg — they get a hairline divider
+    // from `aiGroupRow` instead.
+    aiGroupCard: {
+      backgroundColor: themeColors.card,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      borderRadius: borderRadius.md,
+      marginBottom: spacing.sm,
+      overflow: "hidden",
+    },
+    aiGroupRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      gap: spacing.sm,
+    },
+    // Sub-card inside Search & Chat that holds the per-tool
+    // auto-approve toggles. Visually nests under the AI Assistant
+    // chat row by carrying the surrounding card's background but
+    // with a top divider. Horizontal inset is left to children
+    // (heading uses its own inset, rows use aiGroupRow's padding)
+    // so the row labels align with the AI Assistant chat label.
+    autoApproveBlock: {
+      paddingTop: spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: themeColors.border,
     },
     autoApproveHeading: {
       fontSize: 11,
@@ -564,13 +1138,12 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
       textTransform: "uppercase",
       marginBottom: spacing.xs,
       letterSpacing: 0.5,
+      paddingHorizontal: spacing.md,
     },
-    // Description sits under the heading with the same horizontal
-    // inset; explicit margin-bottom adds breathing room before the
-    // first toggle row.
     autoApproveDescription: {
       fontSize: 11,
       marginBottom: spacing.sm,
+      paddingHorizontal: spacing.md,
     },
     menuRowRight: {
       flexDirection: "row",
@@ -589,18 +1162,6 @@ function makeStyles(themeColors: ReturnType<typeof import("@/theme/colors").useT
       color: "#ffffff",
       fontSize: 11,
       fontWeight: "700",
-    },
-    logoutButton: {
-      backgroundColor: themeColors.destructive,
-      borderRadius: borderRadius.md,
-      paddingVertical: spacing.sm + 4,
-      alignItems: "center",
-      marginTop: spacing.lg,
-    },
-    logoutText: {
-      color: "#ffffff",
-      fontSize: 16,
-      fontWeight: "600",
     },
   });
 }

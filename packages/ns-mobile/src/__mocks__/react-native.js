@@ -1,4 +1,5 @@
 module.exports = {
+  NativeModules: { SourceCode: { scriptURL: undefined } },
   Platform: { OS: "ios", select: (obj) => obj.ios },
   StyleSheet: { create: (styles) => styles },
   View: "View",

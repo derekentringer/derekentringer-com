@@ -4,13 +4,18 @@
   "private": true,
   "main": "index.ts",
   "scripts": {
+    "build-info": "node scripts/write-build-info.mjs",
+    "prestart": "npm run build-info",
+    "predev": "npm run build-info",
+    "pretype-check": "npm run build-info",
+    "pretest": "npm run build-info",
     "start": "expo start",
     "dev": "expo start",
     "build": "echo 'Expo uses EAS Build — run eas build instead'",
     "type-check": "tsc --noEmit",
     "test": "jest --passWithNoTests",
-    "android": "expo run:android",
-    "ios": "expo run:ios"
+    "android": "npm run build-info && expo run:android",
+    "ios": "npm run build-info && expo run:ios"
   },
   "dependencies": {
     "@derekentringer/ns-shared": "*",

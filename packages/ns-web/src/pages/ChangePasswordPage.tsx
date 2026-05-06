@@ -56,7 +56,7 @@ export function ChangePasswordPage() {
           <h1 className="font-normal text-3xl text-foreground">NoteSync</h1>
         </div>
         <p className="text-sm text-muted-foreground text-center">
-          Change your password
+          Change Your Password
         </p>
         <input
           type="password"

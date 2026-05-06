@@ -3,6 +3,7 @@ import {
   View,
   FlatList,
   RefreshControl,
+  Platform,
   StyleSheet,
 } from "react-native";
 import { useAppAlert } from "@/components/AppAlertProvider";
@@ -137,6 +138,7 @@ export function TrashScreen({ navigation }: Props) {
               onPress={handleEmptyTrash}
               accessibilityRole="button"
               accessibilityLabel="Empty trash"
+              style={styles.headerIcon}
             />
           </View>
         ) : null,
@@ -222,6 +224,15 @@ const styles = StyleSheet.create({
   // centered inside a 48 dp touch target via 12 dp padding.
   // Source: https://m3.material.io/components/top-app-bar/specs
   headerButton: {
-    padding: 12,
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
 });

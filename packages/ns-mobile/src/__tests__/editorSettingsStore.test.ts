@@ -35,6 +35,18 @@ describe("default settings", () => {
   it("propertiesMode defaults to 'panel' (frontmatter hidden) — matches web", () => {
     expect(DEFAULT_SETTINGS.propertiesMode).toBe("panel");
   });
+
+  it("theme defaults to 'system' (follow OS)", () => {
+    expect(DEFAULT_SETTINGS.theme).toBe("system");
+  });
+
+  it("accentColor defaults to 'lime' to match web/desktop", () => {
+    expect(DEFAULT_SETTINGS.accentColor).toBe("lime");
+  });
+
+  it("editorFontSize defaults to 14 to match web/desktop", () => {
+    expect(DEFAULT_SETTINGS.editorFontSize).toBe(14);
+  });
 });
 
 describe("parseSettings", () => {
@@ -49,14 +61,48 @@ describe("parseSettings", () => {
 
   it("accepts 'source' and round-trips it", () => {
     expect(parseSettings(JSON.stringify({ propertiesMode: "source" }))).toEqual(
-      { propertiesMode: "source" },
+      { ...DEFAULT_SETTINGS, propertiesMode: "source" },
     );
   });
 
   it("falls back to 'panel' for an unknown mode value", () => {
     expect(parseSettings(JSON.stringify({ propertiesMode: "bogus" }))).toEqual(
-      { propertiesMode: "panel" },
+      DEFAULT_SETTINGS,
     );
+  });
+
+  it("accepts 'dark' / 'light' / 'teams' theme values and falls back on bogus", () => {
+    expect(parseSettings(JSON.stringify({ theme: "dark" })).theme).toBe("dark");
+    expect(parseSettings(JSON.stringify({ theme: "light" })).theme).toBe(
+      "light",
+    );
+    expect(parseSettings(JSON.stringify({ theme: "teams" })).theme).toBe(
+      "teams",
+    );
+    expect(parseSettings(JSON.stringify({ theme: "bogus" })).theme).toBe(
+      DEFAULT_SETTINGS.theme,
+    );
+  });
+
+  it("clamps editorFontSize into the 10–24 range", () => {
+    expect(
+      parseSettings(JSON.stringify({ editorFontSize: 5 })).editorFontSize,
+    ).toBe(10);
+    expect(
+      parseSettings(JSON.stringify({ editorFontSize: 99 })).editorFontSize,
+    ).toBe(24);
+    expect(
+      parseSettings(JSON.stringify({ editorFontSize: 18 })).editorFontSize,
+    ).toBe(18);
+  });
+
+  it("accepts known accent presets and falls back on unknown", () => {
+    expect(
+      parseSettings(JSON.stringify({ accentColor: "purple" })).accentColor,
+    ).toBe("purple");
+    expect(
+      parseSettings(JSON.stringify({ accentColor: "bogus" })).accentColor,
+    ).toBe(DEFAULT_SETTINGS.accentColor);
   });
 });
 
@@ -89,9 +135,10 @@ describe("togglePropertiesMode", () => {
     // Wait a tick so the void-fired persist promises settle.
     await new Promise((r) => setTimeout(r, 0));
     expect(mockSet).toHaveBeenCalledTimes(2);
-    expect(mockSet).toHaveBeenLastCalledWith(
-      "ns-editor-settings",
-      JSON.stringify({ propertiesMode: "panel" }),
-    );
+    // Last persist serializes the full settings shape — check just
+    // the field that matters for this test so the assertion isn't
+    // brittle as new fields are added.
+    const [, lastJson] = mockSet.mock.calls[mockSet.mock.calls.length - 1];
+    expect(JSON.parse(lastJson as string).propertiesMode).toBe("panel");
   });
 });

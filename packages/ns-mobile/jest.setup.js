@@ -85,6 +85,19 @@ jest.mock("react-native-reanimated", () => ({
   Easing: { linear: jest.fn() },
 }));
 
+// Mock expo-constants — loads expo-modules-core's EventEmitter
+// which is unavailable under jsdom jest. devHost.ts uses
+// Constants.expoGoConfig?.hostUri / expoConfig?.hostUri as a
+// fallback; both undefined in tests is fine since
+// NativeModules.SourceCode also returns the dev URL in real builds.
+jest.mock("expo-constants", () => ({
+  __esModule: true,
+  default: {
+    expoConfig: undefined,
+    expoGoConfig: undefined,
+  },
+}));
+
 // Suppress require cycle warnings
 const originalConsoleWarn = console.warn;
 console.warn = (...args) => {

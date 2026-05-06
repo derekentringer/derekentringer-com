@@ -384,7 +384,7 @@ export function NotesPage() {
   // Settings / Change Password / About
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>();
-  const [settingsInitialAction, setSettingsInitialAction] = useState<"whats-new" | "feedback" | undefined>();
+  const [settingsInitialAction, setSettingsInitialAction] = useState<"feedback" | undefined>();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
 
@@ -3807,7 +3807,7 @@ export function NotesPage() {
                                     <>
                                       <span className="text-[10px] text-muted-foreground">·</span>
                                       {note.tags.slice(0, 2).map((tag) => (
-                                        <span key={tag} className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
+                                        <span key={tag} className="ns-tag-pill text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
                                       ))}
                                       {note.tags.length > 2 && (
                                         <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
@@ -4190,7 +4190,7 @@ export function NotesPage() {
                         {note.tags.slice(0, 2).map((tag) => (
                           <span
                             key={tag}
-                            className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]"
+                            className="ns-tag-pill text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]"
                           >
                             {tag}
                           </span>
@@ -5062,12 +5062,6 @@ export function NotesPage() {
     {showAbout && (
       <AboutDialog
         onClose={() => setShowAbout(false)}
-        onWhatsNew={() => {
-          setShowAbout(false);
-          setSettingsInitialSection("About");
-          setSettingsInitialAction("whats-new");
-          setShowSettings(true);
-        }}
         onFeedback={() => {
           setShowAbout(false);
           setSettingsInitialSection("About");

@@ -164,6 +164,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   const togglePropertiesMode = useEditorSettingsStore(
     (s) => s.togglePropertiesMode,
   );
+  const editorFontSize = useEditorSettingsStore((s) => s.editorFontSize);
 
   // Parsed view of the current content. `body` is what the user
   // sees in panel mode; `rawYaml`/`metadata`/`unknownFields` are
@@ -239,6 +240,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               name={isPreview ? "pencil" : "eye"}
               size={24}
               color={themeColors.foreground}
+              style={styles.headerIcon}
             />
           </Pressable>
           <Pressable
@@ -251,6 +253,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               name="dots-vertical"
               size={24}
               color={themeColors.foreground}
+              style={styles.headerIcon}
             />
           </Pressable>
         </View>
@@ -601,7 +604,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
 
   const mdStyles = useMemo(
     () => ({
-      body: { color: themeColors.foreground, fontSize: 15, lineHeight: 22 },
+      body: {
+        color: themeColors.foreground,
+        fontSize: editorFontSize,
+        lineHeight: Math.round(editorFontSize * 1.5),
+      },
       // Heading parity with ns-web's `.markdown-preview h{1..3}` —
       // primary color on h1/h2, top margin so headings don't
       // collide with the prior paragraph. Mirrors NoteDetailScreen.
@@ -678,7 +685,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         marginBottom: 24,
       },
     }),
-    [themeColors],
+    [themeColors, editorFontSize],
   );
 
   if (initialNoteId && isLoading) {
@@ -858,7 +865,17 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               block, matching web's `</>` toggle. */}
           <TextInput
             ref={contentRef}
-            style={[styles.contentInput, { color: themeColors.foreground }]}
+            style={[
+              styles.contentInput,
+              {
+                color: themeColors.foreground,
+                fontSize: editorFontSize,
+                // Keep the visual line-height ratio constant — desktop
+                // editor uses ~1.5×; mirror that so vertical rhythm
+                // stays usable across the whole 10–24px range.
+                lineHeight: Math.round(editorFontSize * 1.5),
+              },
+            ]}
             placeholder="Start writing..."
             placeholderTextColor={themeColors.muted}
             value={displayValue}
@@ -1128,10 +1145,19 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 0,
+    ...Platform.select({ ios: { gap: 0 }, default: { gap: 4 } }),
   },
   headerButton: {
-    padding: 12,
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
   statusBar: {
     // No paddingHorizontal — the parent ScrollView's

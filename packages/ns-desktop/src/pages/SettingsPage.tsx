@@ -1,8 +1,6 @@
 declare const __APP_VERSION__: string;
 
 import { useState, useEffect, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { TotpSetupResponse } from "@derekentringer/shared";
 import { useRegistry, formatShortcut } from "../commands/index.ts";
 import {
@@ -128,14 +126,14 @@ function RadioOption<T extends string | number>({
 }
 
 const STYLE_OPTIONS: { value: CompletionStyle; label: string; info: string }[] = [
-  { value: "continue", label: "Continue writing", info: "Predicts and continues your natural writing style." },
-  { value: "markdown", label: "Markdown assist", info: "Suggests markdown formatting like headings, lists, and code blocks." },
-  { value: "brief", label: "Brief", info: "Short, concise completions — a few words at a time." },
+  { value: "continue", label: "Continue Writing", info: "AI Assistant predicts and continues your natural writing style" },
+  { value: "markdown", label: "Markdown Assist", info: "AI Assistant suggests markdown formatting like headings, lists, and code blocks" },
+  { value: "brief", label: "Brief", info: "AI Assistant suggests short, concise completions — a few words at a time" },
 ];
 
 const RECORDING_SOURCE_OPTIONS: { value: RecordingSource; label: string; info: string }[] = [
-  { value: "meeting", label: "Meeting mode", info: "Captures system audio (meeting participants) + microphone (your voice). Requires macOS screen recording permission." },
-  { value: "microphone", label: "Microphone only", info: "Records from your microphone. Standard recording mode." },
+  { value: "meeting", label: "Meeting mode", info: "Captures system audio (meeting participants) + microphone (your voice). Requires macOS screen recording permission" },
+  { value: "microphone", label: "Microphone only", info: "Records from your microphone. Standard recording mode" },
 ];
 
 // Keyboard shortcuts are now driven by the command registry.
@@ -179,7 +177,7 @@ interface SettingsPageProps {
   onChangePassword?: () => void;
   onSignOut?: () => void;
   initialSection?: string;
-  initialAction?: "whats-new" | "feedback";
+  initialAction?: "feedback";
   onTrashRetentionChange?: (days: number) => void;
   editorSettings: EditorSettings;
   updateEditorSetting: <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) => void;
@@ -208,19 +206,6 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
   const [shortcutFilter, setShortcutFilter] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
-  const [releaseNotes, setReleaseNotes] = useState<string | null>(null);
-  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
-
-  // Auto-open release notes if navigated from About dialog
-  useEffect(() => {
-    if (initialAction === "whats-new") {
-      fetch("/RELEASE_NOTES.md")
-        .then((res) => res.text())
-        .then((text) => { setReleaseNotes(text); setShowReleaseNotes(true); })
-        .catch(() => { setReleaseNotes("Failed to load release notes."); setShowReleaseNotes(true); });
-    }
-  }, [initialAction]);
-
   // Admin state
   const [adminAiEnabled, setAdminAiEnabled] = useState(false);
   const [adminAiLoading, setAdminAiLoading] = useState(false);
@@ -443,16 +428,16 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
           {activeSection === "Appearance" && (
           <div className="space-y-4">
             <SettingsGroup>
-              <SettingsRow label="Theme">
+              <SettingsRow label="Theme" info={'"System" follows your device\'s light/dark setting'}>
                 <div className="flex gap-4" role="radiogroup" aria-label="Theme">
+                  <RadioOption name="theme" value={"system" as ThemeMode} currentValue={editorSettings.theme} label="System" onChange={handleThemeChange} />
                   <RadioOption name="theme" value={"dark" as ThemeMode} currentValue={editorSettings.theme} label="Dark" onChange={handleThemeChange} />
                   <RadioOption name="theme" value={"light" as ThemeMode} currentValue={editorSettings.theme} label="Light" onChange={handleThemeChange} />
-                  <RadioOption name="theme" value={"system" as ThemeMode} currentValue={editorSettings.theme} label="System" onChange={handleThemeChange} />
-                  <RadioOption name="theme" value={"teams" as ThemeMode} currentValue={editorSettings.theme} label="Teams" onChange={handleThemeChange} />
+                  <RadioOption name="theme" value={"teams" as ThemeMode} currentValue={editorSettings.theme} label="Grey" onChange={handleThemeChange} />
                 </div>
               </SettingsRow>
-              <SettingsRow label="Accent color">
-                <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Accent color">
+              <SettingsRow label="Accent Color" info={editorSettings.theme === "teams" ? "Overridden while the Grey theme is active" : "Used for the primary action color across the app"}>
+                <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Accent Color">
                   {(Object.keys(ACCENT_PRESETS) as Exclude<AccentColorPreset, "custom">[]).map((preset) => (
                     <button
                       key={preset}
@@ -495,13 +480,13 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                   </label>
                 </div>
               </SettingsRow>
-              <SettingsRow label="Editor font size">
+              <SettingsRow label="Editor Font Size" info="Body-text size inside the note editor">
                 <select
                   value={editorSettings.editorFontSize}
                   onChange={(e) => updateEditorSetting("editorFontSize", Number(e.target.value))}
                   className="appearance-none bg-input border border-border rounded-md pl-3 pr-7 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer bg-[length:10px_10px] bg-[right_8px_center] bg-no-repeat"
                   style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
-                  aria-label="Editor font size"
+                  aria-label="Editor Font Size"
                 >
                   {Array.from({ length: 15 }, (_, i) => i + 10).map((size) => (
                     <option key={size} value={size}>{size}px</option>
@@ -516,28 +501,29 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
           {activeSection === "Editor" && (
           <div className="space-y-4">
             <SettingsGroup>
-              <SettingsRow label="Default view mode">
-                <div className="flex gap-4" role="radiogroup" aria-label="Default view mode">
+              <SettingsRow label="Default Editor View Mode">
+                <div className="flex gap-4" role="radiogroup" aria-label="Default Editor View Mode">
                   <RadioOption name="defaultViewMode" value={"editor" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Editor" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
+                  <RadioOption name="defaultViewMode" value={"live" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Live" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
                   <RadioOption name="defaultViewMode" value={"split" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Split" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
                   <RadioOption name="defaultViewMode" value={"preview" as ViewModeDefault} currentValue={editorSettings.defaultViewMode} label="Preview" onChange={(v) => updateEditorSetting("defaultViewMode", v)} />
                 </div>
               </SettingsRow>
-              <SettingsRow label="Auto-save delay">
+              <SettingsRow label="Note Auto-Save Delay">
                 <select
                   value={editorSettings.autoSaveDelay}
                   onChange={(e) => updateEditorSetting("autoSaveDelay", Number(e.target.value))}
                   className="appearance-none bg-input border border-border rounded-md pl-3 pr-7 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer bg-[length:10px_10px] bg-[right_8px_center] bg-no-repeat"
                   style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")" }}
-                  aria-label="Auto-save delay"
+                  aria-label="Note Auto-Save Delay"
                 >
                   {AUTO_SAVE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
               </SettingsRow>
-              <SettingsRow label="Tab size">
-                <div className="flex gap-4" role="radiogroup" aria-label="Tab size">
+              <SettingsRow label="Tab Size">
+                <div className="flex gap-4" role="radiogroup" aria-label="Tab Size">
                   <RadioOption name="tabSize" value={2 as TabSizeOption} currentValue={editorSettings.tabSize} label="2 spaces" onChange={(v) => updateEditorSetting("tabSize", v)} />
                   <RadioOption name="tabSize" value={4 as TabSizeOption} currentValue={editorSettings.tabSize} label="4 spaces" onChange={(v) => updateEditorSetting("tabSize", v)} />
                 </div>
@@ -546,28 +532,28 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
 
             <SettingsGroup>
               <ToggleSwitch
-                label="Line numbers"
+                label="Line Numbers"
                 checked={editorSettings.showLineNumbers}
                 onChange={(v) => updateEditorSetting("showLineNumbers", v)}
-                info="Show line numbers in the editor gutter."
+                info="Show line numbers in the editor"
               />
               <ToggleSwitch
-                label="Word wrap"
+                label="Word Wrap"
                 checked={editorSettings.wordWrap}
                 onChange={(v) => updateEditorSetting("wordWrap", v)}
-                info="Wrap long lines instead of horizontal scrolling."
+                info="Wrap long lines instead of horizontal scrolling"
               />
               <ToggleSwitch
-                label="Cursor blink"
+                label="Cursor Blink"
                 checked={editorSettings.cursorBlink}
                 onChange={(v) => updateEditorSetting("cursorBlink", v)}
-                info="Animate the cursor with a blinking effect."
+                info="Animate the cursor with a blinking effect"
               />
             </SettingsGroup>
 
             <SettingsGroup>
-              <SettingsRow label="Cursor style">
-                <div className="flex gap-4" role="radiogroup" aria-label="Cursor style">
+              <SettingsRow label="Cursor Style">
+                <div className="flex gap-4" role="radiogroup" aria-label="Cursor Style">
                   <RadioOption name="cursorStyle" value={"line" as CursorStyle} currentValue={editorSettings.cursorStyle} label="Line" onChange={(v) => updateEditorSetting("cursorStyle", v)} />
                   <RadioOption name="cursorStyle" value={"block" as CursorStyle} currentValue={editorSettings.cursorStyle} label="Block" onChange={(v) => updateEditorSetting("cursorStyle", v)} />
                   <RadioOption name="cursorStyle" value={"underline" as CursorStyle} currentValue={editorSettings.cursorStyle} label="Underline" onChange={(v) => updateEditorSetting("cursorStyle", v)} />
@@ -580,7 +566,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
           {/* Trash */}
           {activeSection === "Trash" && (
           <SettingsGroup>
-            <SettingsRow label="Auto-delete after" info="Trashed notes are permanently deleted after this period. Set to 'Never' to keep trashed notes indefinitely.">
+            <SettingsRow label="Auto-Delete After" info="Trashed notes are permanently deleted after this period. Set to 'Never' to keep trashed notes indefinitely">
               <select
                 value={trashRetentionDays}
                 onChange={(e) => handleTrashRetentionChange(Number(e.target.value))}
@@ -599,7 +585,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
           {/* Version History */}
           {activeSection === "Version History" && (
           <SettingsGroup>
-            <SettingsRow label="Capture interval" info="How often a version snapshot is saved when you edit a note. Set to 'Every save' to capture a version on every save.">
+            <SettingsRow label="Capture Interval" info="How often a version snapshot is saved when you edit a note. Set to 'Every save' to capture a version on every save">
               <select
                 value={editorSettings.versionIntervalMinutes}
                 onChange={(e) => updateEditorSetting("versionIntervalMinutes", Number(e.target.value))}
@@ -619,6 +605,14 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
           {activeSection === "My Account" && (
           <div className="space-y-4">
             <SettingsGroup>
+              <SettingsRow label="Email">
+                <span
+                  className="text-sm text-muted-foreground truncate max-w-[280px]"
+                  title={user?.email}
+                >
+                  {user?.email ?? "—"}
+                </span>
+              </SettingsRow>
               <SettingsRow label="Password">
                 <button
                   onClick={onChangePassword}
@@ -630,7 +624,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
             </SettingsGroup>
 
             <SettingsGroup>
-              <SettingsRow label="Reset all settings" info="Resets all appearance, editor, and AI settings back to their defaults. Your notes, account, and data are not affected.">
+              <SettingsRow label="Reset All Settings" info="Resets all appearance, editor, and AI settings back to their defaults. Your notes, account, and data are not affected">
                 {confirmReset ? (
                   <div className="flex items-center gap-2">
                     <button
@@ -662,7 +656,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
             </SettingsGroup>
 
             <SettingsGroup>
-              <SettingsRow label="Sign out of your account">
+              <SettingsRow label="Sign Out of Your Account">
                 {confirmSignOut ? (
                   <div className="flex items-center gap-2">
                     <button
@@ -699,7 +693,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                 <div className="px-3 py-3 space-y-3">
                   <p className="text-sm text-green-500 font-medium">2FA enabled successfully!</p>
                   <p className="text-sm text-muted-foreground">
-                    Save these backup codes in a safe place. Each code can only be used once.
+                    Each code can be used once if you lose access to your authenticator app. Store them somewhere safe — they will not be shown again
                   </p>
                   <div className="bg-background border border-border rounded-md p-3 font-mono text-sm space-y-1">
                     {totpBackupCodes.map((code) => (
@@ -777,7 +771,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
             ) : user?.totpEnabled ? (
               <>
                 <SettingsGroup>
-                  <SettingsRow label="Two-factor authentication">
+                  <SettingsRow label="Two-Factor Authentication" info="Two-factor authentication is currently active. You'll need a 6-digit code from your authenticator app each time you sign in">
                     <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-500">Enabled</span>
                   </SettingsRow>
                 </SettingsGroup>
@@ -787,7 +781,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                     <div className="px-3 py-3 space-y-2">
                       <input
                         type="text"
-                        placeholder="Enter current TOTP code"
+                        placeholder="Enter code"
                         value={totpDisableCode}
                         onChange={(e) => setTotpDisableCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                         className="w-full px-3 py-2 rounded-md bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-center tracking-widest"
@@ -826,7 +820,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                   </SettingsGroup>
                 ) : (
                   <SettingsGroup>
-                    <SettingsRow label="Disable two-factor authentication">
+                    <SettingsRow label="Disable Two-Factor Authentication">
                       <button
                         onClick={() => setTotpShowDisable(true)}
                         className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-destructive hover:border-destructive transition-colors cursor-pointer"
@@ -839,7 +833,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
               </>
             ) : (
               <SettingsGroup>
-                <SettingsRow label="Two-factor authentication">
+                <SettingsRow label="Two-Factor Authentication" info="Adds a 6-digit code from an authenticator app to your sign-in. We recommend Google Authenticator, 1Password, or Authy">
                   <button
                     onClick={async () => {
                       setTotpLoading(true);
@@ -869,16 +863,16 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
           <div className="space-y-4">
             <SettingsGroup>
               <ToggleSwitch
-                label="Enable AI features"
+                label="AI Features"
                 checked={aiSettings.masterAiEnabled}
                 onChange={(v) => updateAiSetting("masterAiEnabled", v)}
-                info="Master toggle for all AI features. When off, all AI features are disabled."
+                info="Master toggle for all AI features across the app"
               />
             </SettingsGroup>
 
             {/* Writing Assistance */}
             <SettingsGroup>
-              <ToggleSwitch label="Inline completions" checked={aiSettings.completions} onChange={(v) => updateAiSetting("completions", v)} info="AI suggests text as you type. Press Tab to accept, Escape to dismiss." disabled={!aiSettings.masterAiEnabled} />
+              <ToggleSwitch label="AI Assistant Inline Completions" checked={aiSettings.completions} onChange={(v) => updateAiSetting("completions", v)} info="AI Assistant suggests text as you type. Press Tab to accept, Escape to dismiss" disabled={!aiSettings.masterAiEnabled} />
               {aiSettings.completions && aiSettings.masterAiEnabled && (
                 <div className="pb-2.5 px-3" role="radiogroup" aria-label="Completion style">
                   {STYLE_OPTIONS.map(({ value, label: styleLabel, info: styleInfo }) => (
@@ -890,20 +884,20 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                   ))}
                 </div>
               )}
-              <ToggleSwitch label="Continue writing" checked={aiSettings.continueWriting} onChange={(v) => updateAiSetting("continueWriting", v)} info="Press Cmd/Ctrl+Shift+Space to generate a full paragraph or suggest document structure." disabled={!aiSettings.masterAiEnabled} />
-              <ToggleSwitch label="Select-and-rewrite" checked={aiSettings.rewrite} onChange={(v) => updateAiSetting("rewrite", v)} info="Select text and right-click (or Cmd+Shift+R) to rewrite it with AI." disabled={!aiSettings.masterAiEnabled} />
+              <ToggleSwitch label="Continue Writing" checked={aiSettings.continueWriting} onChange={(v) => updateAiSetting("continueWriting", v)} info="Press Cmd/Ctrl+Shift+Space to generate a full paragraph or suggest document structure" disabled={!aiSettings.masterAiEnabled} />
+              <ToggleSwitch label="Select-and-Rewrite" checked={aiSettings.rewrite} onChange={(v) => updateAiSetting("rewrite", v)} info="Select text and right-click (or Cmd+Shift+R) to rewrite it with AI" disabled={!aiSettings.masterAiEnabled} />
             </SettingsGroup>
 
             {/* Note Analysis */}
             <SettingsGroup>
-              <ToggleSwitch label="Summarize" checked={aiSettings.summarize} onChange={(v) => updateAiSetting("summarize", v)} info="Generate a short AI summary of your note, shown below the title." disabled={!aiSettings.masterAiEnabled} />
-              <ToggleSwitch label="Auto-tag suggestions" checked={aiSettings.tagSuggestions} onChange={(v) => updateAiSetting("tagSuggestions", v)} info="AI analyzes your note content and suggests relevant tags." disabled={!aiSettings.masterAiEnabled} />
+              <ToggleSwitch label="Summarize" checked={aiSettings.summarize} onChange={(v) => updateAiSetting("summarize", v)} info="Generate a short AI summary of your note" disabled={!aiSettings.masterAiEnabled} />
+              <ToggleSwitch label="Auto-Tag Suggestions" checked={aiSettings.tagSuggestions} onChange={(v) => updateAiSetting("tagSuggestions", v)} info="Generate tags that are relevant to your note" disabled={!aiSettings.masterAiEnabled} />
             </SettingsGroup>
 
             {/* Search & Chat */}
             <SettingsGroup>
               <div>
-                <ToggleSwitch label="Semantic search" checked={aiSettings.semanticSearch} onChange={(v) => { if (!v) updateAiSetting("qaAssistant", false); updateAiSetting("semanticSearch", v); }} info="Search by meaning, not just keywords. Uses AI embeddings to find related notes." disabled={!aiSettings.masterAiEnabled} />
+                <ToggleSwitch label="Semantic Search" checked={aiSettings.semanticSearch} onChange={(v) => { if (!v) updateAiSetting("qaAssistant", false); updateAiSetting("semanticSearch", v); }} info="Search by meaning, not just keywords. Uses AI embeddings to find related notes" disabled={!aiSettings.masterAiEnabled} />
                 {aiSettings.semanticSearch && aiSettings.masterAiEnabled && embeddingStatus && (
                   <div className="pb-2.5 px-3">
                     <span className="text-xs text-muted-foreground">
@@ -914,29 +908,29 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                   </div>
                 )}
               </div>
-              <ToggleSwitch label="AI assistant chat" checked={aiSettings.qaAssistant} onChange={(v) => updateAiSetting("qaAssistant", v)} info="Ask natural language questions about your notes. Requires semantic search to be enabled." disabled={!aiSettings.masterAiEnabled || !aiSettings.semanticSearch} />
+              <ToggleSwitch label="AI Assistant Chat" checked={aiSettings.qaAssistant} onChange={(v) => updateAiSetting("qaAssistant", v)} info="Ask natural language questions about your notes. Requires semantic search to be enabled" disabled={!aiSettings.masterAiEnabled || !aiSettings.semanticSearch} />
 
               {/* Phase C.5 — per-tool auto-approval for destructive
-                  Claude actions. Defaults are all-off (confirmation
-                  always required). Turning one on lets Claude execute
+                  AI Assistant actions. Defaults are all-off (confirmation
+                  always required). Turning one on lets the AI Assistant execute
                   that action immediately without showing a card.  */}
               {aiSettings.qaAssistant && aiSettings.masterAiEnabled && (
                 <div className="pt-2 px-3 space-y-1 border-t border-border/50">
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Auto-approve destructive actions</span>
-                  <p className="text-[11px] text-muted-foreground">When off, Claude must wait for your confirmation before each of these. Enable sparingly.</p>
-                  <ToggleSwitch label="Move notes to Trash" checked={aiSettings.autoApprove.deleteNote} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, deleteNote: v })} info="Auto-approve `delete_note` calls. Notes go to Trash and can be restored until the trash auto-delete timer purges them." />
-                  <ToggleSwitch label="Delete folders" checked={aiSettings.autoApprove.deleteFolder} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, deleteFolder: v })} info="Auto-approve `delete_folder`. Notes inside become Unfiled; the notes themselves aren't deleted." />
-                  <ToggleSwitch label="Rewrite note content" checked={aiSettings.autoApprove.updateNoteContent} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, updateNoteContent: v })} info="Auto-approve `update_note_content`. Previous version stays in version history." />
-                  <ToggleSwitch label="Rename notes" checked={aiSettings.autoApprove.renameNote} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameNote: v })} info="Auto-approve `rename_note`. Updates the note title only; content, folder, tags, and id are unchanged." />
-                  <ToggleSwitch label="Rename folders" checked={aiSettings.autoApprove.renameFolder} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameFolder: v })} info="Auto-approve `rename_folder`." />
-                  <ToggleSwitch label="Rename tags" checked={aiSettings.autoApprove.renameTag} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameTag: v })} info="Auto-approve `rename_tag`. Affects every note using that tag." />
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Auto-Approve Destructive Actions</span>
+                  <p className="text-[11px] text-muted-foreground">When disabled the AI Assistant waits for your confirmation</p>
+                  <ToggleSwitch label="Move Notes to Trash" checked={aiSettings.autoApprove.deleteNote} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, deleteNote: v })} info="Auto-approve `delete_note` calls. Notes go to Trash and can be restored until the trash auto-delete timer purges them" />
+                  <ToggleSwitch label="Delete Folders" checked={aiSettings.autoApprove.deleteFolder} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, deleteFolder: v })} info="Auto-approve `delete_folder` calls. Notes inside become Unfiled" />
+                  <ToggleSwitch label="Rewrite Note Content" checked={aiSettings.autoApprove.updateNoteContent} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, updateNoteContent: v })} info="Auto-approve `update_note_content` calls. Previous version stays in version history" />
+                  <ToggleSwitch label="Rename Notes" checked={aiSettings.autoApprove.renameNote} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameNote: v })} info="Auto-approve `rename_note` calls. Updates the note title only; content, folder, tags, etc are unchanged" />
+                  <ToggleSwitch label="Rename Folders" checked={aiSettings.autoApprove.renameFolder} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameFolder: v })} info="Auto-approve `rename_folder` calls" />
+                  <ToggleSwitch label="Rename Tags" checked={aiSettings.autoApprove.renameTag} onChange={(v) => updateAiSetting("autoApprove", { ...aiSettings.autoApprove, renameTag: v })} info="Auto-approve `rename_tag` calls. Affects every note using that tag" />
                 </div>
               )}
             </SettingsGroup>
 
             {/* Audio */}
             <SettingsGroup>
-              <ToggleSwitch label="Audio notes" checked={aiSettings.audioNotes} onChange={(v) => updateAiSetting("audioNotes", v)} info="Record audio and transcribe it into a note using AI." disabled={!aiSettings.masterAiEnabled} />
+              <ToggleSwitch label="Audio Notes" checked={aiSettings.audioNotes} onChange={(v) => updateAiSetting("audioNotes", v)} info="Record audio and transcribe it into a note using the AI Assistant" disabled={!aiSettings.masterAiEnabled} />
               {aiSettings.audioNotes && aiSettings.masterAiEnabled && (
                 <div className="pb-2 px-3" role="radiogroup" aria-label="Recording source">
                   <span className="text-xs text-muted-foreground uppercase tracking-wider">Recording source</span>
@@ -980,28 +974,9 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
 
           {/* About */}
           {activeSection === "About" && (
-          <>
             <SettingsGroup>
               <SettingsRow label="Version">
                 <span className="text-sm text-muted-foreground">{__APP_VERSION__}</span>
-              </SettingsRow>
-              <SettingsRow label="What's New">
-                <button
-                  onClick={async () => {
-                    if (!releaseNotes) {
-                      try {
-                        const res = await fetch("/RELEASE_NOTES.md");
-                        setReleaseNotes(await res.text());
-                      } catch {
-                        setReleaseNotes("Failed to load release notes.");
-                      }
-                    }
-                    setShowReleaseNotes(true);
-                  }}
-                  className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors cursor-pointer"
-                >
-                  Release Notes
-                </button>
               </SettingsRow>
               <SettingsRow label="Feedback">
                 <button
@@ -1012,32 +987,17 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                 </button>
               </SettingsRow>
             </SettingsGroup>
-
-            {showReleaseNotes && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80" onClick={() => setShowReleaseNotes(false)}>
-                <div className="w-full max-w-lg max-h-[80vh] bg-card border border-border rounded-lg shadow-lg flex flex-col" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-                    <span className="text-sm font-medium text-foreground">Release Notes</span>
-                    <button onClick={() => setShowReleaseNotes(false)} className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer">&times;</button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto px-4 py-3 text-sm text-foreground markdown-preview">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{releaseNotes ?? ""}</ReactMarkdown>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
           )}
 
           {/* AI Controls (Admin) */}
           {activeSection === "AI Controls" && user?.role === "admin" && (
           <SettingsGroup>
             <ToggleSwitch
-              label="Global AI enabled"
+              label="Global AI Enabled"
               checked={adminAiEnabled}
               onChange={handleAdminAiToggle}
               disabled={adminAiLoading}
-              info="When disabled, AI features (completions, summaries, tags, rewrite, transcription, Q&A) are turned off for all users."
+              info="When disabled, AI features (completions, summaries, tags, rewrite, transcription, Q&A) are turned off for all users"
             />
           </SettingsGroup>
           )}
@@ -1048,7 +1008,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
             <SettingsGroup>
               <div className="px-3 py-3 space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  One email per line. Only these emails can register new accounts.
+                  One email per line. Only these emails can register new accounts
                 </p>
                 <textarea
                   value={approvedEmailsText}
@@ -1168,7 +1128,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80" onClick={() => { setDeleteDialog(null); setDeleteError(""); }}>
                 <div className="w-full max-w-sm bg-card border border-border rounded-lg shadow-lg p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
                   <p className="text-sm font-medium text-foreground">Delete user {deleteDialog.email}?</p>
-                  <p className="text-xs text-muted-foreground">This action cannot be undone. All user data will be permanently deleted.</p>
+                  <p className="text-xs text-muted-foreground">This action cannot be undone. All user data will be permanently deleted</p>
                   {deleteError && <p className="text-sm text-error">{deleteError}</p>}
                   <div className="flex gap-2">
                     <button

@@ -12,6 +12,7 @@ import { AppNavigator } from "@/navigation/AppNavigator";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { AppAlertProvider } from "@/components/AppAlertProvider";
 import { colors } from "@/theme";
+import { useResolvedTheme } from "@/theme/colors";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,7 +46,7 @@ export default function App() {
           <KeyboardProvider>
             <BottomSheetModalProvider>
               <AppAlertProvider>
-                <StatusBar style="auto" />
+                <ThemedStatusBar />
                 <ErrorBoundary>
                   <AppNavigator />
                 </ErrorBoundary>
@@ -56,4 +57,15 @@ export default function App() {
       </QueryClientProvider>
     </GestureHandlerRootView>
   );
+}
+
+/** Reads the app's resolved theme (user-chosen light/dark + system
+ *  fallback) and tells expo-status-bar which icon-tint mode to use.
+ *  `style="auto"` would only follow the OS, so a user explicitly
+ *  picking Light while the OS is Dark would leave white-on-white
+ *  status icons. Renders nothing visible — it just configures the
+ *  native status bar. */
+function ThemedStatusBar() {
+  const resolved = useResolvedTheme();
+  return <StatusBar style={resolved === "light" ? "dark" : "light"} />;
 }

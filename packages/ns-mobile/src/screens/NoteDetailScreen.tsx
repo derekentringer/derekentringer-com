@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Animated,
+  Platform,
   StyleSheet,
 } from "react-native";
 import { useAppAlert } from "@/components/AppAlertProvider";
@@ -228,6 +229,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
               name="pencil-outline"
               size={24}
               color={themeColors.foreground}
+              style={styles.headerIcon}
             />
           </Pressable>
           <Pressable
@@ -240,6 +242,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
               name={note?.favorite ? "star" : "star-outline"}
               size={24}
               color={note?.favorite ? themeColors.primary : themeColors.foreground}
+              style={styles.headerIcon}
             />
           </Pressable>
           <Pressable
@@ -252,6 +255,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
               name="dots-vertical"
               size={24}
               color={themeColors.foreground}
+              style={styles.headerIcon}
             />
           </Pressable>
         </View>
@@ -480,7 +484,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
                       <Text
                         style={[
                           styles.tagText,
-                          { color: themeColors.primary },
+                          { color: themeColors.tagText },
                         ]}
                       >
                         {tag}
@@ -599,13 +603,31 @@ const styles = StyleSheet.create({
   // The 12 dp internal padding on each button already produces
   // the right visual separation, so the inter-button gap is 0.
   // Source: https://m3.material.io/components/top-app-bar/specs
+  // Inter-item spacing follows platform conventions: 0 on iOS so the
+  // bar-button pill renders as a single segmented group; 4dp on Android
+  // per Material 3 top-app-bar action-item spacing.
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 0,
+    ...Platform.select({ ios: { gap: 0 }, default: { gap: 4 } }),
   },
+  // 24dp icon in a 48dp touch target on Android (Material 3 spec) and
+  // 44pt on iOS (HIG). Keep alignItems/justifyContent: center so the
+  // glyph sits in the middle of the touch area regardless.
   headerButton: {
-    padding: 12,
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // lineHeight matches icon size — kills the trailing ~4pt of
+  // line-box descender that otherwise pushes the glyph below the
+  // visual center of the iOS bar-button pill.
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
   statusLine: {
     fontSize: 11,
