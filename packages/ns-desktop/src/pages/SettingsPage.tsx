@@ -354,8 +354,8 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
     "Editor",
     "Keyboard Shortcuts",
     "AI Features",
-    "Version History",
     "Trash",
+    "Version History",
     "My Account",
     "Security",
     "About",
@@ -388,7 +388,7 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
           {([
             { label: "General", items: ["Appearance", "Editor", "Keyboard Shortcuts"] },
             { label: "Features", items: ["AI Features"] },
-            { label: "Data", items: ["Version History", "Trash"] },
+            { label: "Data", items: ["Trash", "Version History"] },
             { label: "Account", items: ["My Account", "Security"] },
             { label: "App", items: ["About"] },
             ...(user?.role === "admin" ? [{ label: "Admin", items: ["AI Controls", "Approved Emails", "User Management"] as Section[] }] : []),

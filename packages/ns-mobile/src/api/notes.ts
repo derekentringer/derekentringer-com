@@ -118,6 +118,30 @@ export async function restoreVersion(
   return data.note;
 }
 
+/**
+ * Get the per-user version-snapshot capture interval in minutes.
+ * `0` means "every save" (web/desktop label). The setting lives
+ * on the server in the user's `settings` store, and the API
+ * already consults it on every save when deciding whether to
+ * create a snapshot — mobile only needs the UI surface.
+ */
+export async function getVersionInterval(): Promise<{ minutes: number }> {
+  const { data } = await api.get<{ minutes: number }>("/notes/versions/interval");
+  return data;
+}
+
+/** Set the version-snapshot capture interval. Returns the
+ *  updated value as confirmation. */
+export async function setVersionInterval(
+  minutes: number,
+): Promise<{ minutes: number }> {
+  const { data } = await api.put<{ minutes: number }>(
+    "/notes/versions/interval",
+    { minutes },
+  );
+  return data;
+}
+
 export async function fetchTags(): Promise<{
   tags: { name: string; count: number }[];
 }> {
