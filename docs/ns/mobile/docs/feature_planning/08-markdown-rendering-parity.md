@@ -1,6 +1,6 @@
 # 08 — Markdown Rendering Parity
 
-**Status:** In Progress (Phases 1–4 complete; Phase 5 pending)
+**Status:** In Progress (Phases 1–4 + 5a complete; Phase 5b pending; Phase 6 deferred)
 **Priority:** Medium
 
 ## Summary
@@ -132,24 +132,22 @@ Verified on iOS + Android against `markdown-parity-test-fixture.md`.
 ### Phase 5 — Syntax Highlighting (split into two sub-phases)
 **Effort:** ~1 day for 5a, ~1–2 days for 5b
 
-#### Phase 5a — Code-block chrome (no real coloring)
+#### Phase 5a — Code-block chrome (no real coloring) ✅
+**Effort:** ~1 day (actual: ~half day)
+**Status:** Complete (2026-05-07)
 
 **Goal:** Code fences look like code blocks — monospace font, theme-aware bg, language label, copy-to-clipboard button — but glyphs are still single-colored.
 
-**Tasks:**
-- Custom `fence` rule in `markdownRules.ts` that:
-  - Reads the language hint after the opening fence.
-  - Renders a header strip with the language name and a copy button (`expo-clipboard`).
-  - Renders the code body in a monospace font (Phase 2 already handled long-line horizontal scroll).
-- Match web/desktop's `CodeBlock.tsx` visual chrome (border-radius, padding, language label position).
+**What shipped:**
+- New `packages/ns-mobile/src/components/notes/MarkdownCodeBlock.tsx`. Visual: bordered card → header strip (language label on the left, copy icon on the right) → horizontally-scrollable monospace body. When the fence has no language hint (test fixture 6g), the header strip collapses to a tighter mini-header with just the copy button right-aligned, so plain ``` fences don't show an empty label slot.
+- Copy button uses `expo-clipboard.setStringAsync`, fires a Light haptic, swaps to a checkmark for 1.5s, then resets. Stale-timer guard cleans up across re-taps and unmount.
+- Updated the `fence` rule in `markdownRules.ts` to read `node.sourceInfo` (the markdown-it fence info string, surfaced through `tokensToAST`) and render the new component.
+- The indented `code_block` rule (4-space-indented code) keeps the simpler Phase-2 chrome — no language hint exists for indented blocks, so the chrome adds no value there.
+- Phase 2's long-line horizontal scroll is preserved inside the new component.
 
-**Files:**
+**Files touched:**
+- `packages/ns-mobile/src/components/notes/MarkdownCodeBlock.tsx` (new)
 - `packages/ns-mobile/src/lib/markdownRules.ts`
-- `packages/ns-mobile/src/components/notes/MarkdownCodeBlock.tsx` (extract since it grows beyond a one-liner)
-
-**Acceptance:**
-- Each code fence shows its language label.
-- Copy button works.
 
 #### Phase 5b — Actual syntax coloring (optional, can defer)
 

@@ -18,6 +18,7 @@ import {
 // without the spread-key shape.
 import FitImage from "react-native-fit-image";
 import { cleanHeadingText } from "@/lib/extractHeadings";
+import { MarkdownCodeBlock } from "@/components/notes/MarkdownCodeBlock";
 
 /**
  * Context used by Phase 4's interactive Table of Contents. The
@@ -282,30 +283,22 @@ export const markdownRules = {
       },
       children,
     ),
-  // Fenced code blocks (```lang … ```) and indented code blocks
-  // wrap their content Text in a horizontal ScrollView so long
-  // lines scroll horizontally instead of wrapping mid-line. The
-  // bordered chrome (bg, border, padding, radius) lives on the
-  // ScrollView; the inner Text inherits color/font from the body
-  // style cascade, which is why we don't pass `styles.fence` /
-  // `styles.code_block` on the Text — applying them there would
-  // double-apply padding inside the already-padded container.
+  // Fenced code blocks (```lang … ```) — Phase 5a chrome:
+  // language label header + copy-to-clipboard button + monospace
+  // body with horizontal scroll for long lines (Phase 2 behavior
+  // preserved inside MarkdownCodeBlock). The language hint comes
+  // from the fence's `info` string, surfaced by tokensToAST as
+  // `node.sourceInfo`.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fence: (node: any, _children: any, _parent: any, styles: any, inheritedStyles: any = {}) => {
-    let content = node.content;
-    if (typeof content === "string" && content.endsWith("\n")) {
-      content = content.slice(0, -1);
-    }
-    return React.createElement(
-      ScrollView,
-      {
-        key: node.key,
-        horizontal: true,
-        showsHorizontalScrollIndicator: false,
-        style: styles._VIEW_SAFE_fence,
-      },
-      React.createElement(Text, { style: inheritedStyles }, content),
-    );
+  fence: (node: any) => {
+    let content: string = node.content ?? "";
+    if (content.endsWith("\n")) content = content.slice(0, -1);
+    const language = (node.sourceInfo ?? "").trim().toLowerCase();
+    return React.createElement(MarkdownCodeBlock, {
+      key: node.key,
+      content,
+      language,
+    });
   },
   // Heading rules (h1–h6) wrap children in a HeadingCapture that
   // reports the heading's rendered Y back to the host screen via
