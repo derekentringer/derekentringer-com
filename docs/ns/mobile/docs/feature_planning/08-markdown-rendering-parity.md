@@ -1,6 +1,6 @@
 # 08 — Markdown Rendering Parity
 
-**Status:** In Progress (Phases 1–3 complete; Phase 4 pending)
+**Status:** In Progress (Phases 1–4 complete; Phase 5 pending)
 **Priority:** Medium
 
 ## Summary
@@ -105,33 +105,27 @@ Verified on iOS + Android against `markdown-parity-test-fixture.md`.
 
 ---
 
-### Phase 4 — Interactive Table of Contents
-**Effort:** ~1–2 days
+### Phase 4 — Interactive Table of Contents ✅
+**Effort:** ~1–2 days (actual: ~1 day)
+**Status:** Complete (2026-05-07)
 
 **Goal:** A bottom-sheet ToC button in the header that lists all headings and jumps the scroll position to the chosen heading.
 
-**Tasks:**
-- New `packages/ns-mobile/src/lib/extractHeadings.ts` (port the parsing logic from `packages/ns-web/src/lib/extractHeadings.ts`).
-- New `packages/ns-mobile/src/components/notes/TocSheet.tsx` mirroring the web `TocPanel` — list of headings indented by level, tap to jump.
-- In `NoteDetailScreen`:
-  - Capture each heading's Y position via `onLayout` on a custom heading rule, keyed by heading index.
-  - Add a ToC icon to the header right (consistent with the recent header-icon work).
-  - On heading tap, scroll the outer `ScrollView` to the captured Y offset.
+**What shipped:**
+- New `packages/ns-mobile/src/lib/extractHeadings.ts` — mobile port of the web extractor. Returns `{level, text}[]` in source order, skipping fenced code blocks and a defensive frontmatter block. Drops the `slug`/`lineNumber` fields the web version produces (mobile keys by cleaned text since we scroll to a captured Y, not a DOM anchor). 13 unit tests cover frontmatter, fenced code, inline-formatting cleanup, and the no-match cases.
+- New `packages/ns-mobile/src/components/notes/TocSheet.tsx` — `BottomSheetModal` mirroring the existing `VersionHistorySheet` shape: header strip + indented heading list (`(level - minLevel) * 16` left-pad) + tap-to-dismiss handler. Empty state shown when the note has no headings.
+- New `TocCaptureContext` in `markdownRules.ts` exposes a `registerHeading(text, y)` callback plus a `contentRef` (a wrapper `<View>` placed inside the ScrollView). Custom `heading1`–`heading6` rules wrap their children in a `<HeadingCapture>` whose `onLayout` calls `measureInWindow` on both the heading and the content baseline; subtracting the two window-Y values yields the heading's Y inside the scrollable content — exactly what `scrollTo({y})` consumes. No scroll-offset tracking needed because the content baseline moves with the scroll.
+- Heading text is extracted by walking the AST recursively to the leaf `text` nodes (`extractAstText`). Reading `node.children[0].content` directly worked on iOS but returned empty on Android — a Hermes/markdown-it interaction we worked around.
+- `NoteDetailScreen` mounts the Provider, owns the `contentRef`, adds a `format-list-bulleted` icon to the header right (only shown when the note has headings), presents the sheet on tap, and calls `scrollViewRef.current.scrollTo` on heading select.
 
-**Files:**
-- `packages/ns-mobile/src/lib/extractHeadings.ts`
-- `packages/ns-mobile/src/components/notes/TocSheet.tsx`
-- `packages/ns-mobile/src/lib/markdownRules.ts` (heading rule with `onLayout` capture)
+**Why `measureInWindow` instead of `measureLayout(handle, …)`:** the new RN architecture (Fabric) rejects numeric node handles for `measureLayout`'s `relativeTo` argument. Window coords work on both legacy and Fabric renderers.
+
+**Files touched:**
+- `packages/ns-mobile/src/lib/extractHeadings.ts` (new)
+- `packages/ns-mobile/src/__tests__/extractHeadings.test.ts` (new, 13 tests)
+- `packages/ns-mobile/src/components/notes/TocSheet.tsx` (new)
+- `packages/ns-mobile/src/lib/markdownRules.ts`
 - `packages/ns-mobile/src/screens/NoteDetailScreen.tsx`
-
-**Tests:**
-- Unit tests for `extractHeadings`: respects depth, skips fenced-code-fence headings, skips frontmatter-region matches.
-- Manual: open the test fixture, tap the ToC button → see all H1–H6 entries indented by depth → tap one → note scrolls to it.
-
-**Acceptance:**
-- ToC button visible in header.
-- All headings extracted in order.
-- Tapping a heading scrolls to within ~10pt of the heading's top.
 
 ---
 
