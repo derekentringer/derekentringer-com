@@ -1,6 +1,6 @@
 # 08 — Markdown Rendering Parity
 
-**Status:** In Progress (Phase 1 complete; Phase 2 pending)
+**Status:** In Progress (Phases 1–2 complete; Phase 3 pending)
 **Priority:** Medium
 
 ## Summary
@@ -61,25 +61,20 @@ Verified on iOS + Android against `markdown-parity-test-fixture.md`.
 
 ---
 
-### Phase 2 — Wide-table & code-block horizontal scroll
-**Effort:** ~half day
+### Phase 2 — Wide-table & code-block horizontal scroll ✅
+**Effort:** ~half day (actual: ~half day)
+**Status:** Complete (2026-05-07)
 
 **Goal:** Tables and code blocks that exceed the viewport scroll horizontally instead of wrapping cell/line content.
 
-**Context:** Simple, aligned, and inline-markdown-in-cell tables already render correctly on both iOS and Android via the library's GFM defaults — column alignment is honored, inline markdown in cells works. Code blocks render with monospace + bordered chrome. The only overflow gap is wide content wrapping instead of scrolling (visible in fixture sections 7c and 6g).
+**What shipped:**
+- Custom `table` rule wraps the inner table View in a horizontal `ScrollView` with `contentContainerStyle: { flexGrow: 1 }`. Simple/narrow tables still inflate to fill the viewport; wide tables overflow and scroll horizontally.
+- Custom `th` / `td` rules add `minWidth: 100` so column count drives the row's natural width — once total minWidth exceeds the viewport, the outer ScrollView starts scrolling. Below that, `flex: 1` still divides the inflated row evenly.
+- Custom `fence` and `code_block` rules wrap their inner Text in a horizontal `ScrollView` so long lines scroll instead of wrapping. Bordered chrome (bg, border, padding, radius) lives on the ScrollView; the Text inherits color/font from the body cascade.
+- GFM column alignment continues to work — alignment lives on `node.attributes.style` and propagates through `inheritedStyles` in `AstRenderer`, so the wrap doesn't disturb it.
 
-**Tasks:**
-- Wrap the table rule's output in a horizontal `ScrollView` so wide tables scroll instead of wrapping cell text.
-- Wrap fenced code-block bodies in a horizontal `ScrollView` so long lines scroll instead of wrapping.
-- Verify GFM column alignment still works after the wrap.
-
-**Files:**
+**Files touched:**
 - `packages/ns-mobile/src/lib/markdownRules.ts`
-
-**Acceptance:**
-- Fixture section 7c (wide table) scrolls horizontally instead of wrapping cell text.
-- Fixture section 6g (plain code fence with intentionally long line) scrolls horizontally instead of wrapping.
-- 7a/7b/7d tables and other code blocks unchanged.
 
 ---
 

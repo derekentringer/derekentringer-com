@@ -1,5 +1,5 @@
 import React from "react";
-import { Linking, Platform, Text } from "react-native";
+import { Linking, Platform, ScrollView, Text, View } from "react-native";
 // react-native-markdown-display's default `image` rule does
 // `<FitImage {...imageProps} />` where `imageProps.key = node.key`,
 // which trips React 18+'s "key passed via spread" warning. We
@@ -25,6 +25,12 @@ const WIKI_DECOR = Platform.select({
   },
   default: {},
 });
+
+// Min cell width that triggers horizontal scroll on wide tables
+// while still letting simple 2–4 column tables fill the viewport.
+// At ~393pt phone width: 4 cols × 100 = 400 (slight scroll), 11 cols
+// × 100 = 1100 (clearly scrolls), 3 cols × 100 = 300 (fully fits).
+const TABLE_CELL_MIN_WIDTH = 100;
 
 export const markdownRules = {
   // Library's built-in image renderer signature; using `any` here
@@ -83,6 +89,94 @@ export const markdownRules = {
       Text,
       { key: node.key, style, onPress },
       children,
+    );
+  },
+  // Wrap tables in a horizontal ScrollView so wide tables (more
+  // columns than fit on screen) scroll instead of forcing each
+  // cell to wrap its text. `flexGrow: 1` on the contentContainer
+  // keeps simple tables filling the viewport — without it, narrow
+  // tables would shrink to their natural content width and leave
+  // dead space on the right. GFM column alignment is preserved by
+  // the library via `node.attributes.style` cascading down to
+  // inner Text nodes through `inheritedStyles`, so it survives
+  // this wrap untouched.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table: (node: any, children: any, _parent: any, styles: any) =>
+    React.createElement(
+      ScrollView,
+      {
+        key: node.key,
+        horizontal: true,
+        showsHorizontalScrollIndicator: false,
+        contentContainerStyle: { flexGrow: 1 },
+      },
+      React.createElement(View, { style: styles._VIEW_SAFE_table }, children),
+    ),
+  // th / td get a minWidth so the row's natural width grows with
+  // column count. When total minWidth exceeds the viewport, the
+  // ScrollView around the table starts scrolling. Below that, the
+  // outer container's flexGrow:1 inflates the row and `flex: 1` on
+  // each cell still divides the available space evenly.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  th: (node: any, children: any, _parent: any, styles: any) =>
+    React.createElement(
+      View,
+      {
+        key: node.key,
+        style: [styles._VIEW_SAFE_th, { minWidth: TABLE_CELL_MIN_WIDTH }],
+      },
+      children,
+    ),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  td: (node: any, children: any, _parent: any, styles: any) =>
+    React.createElement(
+      View,
+      {
+        key: node.key,
+        style: [styles._VIEW_SAFE_td, { minWidth: TABLE_CELL_MIN_WIDTH }],
+      },
+      children,
+    ),
+  // Fenced code blocks (```lang … ```) and indented code blocks
+  // wrap their content Text in a horizontal ScrollView so long
+  // lines scroll horizontally instead of wrapping mid-line. The
+  // bordered chrome (bg, border, padding, radius) lives on the
+  // ScrollView; the inner Text inherits color/font from the body
+  // style cascade, which is why we don't pass `styles.fence` /
+  // `styles.code_block` on the Text — applying them there would
+  // double-apply padding inside the already-padded container.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fence: (node: any, _children: any, _parent: any, styles: any, inheritedStyles: any = {}) => {
+    let content = node.content;
+    if (typeof content === "string" && content.endsWith("\n")) {
+      content = content.slice(0, -1);
+    }
+    return React.createElement(
+      ScrollView,
+      {
+        key: node.key,
+        horizontal: true,
+        showsHorizontalScrollIndicator: false,
+        style: styles._VIEW_SAFE_fence,
+      },
+      React.createElement(Text, { style: inheritedStyles }, content),
+    );
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  code_block: (node: any, _children: any, _parent: any, styles: any, inheritedStyles: any = {}) => {
+    let content = node.content;
+    if (typeof content === "string" && content.endsWith("\n")) {
+      content = content.slice(0, -1);
+    }
+    return React.createElement(
+      ScrollView,
+      {
+        key: node.key,
+        horizontal: true,
+        showsHorizontalScrollIndicator: false,
+        style: styles._VIEW_SAFE_code_block,
+      },
+      React.createElement(Text, { style: inheritedStyles }, content),
     );
   },
 };
