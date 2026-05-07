@@ -1,6 +1,6 @@
 # 08 — Markdown Rendering Parity
 
-**Status:** In Progress (Phases 1–2 complete; Phase 3 pending)
+**Status:** In Progress (Phases 1–3 complete; Phase 4 pending)
 **Priority:** Medium
 
 ## Summary
@@ -78,29 +78,30 @@ Verified on iOS + Android against `markdown-parity-test-fixture.md`.
 
 ---
 
-### Phase 3 — Interactive Task Checkboxes
-**Effort:** ~1 day
+### Phase 3 — Interactive Task Checkboxes ✅
+**Effort:** ~1 day (actual: ~1 day)
+**Status:** Complete (2026-05-07)
 
 **Goal:** `[ ]` / `[x]` items render as tappable checkboxes that update the source markdown and persist.
 
-**Tasks:**
-- Add a custom `list_item` rule that detects `[ ]` / `[x]` prefix and renders a `Pressable` checkbox + the rest of the line as the label.
-- New utility `packages/ns-mobile/src/lib/toggleTask.ts` that takes the note content + the index of the checkbox and returns content with that line's checkbox flipped.
-- Wire `onPress` in the rule → call back into `NoteDetailScreen` → update note via existing save path.
-- Handle nesting (task items inside other lists) and mixed lists (some plain, some task).
+**What shipped:**
+- New `packages/ns-mobile/src/lib/toggleTask.ts` with three exports:
+  - `markTasks(content)` — runs in the render pipeline (alongside `stripFrontmatter` and `resolveWikiLinks`) to rewrite each leading `[ ] ` / `[x] ` task marker into a markdown link with a custom URL scheme (`#task-empty:N` / `#task-done:N`), label being the Unicode checkbox glyph (☐ / ☑).
+  - `toggleTask(content, taskIndex)` — flips the checked state of the N-th task in canonical source. Used against the *unmodified* note content so the round-trip representation stays as standard GFM.
+  - `parseTaskUrl(url)` — distinguishes the task URL scheme.
+- Extended `link` rule in `markdownRules.ts` to recognize `#task-empty:` / `#task-done:` URLs and render the glyph at 18pt with theme-tinted color (lime for done, muted for empty) plus `accessibilityRole: "checkbox"`.
+- `NoteDetailScreen.handleLinkPress` dispatches on task URLs → `toggleTask` against `note.content` → `useUpdateNote.mutate(...)`. Auto-save propagates the change through the standard sync path.
+- `NoteEditorScreen.handleLinkPress` does the same against the local `content` state so the editor's Preview view also responds to checkbox taps; auto-save picks it up like any other edit.
+- 20 new unit tests covering markTasks (8), toggleTask (7), parseTaskUrl (4), and the round-trip (1). Full mobile suite: 336/336 green.
 
-**Files:**
+**Known cosmetic gap:** task items in mixed lists (test fixture 4d) show both the bullet AND the checkbox glyph (`• ☐ Task item`). The bullet stays because we don't override `list_item`. Tracked as a follow-up; can be addressed by detecting the task pattern in a custom `list_item` rule.
+
+**Files touched:**
+- `packages/ns-mobile/src/lib/toggleTask.ts` (new)
+- `packages/ns-mobile/src/__tests__/toggleTask.test.ts` (new, 20 tests)
 - `packages/ns-mobile/src/lib/markdownRules.ts`
-- `packages/ns-mobile/src/lib/toggleTask.ts`
 - `packages/ns-mobile/src/screens/NoteDetailScreen.tsx`
-
-**Tests:**
-- Unit tests for `toggleTask` covering: simple toggle, nested task, multiple tasks on the same line index.
-- Manual: tap a checkbox in the test fixture → see it flip → close + reopen note → persists.
-
-**Acceptance:**
-- Tapping a task checkbox toggles its state instantly and saves to the note.
-- Sync still works (toggled state propagates to web/desktop).
+- `packages/ns-mobile/src/screens/NoteEditorScreen.tsx`
 
 ---
 

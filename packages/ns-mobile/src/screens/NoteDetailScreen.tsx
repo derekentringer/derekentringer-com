@@ -27,6 +27,7 @@ import {
   useNote,
   useDeleteNote,
   useToggleFavorite,
+  useUpdateNote,
   useAllNotesForWikiLinks,
 } from "@/hooks/useNotes";
 import {
@@ -34,6 +35,11 @@ import {
   parseWikiLinkUrl,
   parseBrokenWikiLinkUrl,
 } from "@/lib/resolveWikiLinks";
+import {
+  markTasks,
+  toggleTask,
+  parseTaskUrl,
+} from "@/lib/toggleTask";
 import { useBacklinks } from "@/hooks/useBacklinks";
 import { useVersions } from "@/hooks/useVersions";
 import { BacklinksSection } from "@/components/notes/BacklinksSection";
@@ -76,8 +82,15 @@ export function NoteDetailScreen({ route, navigation }: Props) {
   }, [allNotes]);
   const renderedContent = React.useMemo(() => {
     if (!note?.content) return "";
-    return resolveWikiLinks(stripFrontmatter(note.content), titleToIdMap);
+    return markTasks(
+      resolveWikiLinks(stripFrontmatter(note.content), titleToIdMap),
+    );
   }, [note?.content, titleToIdMap]);
+
+  const deleteNote = useDeleteNote();
+  const toggleFavorite = useToggleFavorite();
+  const updateNote = useUpdateNote();
+
   const handleLinkPress = React.useCallback(
     (url: string) => {
       const wikiNoteId = parseWikiLinkUrl(url);
@@ -93,9 +106,20 @@ export function NoteDetailScreen({ route, navigation }: Props) {
         );
         return false;
       }
+      const task = parseTaskUrl(url);
+      if (task && note) {
+        // toggleTask runs against the *original* unmodified note
+        // content (frontmatter + wiki-link syntax intact) so the
+        // canonical GFM `- [ ] ` form round-trips through sync.
+        const newContent = toggleTask(note.content, task.taskIndex);
+        if (newContent !== note.content) {
+          updateNote.mutate({ id: note.id, data: { content: newContent } });
+        }
+        return false;
+      }
       return true; // let the lib open external URLs
     },
-    [navigation, showAlert],
+    [navigation, showAlert, note, updateNote],
   );
   const { data: backlinksData } = useBacklinks(noteId);
   const {
@@ -106,9 +130,6 @@ export function NoteDetailScreen({ route, navigation }: Props) {
 
   const resolvedFolderName =
     findFolderName(foldersData?.folders ?? [], note?.folderId) || note?.folder || null;
-
-  const deleteNote = useDeleteNote();
-  const toggleFavorite = useToggleFavorite();
 
   const versionSheetRef = useRef<BottomSheetModal>(null);
   const [showOverflow, setShowOverflow] = useState(false);
@@ -362,6 +383,9 @@ export function NoteDetailScreen({ route, navigation }: Props) {
       // Custom key consumed by markdownRules.link for `#wiki-broken:`
       // URLs (mirrors web's `.wiki-link-broken` muted style).
       link_wiki_broken: { color: themeColors.muted },
+      // Empty task checkbox glyph — muted color to differentiate
+      // from a checked box (which uses the lime primary).
+      link_task_empty: { color: themeColors.muted },
       // Web's `.markdown-preview hr` uses a 1px top border + 1.5em
       // vertical margin. RN's react-native-markdown-display renders
       // hr as a View, so we need explicit height + margins —
