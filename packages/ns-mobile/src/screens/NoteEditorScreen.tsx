@@ -13,7 +13,7 @@ import {
 import { useAppAlert } from "@/components/AppAlertProvider";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import Markdown from "react-native-markdown-display";
+import Markdown, { MarkdownIt } from "react-native-markdown-display";
 import { markdownRules } from "@/lib/markdownRules";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { NotesStackParamList } from "@/navigation/types";
@@ -29,6 +29,7 @@ import {
 import {
   resolveWikiLinks,
   parseWikiLinkUrl,
+  parseBrokenWikiLinkUrl,
 } from "@/lib/resolveWikiLinks";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import useSyncStore from "@/store/syncStore";
@@ -69,6 +70,11 @@ import {
   stripFrontmatter,
 } from "@derekentringer/ns-shared";
 import useEditorSettingsStore from "@/store/editorSettingsStore";
+
+// MarkdownIt instance with `linkify: true` so bare URLs in body
+// text become tappable in the preview. Module-scope so the
+// Markdown component's memoization stays stable across renders.
+const mdParser = MarkdownIt({ typographer: true, linkify: true });
 
 type Props = NativeStackScreenProps<NotesStackParamList, "NoteEditor">;
 
@@ -154,9 +160,17 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         navigation.push("NoteDetail", { noteId: wikiNoteId });
         return false;
       }
+      const brokenTitle = parseBrokenWikiLinkUrl(url);
+      if (brokenTitle) {
+        showAlert(
+          "Note not found",
+          `No note titled "${brokenTitle}" exists.`,
+        );
+        return false;
+      }
       return true;
     },
-    [navigation],
+    [navigation, showAlert],
   );
   const { data: tagsData } = useTags();
   const isOnline = useSyncStore((s) => s.isOnline);
@@ -674,6 +688,9 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         paddingVertical: 4,
       },
       link: { color: themeColors.primary },
+      // Custom key consumed by markdownRules.link for `#wiki-broken:`
+      // URLs (mirrors web's `.wiki-link-broken` muted style).
+      link_wiki_broken: { color: themeColors.muted },
       // Mirrors NoteDetailScreen: explicit height + margins so the
       // hr renders as a visible 1px rule with breathing room above
       // and below (web's `.markdown-preview hr`: 1px border +
@@ -731,7 +748,12 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             </Text>
           ) : null}
           {content ? (
-            <Markdown style={mdStyles} rules={markdownRules} onLinkPress={handleLinkPress}>
+            <Markdown
+              style={mdStyles}
+              rules={markdownRules}
+              onLinkPress={handleLinkPress}
+              markdownit={mdParser}
+            >
               {resolveWikiLinks(stripFrontmatter(content), titleToIdMap)}
             </Markdown>
           ) : (

@@ -526,9 +526,22 @@
   }
 }
 
-/* Wiki-link styles */
+/* Wiki-link styles.
+ *
+ * Uses longhand + -webkit- prefixed longhand instead of the
+ * `text-decoration: underline dotted` shorthand. Chrome handles
+ * the shorthand fine, but Tauri's WKWebView (used by ns-desktop
+ * on macOS) renders the shorthand as a solid underline. The
+ * longhand + webkit-prefixed pair forces dotted everywhere.
+ *
+ * `dotted` (rather than `dashed`) is used so the visual matches
+ * mobile, where RN renders `dashed` with much heavier, more
+ * widely-spaced marks than web's CSS. */
 .markdown-preview a.wiki-link {
-  text-decoration: underline dashed;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  -webkit-text-decoration-line: underline;
+  -webkit-text-decoration-style: dotted;
   text-underline-offset: 2px;
   cursor: pointer;
 }
@@ -539,8 +552,12 @@
 
 .wiki-link-broken {
   color: var(--color-muted-foreground);
-  text-decoration: underline dashed;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
   text-decoration-color: var(--color-destructive);
+  -webkit-text-decoration-line: underline;
+  -webkit-text-decoration-style: dotted;
+  -webkit-text-decoration-color: var(--color-destructive);
   text-underline-offset: 2px;
 }
 

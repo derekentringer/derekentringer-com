@@ -10,12 +10,14 @@
 // Behavior:
 //   `[[Title]]`            → `[Title](#wiki:<noteId>)`
 //   `[[Title|alias]]`      → `[alias](#wiki:<noteId>)`
-//   `[[unresolved]]`       → unchanged (renders as plain text)
+//   `[[unresolved]]`       → `[unresolved](#wiki-broken:<title>)`
 //
-// The link is rendered via the markdown library's normal link
-// styling (which on mobile uses `themeColors.primary`). Tapping
-// it fires `onLinkPress` with the `#wiki:<noteId>` URL — the
-// caller intercepts that scheme and navigates to NoteDetail.
+// Unresolved links use a separate `#wiki-broken:` scheme so the
+// renderer can style them differently (muted color + dashed
+// underline, mirroring web's `.wiki-link-broken` span). Tapping
+// fires `onLinkPress` — the caller distinguishes via
+// `parseWikiLinkUrl` (resolved → navigate) vs
+// `parseBrokenWikiLinkUrl` (broken → toast / no-op).
 
 const WIKI_RE = /\[\[([^\[\]]+?)\]\]/g;
 
@@ -23,15 +25,18 @@ export function resolveWikiLinks(
   content: string,
   titleToIdMap: Map<string, string>,
 ): string {
-  return content.replace(WIKI_RE, (full, inner) => {
+  return content.replace(WIKI_RE, (_full, inner) => {
     const raw = String(inner).trim();
     // Pipe alias: [[Title|alias]] — link points to Title, label is alias.
     const pipeIdx = raw.indexOf("|");
     const title = pipeIdx >= 0 ? raw.slice(0, pipeIdx).trim() : raw;
     const label = pipeIdx >= 0 ? raw.slice(pipeIdx + 1).trim() : raw;
     const noteId = titleToIdMap.get(title.toLowerCase());
-    if (!noteId) return full;
-    return `[${label}](#wiki:${noteId})`;
+    if (noteId) return `[${label}](#wiki:${noteId})`;
+    // Unresolved: emit a broken-link form so the renderer can
+    // style it. encodeURIComponent on the title avoids breaking
+    // the markdown link URL syntax for titles with parens, etc.
+    return `[${label}](#wiki-broken:${encodeURIComponent(title)})`;
   });
 }
 
@@ -41,4 +46,18 @@ export function parseWikiLinkUrl(url: string): string | null {
   if (!url.startsWith("#wiki:")) return null;
   const id = url.slice("#wiki:".length).trim();
   return id.length > 0 ? id : null;
+}
+
+/** Parse a `#wiki-broken:<title>` URL produced by `resolveWikiLinks`.
+ *  Returns the original (decoded) title if the URL matches the
+ *  scheme, else null. */
+export function parseBrokenWikiLinkUrl(url: string): string | null {
+  if (!url.startsWith("#wiki-broken:")) return null;
+  const encoded = url.slice("#wiki-broken:".length).trim();
+  if (encoded.length === 0) return null;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return encoded;
+  }
 }

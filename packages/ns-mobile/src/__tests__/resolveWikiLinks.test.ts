@@ -1,6 +1,7 @@
 import {
   resolveWikiLinks,
   parseWikiLinkUrl,
+  parseBrokenWikiLinkUrl,
 } from "../lib/resolveWikiLinks";
 
 describe("resolveWikiLinks", () => {
@@ -24,9 +25,14 @@ describe("resolveWikiLinks", () => {
     expect(out).toBe("[the use cases doc](#wiki:note-1)");
   });
 
-  it("leaves an unresolved [[…]] in place so it renders as plain text", () => {
+  it("rewrites an unresolved [[…]] to a #wiki-broken: link", () => {
     const out = resolveWikiLinks("[[Unknown Note]] is missing.", map);
-    expect(out).toBe("[[Unknown Note]] is missing.");
+    expect(out).toBe("[Unknown Note](#wiki-broken:Unknown%20Note) is missing.");
+  });
+
+  it("uses the alias as the broken-link label and URL-encodes the title", () => {
+    const out = resolveWikiLinks("[[Unknown Note|alias]]", map);
+    expect(out).toBe("[alias](#wiki-broken:Unknown%20Note)");
   });
 
   it("rewrites multiple wiki-links in the same string", () => {
@@ -39,9 +45,9 @@ describe("resolveWikiLinks", () => {
     );
   });
 
-  it("returns the input unchanged when the map is empty", () => {
+  it("treats an empty map as all-broken", () => {
     const out = resolveWikiLinks("[[Anything]]", new Map());
-    expect(out).toBe("[[Anything]]");
+    expect(out).toBe("[Anything](#wiki-broken:Anything)");
   });
 });
 
@@ -59,5 +65,28 @@ describe("parseWikiLinkUrl", () => {
   it("returns null for #wiki: with no id", () => {
     expect(parseWikiLinkUrl("#wiki:")).toBeNull();
     expect(parseWikiLinkUrl("#wiki:   ")).toBeNull();
+  });
+
+  it("returns null for #wiki-broken: urls", () => {
+    expect(parseWikiLinkUrl("#wiki-broken:Unknown")).toBeNull();
+  });
+});
+
+describe("parseBrokenWikiLinkUrl", () => {
+  it("returns the decoded title for a #wiki-broken: url", () => {
+    expect(parseBrokenWikiLinkUrl("#wiki-broken:Unknown%20Note")).toBe(
+      "Unknown Note",
+    );
+  });
+
+  it("returns null for non-broken urls", () => {
+    expect(parseBrokenWikiLinkUrl("#wiki:note-1")).toBeNull();
+    expect(parseBrokenWikiLinkUrl("https://example.com")).toBeNull();
+    expect(parseBrokenWikiLinkUrl("")).toBeNull();
+  });
+
+  it("returns null for #wiki-broken: with no title", () => {
+    expect(parseBrokenWikiLinkUrl("#wiki-broken:")).toBeNull();
+    expect(parseBrokenWikiLinkUrl("#wiki-broken:   ")).toBeNull();
   });
 });

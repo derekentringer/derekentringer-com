@@ -1,25 +1,31 @@
 # 08 — Markdown Rendering Parity
 
-**Status:** In Progress (Phase 1 pending)
+**Status:** In Progress (Phase 1 complete; Phase 2 pending)
 **Priority:** Medium
 
 ## Summary
 
 Close the markdown rendering gap between mobile and web/desktop. Mobile uses `react-native-markdown-display` while web/desktop use `react-markdown` + `remark-gfm` + `rehype-highlight` + `mermaid` + custom remark plugins. Several features render unstyled or as plain text on mobile today.
 
-## Feature Gap (as of 2026-05-06)
+## Feature Gap (as of 2026-05-07)
+
+Verified on iOS + Android against `markdown-parity-test-fixture.md`.
 
 | Feature | Web/Desktop | Mobile | Gap |
 |---------|-------------|--------|-----|
-| GFM Tables | `remark-gfm` + custom `InteractiveTable` | Not rendered (plain text) | **Major** |
+| GFM Tables (simple, aligned, inline markdown in cells) | `remark-gfm` + custom `InteractiveTable` | Renders natively, alignment respected | Parity |
+| GFM Tables (wide-table horizontal scroll) | Wrapped in scroll container | Cells wrap instead of scrolling | **Minor** |
+| Code-block long-line horizontal scroll | `<pre>` overflow-x | Lines wrap instead of scrolling | **Minor** |
 | Syntax highlighting | `rehype-highlight` + `CodeBlock` (lang label, copy btn) | Unstyled, no language label, no copy | **Major** |
 | Mermaid diagrams | `mermaid` lib, `language="mermaid"` detection | Not rendered (deferred) | **Deferred** |
 | Interactive task lists | `remark-gfm` + custom `<input type="checkbox">` updating source | Plain `[ ]`/`[x]` text, not interactive | **Major** |
 | Interactive Table of Contents | `TocPanel` + `rehype-slug` + heading IDs + jump-to-anchor | No ToC, no heading anchors | **Major** |
-| Wiki-link styling | Custom `remarkWikiLink` + `.wiki-link` accent + dotted underline | Functional click navigation, no visual styling | **Minor** |
-| Strikethrough (`~~text~~`) | `remark-gfm` | Library default — likely supported, unverified | **Verify** |
-| Autolinks (bare URLs) | `remark-gfm` | Library default — unverified | **Verify** |
-| Raw HTML embeds | ReactMarkdown allows HTML | Library default — likely stripped | **Verify** |
+| Wiki-link rendering | Custom `remarkWikiLink` → tappable link | Raw `[[…]]` text, not rendered as link at all | **Major** |
+| Wiki-link visual styling | `.wiki-link` accent + dotted underline | n/a until rendering is fixed | (rolls into above) |
+| Bare URL autolinks (`https://…`) | `remark-gfm` | Plain text, not tappable | **Major** |
+| Strikethrough (`~~text~~`) | `remark-gfm` | Renders with line-through | Parity |
+| Email autolinks (`<a@b>`) | Standard | Renders as tappable link | Parity |
+| Raw HTML embeds | ReactMarkdown allows HTML | Escaped, visible as literal text | Parity (acceptable) |
 | Frontmatter | Editor folds it | `stripFrontmatter()` runs pre-render | Parity |
 | Headings, bold, italic, lists, blockquotes, inline code, basic code blocks, links, images, hr | Full support | Library defaults | Parity |
 
@@ -27,47 +33,53 @@ Close the markdown rendering gap between mobile and web/desktop. Mobile uses `re
 
 ## Phased Implementation Plan
 
-### Phase 1 — Verification + Wiki-link Visual Styling
-**Effort:** ~half day
+### Phase 1 — Wiki-link rendering + bare URL autolinks ✅
+**Effort:** ~1 day (actual: ~1 day)
+**Status:** Complete (2026-05-07)
 
-**Goal:** Confirm what works today on device for the unverified items; polish wiki-links so they look like links instead of identical to plain links.
+**Goal:** Wiki-links render as tappable, visually distinct links instead of raw `[[…]]` text. Bare URLs (`https://…`) become tappable instead of plain text.
 
-**Tasks:**
-- Build the test fixture (`markdown-parity-test-fixture.md`) into a real note and visually verify on iOS + Android:
-  - Strikethrough renders with line-through
-  - Bare URLs become tappable
-  - Raw HTML embed: confirm whether stripped, escaped, or rendered
-- Add a custom link rule in `markdownRules.ts` that detects the `#wiki:` URL scheme and styles the link with the lime accent + a dotted underline so wiki-links visually distinguish from regular links.
+**What shipped:**
+- `resolveWikiLinks` now rewrites unresolved `[[Title]]` to `[Title](#wiki-broken:<encodedTitle>)` instead of leaving raw text. Aliases (`[[Title|alias]]`) work for both resolved and broken cases.
+- New `parseBrokenWikiLinkUrl` helper for the `#wiki-broken:` scheme; both screens' `handleLinkPress` route resolved → navigate, broken → "Note not found" alert, regular URL → external open.
+- Custom `link` rule in `markdownRules.ts` discriminates by URL prefix:
+  - `#wiki:` → `styles.link` + `WIKI_DECOR`
+  - `#wiki-broken:` → `styles.link_wiki_broken` + `WIKI_DECOR`
+  - everything else → unchanged default
+- `WIKI_DECOR` is `Platform.select`-ed: iOS gets `textDecorationStyle: "dotted"` (RN's `dashed` rendered as very heavy chunks); Android gets no extra decoration since it ignores `textDecorationStyle` and falls back to a misleading solid underline. On Android the missing underline on a lime word is the wiki-link cue.
+- Both `NoteDetailScreen` and `NoteEditorScreen` pass `markdownit={MarkdownIt({ typographer: true, linkify: true })}` to the `Markdown` component, enabling bare URL autolinks at the parser level.
+- Web/desktop CSS in `packages/ns-web/src/styles/global.css` was switched from `text-decoration: underline dashed` shorthand → longhand + `-webkit-text-decoration-*` longhand (Tauri's WKWebView was rendering the shorthand as solid). Style also changed from `dashed` → `dotted` so all four platforms match visually.
+- All wiki-link colors theme-aware: mobile via `themeColors.primary`/`themeColors.muted` (per-theme `colors.ts`); web/desktop via `var(--color-primary)`/`var(--color-muted-foreground)`/`var(--color-destructive)`.
 
-**Files:**
+**Files touched:**
+- `packages/ns-mobile/src/lib/resolveWikiLinks.ts`
 - `packages/ns-mobile/src/lib/markdownRules.ts`
-
-**Acceptance:**
-- All "verify" rows in the gap table either resolved or scoped to follow-up tickets.
-- Wiki-links visually distinct from regular links in the rendered note.
+- `packages/ns-mobile/src/screens/NoteDetailScreen.tsx`
+- `packages/ns-mobile/src/screens/NoteEditorScreen.tsx`
+- `packages/ns-mobile/src/__tests__/resolveWikiLinks.test.ts` (14 tests, all green)
+- `packages/ns-web/src/styles/global.css`
 
 ---
 
-### Phase 2 — GFM Tables
-**Effort:** ~1–2 days
+### Phase 2 — Wide-table & code-block horizontal scroll
+**Effort:** ~half day
 
-**Goal:** Tables render natively, scroll horizontally for overflow, match web/desktop visual style.
+**Goal:** Tables and code blocks that exceed the viewport scroll horizontally instead of wrapping cell/line content.
+
+**Context:** Simple, aligned, and inline-markdown-in-cell tables already render correctly on both iOS and Android via the library's GFM defaults — column alignment is honored, inline markdown in cells works. Code blocks render with monospace + bordered chrome. The only overflow gap is wide content wrapping instead of scrolling (visible in fixture sections 7c and 6g).
 
 **Tasks:**
-- Add custom rules for `table`, `thead`, `tbody`, `tr`, `th`, `td` in `markdownRules.ts`.
-- Render header row with bold weight + theme `card` background; body rows with alternating subtle bg.
-- Wrap the whole table in a horizontal `ScrollView` so wide tables don't overflow the viewport.
-- Honor GFM column alignment (`:---`, `:---:`, `---:`).
-- Possibly extract into `packages/ns-mobile/src/components/notes/MarkdownTable.tsx` if the inline rule grows complex.
+- Wrap the table rule's output in a horizontal `ScrollView` so wide tables scroll instead of wrapping cell text.
+- Wrap fenced code-block bodies in a horizontal `ScrollView` so long lines scroll instead of wrapping.
+- Verify GFM column alignment still works after the wrap.
 
 **Files:**
 - `packages/ns-mobile/src/lib/markdownRules.ts`
-- `packages/ns-mobile/src/components/notes/MarkdownTable.tsx` (if extracted)
 
 **Acceptance:**
-- Test fixture's "Tables" section renders as styled grids.
-- Wide table scrolls horizontally without overlapping note margins.
-- Alignment column markers respected.
+- Fixture section 7c (wide table) scrolls horizontally instead of wrapping cell text.
+- Fixture section 6g (plain code fence with intentionally long line) scrolls horizontally instead of wrapping.
+- 7a/7b/7d tables and other code blocks unchanged.
 
 ---
 
@@ -138,7 +150,7 @@ Close the markdown rendering gap between mobile and web/desktop. Mobile uses `re
 - Custom `fence` rule in `markdownRules.ts` that:
   - Reads the language hint after the opening fence.
   - Renders a header strip with the language name and a copy button (`expo-clipboard`).
-  - Renders the code body in a monospace font with horizontal scroll for long lines.
+  - Renders the code body in a monospace font (Phase 2 already handled long-line horizontal scroll).
 - Match web/desktop's `CodeBlock.tsx` visual chrome (border-radius, padding, language label position).
 
 **Files:**
@@ -148,7 +160,6 @@ Close the markdown rendering gap between mobile and web/desktop. Mobile uses `re
 **Acceptance:**
 - Each code fence shows its language label.
 - Copy button works.
-- Long lines scroll horizontally inside the block (don't wrap).
 
 #### Phase 5b — Actual syntax coloring (optional, can defer)
 
