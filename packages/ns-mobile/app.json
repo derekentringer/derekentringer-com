@@ -32,6 +32,7 @@
       "package": "com.derekentringer.notesync",
       "edgeToEdgeEnabled": true
     },
+    "scheme": "notesync",
     "plugins": [
       "expo-font",
       "expo-sqlite",
@@ -47,6 +48,13 @@
         {
           "photosPermission": "Allow NoteSync to read photos from your library so you can attach them to your notes.",
           "cameraPermission": "Allow NoteSync to use the camera so you can take a photo and attach it to a note."
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["text/*"],
+          "disableIOS": true
         }
       ]
     ]

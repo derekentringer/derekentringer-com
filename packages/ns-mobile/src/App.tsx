@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ShareIntentProvider } from "expo-share-intent";
 import { AppNavigator } from "@/navigation/AppNavigator";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { AppAlertProvider } from "@/components/AppAlertProvider";
@@ -38,24 +39,34 @@ export default function App() {
   }
 
   return (
-    <GestureHandlerRootView
-      style={{ flex: 1, backgroundColor: colors.background }}
-    >
-      <QueryClientProvider client={queryClient}>
-        <SafeAreaProvider>
-          <KeyboardProvider>
-            <BottomSheetModalProvider>
-              <AppAlertProvider>
-                <ThemedStatusBar />
-                <ErrorBoundary>
-                  <AppNavigator />
-                </ErrorBoundary>
-              </AppAlertProvider>
-            </BottomSheetModalProvider>
-          </KeyboardProvider>
-        </SafeAreaProvider>
-      </QueryClientProvider>
-    </GestureHandlerRootView>
+    // ShareIntentProvider wraps the whole app so any screen — most
+    // importantly the post-auth tabs — can read the active share
+    // intent via useShareIntentContext(). The provider doesn't
+    // render any UI; it just listens to the native module's pending
+    // / none state. Phase E.1 only configures Android (text/*),
+    // iOS share-extension target is deferred. Resetting on
+    // background prevents stale intents from re-firing if the app
+    // is left running.
+    <ShareIntentProvider options={{ resetOnBackground: true }}>
+      <GestureHandlerRootView
+        style={{ flex: 1, backgroundColor: colors.background }}
+      >
+        <QueryClientProvider client={queryClient}>
+          <SafeAreaProvider>
+            <KeyboardProvider>
+              <BottomSheetModalProvider>
+                <AppAlertProvider>
+                  <ThemedStatusBar />
+                  <ErrorBoundary>
+                    <AppNavigator />
+                  </ErrorBoundary>
+                </AppAlertProvider>
+              </BottomSheetModalProvider>
+            </KeyboardProvider>
+          </SafeAreaProvider>
+        </QueryClientProvider>
+      </GestureHandlerRootView>
+    </ShareIntentProvider>
   );
 }
 

@@ -25,6 +25,7 @@ import { ChangePasswordScreen } from "@/screens/ChangePasswordScreen";
 import { TwoFactorAuthScreen } from "@/screens/TwoFactorAuthScreen";
 import { RecordingScreen } from "@/screens/RecordingScreen";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
+import { ShareReceiverOverlay } from "@/components/share/ShareReceiverOverlay";
 import { useThemeColors } from "@/theme/colors";
 import { colors } from "@/theme";
 import { initDatabase } from "@/lib/database";
@@ -310,6 +311,11 @@ function AuthenticatedApp() {
       <View style={{ flex: 1, marginTop: isOnline ? 0 : -insets.top }}>
         <MainTabNavigator />
       </View>
+      {/* Phase E.1 — share-sheet receiver. Mounts inside the
+          authenticated tree so a share intent only opens the
+          receiver when the user is actually signed in; pre-auth
+          shares fall through and the user sees the login screen. */}
+      <ShareReceiverOverlay />
     </View>
   );
 }
