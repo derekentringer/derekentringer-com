@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,9 +9,67 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+import SyntaxHighlighter from "react-native-syntax-highlighter";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { useThemeColors } from "@/theme/colors";
+import { useThemeColors, type ThemeColors } from "@/theme/colors";
 import { borderRadius, spacing } from "@/theme";
+
+const MONOSPACE_FONT = Platform.OS === "ios" ? "Menlo-Regular" : "monospace";
+
+/**
+ * Build a react-syntax-highlighter style object that mirrors web's
+ * `.hljs-*` class → CSS variable mapping in `global.css`. The
+ * groupings (which classes share which color) are kept identical
+ * to web so a snippet looks the same on both platforms.
+ *
+ * The `hljs` root sets the body's transparent background — the
+ * outer `MarkdownCodeBlock` container already paints the card
+ * color; we don't want a second swatch under the highlighted
+ * tokens.
+ */
+function buildHljsTheme(themeColors: ThemeColors): Record<string, Record<string, string | number>> {
+  const keyword = { color: themeColors.hljsKeyword };
+  const str = { color: themeColors.hljsString };
+  const comment = { color: themeColors.hljsComment };
+  const number = { color: themeColors.hljsNumber };
+  const fn = { color: themeColors.hljsFunction };
+  const variable = { color: themeColors.hljsVariable };
+  // Every value in this map must be a string. The library's
+  // `generateNewStylesheet` calls `value.includes('em')` on each
+  // style value (to convert `"0.5em"` → 8px), which throws if a
+  // value is a number. Padding is intentionally omitted — the
+  // outer ScrollView's `contentContainerStyle` already pads the
+  // body, so we don't need to push padding through this map.
+  return {
+    hljs: {
+      backgroundColor: "transparent",
+      color: themeColors.foreground,
+    },
+    "hljs-keyword": keyword,
+    "hljs-selector-tag": keyword,
+    "hljs-built_in": keyword,
+    "hljs-name": keyword,
+    "hljs-tag": keyword,
+    "hljs-string": str,
+    "hljs-title": str,
+    "hljs-section": str,
+    "hljs-attribute": str,
+    "hljs-literal": str,
+    "hljs-template-tag": str,
+    "hljs-template-variable": str,
+    "hljs-type": str,
+    "hljs-comment": comment,
+    "hljs-deletion": comment,
+    "hljs-number": number,
+    "hljs-regexp": number,
+    "hljs-meta": number,
+    "hljs-function": fn,
+    "hljs-variable": variable,
+    "hljs-params": variable,
+    "hljs-addition": { color: themeColors.success },
+  };
+}
 
 interface MarkdownCodeBlockProps {
   /** The fenced code's body (already trimmed of the trailing newline). */
@@ -48,6 +107,10 @@ export function MarkdownCodeBlock({ content, language }: MarkdownCodeBlockProps)
   // Track the active timeout so re-taps don't leave stale resets
   // running (which would flip an already-fresh state back).
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // hljs theme rebuilds only when the active palette changes (theme
+  // switch / accent change). The library memoizes by reference too.
+  const hljsTheme = useMemo(() => buildHljsTheme(themeColors), [themeColors]);
 
   const handleCopy = useCallback(async () => {
     await Clipboard.setStringAsync(content);
@@ -130,16 +193,30 @@ export function MarkdownCodeBlock({ content, language }: MarkdownCodeBlockProps)
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.bodyContent}
       >
-        <Text
-          style={[styles.bodyText, { color: themeColors.foreground }]}
-          // Disable native text selection / accessibility actions
-          // to keep the tap target on the inner code body the
-          // sole concern of the surrounding ScrollView; users
-          // copy via the explicit button.
-          selectable={false}
-        >
-          {content}
-        </Text>
+        {language ? (
+          <SyntaxHighlighter
+            language={language}
+            style={hljsTheme}
+            highlighter="highlightjs"
+            fontFamily={MONOSPACE_FONT}
+            fontSize={13}
+            // Suppress the lib's internal Pre/Code ScrollViews —
+            // we already wrap in our own horizontal ScrollView
+            // above. Nesting two horizontal scrollers steals
+            // horizontal-pan gestures from the outer one.
+            PreTag={View}
+            CodeTag={View}
+          >
+            {content}
+          </SyntaxHighlighter>
+        ) : (
+          <Text
+            style={[styles.bodyText, { color: themeColors.foreground }]}
+            selectable={false}
+          >
+            {content}
+          </Text>
+        )}
       </ScrollView>
     </View>
   );
