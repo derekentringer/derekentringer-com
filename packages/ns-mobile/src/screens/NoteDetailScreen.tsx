@@ -15,7 +15,9 @@ import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Clipboard from "expo-clipboard";
 import Markdown, { MarkdownIt } from "react-native-markdown-display";
-import { markdownRules } from "@/lib/markdownRules";
+import { markdownRules, TocCaptureContext } from "@/lib/markdownRules";
+import { extractHeadings, type MobileHeading } from "@/lib/extractHeadings";
+import { TocSheet } from "@/components/notes/TocSheet";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -132,7 +134,53 @@ export function NoteDetailScreen({ route, navigation }: Props) {
     findFolderName(foldersData?.folders ?? [], note?.folderId) || note?.folder || null;
 
   const versionSheetRef = useRef<BottomSheetModal>(null);
+  const tocSheetRef = useRef<BottomSheetModal>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  // ToC capture baseline — wraps every child of the ScrollView so
+  // its window-Y moves with the scroll. The heading-capture math
+  // subtracts this baseline's Y from each heading's window-Y to
+  // get the heading's offset within the scrollable content. See
+  // TocCaptureContext docs in markdownRules.ts.
+  const contentRef = useRef<View>(null);
   const [showOverflow, setShowOverflow] = useState(false);
+
+  // Phase 4 — Table of Contents capture.
+  // Source-derived heading list (used by the bottom sheet) and a
+  // map of cleaned-text → rendered Y offset (filled in by the
+  // markdown rules' onLayout). Keyed by text since the renderer
+  // doesn't carry source-line info; duplicate headings collapse,
+  // last-rendered-wins.
+  const headings = React.useMemo<MobileHeading[]>(() => {
+    if (!note?.content) return [];
+    return extractHeadings(stripFrontmatter(note.content));
+  }, [note?.content]);
+  const headingPositionsRef = useRef<Map<string, number>>(new Map());
+  // Reset positions whenever content changes so we don't carry
+  // stale Ys across edits. The onLayout callbacks then refill it.
+  React.useEffect(() => {
+    headingPositionsRef.current = new Map();
+  }, [note?.content]);
+  const tocCaptureValue = React.useMemo(
+    () => ({
+      registerHeading(text: string, y: number) {
+        headingPositionsRef.current.set(text, y);
+      },
+      contentRef,
+    }),
+    [],
+  );
+  const handleTocPress = useCallback(() => {
+    tocSheetRef.current?.present();
+  }, []);
+  const handleSelectHeading = useCallback(
+    (heading: MobileHeading) => {
+      const y = headingPositionsRef.current.get(heading.text);
+      if (y !== undefined) {
+        scrollViewRef.current?.scrollTo({ y, animated: true });
+      }
+    },
+    [],
+  );
 
   // Clamp the read-only tag list to 2 rows; tapping the card
   // expands. Mirrors the editor's TagInput pattern: the inner
@@ -256,6 +304,21 @@ export function NoteDetailScreen({ route, navigation }: Props) {
     navigation.setOptions({
       headerRight: () => (
         <View style={styles.headerRight}>
+          {headings.length > 0 ? (
+            <Pressable
+              onPress={handleTocPress}
+              style={styles.headerButton}
+              accessibilityRole="button"
+              accessibilityLabel="Open table of contents"
+            >
+              <MaterialCommunityIcons
+                name="format-list-bulleted"
+                size={24}
+                color={themeColors.foreground}
+                style={styles.headerIcon}
+              />
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={() => navigation.navigate("NoteEditor", { noteId })}
             style={styles.headerButton}
@@ -298,7 +361,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
         </View>
       ),
     });
-  }, [navigation, noteId, note?.favorite, themeColors, handleToggleFavorite, handleCopyLink]);
+  }, [navigation, noteId, note?.favorite, themeColors, handleToggleFavorite, handleCopyLink, handleTocPress, headings.length]);
 
   const mdStyles = React.useMemo(
     () => ({
@@ -429,6 +492,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
@@ -438,6 +502,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
           />
         }
       >
+        <View ref={contentRef} collapsable={false}>
         {/* Status line */}
         <Text style={[styles.statusLine, { color: themeColors.muted }]}>
           Saved · Created {formatCreatedDate(note.createdAt)} · Modified {formatModifiedDate(note.updatedAt)}
@@ -546,14 +611,16 @@ export function NoteDetailScreen({ route, navigation }: Props) {
             still surfaced in the title/tags/dates header above. */}
         <View style={styles.content}>
           {note.content ? (
-            <Markdown
-              style={mdStyles}
-              rules={markdownRules}
-              onLinkPress={handleLinkPress}
-              markdownit={mdParser}
-            >
-              {renderedContent}
-            </Markdown>
+            <TocCaptureContext.Provider value={tocCaptureValue}>
+              <Markdown
+                style={mdStyles}
+                rules={markdownRules}
+                onLinkPress={handleLinkPress}
+                markdownit={mdParser}
+              >
+                {renderedContent}
+              </Markdown>
+            </TocCaptureContext.Provider>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>
               No content
@@ -570,6 +637,7 @@ export function NoteDetailScreen({ route, navigation }: Props) {
             />
           </View>
         ) : null}
+        </View>
       </ScrollView>
 
       {/* Overflow menu */}
@@ -630,6 +698,11 @@ export function NoteDetailScreen({ route, navigation }: Props) {
         currentTitle={note?.title ?? ""}
         currentContent={note?.content ?? ""}
         onSelectVersion={handleSelectVersion}
+      />
+      <TocSheet
+        bottomSheetRef={tocSheetRef}
+        headings={headings}
+        onSelectHeading={handleSelectHeading}
       />
     </View>
   );
