@@ -32,6 +32,16 @@ export const darkColors = {
    *  Teams palette overrides this to a near-white for legibility
    *  against its faint-purple pill background. */
   tagText: "#d4e157",
+  // Material Palenight-ish per-token syntax colors mirroring the
+  // `--color-hljs-*` set in `packages/ns-web/src/styles/global.css`.
+  // Phase 5b consumes these in MarkdownCodeBlock to drive
+  // react-native-syntax-highlighter's hljs theme map.
+  hljsKeyword: "#c792ea",
+  hljsString: "#c3e88d",
+  hljsComment: "#636d83",
+  hljsNumber: "#f78c6c",
+  hljsFunction: "#82aaff",
+  hljsVariable: "#f07178",
 } as const;
 
 export const lightColors = {
@@ -56,6 +66,14 @@ export const lightColors = {
   // the accent `primary` color.
   tabInactive: "#1a1a1a",
   tagText: "#7c8a00",
+  // Material Light variant for hljs colors — mirrors web's
+  // `[data-theme="light"]` block.
+  hljsKeyword: "#7c4dff",
+  hljsString: "#558b2f",
+  hljsComment: "#90a4ae",
+  hljsNumber: "#f4511e",
+  hljsFunction: "#1565c0",
+  hljsVariable: "#c62828",
 } as const;
 
 // Microsoft Teams dark palette — matches the Fluent UI brandTeamsV21
@@ -84,6 +102,15 @@ export const teamsColors = {
   // override on web/desktop so tag labels stay legible against the
   // faint purple pill background instead of melting into it.
   tagText: "#dcdce0",
+  // Teams-theme hljs palette — same as default dark per web (the
+  // teams CSS block reuses the dark hljs vars; only `comment` is
+  // pushed slightly darker on web — we mirror that nuance here).
+  hljsKeyword: "#c792ea",
+  hljsString: "#c3e88d",
+  hljsComment: "#666666",
+  hljsNumber: "#f78c6c",
+  hljsFunction: "#82aaff",
+  hljsVariable: "#f07178",
 } as const;
 
 export type ThemeColors = {
@@ -104,6 +131,12 @@ export type ThemeColors = {
   warning: string;
   tabInactive: string;
   tagText: string;
+  hljsKeyword: string;
+  hljsString: string;
+  hljsComment: string;
+  hljsNumber: string;
+  hljsFunction: string;
+  hljsVariable: string;
 };
 
 /** Resolve the active theme to a concrete light/dark mode. Teams

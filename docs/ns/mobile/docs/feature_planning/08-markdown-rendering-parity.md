@@ -1,6 +1,6 @@
 # 08 — Markdown Rendering Parity
 
-**Status:** In Progress (Phases 1–4 + 5a complete; Phase 5b pending; Phase 6 deferred)
+**Status:** In Progress (Phases 1–5 complete; Phase 6 deferred)
 **Priority:** Medium
 
 ## Summary
@@ -149,20 +149,26 @@ Verified on iOS + Android against `markdown-parity-test-fixture.md`.
 - `packages/ns-mobile/src/components/notes/MarkdownCodeBlock.tsx` (new)
 - `packages/ns-mobile/src/lib/markdownRules.ts`
 
-#### Phase 5b — Actual syntax coloring (optional, can defer)
+#### Phase 5b — Actual syntax coloring ✅
+**Effort:** ~1–2 days (actual: ~half day)
+**Status:** Complete (2026-05-07)
 
 **Goal:** Match web/desktop's per-token coloring.
 
-**Approach options:**
-- `react-native-syntax-highlighter` (uses Prism or highlight.js under the hood).
-- Pros: drop-in, mature lib.
-- Cons: bundle size, theme matching with web/desktop's `rehype-highlight` output.
+**What shipped:**
+- Added `react-native-syntax-highlighter` (^2.1.0) + `react-syntax-highlighter` (^6.1.2) deps. Highlight.js mode (matches web's `rehype-highlight`).
+- 6 new color keys on `ThemeColors` (`hljsKeyword`, `hljsString`, `hljsComment`, `hljsNumber`, `hljsFunction`, `hljsVariable`) seeded for all three palettes — dark uses Material Palenight values, light uses the Material Light variant, teams uses the same dark palette but pushes comment slightly darker. All values mirror the `--color-hljs-*` CSS variables in `packages/ns-web/src/styles/global.css`.
+- `MarkdownCodeBlock` now builds an hljs theme map from the active `themeColors` (memoized) and renders the body via `<SyntaxHighlighter language={…} style={hljsTheme} highlighter="highlightjs" PreTag={View} CodeTag={View}>`. PreTag/CodeTag are overridden to `View` so the lib's internal ScrollView doesn't fight our outer horizontal one.
+- Plain fences (no language hint) keep the existing un-highlighted Text path so the lib isn't loaded for them.
+- New TS shim at `src/types/react-native-syntax-highlighter.d.ts` declares the surface we consume — upstream ships JS only with no types.
 
-**Files:**
-- Same as 5a, plus a new dependency.
+**Bugfix during testing:** the lib's `generateNewStylesheet` calls `value.includes('em')` on every style value (to convert `0.5em` → 8 px). Numeric values crash since numbers don't have `.includes`. Fix was to drop `padding: 0` from the theme's `hljs` root entry — padding already lives on the outer ScrollView's `contentContainerStyle`.
 
-**Acceptance:**
-- Code-block coloring approximates web/desktop output for js/ts/python/json/bash.
+**Files touched:**
+- `packages/ns-mobile/package.json` (deps)
+- `packages/ns-mobile/src/theme/colors.ts`
+- `packages/ns-mobile/src/components/notes/MarkdownCodeBlock.tsx`
+- `packages/ns-mobile/src/types/react-native-syntax-highlighter.d.ts` (new)
 
 ---
 
