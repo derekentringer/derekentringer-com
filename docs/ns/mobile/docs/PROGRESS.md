@@ -59,7 +59,7 @@
 ### Phase 4: Polish — Low Priority
 
 - [ ] [06 — Polish & Distribution](feature_planning/06-polish-and-distribution.md)
-- [ ] [08 — Markdown Rendering Parity](feature_planning/08-markdown-rendering-parity.md)
+- [x] [08 — Markdown Rendering Parity](features/08-markdown-rendering-parity.md)
 
 ## Extension Ideas (Future)
 
