@@ -14,7 +14,7 @@ import { useAppAlert } from "@/components/AppAlertProvider";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Clipboard from "expo-clipboard";
-import Markdown from "react-native-markdown-display";
+import Markdown, { MarkdownIt } from "react-native-markdown-display";
 import { markdownRules } from "@/lib/markdownRules";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
@@ -32,6 +32,7 @@ import {
 import {
   resolveWikiLinks,
   parseWikiLinkUrl,
+  parseBrokenWikiLinkUrl,
 } from "@/lib/resolveWikiLinks";
 import { useBacklinks } from "@/hooks/useBacklinks";
 import { useVersions } from "@/hooks/useVersions";
@@ -46,6 +47,13 @@ import { stripFrontmatter } from "@derekentringer/ns-shared";
 import { useFolders } from "@/hooks/useFolders";
 import { findFolderName } from "@/lib/folders";
 import { manualSync } from "@/lib/syncEngine";
+
+// MarkdownIt instance with `linkify: true` so bare URLs (e.g. a
+// `https://...` pasted into body text) become tappable. The
+// library's default has `typographer: true` and no linkify; we
+// preserve typographer and add linkify. Stable module-scope
+// instance so the Markdown component's memoization doesn't churn.
+const mdParser = MarkdownIt({ typographer: true, linkify: true });
 
 type Props = NativeStackScreenProps<NotesStackParamList, "NoteDetail">;
 
@@ -77,9 +85,17 @@ export function NoteDetailScreen({ route, navigation }: Props) {
         navigation.push("NoteDetail", { noteId: wikiNoteId });
         return false; // we handled it; don't open externally
       }
+      const brokenTitle = parseBrokenWikiLinkUrl(url);
+      if (brokenTitle) {
+        showAlert(
+          "Note not found",
+          `No note titled "${brokenTitle}" exists.`,
+        );
+        return false;
+      }
       return true; // let the lib open external URLs
     },
-    [navigation],
+    [navigation, showAlert],
   );
   const { data: backlinksData } = useBacklinks(noteId);
   const {
@@ -343,6 +359,9 @@ export function NoteDetailScreen({ route, navigation }: Props) {
         paddingVertical: 4,
       },
       link: { color: themeColors.primary },
+      // Custom key consumed by markdownRules.link for `#wiki-broken:`
+      // URLs (mirrors web's `.wiki-link-broken` muted style).
+      link_wiki_broken: { color: themeColors.muted },
       // Web's `.markdown-preview hr` uses a 1px top border + 1.5em
       // vertical margin. RN's react-native-markdown-display renders
       // hr as a View, so we need explicit height + margins —
@@ -503,7 +522,12 @@ export function NoteDetailScreen({ route, navigation }: Props) {
             still surfaced in the title/tags/dates header above. */}
         <View style={styles.content}>
           {note.content ? (
-            <Markdown style={mdStyles} rules={markdownRules} onLinkPress={handleLinkPress}>
+            <Markdown
+              style={mdStyles}
+              rules={markdownRules}
+              onLinkPress={handleLinkPress}
+              markdownit={mdParser}
+            >
               {renderedContent}
             </Markdown>
           ) : (
