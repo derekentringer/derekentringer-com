@@ -54,7 +54,11 @@
         "expo-share-intent",
         {
           "androidIntentFilters": ["text/*"],
-          "disableIOS": true
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsText": true,
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsWebPageWithMaxCount": 1
+          }
         }
       ]
     ]
