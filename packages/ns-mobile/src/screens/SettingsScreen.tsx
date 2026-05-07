@@ -31,6 +31,10 @@ import {
 import { useThemeColors, useResolvedTheme } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { useTrashCount } from "@/hooks/useTrash";
+import {
+  useVersionInterval,
+  useSetVersionInterval,
+} from "@/hooks/useVersionInterval";
 import { manualSync } from "@/lib/syncEngine";
 import { getSyncQueueCount } from "@/lib/noteStore";
 import { SyncIssuesSheet } from "@/components/sync/SyncIssuesSheet";
@@ -291,6 +295,9 @@ export function SettingsScreen({ navigation }: Props) {
             />
           </View>
         </Pressable>
+        <View style={{ marginTop: spacing.xs }}>
+          <VersionHistorySettingsSection />
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -708,6 +715,80 @@ function DashboardSettingsSection() {
         setSpeedDialEnabled,
         "Tap the “+” button to expand New Note plus the four recording modes. Off keeps a single “+” FAB that creates a note",
       )}
+    </View>
+  );
+}
+
+// ─── Version History Settings Section ────────────────────────────
+
+const VERSION_INTERVAL_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "Every save" },
+  { value: 5, label: "5 min" },
+  { value: 15, label: "15 min" },
+  { value: 30, label: "30 min" },
+  { value: 60, label: "60 min" },
+];
+
+const DEFAULT_VERSION_INTERVAL = 15;
+
+function VersionHistorySettingsSection() {
+  const themeColors = useThemeColors();
+  const styles = makeStyles(themeColors);
+  const { data } = useVersionInterval();
+  const setInterval = useSetVersionInterval();
+  // Optimistic default while the server value is in flight so the
+  // chip row doesn't visibly snap once the network call lands.
+  const current = data?.minutes ?? DEFAULT_VERSION_INTERVAL;
+
+  return (
+    <View style={styles.appearanceCard}>
+      <View style={styles.appearanceCardHeader}>
+        <Text style={styles.menuRowText}>Capture Interval</Text>
+        <Text style={[styles.toggleInfo, { color: themeColors.muted }]}>
+          How often a version snapshot is saved when you edit a note. Set to "Every save" to capture a version on every save.
+        </Text>
+      </View>
+      <View style={styles.themeRow}>
+        {VERSION_INTERVAL_OPTIONS.map((opt) => {
+          const isActive = current === opt.value;
+          return (
+            <Pressable
+              key={opt.value}
+              onPress={() => {
+                if (current === opt.value) return;
+                setInterval.mutate(opt.value);
+              }}
+              style={[
+                styles.themeChip,
+                {
+                  backgroundColor: isActive
+                    ? `${themeColors.primary}1A`
+                    : "transparent",
+                  borderColor: isActive
+                    ? themeColors.primary
+                    : themeColors.border,
+                },
+              ]}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`Version capture interval: ${opt.label}`}
+            >
+              <Text
+                style={[
+                  styles.themeChipText,
+                  {
+                    color: isActive
+                      ? themeColors.primary
+                      : themeColors.foreground,
+                  },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }

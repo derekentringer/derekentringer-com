@@ -478,8 +478,8 @@ export function SettingsPage() {
     "Keyboard Shortcuts",
     "AI Features",
     "Offline Cache",
-    "Version History",
     "Trash",
+    "Version History",
     "My Account",
     "Security",
     "About",
@@ -527,7 +527,7 @@ export function SettingsPage() {
           {([
             { label: "General", items: ["Appearance", "Editor", "Keyboard Shortcuts"] },
             { label: "Features", items: ["AI Features", "Offline Cache"] },
-            { label: "Data", items: ["Version History", "Trash"] },
+            { label: "Data", items: ["Trash", "Version History"] },
             { label: "Account", items: ["My Account", "Security"] },
             { label: "App", items: ["About"] },
             ...(user?.role === "admin" ? [{ label: "Admin", items: ["AI Controls", "Approved Emails", "User Management"] as Section[] }] : []),
