@@ -31,6 +31,11 @@ import {
   parseWikiLinkUrl,
   parseBrokenWikiLinkUrl,
 } from "@/lib/resolveWikiLinks";
+import {
+  markTasks,
+  toggleTask,
+  parseTaskUrl,
+} from "@/lib/toggleTask";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import useSyncStore from "@/store/syncStore";
 import { useFolders } from "@/hooks/useFolders";
@@ -166,6 +171,14 @@ export function NoteEditorScreen({ route, navigation }: Props) {
           "Note not found",
           `No note titled "${brokenTitle}" exists.`,
         );
+        return false;
+      }
+      const task = parseTaskUrl(url);
+      if (task) {
+        // Toggle against the local `content` state (which already
+        // includes any unsaved edits). The auto-save hook then
+        // picks up the change like any other edit.
+        setContent((prev) => toggleTask(prev, task.taskIndex));
         return false;
       }
       return true;
@@ -691,6 +704,9 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       // Custom key consumed by markdownRules.link for `#wiki-broken:`
       // URLs (mirrors web's `.wiki-link-broken` muted style).
       link_wiki_broken: { color: themeColors.muted },
+      // Empty task checkbox glyph — muted color to differentiate
+      // from a checked box (which uses the lime primary).
+      link_task_empty: { color: themeColors.muted },
       // Mirrors NoteDetailScreen: explicit height + margins so the
       // hr renders as a visible 1px rule with breathing room above
       // and below (web's `.markdown-preview hr`: 1px border +
@@ -754,7 +770,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               onLinkPress={handleLinkPress}
               markdownit={mdParser}
             >
-              {resolveWikiLinks(stripFrontmatter(content), titleToIdMap)}
+              {markTasks(resolveWikiLinks(stripFrontmatter(content), titleToIdMap))}
             </Markdown>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>

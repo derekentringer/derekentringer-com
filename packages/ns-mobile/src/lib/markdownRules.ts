@@ -61,22 +61,21 @@ export const markdownRules = {
         : {}),
     });
   },
-  // Override the default link rule so wiki-links and broken
-  // wiki-links get their own styling. Regular links keep
-  // `styles.link` exactly as before (lime via themeColors.primary,
-  // no underline). The handler mirrors the library's openUrl
-  // helper inline (the lib's exported helper has a single-arg
-  // type declaration that doesn't match its runtime signature).
+  // Override the default link rule so wiki-links, broken wiki-
+  // links, and task checkboxes get their own styling. Regular
+  // links keep `styles.link` exactly as before (lime via
+  // themeColors.primary, no underline). The handler mirrors the
+  // library's openUrl helper inline (the lib's exported helper
+  // has a single-arg type declaration that doesn't match its
+  // runtime signature).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   link: (node: any, children: any, _parent: any, styles: any, onLinkPress: ((url: string) => boolean) | undefined) => {
     const href: string = node?.attributes?.href ?? "";
     const isWiki = href.startsWith("#wiki:");
     const isBroken = href.startsWith("#wiki-broken:");
-    const style = isWiki
-      ? [styles.link, WIKI_DECOR]
-      : isBroken
-        ? [styles.link_wiki_broken ?? styles.link, WIKI_DECOR]
-        : styles.link;
+    const isTaskEmpty = href.startsWith("#task-empty:");
+    const isTaskDone = href.startsWith("#task-done:");
+    const isTask = isTaskEmpty || isTaskDone;
     const onPress = () => {
       if (onLinkPress) {
         const shouldOpenExternally = onLinkPress(href);
@@ -85,6 +84,37 @@ export const markdownRules = {
         Linking.openURL(href);
       }
     };
+    if (isTask) {
+      // Task checkbox: render the glyph children with a slightly
+      // larger size + theme-tinted color, no underline. The
+      // glyph itself comes from markTasks (☐ for empty, ☑ for
+      // done) so we just lean on the rendered children rather
+      // than re-deriving from the URL. `hitSlop`-equivalent isn't
+      // available on Text — the glyph itself is ~18pt which gives
+      // a reasonable tap area; expand later if user feedback
+      // requests it.
+      return React.createElement(
+        Text,
+        {
+          key: node.key,
+          style: [
+            isTaskDone
+              ? styles.link
+              : (styles.link_task_empty ?? styles.link),
+            { fontSize: 18 },
+          ],
+          onPress,
+          accessibilityRole: "checkbox" as const,
+          accessibilityState: { checked: isTaskDone },
+        },
+        children,
+      );
+    }
+    const style = isWiki
+      ? [styles.link, WIKI_DECOR]
+      : isBroken
+        ? [styles.link_wiki_broken ?? styles.link, WIKI_DECOR]
+        : styles.link;
     return React.createElement(
       Text,
       { key: node.key, style, onPress },
