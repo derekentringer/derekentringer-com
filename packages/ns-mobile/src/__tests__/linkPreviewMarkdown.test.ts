@@ -1,6 +1,6 @@
 import {
+  classifySharedContent,
   deriveLinkPreviewTitle,
-  detectSharedUrl,
   formatLinkPreviewBody,
   isLikelyUrl,
 } from "../lib/linkPreviewMarkdown";
@@ -23,99 +23,171 @@ describe("isLikelyUrl", () => {
   });
 });
 
-describe("detectSharedUrl", () => {
-  it("prefers webUrl when set", () => {
+describe("classifySharedContent", () => {
+  it("treats a pure URL text as URL-only with empty body", () => {
     expect(
-      detectSharedUrl("Cool article", "https://example.com/x"),
-    ).toBe("https://example.com/x");
+      classifySharedContent("https://example.com/x", ""),
+    ).toEqual({ url: "https://example.com/x", bodyText: "" });
   });
 
-  it("falls back to text when text is a single URL", () => {
-    expect(detectSharedUrl("https://example.com/y", "")).toBe(
-      "https://example.com/y",
-    );
+  it("uses webUrl when text is empty", () => {
+    expect(classifySharedContent("", "https://example.com/x")).toEqual({
+      url: "https://example.com/x",
+      bodyText: "",
+    });
   });
 
-  it("returns null when neither is a URL", () => {
-    expect(detectSharedUrl("just a quote", "")).toBeNull();
+  it("preserves bodyText and uses webUrl when both are present", () => {
+    expect(
+      classifySharedContent(
+        "\"highlighted quote\"\n\nhttps://example.com/x",
+        "https://example.com/x",
+      ),
+    ).toEqual({
+      url: "https://example.com/x",
+      bodyText: '"highlighted quote"',
+    });
   });
 
-  it("returns null when webUrl is set but not a URL", () => {
-    expect(detectSharedUrl("https://valid.example", "not-a-url")).toBe(
-      "https://valid.example",
-    );
+  it("strips the canonical webUrl from the bodyText", () => {
+    expect(
+      classifySharedContent(
+        "Look at this: https://example.com/x — interesting",
+        "https://example.com/x",
+      ),
+    ).toEqual({
+      url: "https://example.com/x",
+      bodyText: "Look at this:  — interesting",
+    });
   });
 
-  it("trims surrounding whitespace", () => {
-    expect(detectSharedUrl("  https://example.com  ", "")).toBe(
-      "https://example.com",
-    );
+  it("extracts a URL from text when webUrl is empty", () => {
+    expect(
+      classifySharedContent(
+        '"a quote"\nhttps://example.com/article',
+        "",
+      ),
+    ).toEqual({
+      url: "https://example.com/article",
+      bodyText: '"a quote"',
+    });
+  });
+
+  it("returns text as bodyText when no URL is anywhere", () => {
+    expect(classifySharedContent("just a quote", "")).toEqual({
+      url: null,
+      bodyText: "just a quote",
+    });
+  });
+
+  it("returns empty when both inputs are empty", () => {
+    expect(classifySharedContent("", "")).toEqual({
+      url: null,
+      bodyText: "",
+    });
   });
 });
 
 describe("formatLinkPreviewBody", () => {
-  const fullPreview = {
+  const preview = {
     url: "https://example.com/article",
     title: "The Great Article",
-    description: "A summary of the article.",
+    description: "A summary.",
     imageUrl: "https://cdn.example.com/hero.png",
   };
 
-  it("renders all fields when enriched", () => {
-    expect(formatLinkPreviewBody(fullPreview, true)).toBe(
-      "# The Great Article\n\nA summary of the article.\n\n![The Great Article](https://cdn.example.com/hero.png)\n\nhttps://example.com/article",
-    );
-  });
-
-  it("returns the bare URL when not enriched", () => {
-    expect(formatLinkPreviewBody(fullPreview, false)).toBe(
-      "https://example.com/article",
-    );
-  });
-
-  it("skips missing title", () => {
+  it("renders title heading + image + url for URL-only Save-new", () => {
     expect(
-      formatLinkPreviewBody(
-        {
-          ...fullPreview,
-          title: null,
-        },
-        true,
-      ),
+      formatLinkPreviewBody(preview, {
+        bodyText: "",
+        enriched: true,
+        includeTitleHeading: true,
+      }),
     ).toBe(
-      "A summary of the article.\n\n![preview](https://cdn.example.com/hero.png)\n\nhttps://example.com/article",
+      "# The Great Article\n\nA summary.\n\n![The Great Article](https://cdn.example.com/hero.png)\n\nhttps://example.com/article",
     );
   });
 
-  it("skips missing description", () => {
+  it("includes user bodyText and skips og:description (avoid duplication)", () => {
     expect(
-      formatLinkPreviewBody(
-        {
-          ...fullPreview,
-          description: null,
-        },
-        true,
-      ),
+      formatLinkPreviewBody(preview, {
+        bodyText: '"highlighted quote"',
+        enriched: true,
+        includeTitleHeading: true,
+      }),
     ).toBe(
-      "# The Great Article\n\n![The Great Article](https://cdn.example.com/hero.png)\n\nhttps://example.com/article",
+      '# The Great Article\n\n"highlighted quote"\n\n![The Great Article](https://cdn.example.com/hero.png)\n\nhttps://example.com/article',
     );
+  });
+
+  it("omits the title heading on Append-to (existing note already has one)", () => {
+    expect(
+      formatLinkPreviewBody(preview, {
+        bodyText: '"highlighted quote"',
+        enriched: true,
+        includeTitleHeading: false,
+      }),
+    ).toBe(
+      '"highlighted quote"\n\n![The Great Article](https://cdn.example.com/hero.png)\n\nhttps://example.com/article',
+    );
+  });
+
+  it("returns bodyText + URL when not enriched and bodyText is present", () => {
+    expect(
+      formatLinkPreviewBody(preview, {
+        bodyText: '"highlighted quote"',
+        enriched: false,
+        includeTitleHeading: true,
+      }),
+    ).toBe('"highlighted quote"\n\nhttps://example.com/article');
+  });
+
+  it("returns bare URL when not enriched and no bodyText", () => {
+    expect(
+      formatLinkPreviewBody(preview, {
+        bodyText: "",
+        enriched: false,
+        includeTitleHeading: true,
+      }),
+    ).toBe("https://example.com/article");
   });
 
   it("skips missing image", () => {
     expect(
       formatLinkPreviewBody(
-        {
-          ...fullPreview,
-          imageUrl: null,
-        },
-        true,
+        { ...preview, imageUrl: null },
+        { bodyText: "body text", enriched: true, includeTitleHeading: true },
       ),
     ).toBe(
-      "# The Great Article\n\nA summary of the article.\n\nhttps://example.com/article",
+      "# The Great Article\n\nbody text\n\nhttps://example.com/article",
     );
   });
 
-  it("returns just the URL when every metadata field is null", () => {
+  it("skips missing title heading even when includeTitleHeading is true", () => {
+    expect(
+      formatLinkPreviewBody(
+        { ...preview, title: null },
+        {
+          bodyText: '"quote"',
+          enriched: true,
+          includeTitleHeading: true,
+        },
+      ),
+    ).toBe(
+      '"quote"\n\n![preview](https://cdn.example.com/hero.png)\n\nhttps://example.com/article',
+    );
+  });
+
+  it("uses og:description only when there's no bodyText to act as content", () => {
+    const out = formatLinkPreviewBody(preview, {
+      bodyText: "",
+      enriched: true,
+      includeTitleHeading: true,
+    });
+    expect(out).toContain("A summary.");
+  });
+
+  it("collapses to bodyText when every preview field is null", () => {
     expect(
       formatLinkPreviewBody(
         {
@@ -124,62 +196,62 @@ describe("formatLinkPreviewBody", () => {
           description: null,
           imageUrl: null,
         },
-        true,
+        {
+          bodyText: '"my highlight"',
+          enriched: true,
+          includeTitleHeading: true,
+        },
       ),
-    ).toBe("https://example.com/x");
+    ).toBe('"my highlight"\n\nhttps://example.com/x');
   });
 });
 
 describe("deriveLinkPreviewTitle", () => {
+  const preview = {
+    url: "https://example.com/x",
+    title: "Page Title",
+    description: null,
+    imageUrl: null,
+  };
+
   it("uses preview title when enriched and title present", () => {
-    expect(
-      deriveLinkPreviewTitle(
-        {
-          url: "https://example.com/x",
-          title: "Article Title",
-          description: null,
-          imageUrl: null,
-        },
-        true,
-      ),
-    ).toBe("Article Title");
+    expect(deriveLinkPreviewTitle(preview, "", true)).toBe("Page Title");
   });
 
   it("truncates titles longer than 80 chars with an ellipsis", () => {
     const long = "a".repeat(100);
     const out = deriveLinkPreviewTitle(
-      { url: "x", title: long, description: null, imageUrl: null },
+      { ...preview, title: long },
+      "",
       true,
     );
     expect(out.length).toBeLessThanOrEqual(81);
     expect(out.endsWith("…")).toBe(true);
   });
 
-  it("falls back to URL when not enriched", () => {
+  it("falls back to first line of bodyText when not enriched", () => {
     expect(
       deriveLinkPreviewTitle(
-        {
-          url: "https://example.com/x",
-          title: "Title",
-          description: null,
-          imageUrl: null,
-        },
+        preview,
+        "first line\nsecond line",
         false,
       ),
-    ).toBe("https://example.com/x");
+    ).toBe("first line");
   });
 
-  it("falls back to URL when title is null", () => {
+  it("falls back to first line of bodyText when title is null", () => {
     expect(
       deriveLinkPreviewTitle(
-        {
-          url: "https://example.com/x",
-          title: null,
-          description: null,
-          imageUrl: null,
-        },
+        { ...preview, title: null },
+        '"a highlighted quote"',
         true,
       ),
+    ).toBe('"a highlighted quote"');
+  });
+
+  it("falls back to URL when neither title nor bodyText is present", () => {
+    expect(
+      deriveLinkPreviewTitle({ ...preview, title: null }, "", true),
     ).toBe("https://example.com/x");
   });
 });

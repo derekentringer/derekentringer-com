@@ -19,8 +19,8 @@ import { useThemeColors } from "@/theme/colors";
 import { borderRadius, spacing } from "@/theme";
 import { appendShareContent } from "@/lib/appendShareContent";
 import {
+  classifySharedContent,
   deriveLinkPreviewTitle,
-  detectSharedUrl,
   formatLinkPreviewBody,
 } from "@/lib/linkPreviewMarkdown";
 import { fetchLinkPreview } from "@/api/links";
@@ -54,43 +54,69 @@ export function ShareReceiverOverlay() {
 
   const sharedText = ctx.shareIntent?.text ?? "";
   const sharedWebUrl = ctx.shareIntent?.webUrl ?? "";
-  const sharedUrl = useMemo(
-    () => detectSharedUrl(sharedText, sharedWebUrl),
+  const { url: sharedUrl, bodyText: sharedBodyText } = useMemo(
+    () => classifySharedContent(sharedText, sharedWebUrl),
     [sharedText, sharedWebUrl],
   );
-  const fallbackPreviewText =
-    sharedText.length > 0 ? sharedText : sharedWebUrl;
 
-  // Title / body the underlying mutations should send. URL shares
-  // get the enriched title + markdown body when the user hasn't
-  // dismissed the metadata; non-URL shares fall back to the
-  // first-non-empty-line title and raw shared text.
+  // Whether the saved markdown should include the link-preview
+  // metadata (image / og:title / og:description / URL) or just the
+  // user's text + bare URL. Toggled off via the "Save URL only" chip.
   const isEnrichedUrlShare =
     sharedUrl !== null &&
     enrichmentEnabled &&
     previewState === "loaded" &&
     linkPreview !== null;
 
+  // Title for the new-note path. URL shares prefer og:title with
+  // bodyText fallback; pure-text shares use the first non-empty
+  // line of the shared text (matching the original E.1 behavior).
   const saveTitle = useMemo(() => {
-    if (sharedUrl !== null && linkPreview !== null) {
-      return deriveLinkPreviewTitle(linkPreview, isEnrichedUrlShare);
+    if (sharedUrl !== null) {
+      const previewForTitle: LinkPreview = linkPreview ?? {
+        url: sharedUrl,
+        title: null,
+        description: null,
+        imageUrl: null,
+      };
+      return deriveLinkPreviewTitle(
+        previewForTitle,
+        sharedBodyText,
+        isEnrichedUrlShare,
+      );
     }
-    if (sharedUrl !== null) return sharedUrl;
-    const firstLine = fallbackPreviewText
+    const firstLine = sharedBodyText
       .split("\n")
       .find((l) => l.trim().length > 0);
     if (!firstLine) return "Shared note";
     const trimmed = firstLine.trim();
     return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
-  }, [sharedUrl, linkPreview, isEnrichedUrlShare, fallbackPreviewText]);
+  }, [sharedUrl, linkPreview, isEnrichedUrlShare, sharedBodyText]);
 
-  const saveBody = useMemo(() => {
-    if (sharedUrl !== null && linkPreview !== null) {
-      return formatLinkPreviewBody(linkPreview, isEnrichedUrlShare);
-    }
-    if (sharedUrl !== null) return sharedUrl;
-    return fallbackPreviewText;
-  }, [sharedUrl, linkPreview, isEnrichedUrlShare, fallbackPreviewText]);
+  // Body content that the mutations send. Pure-text shares write
+  // the user's text verbatim. URL shares compose bodyText + the
+  // preview metadata via formatLinkPreviewBody — the heading is
+  // included only on Save-new (Append-to lives inside an existing
+  // note that already has its own heading).
+  const buildSaveBody = useCallback(
+    (includeTitleHeading: boolean): string => {
+      if (sharedUrl !== null) {
+        const previewForBody: LinkPreview = linkPreview ?? {
+          url: sharedUrl,
+          title: null,
+          description: null,
+          imageUrl: null,
+        };
+        return formatLinkPreviewBody(previewForBody, {
+          bodyText: sharedBodyText,
+          enriched: isEnrichedUrlShare,
+          includeTitleHeading,
+        });
+      }
+      return sharedBodyText;
+    },
+    [sharedUrl, linkPreview, isEnrichedUrlShare, sharedBodyText],
+  );
 
   const dismiss = useCallback(() => {
     // `true` clears the native module's queued payload so a
@@ -104,13 +130,13 @@ export function ShareReceiverOverlay() {
     try {
       await createNote.mutateAsync({
         title: saveTitle,
-        content: saveBody,
+        content: buildSaveBody(true),
       });
       dismiss();
     } catch {
       setPending(false);
     }
-  }, [pending, createNote, saveTitle, saveBody, dismiss]);
+  }, [pending, createNote, saveTitle, buildSaveBody, dismiss]);
 
   const handleOpenAppendPicker = useCallback(() => {
     if (pending) return;
@@ -124,7 +150,7 @@ export function ShareReceiverOverlay() {
       try {
         const newContent = appendShareContent(
           target.content ?? "",
-          saveBody,
+          buildSaveBody(false),
           new Date(),
         );
         await updateNote.mutateAsync({
@@ -136,13 +162,13 @@ export function ShareReceiverOverlay() {
         setPending(false);
       }
     },
-    [pending, updateNote, saveBody, dismiss],
+    [pending, updateNote, buildSaveBody, dismiss],
   );
 
   const visible =
     ctx.isReady &&
     ctx.hasShareIntent &&
-    (sharedUrl !== null || fallbackPreviewText.length > 0);
+    (sharedUrl !== null || sharedBodyText.length > 0);
 
   // Hardware back on Android — preserves the dismissal RN Modal
   // gave us via `onRequestClose` before the Modal → View refactor.
@@ -167,15 +193,17 @@ export function ShareReceiverOverlay() {
     setEnrichmentEnabled(true);
   }, [visible]);
 
-  // Kick off the preview fetch when a URL share opens. Cancellation
-  // via the `cancelled` flag prevents a stale fetch from setting
-  // state if the user dismisses (or a new share replaces this one)
-  // before the network call resolves.
+  // Kick off the preview fetch when a URL share opens. The deps are
+  // intentionally limited to `visible` + `sharedUrl` — including
+  // `previewState` here would cause the effect to re-run when we
+  // transition idle → loading, the cleanup would set `cancelled =
+  // true` for the in-flight fetch, and the result would be discarded
+  // (the bug that pinned the UI on "Fetching preview…" forever).
   useEffect(() => {
     if (!visible || sharedUrl === null) return;
-    if (previewState !== "idle") return;
     let cancelled = false;
     setPreviewState("loading");
+    setLinkPreview(null);
     void (async () => {
       try {
         const preview = await fetchLinkPreview(sharedUrl);
@@ -190,7 +218,7 @@ export function ShareReceiverOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [visible, sharedUrl, previewState]);
+  }, [visible, sharedUrl]);
 
   if (!visible) {
     return null;
@@ -274,85 +302,123 @@ export function ShareReceiverOverlay() {
             style={styles.previewScroll}
             contentContainerStyle={styles.previewContent}
           >
-            {showLoadingPreview ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator size="small" color={themeColors.muted} />
-                <Text style={[styles.loadingText, { color: themeColors.muted }]}>
-                  Fetching preview…
-                </Text>
-              </View>
-            ) : showEnrichedPreview && linkPreview ? (
-              <View>
-                {linkPreview.imageUrl ? (
-                  <Image
-                    source={{ uri: linkPreview.imageUrl }}
-                    style={[
-                      styles.thumbnail,
-                      { backgroundColor: themeColors.input },
-                    ]}
-                    resizeMode="cover"
-                    accessibilityLabel={
-                      linkPreview.title ?? "Link preview thumbnail"
-                    }
-                  />
-                ) : null}
-                {linkPreview.title ? (
+            {sharedBodyText.length > 0 ? (
+              <Text
+                style={[
+                  styles.preview,
+                  styles.bodyText,
+                  { color: themeColors.foreground },
+                ]}
+              >
+                {sharedBodyText}
+              </Text>
+            ) : null}
+
+            {sharedUrl !== null ? (
+              showLoadingPreview ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color={themeColors.muted} />
                   <Text
-                    style={[
-                      styles.previewTitle,
-                      { color: themeColors.foreground },
-                    ]}
+                    style={[styles.loadingText, { color: themeColors.muted }]}
                   >
-                    {linkPreview.title}
+                    Fetching preview…
                   </Text>
-                ) : null}
-                {linkPreview.description ? (
-                  <Text
-                    style={[styles.preview, { color: themeColors.foreground }]}
-                  >
-                    {linkPreview.description}
-                  </Text>
-                ) : null}
-                <Text
-                  style={[styles.previewUrl, { color: themeColors.muted }]}
-                  numberOfLines={2}
-                >
-                  {linkPreview.url}
-                </Text>
-                <Pressable
-                  onPress={() => setEnrichmentEnabled(false)}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Save without preview metadata"
-                  style={({ pressed }) => [
-                    styles.dismissEnrichmentChip,
+                </View>
+              ) : showEnrichedPreview && linkPreview ? (
+                <View
+                  style={[
+                    styles.previewCard,
                     {
                       borderColor: themeColors.border,
                       backgroundColor: themeColors.input,
                     },
-                    pressed && { opacity: 0.6 },
                   ]}
                 >
-                  <MaterialCommunityIcons
-                    name="close"
-                    size={14}
-                    color={themeColors.muted}
-                  />
-                  <Text
-                    style={[
-                      styles.dismissEnrichmentText,
-                      { color: themeColors.muted },
-                    ]}
-                  >
-                    Save URL only
-                  </Text>
-                </Pressable>
-              </View>
-            ) : (
-              <Text style={[styles.preview, { color: themeColors.foreground }]}>
-                {saveBody}
-              </Text>
-            )}
+                  {linkPreview.imageUrl ? (
+                    <Image
+                      source={{ uri: linkPreview.imageUrl }}
+                      style={[
+                        styles.thumbnail,
+                        { backgroundColor: themeColors.background },
+                      ]}
+                      resizeMode="cover"
+                      accessibilityLabel={
+                        linkPreview.title ?? "Link preview thumbnail"
+                      }
+                    />
+                  ) : null}
+                  <View style={styles.previewCardBody}>
+                    {linkPreview.title ? (
+                      <Text
+                        style={[
+                          styles.previewTitle,
+                          { color: themeColors.foreground },
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {linkPreview.title}
+                      </Text>
+                    ) : null}
+                    {linkPreview.description &&
+                    sharedBodyText.length === 0 ? (
+                      <Text
+                        style={[
+                          styles.preview,
+                          { color: themeColors.foreground },
+                        ]}
+                        numberOfLines={3}
+                      >
+                        {linkPreview.description}
+                      </Text>
+                    ) : null}
+                    <Text
+                      style={[styles.previewUrl, { color: themeColors.muted }]}
+                      numberOfLines={2}
+                    >
+                      {linkPreview.url}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <Text
+                  style={[styles.previewUrl, { color: themeColors.muted }]}
+                  numberOfLines={2}
+                >
+                  {sharedUrl}
+                </Text>
+              )
+            ) : null}
+
+            {showEnrichedPreview ? (
+              <Pressable
+                onPress={() => setEnrichmentEnabled(false)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Save without preview metadata"
+                style={({ pressed }) => [
+                  styles.dismissEnrichmentChip,
+                  {
+                    borderColor: themeColors.border,
+                    backgroundColor: themeColors.input,
+                  },
+                  pressed && { opacity: 0.6 },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={14}
+                  color={themeColors.muted}
+                />
+                <Text
+                  style={[
+                    styles.dismissEnrichmentText,
+                    { color: themeColors.muted },
+                  ]}
+                >
+                  Save URL only
+                </Text>
+              </Pressable>
+            ) : null}
           </ScrollView>
 
           <View style={styles.actions}>
@@ -497,20 +563,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  bodyText: {
+    marginBottom: spacing.md,
+  },
+  previewCard: {
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  previewCardBody: {
+    padding: spacing.sm,
+    gap: spacing.xs,
+  },
   previewTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    marginBottom: spacing.xs,
   },
   previewUrl: {
     fontSize: 12,
-    marginTop: spacing.sm,
   },
   thumbnail: {
     width: "100%",
     aspectRatio: 1.91, // og:image canonical 1200x630 ratio
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.sm,
   },
   loadingRow: {
     flexDirection: "row",
