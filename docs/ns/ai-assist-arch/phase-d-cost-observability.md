@@ -1,7 +1,7 @@
 # Phase D — Cost & Observability
 
-**Status**: 🟠 in progress (D.1, D.2, D.4 implemented; D.3 turned out not-applicable — see below)
-**Branch**: `feat/ai-assist-phase-d` (off `develop-ai-assist`)
+**Status**: 🔷 shipped (D.1, D.2, D.4 implemented; D.3 turned out not-applicable — see below). Originally landed via `feat/ai-assist-phase-d` → `develop-ai-assist`; long-lived branch later merged to `develop`. Phase branch and `develop-ai-assist` both deleted post-merge.
+**Branch**: `feat/ai-assist-phase-d` (deleted post-merge)
 **Depends on**: none (can ship independently)
 **Blocks**: nothing; enables informed scaling of A, B, and C
 
