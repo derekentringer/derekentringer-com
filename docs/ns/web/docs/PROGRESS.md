@@ -233,6 +233,14 @@
 - [x] Audio chunk transcription fix — Chunk blobs now include all data from recording start (WebM header in first chunk) so magic byte validation passes on server
 - [x] Live recording card in chat — Recording context (Related Notes + Transcription) moved from dedicated panel section into a sticky card at the top of the chat messages area; card shows pulsing red dot, dynamic "{mode} Recording" title, collapsible Related Notes and Transcription dropdowns with matching spacing; transcription fixed to ~15 lines (no vertical drag resize); when recording ends, card becomes a normal "{mode} Ended" message in the chat flow
 - [x] Recording bar pulsing dot — Stop button dot changed from square `animate-pulse` to round `animate-ping` matching the recording card style
+
+### URL Paste-to-Preview (Phase E.4)
+
+- [x] **Paste-to-preview URL enrichment** (`src/editor/urlPreview.ts`) — Pasting a single URL into the CodeMirror editor auto-fetches `/links/preview` and replaces the URL inline with a structured `**title** / description / ![og:image] / url` block. Behavior gated by **Settings → Editor → Auto-preview pasted URLs** (default on); read live via a ref so flipping the toggle takes effect on the next paste with no editor rebuild. A `StateField` tracks the inserted range and maps positions through every subsequent transaction (`from: assoc 1`, `to: assoc -1`) so the "Show URL only" undo toast at the bottom-right reverts the *current* range, not stale positions, even after the user types around the inserted block. Empty-metadata previews (sites that block scrapers, paywalls) are silently skipped — the bare URL stays put, no toast. Mirrors the same shape on `ns-desktop`. 23 new tests across `linkPreviewMarkdown.test.ts` (helpers) + `urlPreview.test.ts` (extension integration via headless `EditorView`).
+
+### Server-Managed Transcription Jobs (Phase H)
+
+- [x] **Transcription pipeline migration** — Web's recording stop flow now uploads the audio chunk to `/ai/transcription-jobs` and lets a server-side worker handle Whisper transcription, Claude structuring, and Note creation; client observes status via SSE `event: transcription-job`. Survives client quit and works cross-device (start a recording on phone, see the structured note on desktop minutes later without touching the phone). Architecture details in [`docs/ns/mobile-parity-arch/phase-h-server-jobs.md`](../../../mobile-parity-arch/phase-h-server-jobs.md).
 - [x] Clear button moved to header — Chat Clear button relocated from standalone row into the AI Assistant header bar (right-aligned via `ml-auto`)
 
 ### Settings Redesign

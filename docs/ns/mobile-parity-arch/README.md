@@ -37,6 +37,9 @@ adds mobile-specific killers as their own phases.
 | E | [Share sheet integration](./phase-e-share-sheet.md) | Receive text / URLs / images from any app → "Save as note" / "Append to note" / "Save to folder" | High — capture-from-anywhere is mobile-native | Medium. expo-sharing + share-extension target. |
 | F | [Quick capture widget + lock-screen actions](./phase-f-widget.md) | Android home-screen widget: tap → new note, tap → voice memo. Lock-screen quick action for instant voice capture. | High — friction is the killer for mobile capture | Medium-high. Android widget (Java/Kotlin native module). |
 | G | [Background sync via FCM push](./phase-g-bg-sync.md) | Server triggers an FCM data message → app wakes briefly to pull, so notes are fresh when the user reopens. Closes the gap with desktop's always-on SSE. | Medium-high — invisible but compounds with everything else | Medium. FCM is already in the stack; just need wiring. |
+| H | [Server-managed transcription jobs](./phase-h-server-jobs.md) | Decouple recording-stop from the transcription pipeline: client uploads once, server worker owns Whisper/Claude/Note creation, clients observe via SSE. Survives app quit, works cross-device. | High — fixes long-meeting timeouts and stop-then-quit reliability | Medium. New table + worker + retention sweep; reuses existing R2/Whisper/Claude. |
+
+**Shipped:** A, B, C, D, E (E.1–E.6), H. **Remaining:** F, G.
 
 ## What's intentionally NOT in this branch
 

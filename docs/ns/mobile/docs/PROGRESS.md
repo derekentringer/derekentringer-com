@@ -53,19 +53,25 @@
 
 ### Phase 3: AI & Audio — Medium Priority
 
-- [ ] [05 — AI Features](feature_planning/05-ai-features.md)
-- [ ] [07 — Audio Recording & Transcription](feature_planning/07-audio-recording.md)
+- [x] [05 — AI Features](features/05-ai-features.md) — Phase A AI Assistant chat (streaming, 22-tool agentic use, slash commands, confirmation cards) + Phase B Inline AI (Summarize, Suggest Tags surfaced via markdown toolbar)
+- [x] [07 — Audio Recording & Transcription](features/07-audio-recording.md) — `expo-audio` recording shell, chunked Whisper transcription with live transcript, mode-aware structured note generation, mic-only mobile UX (system audio is desktop-only)
 
 ### Phase 4: Polish — Low Priority
 
 - [ ] [06 — Polish & Distribution](feature_planning/06-polish-and-distribution.md)
 - [x] [08 — Markdown Rendering Parity](features/08-markdown-rendering-parity.md)
 
+### Phase 5: Capture & Reliability
+
+- [x] [09 — Share Sheet Integration](features/09-share-sheet-integration.md) — E.1–E.6: Android + iOS share-receiver, Save-new / Append-to-existing, URL preview enrichment via `/links/preview` (with R2-hosted og:image), image shares, folder picker, editable title/body
+- [x] [10 — Server-Managed Transcription Jobs](features/10-server-managed-transcription-jobs.md) — Phase H: decouples client recording from transcription/structuring; client uploads once, server worker owns the pipeline, clients observe via SSE; survives app quit, works cross-device
+
 ## Extension Ideas (Future)
 
-- Quick capture widget (home screen widget for Android)
-- Share sheet integration (share text from other apps into NoteSync)
+- Quick capture widget (home screen widget for Android — Phase F in `mobile-parity-arch/`)
+- Background sync via FCM push (Phase G in `mobile-parity-arch/`)
 - Handwriting input via stylus
+- End-to-end encryption (planning doc at [`feature_planning/09-e2e-encryption.md`](feature_planning/09-e2e-encryption.md))
 
 ## Status Key
 
