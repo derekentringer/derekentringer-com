@@ -136,3 +136,37 @@ export async function deleteAudio(r2Key: string): Promise<void> {
     new DeleteObjectCommand({ Bucket: getBucketName(), Key: r2Key }),
   );
 }
+
+// Phase E.4 — link-preview thumbnails. Stored under their own
+// `link-previews/` prefix in the same bucket so they don't mingle
+// with user-owned image uploads. Keyed by SHA-256(image URL) so
+// the same publisher-side image (e.g. a CMS hero image) is reused
+// across users sharing the same article.
+
+export function buildLinkPreviewR2Key(
+  urlHash: string,
+  ext: string,
+): string {
+  return `link-previews/${urlHash}.${ext}`;
+}
+
+export async function uploadLinkPreviewImage(
+  buffer: Buffer,
+  r2Key: string,
+  mimeType: string,
+): Promise<string> {
+  const client = getClient();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: getBucketName(),
+      Key: r2Key,
+      Body: buffer,
+      ContentType: mimeType,
+      // Cache aggressively: the key is content-addressed, so it
+      // never changes content. A long max-age lets the public R2
+      // URL be served from the edge without re-hitting origin.
+      CacheControl: "public, max-age=31536000, immutable",
+    }),
+  );
+  return getPublicUrl(r2Key);
+}
