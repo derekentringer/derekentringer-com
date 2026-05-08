@@ -8,37 +8,31 @@ The AI Assistant today is a thin shell around a single-turn Claude call. Each qu
 
 The fix is not a rewrite. Each phase is a small, independently-shippable improvement that compounds. See [current-state.md](./current-state.md) for the baseline factual map.
 
-## Branch strategy
+## Branch strategy (historical)
 
-**Long-lived branch**: `develop-ai-assist` (cut from `main` at v2.40.0).
-
-Each phase gets its own short-lived feature branch that PRs into `develop-ai-assist`:
+The work was done on a long-lived branch `develop-ai-assist` (cut from `main` at v2.40.0). Each phase landed via its own short-lived feature branch into `develop-ai-assist`, then the long-lived branch shipped to `develop` and was deleted. The phase branches were also deleted post-merge.
 
 ```
 main (v2.40.0)
- └── develop-ai-assist                    ← this branch
-       ├── feat/ai-assist-phase-a         (PR → develop-ai-assist)
-       ├── feat/ai-assist-phase-b         (PR → develop-ai-assist)
-       ├── feat/ai-assist-phase-c         (PR → develop-ai-assist)
-       ├── feat/ai-assist-phase-d         (PR → develop-ai-assist)
-       └── feat/ai-assist-phase-e         (PR → develop-ai-assist)
+ └── develop-ai-assist                    ← deleted post-merge
+       ├── feat/ai-assist-phase-a         (deleted)
+       ├── feat/ai-assist-phase-b         (deleted)
+       ├── feat/ai-assist-phase-c         (deleted)
+       ├── feat/ai-assist-phase-d         (deleted)
+       └── feat/ai-assist-phase-e         (deleted)
 ```
-
-When all phases are complete (or we call it done mid-stream), `develop-ai-assist` → `develop` → `main` via PR, tagged, released. Same flow as the `develop-ui-update` long-lived branch.
-
-**Rebase discipline**: keep `develop-ai-assist` rebased onto `main` if main moves during the work. Phase branches rebase onto `develop-ai-assist`.
 
 ## Phase index
 
-| Phase | Title | Status | Branch | Doc |
-|-------|-------|--------|--------|-----|
-| A | Conversation continuity | ✅ merged | `feat/ai-assist-phase-a` | [phase-a-history-context.md](./phase-a-history-context.md) |
-| B | Cross-notes search | ✅ merged | `feat/ai-assist-phase-b` | [phase-b-cross-notes-search.md](./phase-b-cross-notes-search.md) |
-| C | Action safety | ✅ merged | `feat/ai-assist-phase-c` | [phase-c-action-safety.md](./phase-c-action-safety.md) |
-| D | Cost + observability | ✅ merged | `feat/ai-assist-phase-d` | [phase-d-cost-observability.md](./phase-d-cost-observability.md) |
-| E | UX expansion | 🟠 in progress (E.1/E.2/E.4 merged; E.3/E.5 in `feat/ai-assist-phase-e-extras`) | `feat/ai-assist-phase-e`, `feat/ai-assist-phase-e-extras` | [phase-e-ux-expansion.md](./phase-e-ux-expansion.md) |
+| Phase | Title | Status | Doc |
+|-------|-------|--------|-----|
+| A | Conversation continuity | 🔷 shipped | [phase-a-history-context.md](./phase-a-history-context.md) |
+| B | Cross-notes search | 🔷 shipped | [phase-b-cross-notes-search.md](./phase-b-cross-notes-search.md) |
+| C | Action safety | 🔷 shipped | [phase-c-action-safety.md](./phase-c-action-safety.md) |
+| D | Cost + observability | 🔷 shipped | [phase-d-cost-observability.md](./phase-d-cost-observability.md) |
+| E | UX expansion | 🔷 shipped (E.1–E.5; E.6 deferred as exploratory) | [phase-e-ux-expansion.md](./phase-e-ux-expansion.md) |
 
-Status legend: 🟡 planned · 🟠 in progress · ✅ merged to `develop-ai-assist` · 🔷 shipped to `main`
+Status legend: 🟡 planned · 🟠 in progress · 🔷 shipped
 
 ## Dependencies between phases
 
@@ -63,7 +57,7 @@ A (history)  ──┬──▶  B (cross-notes search)  ──▶  E (UX)
 - **Slice 3**: C. Unlocks heavier Claude-driven mutation safely.
 - **Slice 4**: E. Polish + nice-to-haves.
 
-Each slice can be its own PR from `develop-ai-assist` → `develop`, or we bundle and ship the whole long-lived branch at the end. Decide based on how long we're willing to keep the branch alive.
+_(Historical note: phases shipped via the long-lived branch model described above. The branch and per-phase feature branches were deleted after the final merge.)_
 
 ## Related reading
 
