@@ -305,3 +305,18 @@ export interface NoteVersionListResponse {
   versions: NoteVersion[];
   total: number;
 }
+
+/**
+ * Returned by `GET /links/preview?url=`. Used by the mobile share-
+ * sheet receiver, the web/desktop "paste a URL into a note" flow,
+ * and any other surface that wants to enrich a bare URL with its
+ * title / description / hero image. `imageUrl` points at our R2
+ * CDN (the og:image is re-uploaded server-side), not the publisher.
+ * Any field can be `null` if the upstream page didn't provide it.
+ */
+export interface LinkPreview {
+  url: string;
+  title: string | null;
+  description: string | null;
+  imageUrl: string | null;
+}

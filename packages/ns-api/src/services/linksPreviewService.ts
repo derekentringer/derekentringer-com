@@ -22,10 +22,13 @@ import { LRUCache } from "lru-cache";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIPv4, isIPv6 } from "node:net";
 import { createHash } from "node:crypto";
+import type { LinkPreview } from "@derekentringer/shared/ns";
 import {
   buildLinkPreviewR2Key,
   uploadLinkPreviewImage,
 } from "./r2Service.js";
+
+export type { LinkPreview };
 
 const FETCH_TIMEOUT_MS = 5_000;
 const MAX_HTML_BYTES = 2 * 1024 * 1024;
@@ -34,13 +37,6 @@ const CACHE_MAX = 256;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const USER_AGENT =
   "NoteSync-LinkPreview/1.0 (+https://ns.derekentringer.com)";
-
-export interface LinkPreview {
-  url: string;
-  title: string | null;
-  description: string | null;
-  imageUrl: string | null;
-}
 
 const cache = new LRUCache<string, LinkPreview>({
   max: CACHE_MAX,

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   BackHandler,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,29 +13,33 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useShareIntentContext } from "expo-share-intent";
-import type { Note } from "@derekentringer/ns-shared";
+import type { LinkPreview, Note } from "@derekentringer/ns-shared";
 import { useCreateNote, useUpdateNote } from "@/hooks/useNotes";
 import { useThemeColors } from "@/theme/colors";
 import { borderRadius, spacing } from "@/theme";
 import { appendShareContent } from "@/lib/appendShareContent";
+import {
+  classifySharedContent,
+  deriveLinkPreviewTitle,
+  formatLinkPreviewBody,
+} from "@/lib/linkPreviewMarkdown";
+import { fetchLinkPreview } from "@/api/links";
 import { AppendTargetSheet } from "./AppendTargetSheet";
 
 /**
- * Phase E.1 — Share-sheet receiver (Android-only spike).
+ * Phase E.1–E.4 — Share-sheet receiver. When the user shares text
+ * or a URL from another app, this overlay renders on top of the
+ * tab navigator and offers Save-new / Append-to-existing actions.
  *
- * When the user shares text from another app, the OS launches
- * NoteSync; expo-share-intent's ShareIntentProvider sets
- * `hasShareIntent: true` on the context. This overlay renders
- * on top of the main tab navigator and offers a single action:
- * "Save as new note." More flows (append-to-existing, folder
- * pick, image attach, URL preview) are tracked in the parent
- * Phase E plan and will follow once the spike validates the
- * intent → receive → save round trip.
- *
- * Title derivation is intentionally simple: first non-empty line
- * trimmed to 80 chars, fall back to "Shared note" when empty.
- * Users can rename in the editor afterward.
+ * Phase E.4 adds URL enrichment: when the shared payload is a
+ * single URL, we call /links/preview to grab the page's title +
+ * description + og:image (re-hosted to our R2 CDN, not hotlinked
+ * to the publisher) and render an enriched preview card. The user
+ * can dismiss the metadata via an X chip and save just the bare
+ * URL instead.
  */
+type PreviewState = "idle" | "loading" | "loaded" | "failed";
+
 export function ShareReceiverOverlay() {
   const ctx = useShareIntentContext();
   const themeColors = useThemeColors();
@@ -43,25 +48,79 @@ export function ShareReceiverOverlay() {
   const updateNote = useUpdateNote();
   const appendSheetRef = useRef<BottomSheetModal>(null);
   const [pending, setPending] = useState(false);
+  const [previewState, setPreviewState] = useState<PreviewState>("idle");
+  const [linkPreview, setLinkPreview] = useState<LinkPreview | null>(null);
+  const [enrichmentEnabled, setEnrichmentEnabled] = useState(true);
 
-  // Title is derived once per intent (not per render) — useMemo
-  // keyed on the text content keeps the input stable while the
-  // user is looking at the preview.
   const sharedText = ctx.shareIntent?.text ?? "";
   const sharedWebUrl = ctx.shareIntent?.webUrl ?? "";
-  const previewText = sharedText.length > 0 ? sharedText : sharedWebUrl;
+  const { url: sharedUrl, bodyText: sharedBodyText } = useMemo(
+    () => classifySharedContent(sharedText, sharedWebUrl),
+    [sharedText, sharedWebUrl],
+  );
 
-  const derivedTitle = useMemo(() => {
-    const firstLine = previewText.split("\n").find((l) => l.trim().length > 0);
+  // Whether the saved markdown should include the link-preview
+  // metadata (image / og:title / og:description / URL) or just the
+  // user's text + bare URL. Toggled off via the "Save URL only" chip.
+  const isEnrichedUrlShare =
+    sharedUrl !== null &&
+    enrichmentEnabled &&
+    previewState === "loaded" &&
+    linkPreview !== null;
+
+  // Title for the new-note path. URL shares prefer og:title with
+  // bodyText fallback; pure-text shares use the first non-empty
+  // line of the shared text (matching the original E.1 behavior).
+  const saveTitle = useMemo(() => {
+    if (sharedUrl !== null) {
+      const previewForTitle: LinkPreview = linkPreview ?? {
+        url: sharedUrl,
+        title: null,
+        description: null,
+        imageUrl: null,
+      };
+      return deriveLinkPreviewTitle(
+        previewForTitle,
+        sharedBodyText,
+        isEnrichedUrlShare,
+      );
+    }
+    const firstLine = sharedBodyText
+      .split("\n")
+      .find((l) => l.trim().length > 0);
     if (!firstLine) return "Shared note";
     const trimmed = firstLine.trim();
     return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
-  }, [previewText]);
+  }, [sharedUrl, linkPreview, isEnrichedUrlShare, sharedBodyText]);
+
+  // Body content that the mutations send. Pure-text shares write
+  // the user's text verbatim. URL shares compose bodyText + the
+  // preview metadata via formatLinkPreviewBody — the heading is
+  // included only on Save-new (Append-to lives inside an existing
+  // note that already has its own heading).
+  const buildSaveBody = useCallback(
+    (includeTitleHeading: boolean): string => {
+      if (sharedUrl !== null) {
+        const previewForBody: LinkPreview = linkPreview ?? {
+          url: sharedUrl,
+          title: null,
+          description: null,
+          imageUrl: null,
+        };
+        return formatLinkPreviewBody(previewForBody, {
+          bodyText: sharedBodyText,
+          enriched: isEnrichedUrlShare,
+          includeTitleHeading,
+        });
+      }
+      return sharedBodyText;
+    },
+    [sharedUrl, linkPreview, isEnrichedUrlShare, sharedBodyText],
+  );
 
   const dismiss = useCallback(() => {
-    // `true` clears the native module's queued payload too, so a
-    // subsequent share fires fresh instead of replaying the
-    // previous intent.
+    // `true` clears the native module's queued payload so a
+    // subsequent share fires fresh.
     ctx.resetShareIntent(true);
   }, [ctx]);
 
@@ -70,17 +129,14 @@ export function ShareReceiverOverlay() {
     setPending(true);
     try {
       await createNote.mutateAsync({
-        title: derivedTitle,
-        content: previewText,
+        title: saveTitle,
+        content: buildSaveBody(true),
       });
       dismiss();
     } catch {
-      // Surface failures via the existing alert system in a follow-
-      // up; for the E.1 spike we just keep the overlay open so the
-      // user can retry.
       setPending(false);
     }
-  }, [pending, createNote, derivedTitle, previewText, dismiss]);
+  }, [pending, createNote, saveTitle, buildSaveBody, dismiss]);
 
   const handleOpenAppendPicker = useCallback(() => {
     if (pending) return;
@@ -94,7 +150,7 @@ export function ShareReceiverOverlay() {
       try {
         const newContent = appendShareContent(
           target.content ?? "",
-          previewText,
+          buildSaveBody(false),
           new Date(),
         );
         await updateNote.mutateAsync({
@@ -106,18 +162,16 @@ export function ShareReceiverOverlay() {
         setPending(false);
       }
     },
-    [pending, updateNote, previewText, dismiss],
+    [pending, updateNote, buildSaveBody, dismiss],
   );
 
-  // Hide the overlay completely when there's nothing to act on.
-  // `isReady` guards against rendering during the brief boot
-  // window where the native module hasn't reported yet.
   const visible =
-    ctx.isReady && ctx.hasShareIntent && previewText.length > 0;
+    ctx.isReady &&
+    ctx.hasShareIntent &&
+    (sharedUrl !== null || sharedBodyText.length > 0);
 
-  // Mirror RN Modal's `onRequestClose` for hardware back on Android.
-  // Without this the back button would walk the navigator instead of
-  // dismissing the overlay. Returning `true` consumes the event.
+  // Hardware back on Android — preserves the dismissal RN Modal
+  // gave us via `onRequestClose` before the Modal → View refactor.
   useEffect(() => {
     if (!visible) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -127,24 +181,60 @@ export function ShareReceiverOverlay() {
     return () => sub.remove();
   }, [visible, dismiss]);
 
-  // Reset the spinner whenever the overlay closes. The component stays
-  // mounted across shares (it just renders `null`), so without this the
-  // `pending=true` set during a successful save would persist into the
-  // next share and leave the Save button stuck on its loading state.
+  // Reset transient state on close so the next share starts clean.
+  // The component stays mounted (returns null), so without this the
+  // pending spinner / cached preview from a prior share would leak
+  // forward.
   useEffect(() => {
-    if (!visible) setPending(false);
+    if (visible) return;
+    setPending(false);
+    setPreviewState("idle");
+    setLinkPreview(null);
+    setEnrichmentEnabled(true);
   }, [visible]);
+
+  // Kick off the preview fetch when a URL share opens. The deps are
+  // intentionally limited to `visible` + `sharedUrl` — including
+  // `previewState` here would cause the effect to re-run when we
+  // transition idle → loading, the cleanup would set `cancelled =
+  // true` for the in-flight fetch, and the result would be discarded
+  // (the bug that pinned the UI on "Fetching preview…" forever).
+  useEffect(() => {
+    if (!visible || sharedUrl === null) return;
+    let cancelled = false;
+    setPreviewState("loading");
+    setLinkPreview(null);
+    void (async () => {
+      try {
+        const preview = await fetchLinkPreview(sharedUrl);
+        if (cancelled) return;
+        setLinkPreview(preview);
+        setPreviewState("loaded");
+      } catch {
+        if (cancelled) return;
+        setPreviewState("failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, sharedUrl]);
 
   if (!visible) {
     return null;
   }
 
-  // Rendered as a positioned overlay (not a native Modal) so the
-  // `BottomSheetModal` for the append-picker, which renders into the
-  // app-level `BottomSheetModalProvider` portal, can sit above this
-  // surface. RN's Modal creates a separate native window that the
-  // portal can't reach into, which made the picker appear behind the
-  // dialog on both Android and iOS.
+  const showEnrichedPreview =
+    sharedUrl !== null &&
+    enrichmentEnabled &&
+    previewState === "loaded" &&
+    linkPreview !== null;
+  const showLoadingPreview =
+    sharedUrl !== null && previewState === "loading";
+
+  // Rendered as a positioned overlay (not RN Modal) so the append
+  // picker's `BottomSheetModal` portal sits above this surface
+  // instead of behind it.
   return (
     <View style={styles.overlay} pointerEvents="box-none">
       <View
@@ -204,7 +294,7 @@ export function ShareReceiverOverlay() {
               style={[styles.titleValue, { color: themeColors.foreground }]}
               numberOfLines={1}
             >
-              {derivedTitle}
+              {saveTitle}
             </Text>
           </View>
 
@@ -212,9 +302,123 @@ export function ShareReceiverOverlay() {
             style={styles.previewScroll}
             contentContainerStyle={styles.previewContent}
           >
-            <Text style={[styles.preview, { color: themeColors.foreground }]}>
-              {previewText}
-            </Text>
+            {sharedBodyText.length > 0 ? (
+              <Text
+                style={[
+                  styles.preview,
+                  styles.bodyText,
+                  { color: themeColors.foreground },
+                ]}
+              >
+                {sharedBodyText}
+              </Text>
+            ) : null}
+
+            {sharedUrl !== null ? (
+              showLoadingPreview ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color={themeColors.muted} />
+                  <Text
+                    style={[styles.loadingText, { color: themeColors.muted }]}
+                  >
+                    Fetching preview…
+                  </Text>
+                </View>
+              ) : showEnrichedPreview && linkPreview ? (
+                <View
+                  style={[
+                    styles.previewCard,
+                    {
+                      borderColor: themeColors.border,
+                      backgroundColor: themeColors.input,
+                    },
+                  ]}
+                >
+                  {linkPreview.imageUrl ? (
+                    <Image
+                      source={{ uri: linkPreview.imageUrl }}
+                      style={[
+                        styles.thumbnail,
+                        { backgroundColor: themeColors.background },
+                      ]}
+                      resizeMode="cover"
+                      accessibilityLabel={
+                        linkPreview.title ?? "Link preview thumbnail"
+                      }
+                    />
+                  ) : null}
+                  <View style={styles.previewCardBody}>
+                    {linkPreview.title ? (
+                      <Text
+                        style={[
+                          styles.previewTitle,
+                          { color: themeColors.foreground },
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {linkPreview.title}
+                      </Text>
+                    ) : null}
+                    {linkPreview.description &&
+                    sharedBodyText.length === 0 ? (
+                      <Text
+                        style={[
+                          styles.preview,
+                          { color: themeColors.foreground },
+                        ]}
+                        numberOfLines={3}
+                      >
+                        {linkPreview.description}
+                      </Text>
+                    ) : null}
+                    <Text
+                      style={[styles.previewUrl, { color: themeColors.muted }]}
+                      numberOfLines={2}
+                    >
+                      {linkPreview.url}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <Text
+                  style={[styles.previewUrl, { color: themeColors.muted }]}
+                  numberOfLines={2}
+                >
+                  {sharedUrl}
+                </Text>
+              )
+            ) : null}
+
+            {showEnrichedPreview ? (
+              <Pressable
+                onPress={() => setEnrichmentEnabled(false)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Save without preview metadata"
+                style={({ pressed }) => [
+                  styles.dismissEnrichmentChip,
+                  {
+                    borderColor: themeColors.border,
+                    backgroundColor: themeColors.input,
+                  },
+                  pressed && { opacity: 0.6 },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={14}
+                  color={themeColors.muted}
+                />
+                <Text
+                  style={[
+                    styles.dismissEnrichmentText,
+                    { color: themeColors.muted },
+                  ]}
+                >
+                  Save URL only
+                </Text>
+              </Pressable>
+            ) : null}
           </ScrollView>
 
           <View style={styles.actions}>
@@ -350,7 +554,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   previewScroll: {
-    maxHeight: 320,
+    maxHeight: 360,
   },
   previewContent: {
     padding: spacing.md,
@@ -358,6 +562,53 @@ const styles = StyleSheet.create({
   preview: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  bodyText: {
+    marginBottom: spacing.md,
+  },
+  previewCard: {
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  previewCardBody: {
+    padding: spacing.sm,
+    gap: spacing.xs,
+  },
+  previewTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  previewUrl: {
+    fontSize: 12,
+  },
+  thumbnail: {
+    width: "100%",
+    aspectRatio: 1.91, // og:image canonical 1200x630 ratio
+  },
+  loadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  loadingText: {
+    fontSize: 14,
+  },
+  dismissEnrichmentChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 4,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+  },
+  dismissEnrichmentText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   actions: {
     flexDirection: "row",
