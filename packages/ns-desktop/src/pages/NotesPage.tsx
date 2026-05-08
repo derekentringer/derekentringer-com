@@ -5133,15 +5133,13 @@ export function NotesPage() {
     )}
     {urlPreviewToast && (
       <div
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-3 shadow-lg"
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
         role="status"
       >
-        <span className="text-sm text-[var(--foreground)]">
-          Link preview added.
-        </span>
+        <span className="text-sm text-foreground">Link preview added.</span>
         <button
           type="button"
-          className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-1 text-xs font-semibold text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]"
+          className="cursor-pointer rounded-md border border-border bg-input px-3 py-1 text-xs font-semibold text-foreground hover:bg-primary hover:text-primary-foreground"
           onClick={() => {
             urlPreviewToast.revert();
             setUrlPreviewToast(null);
@@ -5151,7 +5149,7 @@ export function NotesPage() {
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-md p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          className="cursor-pointer rounded-md p-1 text-muted-foreground hover:text-foreground"
           aria-label="Dismiss"
           onClick={() => setUrlPreviewToast(null)}
         >

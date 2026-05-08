@@ -160,6 +160,22 @@ export function urlPreviewExtension(opts: UrlPreviewOptions): Extension {
           return;
         }
 
+        // Skip when the upstream returned no enrichable metadata
+        // (sites that block scrapers, paywalls, JS-only pages,
+        // etc. all hit this path). Replacing the URL with itself
+        // is a no-op edit but the toast would still fire,
+        // confusing the user about what just happened. Treat the
+        // preview as a soft-failure: leave the bare URL alone.
+        const hasMetadata = !!(
+          preview.title ||
+          preview.description ||
+          preview.imageUrl
+        );
+        if (!hasMetadata) {
+          view.dispatch({ effects: removePreview.of(id) });
+          return;
+        }
+
         // Look up the *current* tracked range — the user may have
         // edited elsewhere, shifting positions, while the fetch
         // was in flight. The state field has been mapping our

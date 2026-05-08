@@ -114,6 +114,27 @@ describe("urlPreviewExtension", () => {
     expect(view.state.doc.toString()).toBe("https://example.com/x");
   });
 
+  it("skips replacement and toast when the preview has no usable metadata", async () => {
+    const onPreviewInserted = vi.fn();
+    const { view } = buildView({
+      enabled: true,
+      fetchResult: {
+        url: "https://blocked.example/x",
+        title: null,
+        description: null,
+        imageUrl: null,
+      },
+      onPreviewInserted,
+    });
+
+    pasteText(view, 0, "https://blocked.example/x");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(view.state.doc.toString()).toBe("https://blocked.example/x");
+    expect(onPreviewInserted).not.toHaveBeenCalled();
+  });
+
   it("leaves the bare URL in place when the fetch fails", async () => {
     const { view } = buildView({
       enabled: true,
