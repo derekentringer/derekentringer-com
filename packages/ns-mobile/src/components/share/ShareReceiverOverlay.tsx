@@ -3,10 +3,12 @@ import {
   ActivityIndicator,
   BackHandler,
   Image,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,21 +26,37 @@ import {
   formatLinkPreviewBody,
 } from "@/lib/linkPreviewMarkdown";
 import { fetchLinkPreview } from "@/api/links";
+import {
+  deriveImageTitle,
+  uploadSharedImage,
+} from "@/lib/shareImageUpload";
 import { AppendTargetSheet } from "./AppendTargetSheet";
 
 /**
- * Phase E.1–E.4 — Share-sheet receiver. When the user shares text
- * or a URL from another app, this overlay renders on top of the
- * tab navigator and offers Save-new / Append-to-existing actions.
+ * Phase E.1–E.5 — Share-sheet receiver. When the user shares text,
+ * a URL, or an image from another app, this overlay renders on top
+ * of the tab navigator and offers Save-new / Append-to-existing
+ * actions.
  *
- * Phase E.4 adds URL enrichment: when the shared payload is a
- * single URL, we call /links/preview to grab the page's title +
- * description + og:image (re-hosted to our R2 CDN, not hotlinked
- * to the publisher) and render an enriched preview card. The user
- * can dismiss the metadata via an X chip and save just the bare
- * URL instead.
+ * URL shares (E.4) call /links/preview to grab the page's title +
+ * description + og:image (re-hosted to our R2 CDN). The user can
+ * dismiss the metadata via an X chip and save just the bare URL.
+ *
+ * Image shares (E.5) detect a media intent with an image MIME and
+ * route through the existing image-upload pipeline: the saved note
+ * gets the standard `![]({r2Url})` markdown reference. Save-new
+ * creates an empty note first, uploads the image scoped to that
+ * note, and patches the content; Append-to uploads scoped to the
+ * picked target note and appends the same markdown after the
+ * Phase E.3 separator/timestamp.
  */
 type PreviewState = "idle" | "loading" | "loaded" | "failed";
+
+interface ImageShare {
+  uri: string;
+  mimeType: string;
+  filename: string;
+}
 
 export function ShareReceiverOverlay() {
   const ctx = useShareIntentContext();
@@ -51,9 +69,41 @@ export function ShareReceiverOverlay() {
   const [previewState, setPreviewState] = useState<PreviewState>("idle");
   const [linkPreview, setLinkPreview] = useState<LinkPreview | null>(null);
   const [enrichmentEnabled, setEnrichmentEnabled] = useState(true);
+  // The title field is editable. We derive a default from the share
+  // intent (`saveTitle` below) and seed `editableTitle` with it,
+  // but stop overwriting once the user has typed — otherwise their
+  // edit would be clobbered when the preview fetch finishes and
+  // changes the derived value.
+  const [editableTitle, setEditableTitle] = useState("");
+  const userEditedTitleRef = useRef(false);
+  // Same pattern for the body text — the user can tweak quoted/
+  // highlighted content before saving (fix typos, trim cruft, add
+  // their own commentary). URL-only and image-only shares don't
+  // surface this input; only shares that arrive with non-empty
+  // body text get the editable area.
+  const [editableBodyText, setEditableBodyText] = useState("");
+  const userEditedBodyRef = useRef(false);
 
   const sharedText = ctx.shareIntent?.text ?? "";
   const sharedWebUrl = ctx.shareIntent?.webUrl ?? "";
+  const sharedFiles = ctx.shareIntent?.files ?? null;
+
+  // Image shares are surfaced by expo-share-intent as `type: "media"`
+  // with a single file entry whose `mimeType` starts with "image/".
+  // We only support single-image shares in v1 — multi-image batches
+  // are out of scope per the Phase E plan.
+  const imageShare = useMemo<ImageShare | null>(() => {
+    if (ctx.shareIntent?.type !== "media") return null;
+    const file = sharedFiles?.[0];
+    if (!file) return null;
+    if (!file.mimeType?.startsWith("image/")) return null;
+    return {
+      uri: file.path,
+      mimeType: file.mimeType,
+      filename: file.fileName ?? "",
+    };
+  }, [ctx.shareIntent?.type, sharedFiles]);
+
   const { url: sharedUrl, bodyText: sharedBodyText } = useMemo(
     () => classifySharedContent(sharedText, sharedWebUrl),
     [sharedText, sharedWebUrl],
@@ -68,10 +118,17 @@ export function ShareReceiverOverlay() {
     previewState === "loaded" &&
     linkPreview !== null;
 
-  // Title for the new-note path. URL shares prefer og:title with
+  // Title for the new-note path. Image shares use the source
+  // filename (without extension); URL shares prefer og:title with
   // bodyText fallback; pure-text shares use the first non-empty
-  // line of the shared text (matching the original E.1 behavior).
+  // line of the shared text. Uses `editableBodyText` so any user
+  // edit to the body content immediately re-derives a sensible
+  // title default (until they edit the title too — `userEdited-
+  // TitleRef` then freezes their custom title).
   const saveTitle = useMemo(() => {
+    if (imageShare !== null) {
+      return deriveImageTitle(imageShare.filename);
+    }
     if (sharedUrl !== null) {
       const previewForTitle: LinkPreview = linkPreview ?? {
         url: sharedUrl,
@@ -81,23 +138,29 @@ export function ShareReceiverOverlay() {
       };
       return deriveLinkPreviewTitle(
         previewForTitle,
-        sharedBodyText,
+        editableBodyText,
         isEnrichedUrlShare,
       );
     }
-    const firstLine = sharedBodyText
+    const firstLine = editableBodyText
       .split("\n")
       .find((l) => l.trim().length > 0);
     if (!firstLine) return "Shared note";
     const trimmed = firstLine.trim();
     return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
-  }, [sharedUrl, linkPreview, isEnrichedUrlShare, sharedBodyText]);
+  }, [
+    imageShare,
+    sharedUrl,
+    linkPreview,
+    isEnrichedUrlShare,
+    editableBodyText,
+  ]);
 
   // Body content that the mutations send. Pure-text shares write
-  // the user's text verbatim. URL shares compose bodyText + the
-  // preview metadata via formatLinkPreviewBody — the heading is
-  // included only on Save-new (Append-to lives inside an existing
-  // note that already has its own heading).
+  // the user's (potentially edited) text verbatim. URL shares
+  // compose bodyText + the preview metadata via formatLinkPreviewBody
+  // — the heading is included only on Save-new (Append-to lives
+  // inside an existing note that already has its own heading).
   const buildSaveBody = useCallback(
     (includeTitleHeading: boolean): string => {
       if (sharedUrl !== null) {
@@ -108,14 +171,14 @@ export function ShareReceiverOverlay() {
           imageUrl: null,
         };
         return formatLinkPreviewBody(previewForBody, {
-          bodyText: sharedBodyText,
+          bodyText: editableBodyText,
           enriched: isEnrichedUrlShare,
           includeTitleHeading,
         });
       }
-      return sharedBodyText;
+      return editableBodyText;
     },
-    [sharedUrl, linkPreview, isEnrichedUrlShare, sharedBodyText],
+    [sharedUrl, linkPreview, isEnrichedUrlShare, editableBodyText],
   );
 
   const dismiss = useCallback(() => {
@@ -127,16 +190,49 @@ export function ShareReceiverOverlay() {
   const handleSave = useCallback(async () => {
     if (pending) return;
     setPending(true);
+    // Empty / whitespace-only titles fall back to the derived
+    // default so we never persist an "(Untitled)" save by mistake.
+    const titleToSave = editableTitle.trim() || saveTitle || "Shared note";
     try {
+      if (imageShare !== null) {
+        // Image flow is multi-step: the upload endpoint requires a
+        // noteId, so we create an empty note first, upload scoped
+        // to it, then patch the content with the resulting R2 URL.
+        // The Claude vision `aiDescription` is generated server-
+        // side fire-and-forget — we don't wait for it.
+        const note = await createNote.mutateAsync({
+          title: titleToSave,
+          content: "",
+        });
+        const { r2Url } = await uploadSharedImage({
+          sourceUri: imageShare.uri,
+          noteId: note.id,
+        });
+        await updateNote.mutateAsync({
+          id: note.id,
+          data: { content: `![](${r2Url})` },
+        });
+        dismiss();
+        return;
+      }
       await createNote.mutateAsync({
-        title: saveTitle,
+        title: titleToSave,
         content: buildSaveBody(true),
       });
       dismiss();
     } catch {
       setPending(false);
     }
-  }, [pending, createNote, saveTitle, buildSaveBody, dismiss]);
+  }, [
+    pending,
+    imageShare,
+    createNote,
+    updateNote,
+    editableTitle,
+    saveTitle,
+    buildSaveBody,
+    dismiss,
+  ]);
 
   const handleOpenAppendPicker = useCallback(() => {
     if (pending) return;
@@ -148,9 +244,19 @@ export function ShareReceiverOverlay() {
       if (pending) return;
       setPending(true);
       try {
+        let body: string;
+        if (imageShare !== null) {
+          const { r2Url } = await uploadSharedImage({
+            sourceUri: imageShare.uri,
+            noteId: target.id,
+          });
+          body = `![](${r2Url})`;
+        } else {
+          body = buildSaveBody(false);
+        }
         const newContent = appendShareContent(
           target.content ?? "",
-          buildSaveBody(false),
+          body,
           new Date(),
         );
         await updateNote.mutateAsync({
@@ -162,13 +268,15 @@ export function ShareReceiverOverlay() {
         setPending(false);
       }
     },
-    [pending, updateNote, buildSaveBody, dismiss],
+    [pending, imageShare, updateNote, buildSaveBody, dismiss],
   );
 
   const visible =
     ctx.isReady &&
     ctx.hasShareIntent &&
-    (sharedUrl !== null || sharedBodyText.length > 0);
+    (imageShare !== null ||
+      sharedUrl !== null ||
+      sharedBodyText.length > 0);
 
   // Hardware back on Android — preserves the dismissal RN Modal
   // gave us via `onRequestClose` before the Modal → View refactor.
@@ -191,7 +299,28 @@ export function ShareReceiverOverlay() {
     setPreviewState("idle");
     setLinkPreview(null);
     setEnrichmentEnabled(true);
+    setEditableTitle("");
+    setEditableBodyText("");
+    userEditedTitleRef.current = false;
+    userEditedBodyRef.current = false;
   }, [visible]);
+
+  // Seed the editable title with the derived default and keep it
+  // in sync until the user types into the field. Once they edit,
+  // the ref flips and we stop overwriting their input even if the
+  // derived `saveTitle` later changes (e.g. the link preview
+  // fetch resolves and surfaces an og:title).
+  useEffect(() => {
+    if (userEditedTitleRef.current) return;
+    setEditableTitle(saveTitle);
+  }, [saveTitle]);
+
+  // Same sync for the body text — initial seed from the parsed
+  // share intent, frozen once the user starts typing.
+  useEffect(() => {
+    if (userEditedBodyRef.current) return;
+    setEditableBodyText(sharedBodyText);
+  }, [sharedBodyText]);
 
   // Kick off the preview fetch when a URL share opens. The deps are
   // intentionally limited to `visible` + `sharedUrl` — including
@@ -237,7 +366,12 @@ export function ShareReceiverOverlay() {
   // instead of behind it.
   return (
     <View style={styles.overlay} pointerEvents="box-none">
-      <View
+      <Pressable
+        // Tap on the backdrop dismisses the keyboard (matching the
+        // iOS convention) without closing the overlay. The card
+        // below stops propagation so its own touches don't fire
+        // this handler.
+        onPress={Keyboard.dismiss}
         style={[
           styles.backdrop,
           { backgroundColor: `${themeColors.background}E6` },
@@ -290,28 +424,74 @@ export function ShareReceiverOverlay() {
             <Text style={[styles.titleLabel, { color: themeColors.muted }]}>
               Title
             </Text>
+            <TextInput
+              value={editableTitle}
+              onChangeText={(text) => {
+                userEditedTitleRef.current = true;
+                setEditableTitle(text);
+              }}
+              style={[styles.titleInput, { color: themeColors.foreground }]}
+              placeholder="Shared note"
+              placeholderTextColor={themeColors.muted}
+              autoCorrect={false}
+              autoCapitalize="sentences"
+              returnKeyType="done"
+              onSubmitEditing={Keyboard.dismiss}
+              blurOnSubmit
+              accessibilityLabel="Note title"
+            />
+          </View>
+          <View style={styles.contentLabelRow}>
             <Text
-              style={[styles.titleValue, { color: themeColors.foreground }]}
-              numberOfLines={1}
+              style={[styles.titleLabel, { color: themeColors.muted }]}
             >
-              {saveTitle}
+              Content
             </Text>
           </View>
 
           <ScrollView
             style={styles.previewScroll}
             contentContainerStyle={styles.previewContent}
+            // Lets the user tap the dismiss-enrichment chip / action
+            // buttons in one go while the keyboard is open, instead
+            // of needing a first tap to dismiss the keyboard and a
+            // second tap to actually trigger the press.
+            keyboardShouldPersistTaps="handled"
           >
+            {imageShare !== null ? (
+              <Image
+                source={{ uri: imageShare.uri }}
+                style={[
+                  styles.imageShareThumb,
+                  { backgroundColor: themeColors.input },
+                ]}
+                resizeMode="contain"
+                accessibilityLabel={
+                  imageShare.filename || "Shared image"
+                }
+              />
+            ) : null}
+
             {sharedBodyText.length > 0 ? (
-              <Text
+              <TextInput
+                value={editableBodyText}
+                onChangeText={(text) => {
+                  userEditedBodyRef.current = true;
+                  setEditableBodyText(text);
+                }}
+                multiline
+                textAlignVertical="top"
+                scrollEnabled={false}
                 style={[
                   styles.preview,
                   styles.bodyText,
+                  styles.bodyTextInput,
                   { color: themeColors.foreground },
                 ]}
-              >
-                {sharedBodyText}
-              </Text>
+                placeholder="Shared content"
+                placeholderTextColor={themeColors.muted}
+                accessibilityLabel="Shared content"
+              />
             ) : null}
 
             {sharedUrl !== null ? (
@@ -388,8 +568,15 @@ export function ShareReceiverOverlay() {
                 </Text>
               )
             ) : null}
+          </ScrollView>
 
-            {showEnrichedPreview ? (
+          {showEnrichedPreview ? (
+            <View
+              style={[
+                styles.dismissEnrichmentRow,
+                { borderTopColor: themeColors.border },
+              ]}
+            >
               <Pressable
                 onPress={() => setEnrichmentEnabled(false)}
                 hitSlop={8}
@@ -418,8 +605,8 @@ export function ShareReceiverOverlay() {
                   Save URL only
                 </Text>
               </Pressable>
-            ) : null}
-          </ScrollView>
+            </View>
+          ) : null}
 
           <View style={styles.actions}>
             <Pressable
@@ -497,7 +684,7 @@ export function ShareReceiverOverlay() {
             </Pressable>
           </View>
         </View>
-      </View>
+      </Pressable>
       <AppendTargetSheet
         bottomSheetRef={appendSheetRef}
         onSelectNote={handleAppendToNote}
@@ -537,27 +724,38 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
+    gap: 4,
   },
   titleLabel: {
     fontSize: 12,
     fontWeight: "600",
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
-  titleValue: {
+  titleInput: {
     fontSize: 14,
-    flex: 1,
+    padding: 0,
+  },
+  contentLabelRow: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    // Matches the 4 px gap between TITLE and its input above so
+    // the two label/value pairs read as the same visual rhythm.
+    paddingBottom: 4,
   },
   previewScroll: {
     maxHeight: 360,
   },
   previewContent: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    // Top padding handled by `contentLabelRow` above to keep the
+    // gap between the CONTENT label and the body equal to the
+    // gap below TITLE.
+    paddingTop: 0,
+    paddingBottom: spacing.md,
   },
   preview: {
     fontSize: 14,
@@ -565,6 +763,12 @@ const styles = StyleSheet.create({
   },
   bodyText: {
     marginBottom: spacing.md,
+  },
+  bodyTextInput: {
+    // Reset RN TextInput's default cross-platform padding so the
+    // editable body lines up with the static preview rendering on
+    // top of it (no horizontal indent shift).
+    padding: 0,
   },
   previewCard: {
     borderRadius: borderRadius.md,
@@ -586,6 +790,12 @@ const styles = StyleSheet.create({
     width: "100%",
     aspectRatio: 1.91, // og:image canonical 1200x630 ratio
   },
+  imageShareThumb: {
+    width: "100%",
+    height: 240,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
+  },
   loadingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -595,12 +805,17 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
   },
+  dismissEnrichmentRow: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 0,
+    borderTopWidth: 1,
+  },
   dismissEnrichmentChip: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
     gap: 4,
-    marginTop: spacing.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: borderRadius.md,
