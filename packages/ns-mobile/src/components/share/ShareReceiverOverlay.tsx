@@ -24,21 +24,37 @@ import {
   formatLinkPreviewBody,
 } from "@/lib/linkPreviewMarkdown";
 import { fetchLinkPreview } from "@/api/links";
+import {
+  deriveImageTitle,
+  uploadSharedImage,
+} from "@/lib/shareImageUpload";
 import { AppendTargetSheet } from "./AppendTargetSheet";
 
 /**
- * Phase E.1–E.4 — Share-sheet receiver. When the user shares text
- * or a URL from another app, this overlay renders on top of the
- * tab navigator and offers Save-new / Append-to-existing actions.
+ * Phase E.1–E.5 — Share-sheet receiver. When the user shares text,
+ * a URL, or an image from another app, this overlay renders on top
+ * of the tab navigator and offers Save-new / Append-to-existing
+ * actions.
  *
- * Phase E.4 adds URL enrichment: when the shared payload is a
- * single URL, we call /links/preview to grab the page's title +
- * description + og:image (re-hosted to our R2 CDN, not hotlinked
- * to the publisher) and render an enriched preview card. The user
- * can dismiss the metadata via an X chip and save just the bare
- * URL instead.
+ * URL shares (E.4) call /links/preview to grab the page's title +
+ * description + og:image (re-hosted to our R2 CDN). The user can
+ * dismiss the metadata via an X chip and save just the bare URL.
+ *
+ * Image shares (E.5) detect a media intent with an image MIME and
+ * route through the existing image-upload pipeline: the saved note
+ * gets the standard `![]({r2Url})` markdown reference. Save-new
+ * creates an empty note first, uploads the image scoped to that
+ * note, and patches the content; Append-to uploads scoped to the
+ * picked target note and appends the same markdown after the
+ * Phase E.3 separator/timestamp.
  */
 type PreviewState = "idle" | "loading" | "loaded" | "failed";
+
+interface ImageShare {
+  uri: string;
+  mimeType: string;
+  filename: string;
+}
 
 export function ShareReceiverOverlay() {
   const ctx = useShareIntentContext();
@@ -54,6 +70,24 @@ export function ShareReceiverOverlay() {
 
   const sharedText = ctx.shareIntent?.text ?? "";
   const sharedWebUrl = ctx.shareIntent?.webUrl ?? "";
+  const sharedFiles = ctx.shareIntent?.files ?? null;
+
+  // Image shares are surfaced by expo-share-intent as `type: "media"`
+  // with a single file entry whose `mimeType` starts with "image/".
+  // We only support single-image shares in v1 — multi-image batches
+  // are out of scope per the Phase E plan.
+  const imageShare = useMemo<ImageShare | null>(() => {
+    if (ctx.shareIntent?.type !== "media") return null;
+    const file = sharedFiles?.[0];
+    if (!file) return null;
+    if (!file.mimeType?.startsWith("image/")) return null;
+    return {
+      uri: file.path,
+      mimeType: file.mimeType,
+      filename: file.fileName ?? "",
+    };
+  }, [ctx.shareIntent?.type, sharedFiles]);
+
   const { url: sharedUrl, bodyText: sharedBodyText } = useMemo(
     () => classifySharedContent(sharedText, sharedWebUrl),
     [sharedText, sharedWebUrl],
@@ -68,10 +102,14 @@ export function ShareReceiverOverlay() {
     previewState === "loaded" &&
     linkPreview !== null;
 
-  // Title for the new-note path. URL shares prefer og:title with
+  // Title for the new-note path. Image shares use the source
+  // filename (without extension); URL shares prefer og:title with
   // bodyText fallback; pure-text shares use the first non-empty
-  // line of the shared text (matching the original E.1 behavior).
+  // line of the shared text.
   const saveTitle = useMemo(() => {
+    if (imageShare !== null) {
+      return deriveImageTitle(imageShare.filename);
+    }
     if (sharedUrl !== null) {
       const previewForTitle: LinkPreview = linkPreview ?? {
         url: sharedUrl,
@@ -91,7 +129,13 @@ export function ShareReceiverOverlay() {
     if (!firstLine) return "Shared note";
     const trimmed = firstLine.trim();
     return trimmed.length > 80 ? `${trimmed.slice(0, 80)}…` : trimmed;
-  }, [sharedUrl, linkPreview, isEnrichedUrlShare, sharedBodyText]);
+  }, [
+    imageShare,
+    sharedUrl,
+    linkPreview,
+    isEnrichedUrlShare,
+    sharedBodyText,
+  ]);
 
   // Body content that the mutations send. Pure-text shares write
   // the user's text verbatim. URL shares compose bodyText + the
@@ -128,6 +172,27 @@ export function ShareReceiverOverlay() {
     if (pending) return;
     setPending(true);
     try {
+      if (imageShare !== null) {
+        // Image flow is multi-step: the upload endpoint requires a
+        // noteId, so we create an empty note first, upload scoped
+        // to it, then patch the content with the resulting R2 URL.
+        // The Claude vision `aiDescription` is generated server-
+        // side fire-and-forget — we don't wait for it.
+        const note = await createNote.mutateAsync({
+          title: saveTitle,
+          content: "",
+        });
+        const { r2Url } = await uploadSharedImage({
+          sourceUri: imageShare.uri,
+          noteId: note.id,
+        });
+        await updateNote.mutateAsync({
+          id: note.id,
+          data: { content: `![](${r2Url})` },
+        });
+        dismiss();
+        return;
+      }
       await createNote.mutateAsync({
         title: saveTitle,
         content: buildSaveBody(true),
@@ -136,7 +201,15 @@ export function ShareReceiverOverlay() {
     } catch {
       setPending(false);
     }
-  }, [pending, createNote, saveTitle, buildSaveBody, dismiss]);
+  }, [
+    pending,
+    imageShare,
+    createNote,
+    updateNote,
+    saveTitle,
+    buildSaveBody,
+    dismiss,
+  ]);
 
   const handleOpenAppendPicker = useCallback(() => {
     if (pending) return;
@@ -148,9 +221,19 @@ export function ShareReceiverOverlay() {
       if (pending) return;
       setPending(true);
       try {
+        let body: string;
+        if (imageShare !== null) {
+          const { r2Url } = await uploadSharedImage({
+            sourceUri: imageShare.uri,
+            noteId: target.id,
+          });
+          body = `![](${r2Url})`;
+        } else {
+          body = buildSaveBody(false);
+        }
         const newContent = appendShareContent(
           target.content ?? "",
-          buildSaveBody(false),
+          body,
           new Date(),
         );
         await updateNote.mutateAsync({
@@ -162,13 +245,15 @@ export function ShareReceiverOverlay() {
         setPending(false);
       }
     },
-    [pending, updateNote, buildSaveBody, dismiss],
+    [pending, imageShare, updateNote, buildSaveBody, dismiss],
   );
 
   const visible =
     ctx.isReady &&
     ctx.hasShareIntent &&
-    (sharedUrl !== null || sharedBodyText.length > 0);
+    (imageShare !== null ||
+      sharedUrl !== null ||
+      sharedBodyText.length > 0);
 
   // Hardware back on Android — preserves the dismissal RN Modal
   // gave us via `onRequestClose` before the Modal → View refactor.
@@ -302,6 +387,20 @@ export function ShareReceiverOverlay() {
             style={styles.previewScroll}
             contentContainerStyle={styles.previewContent}
           >
+            {imageShare !== null ? (
+              <Image
+                source={{ uri: imageShare.uri }}
+                style={[
+                  styles.imageShareThumb,
+                  { backgroundColor: themeColors.input },
+                ]}
+                resizeMode="contain"
+                accessibilityLabel={
+                  imageShare.filename || "Shared image"
+                }
+              />
+            ) : null}
+
             {sharedBodyText.length > 0 ? (
               <Text
                 style={[
@@ -585,6 +684,12 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: "100%",
     aspectRatio: 1.91, // og:image canonical 1200x630 ratio
+  },
+  imageShareThumb: {
+    width: "100%",
+    height: 240,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.sm,
   },
   loadingRow: {
     flexDirection: "row",
