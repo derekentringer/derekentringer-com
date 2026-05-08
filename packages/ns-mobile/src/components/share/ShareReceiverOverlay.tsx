@@ -1,7 +1,7 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
+  BackHandler,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,10 +10,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useShareIntentContext } from "expo-share-intent";
-import { useCreateNote } from "@/hooks/useNotes";
+import type { Note } from "@derekentringer/ns-shared";
+import { useCreateNote, useUpdateNote } from "@/hooks/useNotes";
 import { useThemeColors } from "@/theme/colors";
 import { borderRadius, spacing } from "@/theme";
+import { appendShareContent } from "@/lib/appendShareContent";
+import { AppendTargetSheet } from "./AppendTargetSheet";
 
 /**
  * Phase E.1 — Share-sheet receiver (Android-only spike).
@@ -36,6 +40,8 @@ export function ShareReceiverOverlay() {
   const themeColors = useThemeColors();
   const insets = useSafeAreaInsets();
   const createNote = useCreateNote();
+  const updateNote = useUpdateNote();
+  const appendSheetRef = useRef<BottomSheetModal>(null);
   const [pending, setPending] = useState(false);
 
   // Title is derived once per intent (not per render) — useMemo
@@ -76,21 +82,71 @@ export function ShareReceiverOverlay() {
     }
   }, [pending, createNote, derivedTitle, previewText, dismiss]);
 
+  const handleOpenAppendPicker = useCallback(() => {
+    if (pending) return;
+    appendSheetRef.current?.present();
+  }, [pending]);
+
+  const handleAppendToNote = useCallback(
+    async (target: Note) => {
+      if (pending) return;
+      setPending(true);
+      try {
+        const newContent = appendShareContent(
+          target.content ?? "",
+          previewText,
+          new Date(),
+        );
+        await updateNote.mutateAsync({
+          id: target.id,
+          data: { content: newContent },
+        });
+        dismiss();
+      } catch {
+        setPending(false);
+      }
+    },
+    [pending, updateNote, previewText, dismiss],
+  );
+
   // Hide the overlay completely when there's nothing to act on.
   // `isReady` guards against rendering during the brief boot
   // window where the native module hasn't reported yet.
-  if (!ctx.isReady || !ctx.hasShareIntent || previewText.length === 0) {
+  const visible =
+    ctx.isReady && ctx.hasShareIntent && previewText.length > 0;
+
+  // Mirror RN Modal's `onRequestClose` for hardware back on Android.
+  // Without this the back button would walk the navigator instead of
+  // dismissing the overlay. Returning `true` consumes the event.
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      dismiss();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, dismiss]);
+
+  // Reset the spinner whenever the overlay closes. The component stays
+  // mounted across shares (it just renders `null`), so without this the
+  // `pending=true` set during a successful save would persist into the
+  // next share and leave the Save button stuck on its loading state.
+  useEffect(() => {
+    if (!visible) setPending(false);
+  }, [visible]);
+
+  if (!visible) {
     return null;
   }
 
+  // Rendered as a positioned overlay (not a native Modal) so the
+  // `BottomSheetModal` for the append-picker, which renders into the
+  // app-level `BottomSheetModalProvider` portal, can sit above this
+  // surface. RN's Modal creates a separate native window that the
+  // portal can't reach into, which made the picker appear behind the
+  // dialog on both Android and iOS.
   return (
-    <Modal
-      transparent
-      animationType="fade"
-      visible
-      onRequestClose={dismiss}
-      statusBarTranslucent
-    >
+    <View style={styles.overlay} pointerEvents="box-none">
       <View
         style={[
           styles.backdrop,
@@ -184,6 +240,30 @@ export function ShareReceiverOverlay() {
               </Text>
             </Pressable>
             <Pressable
+              onPress={handleOpenAppendPicker}
+              disabled={pending}
+              accessibilityRole="button"
+              accessibilityLabel="Append to existing note"
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                {
+                  borderColor: themeColors.border,
+                  backgroundColor: themeColors.input,
+                },
+                (pressed || pending) && { opacity: 0.7 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  { color: themeColors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                Append to…
+              </Text>
+            </Pressable>
+            <Pressable
               onPress={handleSave}
               disabled={pending}
               accessibilityRole="button"
@@ -205,19 +285,27 @@ export function ShareReceiverOverlay() {
                     styles.primaryButtonText,
                     { color: themeColors.background },
                   ]}
+                  numberOfLines={1}
                 >
-                  Save as new note
+                  Save new
                 </Text>
               )}
             </Pressable>
           </View>
         </View>
       </View>
-    </Modal>
+      <AppendTargetSheet
+        bottomSheetRef={appendSheetRef}
+        onSelectNote={handleAppendToNote}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
   backdrop: {
     flex: 1,
     paddingHorizontal: spacing.md,
