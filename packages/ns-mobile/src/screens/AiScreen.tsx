@@ -1,34 +1,1675 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+// Phase A.5.1 (mobile parity): cross-device chat refetch.
+//
+// The mobile sync engine now subscribes to the server's SSE `chat`
+// event and bumps useSyncStore.chatRefreshKey when another device
+// writes to chat history. AiScreen watches that counter and re-runs
+// fetchChatHistory(). The existing isSavingRef + lastSavedRef
+// guards prevent a self-echo loop — our own writes briefly set
+// isSavingRef true, and even after that flips back, the refetched
+// JSON matches lastSavedRef so we no-op.
+//
+// Phase A.6 (mobile parity): AI settings + auto-approve flags.
+//
+// AiScreen now reads `autoApprove` from the persisted aiSettings
+// store and passes it to every askQuestion call. When a destructive
+// tool's flag is true, the backend skips the confirmation gate and
+// runs the tool directly — the assistant phrases its reply as
+// completed instead of "I've proposed". The Settings tab gets a new
+// "AI Assistant" section with a master toggle plus a per-tool
+// auto-approve list.
+//
+// Phase A.5 (mobile parity): chat persistence + history-aware
+// follow-ups + /savechat slash command.
+//
+// On mount: fetchChatHistory() rehydrates prior turns. On every
+// messages change: a debounced replaceChatMessages() persists to
+// the server (5s steady-state debounce, 200ms fast-flush after a
+// streaming turn ends — same shape desktop/web use). Each new
+// askQuestion call serializes the prior text turns and passes them
+// as `history` so the model has continuity ("the second one", "why
+// did you say that").
+//
+// Phase A.4 (mobile parity): confirmation cards for destructive
+// AI tool calls (delete_note, delete_folder, update_note_content,
+// rename_note, rename_folder, rename_tag).
+//
+// When the SSE stream emits a `confirmation` event, the assistant
+// turn's bubble grows a ConfirmationCard with Apply / Discard
+// buttons. Apply re-runs the tool server-side via /ai/tools/confirm
+// (autoApprove=true on that path) and updates the card to "applied"
+// or "failed". Discard flips the card to "discarded" without
+// touching the server.
+//
+// Phase A.3 (mobile parity): slash commands.
+//
+// Builds on A.2's rich-content rendering. Adds the slash-command
+// catalog from `lib/chatCommands.ts` plus an inline typeahead picker
+// that appears above the composer when input starts with `/`. Tap a
+// command → fills the composer with `/<name>` ready for args. On
+// send, parseCommand → execute locally → result rendered as an
+// assistant message; non-command input falls through to askQuestion
+// streaming as before.
+//
+// Phase A.2 (mobile parity): AI chat with tools, citations, and pills.
+//
+// Builds on A.1's streaming foundation. Now handles:
+//   - tool_activity events (shown as "Searching notes…" while
+//     the assistant message is still empty)
+//   - note_cards events (clickable pills below an assistant turn,
+//     first 5 visible + Show N more for the rest)
+//   - sources events (Q&A "Related notes:" pills, same overflow
+//     pattern, filtered to titles actually cited in the prose)
+//   - inline citation markers via tokenizeCitations — title text and
+//     superscript number both clickable, navigate to NoteDetail
+//   - open_note SSE side-channel: navigate to the note immediately
+//     when Claude calls the open_note tool
+//
+// Slash commands (A.3), confirmation cards (A.4), persistence (A.5),
+// and AI settings (A.6) are still ahead.
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  KeyboardStickyView,
+  useReanimatedKeyboardAnimation,
+} from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import { useNavigation } from "@react-navigation/native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useThemeColors } from "@/theme/colors";
 import { spacing } from "@/theme";
+import {
+  askQuestion,
+  clearServerChatHistory,
+  confirmTool,
+  fetchChatHistory,
+  replaceChatMessages,
+  type ChatMessageData,
+  type NoteCard,
+  type PendingConfirmation,
+} from "@/api/ai";
+import {
+  serializeChatHistory,
+  trimChatHistory,
+} from "@/lib/chatHistory";
+import useAiSettingsStore from "@/store/aiSettingsStore";
+import useSyncStore from "@/store/syncStore";
+import {
+  ConfirmationCard,
+  type ConfirmationStatus,
+} from "@/components/notes/ConfirmationCard";
+import {
+  filterCommands,
+  parseCommand,
+  type ChatCommand,
+} from "@/lib/chatCommands";
+import {
+  tokenizeCitations,
+  type CitationToken,
+} from "@/lib/linkifyCitations";
+import { ChatBubbleEnter } from "@/components/ChatBubbleEnter";
+import { MeetingSummaryCard } from "@/components/notes/MeetingSummaryCard";
+import { formatChatTimestamp } from "@/lib/time";
+
+const nowIso = () => new Date().toISOString();
+import useRecordingResultStore, {
+  type RecordingSummary,
+  retryRecording,
+  discardRecording,
+} from "@/store/recordingResultStore";
+import type { AiStackParamList } from "@/navigation/types";
+import type { QASource } from "@derekentringer/ns-shared";
+
+interface ItemResult {
+  id: string;
+  ok: boolean;
+  text?: string;
+  error?: string;
+}
+
+/** Per-message subset of `RecordingSummary` that the chat panel
+ *  renders. Persists alongside user / assistant turns so meeting
+ *  cards round-trip cross-device the same way they do on
+ *  web/desktop. */
+interface PersistedMeetingData {
+  sessionId: string;
+  mode: RecordingSummary["mode"];
+  status: RecordingSummary["status"];
+  transcript?: string;
+  noteId?: string;
+  noteTitle?: string;
+  errorMessage?: string;
+  // Persisted as `relevantNotes` (not `relatedNotes`) to match the
+  // shape web/desktop's AIAssistantPanel renders from chat history.
+  relevantNotes?: RecordingSummary["relatedNotes"];
+}
+
+interface Message {
+  role: "user" | "assistant" | "meeting-summary";
+  content: string;
+  sources?: QASource[];
+  noteCards?: NoteCard[];
+  toolActivity?: string | null;
+  failed?: boolean;
+  /** Phase A.4: when the SSE stream emits a `confirmation` event, the
+   *  assistant turn carries one or more pending actions (consecutive
+   *  same-tool confirmations merge into a single batched card —
+   *  matches desktop's `pendings` array). */
+  confirmation?: {
+    pendings: PendingConfirmation[];
+    status: ConfirmationStatus;
+    resultText?: string;
+    errorMessage?: string;
+    itemResults?: ItemResult[];
+  };
+  /** Phase C.1.2 follow-up: meeting-summary cards round-trip
+   *  through chat history so a recording made on mobile shows up
+   *  on web/desktop, and vice versa. */
+  meetingData?: PersistedMeetingData;
+  /** ISO timestamp the message was first created. Stamped client-side
+   *  for new turns, hydrated from `r.createdAt` for round-tripped
+   *  rows. Drives the modern-chat-style relative-time label rendered
+   *  under each bubble. */
+  createdAt?: string;
+}
+
+// ─── Hydration helpers (Phase A.5) ────────────────────────────────
+
+interface PersistedConfirmation {
+  /** New shape — array of pendings (batched card). */
+  pendings?: PendingConfirmation[];
+  /** Legacy shape from pre-batch saves; one pending only. */
+  pending?: PendingConfirmation;
+  status: ConfirmationStatus;
+  resultText?: string;
+  errorMessage?: string;
+  itemResults?: ItemResult[];
+}
+
+function rowsToMessages(rows: ChatMessageData[]): Message[] {
+  return rows
+    .map<Message | null>((r) => {
+      // Phase C.1.2 follow-up: meeting-summary now round-trips so
+      // a recording made on any device shows up everywhere via
+      // the same /ai/chat-history path that user/assistant turns
+      // use.
+      if (r.role === "meeting-summary") {
+        const md = r.meetingData as PersistedMeetingData | undefined;
+        if (!md || !md.sessionId) return null;
+        return {
+          role: "meeting-summary",
+          content: r.content ?? "",
+          meetingData: md,
+          createdAt: r.createdAt,
+        };
+      }
+      if (r.role !== "user" && r.role !== "assistant") return null;
+      const conf = r.confirmation as PersistedConfirmation | undefined;
+      let confirmation: Message["confirmation"];
+      if (conf) {
+        const pendings =
+          conf.pendings && conf.pendings.length > 0
+            ? conf.pendings
+            : conf.pending
+              ? [conf.pending]
+              : [];
+        if (pendings.length > 0) {
+          // A persisted "applying" status means we crashed mid-Apply
+          // (or another device is mid-Apply) — flip it back to
+          // "pending" so the user can re-Apply instead of staring at
+          // a forever-spinner.
+          const status: ConfirmationStatus =
+            conf.status === "applying" ? "pending" : conf.status;
+          confirmation = {
+            pendings,
+            status,
+            resultText: conf.resultText,
+            errorMessage: conf.errorMessage,
+            itemResults: conf.itemResults,
+          };
+        }
+      }
+      return {
+        role: r.role,
+        content: r.content,
+        sources: r.sources as QASource[] | undefined,
+        noteCards: r.noteCards as NoteCard[] | undefined,
+        confirmation,
+        createdAt: r.createdAt,
+      };
+    })
+    .filter((m): m is Message => m !== null)
+    // Strip empty assistant placeholders from older saves (any bubble
+    // with no content, no card, no confirmation, no failure marker).
+    .filter((m) => {
+      if (m.role !== "assistant") return true;
+      if (m.content) return true;
+      if (m.confirmation) return true;
+      if (m.noteCards?.length) return true;
+      if (m.sources?.length) return true;
+      if (m.failed) return true;
+      return false;
+    });
+}
+
+function messagesToRows(messages: Message[]): ChatMessageData[] {
+  return messages.map((m) => {
+    let confirmation: PersistedConfirmation | undefined;
+    if (m.confirmation) {
+      // Persist `applying` as `pending` — losing the card on a
+      // cross-device refetch was worse than the small risk of a
+      // re-Apply prompt; the user can simply tap again.
+      const status: ConfirmationStatus =
+        m.confirmation.status === "applying" ? "pending" : m.confirmation.status;
+      confirmation = {
+        pendings: m.confirmation.pendings,
+        status,
+        resultText: m.confirmation.resultText,
+        errorMessage: m.confirmation.errorMessage,
+        itemResults: m.confirmation.itemResults,
+      };
+    }
+    return {
+      role: m.role,
+      content: m.content,
+      sources: m.sources,
+      noteCards: m.noteCards,
+      confirmation,
+      meetingData: m.meetingData,
+      createdAt: m.createdAt,
+    };
+  });
+}
+
+const PILL_LIMIT = 5;
+
+type AiNav = NativeStackNavigationProp<AiStackParamList, "AiHome">;
 
 export function AiScreen() {
   const themeColors = useThemeColors();
+  const navigation = useNavigation<AiNav>();
+  // Bottom-tabs inset on the screen content. Used as the
+  // KeyboardStickyView opened-offset so the composer pins flush
+  // to the keyboard top (without it the sticky view overshoots
+  // by tabBarHeight). Also used in the spacer height math so the
+  // last message lands above the lifted composer.
+  const tabBarHeight = useBottomTabBarHeight();
+  // Keyboard animation as a Reanimated SharedValue. `height` is
+  // negative when the keyboard is open (e.g. -300) and 0 when
+  // closed. Used to drive a spacer at the inverted FlatList's
+  // visual bottom — the FlatList container itself never resizes,
+  // so the keyboard transition no longer triggers per-frame
+  // FlatList relayout / virtualization churn that caused jitter.
+  const keyboardAnim = useReanimatedKeyboardAnimation();
+
+  // Spacer rendered as the inverted FlatList's ListHeaderComponent
+  // (ListHeader = top of data = visual bottom in inverted). Its
+  // height grows with the keyboard so the newest message stays
+  // above the lifted composer. We subtract tabBarHeight because
+  // the screen content area is already inset by the bottom tabs;
+  // KeyboardStickyView translates the composer up by the same
+  // amount so the math lines up.
+  const spacerStyle = useAnimatedStyle(() => ({
+    height: Math.max(0, -keyboardAnim.height.value - tabBarHeight),
+  }));
+  const autoApprove = useAiSettingsStore((s) => s.autoApprove);
+  const chatRefreshKey = useSyncStore((s) => s.chatRefreshKey);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const listRef = useRef<FlatList>(null);
+  // Re-render the chat timestamps every 30s so "Just now" rolls
+  // forward to "1min ago" without forcing a manual refresh. The
+  // tick is unused beyond triggering the re-render.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const openNote = useCallback(
+    (noteId: string) => {
+      // Push NoteDetail onto the AI tab's own stack so the back
+      // button returns to the AI Assistant naturally. We tried
+      // parent.navigate("Notes", ...) earlier to flip the bottom-
+      // nav highlight to Notes while viewing — but that orphans
+      // the back stack (NotesList wasn't in the history, so back
+      // popped out of the tabs entirely). Keeping the note in the
+      // AI stack is the more honest navigation: bottom nav stays
+      // on AI because the user is still in the AI flow.
+      navigation.navigate("NoteDetail", { noteId });
+    },
+    [navigation],
+  );
+
+  // ─── Phase A.5: hydration + persistence ──────────────────────
+  // Rehydrate the chat from the server on mount so the user lands
+  // back into their last conversation. Persisted by the matching
+  // effect below whenever messages change. Guarded by
+  // historyLoadedRef so the first persistence write doesn't race
+  // with the load.
+  // Two refs cover the hydration cycle:
+  //   `fetchStartedRef` — flips true when the fetch is dispatched.
+  //     Prevents duplicate fetches across re-renders. Set early.
+  //   `historyLoadedRef` — flips true ONLY after the fetch settles
+  //     (success OR failure). The persist effect / fast-flush /
+  //     cross-device-refresh all gate on this so they can't fire
+  //     until we know what the server already has.
+  //
+  // The original implementation set historyLoadedRef true at the
+  // top of the effect — before the fetch resolved — which meant a
+  // slow/failed fetch could let the 5s steady-state debounce save
+  // an empty messages array back to the server, wiping the user's
+  // chat history (and propagating that wipe to web/desktop via the
+  // chat SSE channel).
+  const fetchStartedRef = useRef(false);
+  const historyLoadedRef = useRef(false);
+  // Mirror of `historyLoadedRef` as state so effects that gate on
+  // history-loaded can re-run when hydration completes. Without
+  // this, a recording-summary that lands in the store BEFORE the
+  // chat-history fetch settles would be missed by the mirror
+  // effect and never appear in the chat — the user would wait for
+  // the next summaries change to see the card.
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const lastSavedRef = useRef<string>("");
+  const isSavingRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (fetchStartedRef.current) return;
+    fetchStartedRef.current = true;
+    fetchChatHistory()
+      .then((rows) => {
+        if (rows.length === 0) {
+          // Server has no history. Mark lastSaved as "[]" so the
+          // persist effect treats the local empty state as already
+          // saved and doesn't schedule a redundant write.
+          lastSavedRef.current = "[]";
+          return;
+        }
+        const loaded = rowsToMessages(rows);
+        setMessages((prev) => {
+          // If the user already started typing/sending while hydration
+          // was in flight, don't clobber their work — keep what's
+          // there and skip the rehydrate. Mark lastSaved so we don't
+          // immediately re-write the same value.
+          if (prev.length > 0) return prev;
+          lastSavedRef.current = JSON.stringify(loaded);
+          return loaded;
+        });
+      })
+      .catch(() => {
+        // Hydration failure is non-fatal — the user can still chat.
+        // Leave lastSavedRef as "" so we DON'T persist an empty
+        // state back to the server (avoids wiping their history if
+        // the fetch failed transiently).
+      })
+      .finally(() => {
+        historyLoadedRef.current = true;
+        setHistoryLoaded(true);
+      });
+  }, []);
+
+  const persistNow = useCallback(() => {
+    if (!historyLoadedRef.current) return;
+    const json = JSON.stringify(messages);
+    if (json === lastSavedRef.current) return;
+    lastSavedRef.current = json;
+    isSavingRef.current = true;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    replaceChatMessages(messagesToRows(messages))
+      .catch(() => {
+        // Non-fatal — next change will retry. Don't roll back
+        // lastSavedRef so we don't write the same payload N times.
+      })
+      .finally(() => {
+        setTimeout(() => {
+          isSavingRef.current = false;
+        }, 500);
+      });
+  }, [messages]);
+
+  // Steady-state debounce: 5s after the latest mutation, push to
+  // the server. Resets every time messages change. Skips writes
+  // while a stream is in flight (the post-stream fast-flush effect
+  // below picks that up promptly).
+  useEffect(() => {
+    if (!historyLoadedRef.current) return;
+    if (isStreaming) return;
+    const json = JSON.stringify(messages);
+    if (json === lastSavedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      persistNow();
+    }, 5000);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [messages, isStreaming, persistNow]);
+
+  // Phase A.5.1: react to remote chat-history changes from other
+  // devices. The sync engine bumps `chatRefreshKey` when it sees a
+  // server-side `chat` SSE event; we re-fetch and swap state.
+  // Skip the very first render (chatRefreshKey === 0) — that's just
+  // the initial store value, not a real signal.
+  useEffect(() => {
+    if (chatRefreshKey === 0) return;
+    if (!historyLoadedRef.current) return;
+    if (isSavingRef.current) return;
+    fetchChatHistory()
+      .then((rows) => {
+        const loaded = rowsToMessages(rows);
+        const json = JSON.stringify(loaded);
+        // No-op if the server's view matches what we already have.
+        if (json === lastSavedRef.current) return;
+        lastSavedRef.current = json;
+        setMessages(loaded);
+        // If the remote chat was cleared from another device, drop
+        // the local recording-summary store too. Otherwise the
+        // summaries-mirror effect re-injects local meeting cards
+        // and the empty-state placeholder never shows.
+        if (loaded.length === 0) {
+          useRecordingResultStore.getState().clearAll();
+        }
+      })
+      .catch(() => {
+        // Non-fatal; next bump will retry.
+      });
+  }, [chatRefreshKey]);
+
+  // Fast-flush: 200ms after a streaming turn ends, persist promptly
+  // so the assistant message survives a quick screen close.
+  const prevStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => persistNow(), 200);
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming, persistNow]);
+
+  // Recording summary cards live in `recordingResultStore` while
+  // a session is being processed (transcribing → structuring).
+  // Once the pipeline finishes (completed / failed), we mirror
+  // the entry into a `meeting-summary` message so the existing
+  // chat-history persistence carries it cross-device — same
+  // pattern web/desktop use. The store entry stays around but
+  // rendering branches on the matching message's status, so
+  // there's no double-render.
+  const summaries = useRecordingResultStore((s) => s.summaries);
+
+  // Lookup map for the renderItem path: lets each meeting card
+  // check whether the live store still has an `audioUri` for its
+  // session (which gates the Retry button). Cross-device hydrated
+  // cards don't have a matching summary, so Retry stays hidden
+  // for them.
+  const summariesById = useMemo(() => {
+    const map = new Map<string, RecordingSummary>();
+    for (const s of summaries) map.set(s.sessionId, s);
+    return map;
+  }, [summaries]);
+
+  // Mirror store summaries into messages: append on first sight,
+  // patch on subsequent updates, deduplicate by sessionId. Gates
+  // on `historyLoaded` (state, not ref) so the effect re-runs the
+  // moment hydration completes — covers the race where a stop
+  // pushes a summary into the store before chat-history settles.
+  useEffect(() => {
+    if (!historyLoaded) return;
+    if (summaries.length === 0) return;
+    setMessages((prev) => {
+      let changed = false;
+      const next = [...prev];
+      const indexBySession = new Map<string, number>();
+      for (let i = 0; i < next.length; i++) {
+        const md = next[i].meetingData;
+        if (md?.sessionId) indexBySession.set(md.sessionId, i);
+      }
+      for (const s of summaries) {
+        const idx = indexBySession.get(s.sessionId);
+        // Defaults aligned with web/desktop's `MeetingSummaryData`:
+        // their renderers read `meetingData.relevantNotes.length`
+        // and `meetingData.transcript.trim()` directly, so emitting
+        // `undefined` for those fields crashes the AIAssistantPanel
+        // when the card hits another device through chat history.
+        const persisted: PersistedMeetingData = {
+          sessionId: s.sessionId,
+          mode: s.mode,
+          status: s.status,
+          transcript: s.transcript ?? "",
+          noteId: s.noteId,
+          noteTitle: s.noteTitle,
+          errorMessage: s.errorMessage,
+          relevantNotes: s.relatedNotes ?? [],
+        };
+        if (idx === undefined) {
+          next.push({
+            role: "meeting-summary",
+            content: "",
+            meetingData: persisted,
+            createdAt: nowIso(),
+          });
+          changed = true;
+        } else {
+          const existing = next[idx].meetingData;
+          if (
+            JSON.stringify(existing) !== JSON.stringify(persisted)
+          ) {
+            next[idx] = { ...next[idx], meetingData: persisted };
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [summaries, historyLoaded]);
+
+  // The chat uses an inverted FlatList — `data` is messages
+  // reversed, so the newest item is at the visual bottom and
+  // the scroll position is naturally anchored there. Streaming
+  // text growing the latest bubble keeps that bubble's bottom
+  // pinned to the viewport bottom for free.
+  const reversedMessages = useMemo(
+    () => [...messages].reverse(),
+    [messages],
+  );
+
+
+  const handleSend = useCallback(async () => {
+    const question = input.trim();
+    if (!question || isStreaming) return;
+
+    // Slash command path — execute locally, append the result as an
+    // assistant turn, skip the SSE stream entirely.
+    const parsed = parseCommand(question);
+    if (parsed) {
+      setInput("");
+      // Show the user's command in the chat for context.
+      setMessages((prev) => [...prev, { role: "user", content: question, createdAt: nowIso() }]);
+      try {
+        const result = await parsed.command.execute(parsed.args, {
+          clearChat: () => {
+            if (abortRef.current) abortRef.current.abort();
+            setMessages([]);
+          },
+          openInTab: openNote,
+          getChatMessages: () =>
+            messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+              noteCards: m.noteCards,
+              sources: m.sources,
+            })),
+        });
+        if (result.silent) return;
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: result.text,
+            noteCards: result.noteCards,
+            createdAt: nowIso(),
+          },
+        ]);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Command failed.";
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: message, failed: true, createdAt: nowIso() },
+        ]);
+      }
+      return;
+    }
+
+    setInput("");
+    setIsStreaming(true);
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: question, createdAt: nowIso() },
+      { role: "assistant", content: "", createdAt: nowIso() },
+    ]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Pass the prior text turns to the model for continuity. We
+    // serialize from the messages snapshot BEFORE the user's new
+    // question + the empty assistant placeholder we just appended,
+    // so the history doesn't contain the in-flight turn.
+    const historySnapshot = trimChatHistory(
+      serializeChatHistory(messages),
+    );
+
+    try {
+      for await (const event of askQuestion(
+        question,
+        controller.signal,
+        undefined,
+        undefined,
+        historySnapshot,
+        autoApprove,
+      )) {
+        if (controller.signal.aborted) break;
+
+        // open_note is a side-channel: route immediately to the note
+        // and let the message reducer keep doing its thing.
+        if (event.openNote) {
+          openNote(event.openNote.id);
+        }
+
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (!last || last.role !== "assistant") return prev;
+
+          let next = last;
+          if (event.text) {
+            next = {
+              ...next,
+              content: next.content + event.text,
+              // Clear the activity indicator once real prose lands.
+              toolActivity: null,
+            };
+          }
+          if (event.error) {
+            next = { ...next, content: event.error, failed: true };
+          }
+          if (event.tool) {
+            next = { ...next, toolActivity: event.tool.description };
+          }
+          if (event.sources && event.sources.length > 0) {
+            const existing = next.sources ?? [];
+            const merged = [
+              ...existing,
+              ...event.sources.filter(
+                (s) => !existing.some((e) => e.id === s.id),
+              ),
+            ];
+            next = { ...next, sources: merged };
+          }
+          if (event.noteCards && event.noteCards.length > 0) {
+            const existing = next.noteCards ?? [];
+            const merged = [
+              ...existing,
+              ...event.noteCards.filter(
+                (c) => !existing.some((e) => e.id === c.id),
+              ),
+            ];
+            next = { ...next, noteCards: merged };
+          }
+
+          updated[updated.length - 1] = next;
+
+          // Confirmation events: if the most recent card is still
+          // pending and uses the same toolName, merge into it (so
+          // "delete A and B" renders as one batched card with one
+          // Apply CTA — matching desktop). Otherwise insert a new
+          // card. Either way, append an empty assistant placeholder
+          // so subsequent streamed text lands cleanly.
+          if (event.confirmation) {
+            const prevMsg = updated[updated.length - 1];
+            const prevPrevMsg = updated[updated.length - 2];
+            const candidate =
+              prevMsg?.confirmation?.status === "pending"
+                ? prevMsg
+                : prevMsg?.role === "assistant" &&
+                    prevMsg.content === "" &&
+                    prevPrevMsg?.confirmation?.status === "pending"
+                  ? prevPrevMsg
+                  : null;
+            if (
+              candidate?.confirmation &&
+              candidate.confirmation.pendings[0]?.toolName ===
+                event.confirmation.toolName
+            ) {
+              const candIdx = updated.indexOf(candidate);
+              updated[candIdx] = {
+                ...candidate,
+                confirmation: {
+                  ...candidate.confirmation,
+                  pendings: [
+                    ...candidate.confirmation.pendings,
+                    event.confirmation,
+                  ],
+                },
+              };
+            } else {
+              // If the previous turn is an empty assistant
+              // placeholder (still showing the in-progress tool
+              // activity spinner), drop it — the confirmation card
+              // we're about to push subsumes that activity. Without
+              // this the spinner is sandwiched between the user
+              // message and the card and never gets its toolActivity
+              // cleared, leaving a stuck "Moving 'X' to Trash…" row.
+              const last = updated[updated.length - 1];
+              if (
+                last?.role === "assistant" &&
+                last.content === "" &&
+                !last.confirmation &&
+                !last.noteCards?.length &&
+                !last.sources?.length &&
+                !last.failed
+              ) {
+                updated.pop();
+              }
+              updated.push({
+                role: "assistant",
+                content: "",
+                confirmation: {
+                  pendings: [event.confirmation],
+                  status: "pending",
+                },
+                createdAt: nowIso(),
+              });
+              updated.push({ role: "assistant", content: "", createdAt: nowIso() });
+            }
+          }
+          return updated;
+        });
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        const message =
+          err instanceof Error ? err.message : "Something went wrong.";
+        setMessages((prev) => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && last.role === "assistant" && !last.content) {
+            updated[updated.length - 1] = {
+              ...last,
+              content: message,
+              failed: true,
+            };
+          }
+          return updated;
+        });
+      }
+    } finally {
+      setIsStreaming(false);
+      abortRef.current = null;
+    }
+  }, [input, isStreaming, openNote, messages, autoApprove]);
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const handleConfirmApply = useCallback(async (
+    idx: number,
+    pendings: PendingConfirmation[],
+  ) => {
+    // Pendings come straight from the call site so we don't have to
+    // round-trip through setMessages just to read them (a prior
+    // setState-side-effect read was racing with React's deferred
+    // updater queue and bailing out of the call entirely).
+    setMessages((prev) => {
+      const updated = [...prev];
+      const target = updated[idx];
+      if (!target?.confirmation) return prev;
+      updated[idx] = {
+        ...target,
+        confirmation: { ...target.confirmation, status: "applying" },
+      };
+      return updated;
+    });
+
+    // Apply sequentially; gather per-item results so a partial
+    // failure surfaces as "2 of 3 applied" instead of masking
+    // either the wins or the losses.
+    const itemResults: ItemResult[] = [];
+    for (const p of pendings) {
+      try {
+        const result = await confirmTool(p.toolName, p.toolInput);
+        itemResults.push({ id: p.id, ok: true, text: result.text });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Apply failed.";
+        itemResults.push({ id: p.id, ok: false, error: message });
+      }
+    }
+
+    const okCount = itemResults.filter((r) => r.ok).length;
+    const allOk = okCount === pendings.length;
+    const noneOk = okCount === 0;
+
+    setMessages((prev) => {
+      const updated = [...prev];
+      const target = updated[idx];
+      if (!target?.confirmation) return prev;
+      updated[idx] = {
+        ...target,
+        confirmation: {
+          ...target.confirmation,
+          status: noneOk ? "failed" : "applied",
+          resultText:
+            allOk && pendings.length === 1
+              ? itemResults[0].text
+              : allOk
+                ? `All ${pendings.length} actions applied.`
+                : `${okCount} of ${pendings.length} applied — ${pendings.length - okCount} failed.`,
+          errorMessage: noneOk ? itemResults[0]?.error : undefined,
+          itemResults: pendings.length > 1 ? itemResults : undefined,
+        },
+      };
+      return updated;
+    });
+  }, []);
+
+  const handleConfirmDiscard = useCallback((idx: number) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const target = updated[idx];
+      if (!target?.confirmation) return prev;
+      updated[idx] = {
+        ...target,
+        confirmation: { ...target.confirmation, status: "discarded" },
+      };
+      return updated;
+    });
+  }, []);
+
+  const handleClear = useCallback(() => {
+    if (isStreaming) abortRef.current?.abort();
+    setMessages([]);
+    lastSavedRef.current = "[]";
+    // Drop the recording summary store too so the next mirror
+    // pass doesn't repopulate cleared meeting cards.
+    useRecordingResultStore.getState().clearAll();
+    // Wipe server history too so a refresh doesn't bring it back.
+    clearServerChatHistory().catch(() => {});
+  }, [isStreaming]);
+
+  // Retry a failed meeting card. Optimistically flips the bubble
+  // back to "transcribing" so the bouncing-dots state is visible
+  // immediately; the store's retryRecording then re-fires the
+  // pipeline against the saved audio file.
+  const handleAudioRetry = useCallback((sessionId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.role === "meeting-summary" && m.meetingData?.sessionId === sessionId
+          ? {
+              ...m,
+              meetingData: {
+                ...m.meetingData!,
+                status: "transcribing",
+                errorMessage: undefined,
+              },
+            }
+          : m,
+      ),
+    );
+    void retryRecording(sessionId);
+  }, []);
+
+  // Discard a failed card. Removes the message locally; the
+  // persistence loop syncs the removal to chat history so the
+  // card disappears across devices on next refetch. The store's
+  // discardRecording also deletes the local audio file.
+  const handleAudioDiscard = useCallback((sessionId: string) => {
+    setMessages((prev) =>
+      prev.filter(
+        (m) =>
+          !(m.role === "meeting-summary" && m.meetingData?.sessionId === sessionId),
+      ),
+    );
+    void discardRecording(sessionId);
+  }, []);
+
+  // Mount Clear in the navigator header so we don't render a second
+  // "AI Assistant" title inside the screen. Hidden until there's
+  // something to clear.
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () =>
+        messages.length > 0 ? (
+          <Pressable onPress={handleClear} hitSlop={8}>
+            <Text style={[styles.headerAction, { color: themeColors.muted }]}>
+              Clear
+            </Text>
+          </Pressable>
+        ) : null,
+    });
+  }, [navigation, handleClear, messages.length, themeColors.muted]);
 
   return (
-    <View style={[styles.container, { backgroundColor: themeColors.background }]}>
-      <Text style={[styles.text, { color: themeColors.foreground }]}>AI</Text>
-      <Text style={[styles.subtitle, { color: themeColors.muted }]}>
-        Coming soon
+    <View
+      style={[styles.container, { backgroundColor: themeColors.background }]}
+    >
+      {messages.length === 0 && summaries.length === 0 ? (
+        // Empty-state parity with ns-web's AIAssistantPanel:
+        // chat-bubble icon at 32px / muted-foreground/40, "Your AI
+        // Assistant" title, and the same description string.
+        <View style={styles.empty}>
+          <MaterialCommunityIcons
+            name="message-outline"
+            size={32}
+            color={themeColors.muted}
+            style={styles.emptyIcon}
+          />
+          <Text style={[styles.emptyTitle, { color: themeColors.muted }]}>
+            Your AI Assistant
+          </Text>
+          <Text style={[styles.emptyHint, { color: themeColors.muted }]}>
+            Search, create, and organize notes. Summarize content,
+            generate tags, and ask questions during meetings.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={reversedMessages}
+          inverted
+          // Display index counts from newest (0) to oldest. For
+          // meeting-summary messages we key by sessionId so they
+          // stay stable across cross-device refetches; everything
+          // else keys by original-array index.
+          keyExtractor={(item, displayIdx) => {
+            const sid = item.meetingData?.sessionId;
+            if (item.role === "meeting-summary" && sid) return `sum-${sid}`;
+            return `msg-${messages.length - 1 - displayIdx}`;
+          }}
+          renderItem={({ item, index: displayIdx }) => {
+            const messageIndex = messages.length - 1 - displayIdx;
+            const timestamp = item.createdAt
+              ? formatChatTimestamp(item.createdAt)
+              : "";
+            const tsAlign =
+              item.role === "user"
+                ? styles.timestampRight
+                : styles.timestampLeft;
+            const liveSummary = item.meetingData?.sessionId
+              ? summariesById.get(item.meetingData.sessionId)
+              : undefined;
+            const body =
+              item.role === "meeting-summary" && item.meetingData ? (
+                <MeetingSummaryCard
+                  summary={{
+                    sessionId: item.meetingData.sessionId,
+                    createdAt: "",
+                    mode: item.meetingData.mode,
+                    status: item.meetingData.status,
+                    transcript: item.meetingData.transcript,
+                    noteId: item.meetingData.noteId,
+                    noteTitle: item.meetingData.noteTitle,
+                    errorMessage: item.meetingData.errorMessage,
+                    relatedNotes: item.meetingData.relevantNotes,
+                  }}
+                  onOpenNote={(noteId) => openNote(noteId)}
+                  onRetry={handleAudioRetry}
+                  onDiscard={handleAudioDiscard}
+                  canRetry={!!liveSummary?.audioUri}
+                />
+              ) : (
+                <MessageBubble
+                  message={item}
+                  messageIndex={messageIndex}
+                  isStreaming={isStreaming}
+                  onOpenNote={openNote}
+                  onConfirmApply={handleConfirmApply}
+                  onConfirmDiscard={handleConfirmDiscard}
+                />
+              );
+            return (
+              <View>
+                {body}
+                {timestamp ? (
+                  <Text
+                    style={[
+                      styles.timestamp,
+                      tsAlign,
+                      { color: themeColors.muted },
+                    ]}
+                  >
+                    {timestamp}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          }}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          // Inverted FlatList: ListHeaderComponent renders at top
+          // of data which is the visual BOTTOM after inversion.
+          // This keyboard-driven spacer is what pushes the newest
+          // message above the lifted composer without resizing
+          // the FlatList itself.
+          ListHeaderComponent={<Animated.View style={spacerStyle} />}
+        />
+      )}
+
+      <KeyboardStickyView offset={{ closed: 0, opened: tabBarHeight }}>
+        <SlashCommandPicker
+          input={input}
+          onPick={(cmd) => {
+            setInput(`/${cmd.name}${cmd.usage.includes("[") ? " " : ""}`);
+          }}
+        />
+        <View
+          style={[
+            styles.composer,
+            {
+              borderTopColor: themeColors.border,
+              backgroundColor: themeColors.card,
+            },
+          ]}
+        >
+        <TextInput
+          value={input}
+          onChangeText={setInput}
+          placeholder="Ask, search, create, or organize..."
+          placeholderTextColor={themeColors.muted}
+          multiline
+          // Don't toggle editable while streaming — on Android the
+          // TextInput losing editability blurs the field and
+          // dismisses the keyboard, which made hitting Ask close
+          // the keyboard for non-slash questions while slash
+          // commands left it open. The Send/Stop button already
+          // gates submission; the user can keep typing the next
+          // question while the previous one streams.
+          style={[
+            styles.input,
+            {
+              color: themeColors.foreground,
+              backgroundColor: themeColors.input,
+              borderColor: themeColors.border,
+            },
+          ]}
+        />
+        <Pressable
+          onPress={isStreaming ? handleStop : handleSend}
+          disabled={!isStreaming && input.trim().length === 0}
+          style={({ pressed }) => [
+            styles.sendBtn,
+            {
+              backgroundColor: isStreaming
+                ? themeColors.destructive
+                : themeColors.primary,
+              opacity:
+                pressed || (!isStreaming && input.trim().length === 0)
+                  ? 0.6
+                  : 1,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              // Web parity: Ask uses `text-primary-contrast`
+              // (#000000) + `font-medium` on the lime button;
+              // Stop uses `text-foreground` (regular weight) on
+              // the destructive button. Mobile mirrors that.
+              isStreaming ? styles.stopBtnText : styles.askBtnText,
+              isStreaming
+                ? { color: themeColors.foreground }
+                : { color: "#000000" },
+            ]}
+          >
+            {isStreaming ? "Stop" : "Ask"}
+          </Text>
+        </Pressable>
+        </View>
+      </KeyboardStickyView>
+    </View>
+  );
+}
+
+// ─── MessageBubble ───────────────────────────────────────────────
+
+interface MessageBubbleProps {
+  message: Message;
+  messageIndex: number;
+  isStreaming: boolean;
+  onOpenNote: (noteId: string) => void;
+  onConfirmApply: (idx: number, pendings: PendingConfirmation[]) => void;
+  onConfirmDiscard: (idx: number) => void;
+}
+
+function MessageBubble({
+  message,
+  messageIndex,
+  isStreaming,
+  onOpenNote,
+  onConfirmApply,
+  onConfirmDiscard,
+}: MessageBubbleProps) {
+  const themeColors = useThemeColors();
+  const isUser = message.role === "user";
+
+  const tokens = useMemo<CitationToken[]>(() => {
+    if (isUser || !message.content) return [];
+    return tokenizeCitations(message.content, message.sources, message.noteCards);
+  }, [isUser, message.content, message.sources, message.noteCards]);
+
+  // Q&A sources: only show pills for titles actually cited in the
+  // prose. (Mirrors the desktop/web behavior.)
+  const citedSourceIds = useMemo(() => {
+    if (!message.sources || message.sources.length === 0) return new Set<string>();
+    const cited = new Set<string>();
+    for (const t of tokens) {
+      if (t.kind === "title" || t.kind === "marker") {
+        cited.add(t.noteId);
+      }
+    }
+    return cited;
+  }, [tokens, message.sources]);
+
+  const filteredSources = useMemo(() => {
+    return (message.sources ?? []).filter((s) => citedSourceIds.has(s.id));
+  }, [message.sources, citedSourceIds]);
+
+  // Confirmation messages render a card instead of a regular bubble.
+  // The bubble itself is suppressed; the card carries its own border
+  // and looks like a freestanding action prompt.
+  if (message.confirmation) {
+    return (
+      <ChatBubbleEnter
+        align="left"
+        style={[
+          styles.bubbleRow,
+          { justifyContent: "flex-start" },
+        ]}
+      >
+        <View style={styles.confirmationWrap}>
+          <ConfirmationCard
+            pendings={message.confirmation.pendings}
+            status={message.confirmation.status}
+            resultText={message.confirmation.resultText}
+            errorMessage={message.confirmation.errorMessage}
+            itemResults={message.confirmation.itemResults}
+            onApply={() => onConfirmApply(messageIndex, message.confirmation!.pendings)}
+            onDiscard={() => onConfirmDiscard(messageIndex)}
+          />
+        </View>
+      </ChatBubbleEnter>
+    );
+  }
+
+  return (
+    <ChatBubbleEnter
+      align={isUser ? "right" : "left"}
+      style={[
+        styles.bubbleRow,
+        { justifyContent: isUser ? "flex-end" : "flex-start" },
+      ]}
+    >
+      <View
+        style={[
+          styles.bubble,
+          {
+            backgroundColor: isUser ? themeColors.subtle : themeColors.card,
+            borderColor: message.failed
+              ? themeColors.destructive
+              : themeColors.border,
+          },
+          // User bubbles shrink-wrap to content (right-aligned, max
+          // 92% wide). Assistant bubbles left-align at a fixed 80%
+          // of the row so the lane separation reads at a glance —
+          // and `width` (not `maxWidth`) forces the bubble to fill
+          // its lane so embedded pill lists / tables don't shrink-
+          // wrap to the longest title and truncate the rest.
+          isUser ? { maxWidth: "92%" } : { width: "80%" },
+        ]}
+      >
+        {/* Empty-but-streaming placeholder. Show the tool activity if
+            we have one, otherwise a generic spinner. */}
+        {message.content.length === 0 && !isUser ? (
+          <View style={styles.activityRow}>
+            <ActivityIndicator size="small" color={themeColors.muted} />
+            <Text
+              style={[styles.activityText, { color: themeColors.muted }]}
+              numberOfLines={1}
+            >
+              {message.toolActivity ?? (isStreaming ? "Thinking…" : "")}
+            </Text>
+          </View>
+        ) : isUser ? (
+          <UserBubbleText content={message.content} />
+        ) : (
+          <CitationText
+            tokens={tokens}
+            failed={message.failed === true}
+            onOpenNote={onOpenNote}
+          />
+        )}
+
+        {!isUser && filteredSources.length > 0 && (
+          <PillList
+            label="Related notes:"
+            items={filteredSources.map((s) => ({ id: s.id, title: s.title }))}
+            onTap={onOpenNote}
+            testID="source-pill"
+          />
+        )}
+
+        {!isUser && message.noteCards && message.noteCards.length > 0 && (
+          <PillList
+            items={message.noteCards.map((c) => ({
+              id: c.id,
+              title: c.title,
+              folder: c.folder,
+            }))}
+            onTap={onOpenNote}
+            testID="note-card"
+          />
+        )}
+      </View>
+    </ChatBubbleEnter>
+  );
+}
+
+// ─── UserBubbleText ──────────────────────────────────────────────
+
+/** Renders a user message. If it starts with a slash command, the
+ *  command word renders as a small mono-font code chip styled with
+ *  the lime accent (matching desktop/web's `<code class="text-primary
+ *  bg-input">` chip). Args after the first space stay as plain
+ *  prose. */
+function UserBubbleText({ content }: { content: string }) {
+  const themeColors = useThemeColors();
+  if (content.startsWith("/")) {
+    const spaceIdx = content.indexOf(" ");
+    const cmd = spaceIdx > 0 ? content.slice(0, spaceIdx) : content;
+    const rest = spaceIdx > 0 ? content.slice(spaceIdx + 1) : "";
+    return (
+      <Text
+        style={[styles.bubbleText, { color: themeColors.foreground }]}
+      >
+        <Text
+          style={[
+            styles.userCommandChip,
+            {
+              color: themeColors.primary,
+              backgroundColor: themeColors.input,
+            },
+          ]}
+        >
+          {cmd}
+        </Text>
+        {rest.length > 0 ? ` ${rest}` : ""}
       </Text>
+    );
+  }
+  return (
+    <Text style={[styles.bubbleText, { color: themeColors.foreground }]}>
+      {content}
+    </Text>
+  );
+}
+
+// ─── CitationText ────────────────────────────────────────────────
+
+const SUPERSCRIPT_DIGITS = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"];
+
+function toSuperscriptDigits(n: number): string {
+  return ` ${Math.abs(n)
+    .toString()
+    .split("")
+    .map((d) => SUPERSCRIPT_DIGITS[Number(d)] ?? d)
+    .join("")}`;
+}
+
+function CitationText({
+  tokens,
+  failed,
+  onOpenNote,
+}: {
+  tokens: CitationToken[];
+  failed: boolean;
+  onOpenNote: (noteId: string) => void;
+}) {
+  const themeColors = useThemeColors();
+  const baseColor = failed ? themeColors.destructive : themeColors.foreground;
+
+  if (tokens.length === 0) return null;
+
+  return (
+    <Text style={[styles.bubbleText, { color: baseColor }]}>
+      {tokens.map((t, i) => {
+        if (t.kind === "text") {
+          return <Text key={`t-${i}`}>{t.text}</Text>;
+        }
+        if (t.kind === "title") {
+          return (
+            <Text
+              key={`title-${i}`}
+              onPress={() => onOpenNote(t.noteId)}
+              style={[styles.citationTitle, { color: themeColors.primary }]}
+              testID="citation-title"
+            >
+              {t.text}
+            </Text>
+          );
+        }
+        // Marker — RN's inline Text has no CSS `vertical-align:
+        // super` equivalent, so we render the index using Unicode
+        // superscript digits (¹²³…) which are font-rendered above
+        // the baseline — matches the look of <sup> on web/desktop
+        // without absolute positioning or lineHeight hacks.
+        return (
+          <Text
+            key={`m-${i}`}
+            onPress={() => onOpenNote(t.noteId)}
+            style={[styles.citationMarker, { color: themeColors.primary }]}
+            testID="citation-marker"
+          >
+            {toSuperscriptDigits(t.index)}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+}
+
+// ─── SlashCommandPicker ──────────────────────────────────────────
+
+function SlashCommandPicker({
+  input,
+  onPick,
+}: {
+  input: string;
+  onPick: (cmd: ChatCommand) => void;
+}) {
+  const themeColors = useThemeColors();
+
+  // Only show the picker while the user is composing a slash command
+  // and they haven't yet typed args (no space). Once they hit space
+  // they're typing args and the picker would just be in the way.
+  const trimmed = input.trim();
+  const isPickingCommand =
+    trimmed.startsWith("/") && !trimmed.includes(" ");
+  if (!isPickingCommand) return null;
+
+  const matches = filterCommands(trimmed);
+  if (matches.length === 0) return null;
+
+  return (
+    <View
+      style={[
+        styles.pickerWrap,
+        {
+          backgroundColor: themeColors.card,
+          borderTopColor: themeColors.border,
+        },
+      ]}
+    >
+      <FlatList
+        data={matches}
+        keyExtractor={(c) => c.name}
+        keyboardShouldPersistTaps="handled"
+        // Long lists get a scroll cap; mostly there are <10 matches.
+        style={styles.pickerList}
+        renderItem={({ item }) => (
+          <Pressable
+            onPress={() => onPick(item)}
+            style={({ pressed }) => [
+              styles.pickerRow,
+              {
+                backgroundColor: pressed
+                  ? themeColors.input
+                  : "transparent",
+              },
+            ]}
+            testID={`slash-${item.name}`}
+          >
+            <Text
+              style={[styles.pickerName, { color: themeColors.primary }]}
+            >
+              /{item.name}
+            </Text>
+            <Text
+              style={[
+                styles.pickerDescription,
+                { color: themeColors.muted },
+              ]}
+              numberOfLines={1}
+            >
+              {item.description}
+            </Text>
+          </Pressable>
+        )}
+      />
+    </View>
+  );
+}
+
+// ─── PillList (note cards / source pills) ────────────────────────
+
+interface Pill {
+  id: string;
+  title: string;
+  folder?: string;
+}
+
+function PillList({
+  label,
+  items,
+  onTap,
+  testID,
+}: {
+  label?: string;
+  items: Pill[];
+  onTap: (id: string) => void;
+  testID?: string;
+}) {
+  const themeColors = useThemeColors();
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? items : items.slice(0, PILL_LIMIT);
+  const overflow = items.length - PILL_LIMIT;
+
+  return (
+    <View style={[styles.pillSection, { borderTopColor: themeColors.border }]}>
+      {label && (
+        <Text style={[styles.pillLabel, { color: themeColors.muted }]}>
+          {label}
+        </Text>
+      )}
+      {visible.map((pill) => (
+        <Pressable
+          key={pill.id}
+          onPress={() => onTap(pill.id)}
+          testID={testID}
+          style={({ pressed }) => [
+            styles.pill,
+            {
+              // No bg fill on the pill itself — desktop's default
+              // state has no fill, only a border that brightens on
+              // hover. Mobile uses pressed-state opacity.
+              borderColor: themeColors.border,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name="file-document-outline"
+            size={14}
+            color={themeColors.primary}
+            style={styles.pillIcon}
+          />
+          <Text
+            style={[
+              styles.pillTitle,
+              // muted approximates desktop's `text-foreground/70`
+              // (foreground at 70% opacity).
+              { color: themeColors.muted },
+            ]}
+            numberOfLines={1}
+          >
+            {pill.title}
+          </Text>
+          {pill.folder && (
+            <Text style={[styles.pillFolder, { color: themeColors.muted }]}>
+              {pill.folder}
+            </Text>
+          )}
+        </Pressable>
+      ))}
+      {overflow > 0 && (
+        <Pressable
+          onPress={() => setExpanded((v) => !v)}
+          hitSlop={8}
+          style={styles.showMore}
+        >
+          <Text style={[styles.showMoreText, { color: themeColors.muted }]}>
+            {expanded ? "Show fewer" : `Show ${overflow} more`}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
+  container: { flex: 1 },
+  header: {
+    flexDirection: "row",
     alignItems: "center",
-    padding: spacing.md,
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
   },
-  text: {
-    fontSize: 20,
-    fontWeight: "600",
+  headerTitle: { fontSize: 16, fontWeight: "600" },
+  headerAction: { fontSize: 13 },
+  // Empty state matches ns-web: `flex flex-col items-center
+  // justify-center py-12 gap-2` with a 32px chat icon, `text-sm`
+  // muted-foreground title, and `text-xs` muted-foreground/60
+  // description.
+  empty: {
+    flex: 1,
+    alignItems: "center",
+    // Sit ~1/3 of the way down the available space instead of
+    // dead-center so the message doesn't get visually swallowed
+    // by the bottom input bar / tab bar.
+    justifyContent: "flex-start",
+    paddingTop: "25%",
+    paddingHorizontal: 16,
+    gap: spacing.sm,
   },
-  subtitle: {
-    fontSize: 14,
+  emptyIcon: { opacity: 0.4 },
+  emptyTitle: { fontSize: 14, textAlign: "center" },
+  emptyHint: { fontSize: 12, textAlign: "center", opacity: 0.6 },
+  list: { padding: spacing.md, gap: spacing.sm },
+  bubbleRow: { flexDirection: "row" },
+  bubble: {
+    // Desktop's chat bubble is `rounded-lg` (8px) + `px-2.5 py-1.5`
+    // — match the geometry so the visual weight is the same.
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  bubbleText: { fontSize: 14, lineHeight: 20 },
+  userCommandChip: {
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }),
+    fontSize: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  activityRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  activityText: { fontSize: 13, flex: 1 },
+  citationTitle: { fontWeight: "500" },
+  // Unicode superscript digits are font-rendered above the
+  // baseline at ~60% size already; we keep fontSize at the
+  // bubble's own (14) so the cap-height matches and the lime
+  // weight reads as a citation.
+  citationMarker: { fontSize: 14, fontWeight: "600" },
+  pillSection: {
     marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    gap: spacing.xs,
   },
+  pillLabel: { fontSize: 10, marginBottom: spacing.xs },
+  pill: {
+    // Desktop pill: `rounded-md p-2 border border-border` with a
+    // file SVG icon + title text. 6px radius, 8px padding, no fill
+    // — fill is only applied on hover (mobile uses pressed-state
+    // opacity instead).
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  pillIcon: {},
+  pillTitle: { fontSize: 12, fontWeight: "500", flex: 1 },
+  pillFolder: { fontSize: 10 },
+  showMore: { paddingVertical: spacing.xs, alignItems: "flex-start" },
+  showMoreText: { fontSize: 12 },
+  pickerWrap: {
+    borderTopWidth: 1,
+    maxHeight: 240,
+  },
+  pickerList: { maxHeight: 240 },
+  pickerRow: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.sm,
+  },
+  pickerName: { fontSize: 14, fontWeight: "600", minWidth: 80 },
+  pickerDescription: { fontSize: 12, flex: 1 },
+  confirmationWrap: { width: "95%" },
+  composer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderTopWidth: 1,
+  },
+  input: {
+    flex: 1,
+    minHeight: 48,
+    maxHeight: 128,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    fontSize: 14,
+  },
+  sendBtn: {
+    // Web's `px-3 py-2 rounded-md` Ask/Stop button: 6px radius,
+    // 12/8 padding. Mobile uses an explicit 48px height to align
+    // with the composer input.
+    height: 48,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    minWidth: 64,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  askBtnText: { fontSize: 14, fontWeight: "500" },
+  stopBtnText: { fontSize: 14 },
+  timestamp: {
+    fontSize: 10,
+    marginTop: 2,
+    paddingHorizontal: spacing.xs,
+    opacity: 0.7,
+  },
+  timestampLeft: { alignSelf: "flex-start" },
+  timestampRight: { alignSelf: "flex-end" },
 });

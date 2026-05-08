@@ -8,6 +8,8 @@ import authPlugin from "@derekentringer/shared/auth";
 import { loadConfig } from "./config.js";
 import { getPrisma } from "./lib/prisma.js";
 import { createSseHub, type SseHub } from "./lib/sseHub.js";
+import { initTranscriptionWorker } from "./services/transcriptionWorker.js";
+import { reconcileAllOrphanMeetingCards } from "./store/chatStore.js";
 import { cleanupExpiredTokens } from "./store/refreshTokenStore.js";
 import { purgeOldTrash } from "./store/noteStore.js";
 import { getTrashRetentionDays } from "./store/settingStore.js";
@@ -20,6 +22,7 @@ import adminRoutes from "./routes/admin.js";
 import totpRoutes from "./routes/totp.js";
 import syncRoutes from "./routes/sync.js";
 import imageRoutes from "./routes/images.js";
+import linkRoutes from "./routes/links.js";
 
 
 const TOKEN_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -43,6 +46,39 @@ export function buildApp(opts?: BuildAppOptions) {
 
   const sseHub = createSseHub();
   app.decorate("sseHub", sseHub);
+
+  // Phase H — wire the in-process transcription worker. The
+  // worker is currently a stub (kickDispatcher is a no-op); the
+  // real dispatch loop lands in step 3. Initializing here lets
+  // the REST endpoints' `kickDispatcher()` calls become no-ops
+  // safely until then.
+  initTranscriptionWorker({ sseHub, log: app.log });
+
+  // Phase H — periodic orphan-card reconcile sweep. Scans every
+  // 60s for `processing` meeting-summary chat cards older than the
+  // grace window with no matching transcription_jobs row, flips
+  // them to `failed`, and fires `chat` SSE per affected user so
+  // their connected devices refetch and show the failed state.
+  // Without this, a client that never refetches /ai/chat-history
+  // never sees the in-band reconcile that the route handler does.
+  const ORPHAN_SWEEP_INTERVAL_MS = 60 * 1000;
+  const orphanSweepTimer = setInterval(() => {
+    reconcileAllOrphanMeetingCards()
+      .then((updated) => {
+        if (updated.size === 0) return;
+        for (const [userId, count] of updated) {
+          sseHub.notifyChat(userId);
+          app.log.info(
+            { userId, count },
+            "Phase H orphan-card sweep — reconciled stuck processing cards",
+          );
+        }
+      })
+      .catch((err) =>
+        app.log.error({ err }, "Phase H orphan-card sweep failed"),
+      );
+  }, ORPHAN_SWEEP_INTERVAL_MS);
+  if (orphanSweepTimer.unref) orphanSweepTimer.unref();
 
   app.register(cookie);
   app.register(cors, {
@@ -104,6 +140,7 @@ export function buildApp(opts?: BuildAppOptions) {
   app.register(totpRoutes, { prefix: "/auth/totp" });
   app.register(syncRoutes, { prefix: "/sync" });
   app.register(imageRoutes, { prefix: "/images" });
+  app.register(linkRoutes, { prefix: "/links" });
 
 
   app.get("/robots.txt", async (_request, reply) => {

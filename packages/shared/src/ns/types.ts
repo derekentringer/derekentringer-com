@@ -39,4 +39,5 @@ export type {
   NoteTitlesResponse,
   NoteVersion,
   NoteVersionListResponse,
+  LinkPreview,
 } from "@derekentringer/ns-shared";

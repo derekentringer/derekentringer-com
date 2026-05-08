@@ -27,6 +27,7 @@ model User {
   passkeys           Passkey[]
   chatMessages       ChatMessage[]
   tombstones         EntityTombstone[]
+  transcriptionJobs  TranscriptionJob[]
 
   @@map("users")
 }
@@ -105,6 +106,11 @@ model NoteVersion {
   noteId    String
   title     String
   content   String
+  /// Which client created this version. Web REST writes default to
+  /// "web"; sync-push writes pass the origin from SyncPushRequest
+  /// ("mobile" / "desktop"). Read by the version-history list to
+  /// show a per-row provenance badge.
+  origin    String   @default("web")
   createdAt DateTime @default(now())
   note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
 
@@ -257,4 +263,57 @@ model ChatMessage {
 
   @@index([userId, createdAt])
   @@map("chat_messages")
+}
+
+/// Phase H — server-managed transcription jobs.
+///
+/// Decouples client lifecycle from the transcribe → structure → note-
+/// create pipeline. Client uploads audio once (or pre-built transcript
+/// for the web/desktop fast path), server owns everything else and
+/// creates the Note row directly. Survives client quit, propagates
+/// across devices via the existing sync engine on next pull.
+///
+/// Lifecycle:
+///   pending → transcribing → structuring → completed
+///                                       ↘ failed
+/// `audioR2Key` is null on the prebuiltTranscript fast path (web/
+/// desktop with substantive live transcript at stop-time). Otherwise
+/// it points at the audio in R2; deleted on completion (retention),
+/// kept 7 days on failure to support Retry, swept on stale states.
+model TranscriptionJob {
+  id                     String    @id @default(uuid())
+  userId                 String
+  sessionId              String
+  status                 String    @default("pending") // pending | transcribing | structuring | completed | failed
+  mode                   String // meeting | lecture | memo | verbatim
+  audioR2Key             String?
+  audioMimeType          String?
+  audioSizeBytes         Int?
+  transcript             String?
+  structuredTitle        String?
+  structuredContent      String?
+  structuredTags         Json?
+  noteId                 String?
+  errorMessage           String?
+  // Cost telemetry
+  whisperSecondsUsed     Int?
+  // Client-side upload telemetry — populated by the client via the
+  // upload endpoint's metadata fields. Lets us see in production
+  // whether the simple "single multipart + retry" upload flow is
+  // good enough or whether we need TUS / per-chunk resumability.
+  uploadDurationSeconds  Int?
+  uploadRetryCount       Int?
+  uploadBytesTransferred BigInt?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  completedAt            DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Retry reuses the row — client sends the same sessionId on retry.
+  @@unique([userId, sessionId])
+  // Worker dispatch / status sweeps filter by these.
+  @@index([userId, status])
+  @@index([status, updatedAt])
+  @@map("transcription_jobs")
 }

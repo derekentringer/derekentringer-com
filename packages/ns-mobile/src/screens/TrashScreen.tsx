@@ -2,10 +2,11 @@ import React, { useCallback } from "react";
 import {
   View,
   FlatList,
-  Alert,
   RefreshControl,
+  Platform,
   StyleSheet,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -30,6 +31,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, "Trash">;
 
 export function TrashScreen({ navigation }: Props) {
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
   const {
     data: notes = [],
     isLoading,
@@ -59,7 +61,7 @@ export function TrashScreen({ navigation }: Props) {
   const handlePermanentDelete = useCallback(
     (noteId: string) => {
       const note = notes.find((n: Note) => n.id === noteId);
-      Alert.alert(
+      showAlert(
         "Delete Permanently",
         `"${note?.title || "Untitled"}" will be permanently deleted. This cannot be undone.`,
         [
@@ -83,11 +85,11 @@ export function TrashScreen({ navigation }: Props) {
         ],
       );
     },
-    [permanentDelete, notes],
+    [permanentDelete, notes, showAlert],
   );
 
   const handleEmptyTrash = useCallback(() => {
-    Alert.alert(
+    showAlert(
       "Empty Trash",
       `Permanently delete all ${notes.length} trashed notes? This cannot be undone.`,
       [
@@ -107,7 +109,7 @@ export function TrashScreen({ navigation }: Props) {
         },
       ],
     );
-  }, [emptyTrashMutation, notes.length]);
+  }, [emptyTrashMutation, notes.length, showAlert]);
 
   const handleRefresh = useCallback(async () => {
     await refetch();
@@ -131,11 +133,12 @@ export function TrashScreen({ navigation }: Props) {
           <View style={styles.headerButton}>
             <MaterialCommunityIcons
               name="trash-can-outline"
-              size={22}
+              size={24}
               color={themeColors.destructive}
               onPress={handleEmptyTrash}
               accessibilityRole="button"
               accessibilityLabel="Empty trash"
+              style={styles.headerIcon}
             />
           </View>
         ) : null,
@@ -217,7 +220,19 @@ const styles = StyleSheet.create({
   emptyContainer: {
     flex: 1,
   },
+  // Material Design 3 top-app-bar action item: 24 dp glyph
+  // centered inside a 48 dp touch target via 12 dp padding.
+  // Source: https://m3.material.io/components/top-app-bar/specs
   headerButton: {
-    padding: spacing.xs,
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
 });

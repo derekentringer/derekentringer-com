@@ -5,7 +5,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { NoteSearchResult } from "@derekentringer/shared/ns";
+import { type NoteSearchResult, stripFrontmatter } from "@derekentringer/shared/ns";
 import type { ExportFormat } from "../lib/importExport.ts";
 import { stripMarkdown } from "../lib/stripMarkdown.ts";
 import { SearchSnippet } from "./SearchSnippet.tsx";
@@ -74,7 +74,7 @@ function SortableNoteItem({
   const snippet = useMemo(() => {
     if (note.headline) return null; // search results use headline instead
     if (!note.content) return null;
-    return stripMarkdown(note.content, 80);
+    return stripMarkdown(stripFrontmatter(note.content), 80);
   }, [note.content, note.headline]);
 
   const relativeDate = useMemo(() => {
@@ -140,7 +140,7 @@ function SortableNoteItem({
             <>
               <span className="text-[10px] text-muted-foreground">·</span>
               {note.tags.slice(0, 2).map((tag) => (
-                <span key={tag} className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
+                <span key={tag} className="ns-tag-pill text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
               ))}
               {note.tags.length > 2 && (
                 <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>

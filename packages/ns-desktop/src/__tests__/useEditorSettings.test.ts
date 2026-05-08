@@ -48,6 +48,7 @@ describe("useEditorSettings", () => {
       cursorStyle: "block",
       cursorBlink: false,
       versionIntervalMinutes: 5,
+      autoPreviewPastedUrls: false,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
 

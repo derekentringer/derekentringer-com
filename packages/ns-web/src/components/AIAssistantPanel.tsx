@@ -7,10 +7,14 @@ import { createNote, updateNote, deleteNote, fetchNotes, fetchFolders, fetchTags
 import type { QASource } from "@derekentringer/shared/ns";
 import type { MeetingContextNote } from "../api/ai.ts";
 import { parseCommand, filterCommands, type CommandContext, type CommandResult, type ChatCommand } from "../lib/chatCommands.ts";
-import { buildHistoryForClaude } from "../lib/chatHistory.ts";
+import { buildHistoryForAIAssistant } from "../lib/chatHistory.ts";
 import { serializeChatToMarkdown, defaultChatTitle } from "../lib/chatExport.ts";
 import { CodeBlock } from "./CodeBlock.tsx";
 import { ConfirmationCard } from "./ConfirmationCard.tsx";
+import { ChatBubbleEnter } from "./ChatBubbleEnter.tsx";
+import { formatChatTimestamp } from "../lib/time.ts";
+
+const nowIso = () => new Date().toISOString();
 
 const ASSISTANT_TIPS = [
   // Search & discover
@@ -100,7 +104,15 @@ function extractCitations(text: string): string[] {
 }
 
 function stripCitations(text: string): string {
-  return text.replace(CITE_RE, "").replace(/ {2,}/g, " ").trim();
+  // Unwrap unresolved `[Title]` brackets (keep the inner text)
+  // instead of wiping the whole bracketed segment. The AI sometimes
+  // brackets titles that aren't in the citation pool — e.g.
+  // confirmation cards (delete_note, etc.) don't emit `noteCards`,
+  // so a turn like "I've queued up — [A], [B], and [C]." had
+  // nothing to resolve against and the strip wiped the titles
+  // entirely. The `(?!\()` lookahead leaves real markdown links
+  // `[text](url)` untouched.
+  return text.replace(/\[([^\]]+)\](?!\()/g, "$1").replace(/ {2,}/g, " ").trim();
 }
 
 /** Phase E.5: attach numbered superscript citation markers to note
@@ -203,11 +215,12 @@ export function linkifyCitations(
   }
   out += text.slice(cursor);
 
-  // Strip any remaining `[...]` brackets that don't point at a real
-  // markdown link (those would be followed by `(`). These are almost
-  // always hallucinated citations pointing at titles not in the pool,
-  // and shouldn't render as literal brackets in the UI.
-  out = out.replace(/\[[^\]]+\](?!\()/g, "");
+  // Unwrap any remaining `[Title]` brackets that don't point at a
+  // real markdown link (those would be followed by `(`). These are
+  // titles not in the citation pool — keep the inner text so the
+  // prose reads naturally instead of leaving a literal bracket or
+  // wiping the segment.
+  out = out.replace(/\[([^\]]+)\](?!\()/g, "$1");
 
   return out.replace(/ {2,}/g, " ").trim();
 }
@@ -322,6 +335,11 @@ interface Message {
   // chat shows a Retry button that re-fires the preceding user
   // question with full Phase A history.
   failed?: boolean;
+  /** ISO timestamp the message was first created. Stamped client-side
+   *  for new turns, hydrated from `r.createdAt` for round-tripped
+   *  rows. Drives the modern-chat-style relative-time label rendered
+   *  under each bubble. */
+  createdAt?: string;
 }
 
 /** Phase C.4: a single card can hold multiple same-toolName pendings. */
@@ -399,8 +417,18 @@ interface AIAssistantPanelProps {
   chatRefreshKey?: number;
   /** sessionId of the currently-recording session. */
   activeSessionId?: string;
+  /** Most-recent sessionId that AudioRecorder cancelled. Used to suppress
+   *  meeting-card insertion on the matching stop transition. */
+  cancelledSessionId?: string;
   onAudioRetry?: (sessionId: string) => void;
   onAudioDiscard?: (sessionId: string) => void;
+  /** When provided, the failed-card Retry button only renders
+   *  for sessions where this returns true. Without it, Retry
+   *  shows on every failed card — including cross-device hydrated
+   *  cards and prior-session cards after a page reload — even
+   *  though the underlying handler silently no-ops when the
+   *  snapshot is gone. */
+  canAudioRetry?: (sessionId: string) => boolean;
   /** Phase C.5: per-tool auto-approve for destructive actions. */
   autoApprove?: {
     deleteNote: boolean;
@@ -421,7 +449,7 @@ interface AIAssistantPanelProps {
   onNoteContentRewritten?: (opts: { noteId: string; newContent: string }) => void;
 }
 
-export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, onAudioRetry, onAudioDiscard, autoApprove, focusNonce, onNoteContentRewritten }: AIAssistantPanelProps) {
+export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchingContext, liveTranscript, relevantNotes, recordingMode, audioSessionResult, activeNote, chatRefreshKey, activeSessionId, cancelledSessionId, onAudioRetry, onAudioDiscard, canAudioRetry, autoApprove, focusNonce, onNoteContentRewritten }: AIAssistantPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -439,6 +467,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const [transcriptCollapsed, setTranscriptCollapsed] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Re-render the chat timestamps every 30s so "Just now" rolls
+  // forward to "1min ago" without forcing a manual refresh. The
+  // tick is unused beyond triggering the re-render.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Phase E.3: live mirror of `messages` so the memoized commandCtx
@@ -448,38 +484,49 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
   const hasTranscript = (liveTranscript?.length ?? 0) > 0;
   const hasNotes = (relevantNotes?.length ?? 0) > 0;
+  // Two refs to gate hydration: `fetchStartedRef` flips immediately
+  // to prevent duplicate fetches; `historyLoadedRef` flips ONLY in
+  // .finally() so persistence/cross-device-refresh effects can't
+  // run until the server's view is known. Without this, a slow or
+  // failed fetch let the persist debounce save an empty messages
+  // array back to the server, wiping the user's chat history (and
+  // propagating the wipe to other surfaces via the chat SSE).
+  const fetchStartedRef = useRef(false);
   const historyLoadedRef = useRef(false);
 
-  // Phase 2 chat-load repaint: snapshots are in-memory only, so a persisted
-  // "processing" card loaded from server history is stale — the run that
-  // would have enriched it is gone. Repaint as "failed" with a helpful
-  // message and no retry (no snapshot to retry from).
-  function repaintStaleProcessingCards(rows: Message[]): Message[] {
-    return rows.map((m) => {
-      if (m.role !== "meeting-summary") return m;
-      const md = m.meetingData;
-      if (!md || md.status !== "processing") return m;
-      return {
-        ...m,
-        meetingData: {
-          ...md,
-          status: "failed" as const,
-          errorMessage: "Recording lost on refresh — the note couldn't be generated.",
-        },
-      };
-    });
-  }
+  // Phase H removed the chat-load repaint that flipped "processing"
+  // cards to "failed" on refresh. With server-managed transcription
+  // jobs, a "processing" card persisted to chat history represents a
+  // server-side job still in flight — not a stale local snapshot. The
+  // SSE `transcription-job` event delivers the terminal status (and
+  // its real server-side error message) when the job actually finishes.
 
   // Phase E follow-up: confirmation state is persisted for terminal
   // statuses (applied/discarded/failed) so those cards survive refresh.
   function rowToMessage(r: ChatMessageData): Message {
+    // Cards saved by the mobile client before the
+    // `relevantNotes`/`transcript` defaults landed could omit
+    // those fields entirely. The card renderer below dereferences
+    // both directly (`.length`, `.trim()`), so coerce missing
+    // fields to empty values here rather than guarding every
+    // call site.
+    let meetingData =
+      (r.meetingData as MeetingSummaryData | undefined) ?? undefined;
+    if (meetingData) {
+      meetingData = {
+        ...meetingData,
+        relevantNotes: meetingData.relevantNotes ?? [],
+        transcript: meetingData.transcript ?? "",
+      };
+    }
     return {
       role: r.role as Message["role"],
       content: r.content,
       sources: (r.sources as QASource[] | undefined) ?? undefined,
-      meetingData: (r.meetingData as MeetingSummaryData | undefined) ?? undefined,
+      meetingData,
       noteCards: (r.noteCards as NoteCard[] | undefined) ?? undefined,
       confirmation: (r.confirmation as ConfirmationState | undefined) ?? undefined,
+      createdAt: r.createdAt,
     };
   }
 
@@ -503,20 +550,30 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
   // Load chat history from server on mount
   useEffect(() => {
-    if (historyLoadedRef.current) return;
-    historyLoadedRef.current = true;
+    if (fetchStartedRef.current) return;
+    fetchStartedRef.current = true;
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
         const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
-        setMessages(repaintStaleProcessingCards(loaded));
+        setMessages(loaded);
         // Seed prompt history from the hydrated chat so Up-arrow
         // works immediately after a page refresh.
         promptHistoryRef.current = loaded
           .filter((m) => m.role === "user" && m.content.trim().length > 0)
           .map((m) => m.content)
           .slice(-10);
+        lastSavedRef.current = JSON.stringify(loaded);
+      } else {
+        // Server has no history. Mark lastSaved so the persist
+        // effect treats local empty state as already saved.
+        lastSavedRef.current = "[]";
       }
-    }).catch(() => {});
+    }).catch(() => {
+      // Hydration failure: leave lastSavedRef as "" so we don't
+      // persist an empty state back to the server.
+    }).finally(() => {
+      historyLoadedRef.current = true;
+    });
   }, []);
 
   // Suppress refetch during our own saves
@@ -528,7 +585,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     if (isSavingRef.current) return; // Skip refetch triggered by our own save
     fetchChatHistory().then((rows) => {
       if (rows.length > 0) {
-        const loaded = repaintStaleProcessingCards(stripEmptyPlaceholders(rows.map(rowToMessage)));
+        const loaded = stripEmptyPlaceholders(rows.map(rowToMessage));
         setMessages(loaded);
         lastSavedRef.current = JSON.stringify(loaded);
       } else {
@@ -575,6 +632,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         m.confirmation && m.confirmation.status !== "applying"
           ? m.confirmation
           : undefined,
+      // Forward the original createdAt so cross-device hydration
+      // shows each bubble's real authoring time. Without this the
+      // server's snapshot-replace would re-stamp every row with
+      // `now()`, making every message look "Just now" on the other
+      // device after an SSE refetch.
+      createdAt: m.createdAt,
     }))).catch(() => {}).finally(() => {
       setTimeout(() => { isSavingRef.current = false; }, 500);
     });
@@ -646,17 +709,41 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
   const prevRecordingRef = useRef(isRecording);
   const prevRecordingModeRef = useRef(recordingMode);
   const prevSessionIdRef = useRef<string | undefined>(undefined);
+  // AudioRecorder clears its live transcript at stop time and the cleared
+  // value reaches us in the same React batch as `isRecording=false`, so by
+  // the time this effect runs the transcript prop is already "". Mirror
+  // every non-empty value into a ref while recording so we can recover
+  // the last meaningful transcript at stop.
+  const lastLiveTranscriptRef = useRef("");
+  const lastRelevantNotesRef = useRef<MeetingContextNote[]>([]);
+  useEffect(() => {
+    if (isRecording && (liveTranscript?.length ?? 0) > 0) {
+      lastLiveTranscriptRef.current = liveTranscript ?? "";
+    }
+  }, [liveTranscript, isRecording]);
+  useEffect(() => {
+    if (isRecording && relevantNotes && relevantNotes.length > 0) {
+      lastRelevantNotesRef.current = relevantNotes;
+    }
+  }, [relevantNotes, isRecording]);
   useEffect(() => {
     if (isRecording) {
       prevRecordingModeRef.current = recordingMode;
       prevSessionIdRef.current = activeSessionId;
     }
     if (prevRecordingRef.current && !isRecording) {
-      // Recording just stopped — capture the meeting context.
-      const notes = relevantNotes ?? [];
-      const transcript = liveTranscript ?? "";
+      // Recording just stopped. Read transcript/notes from the
+      // last-seen refs because AudioRecorder wipes both in the same
+      // React batch as `isRecording=false`. Skip card insertion only
+      // when AudioRecorder explicitly told us this stop was a cancel
+      // (cancel produces no server-side job, so an orphan "processing"
+      // card would never resolve). Memo recordings often have empty
+      // live transcripts at stop time — that's not a reason to skip.
       const sessionId = prevSessionIdRef.current;
-      if (notes.length > 0 || transcript.trim().length > 0) {
+      const wasCancelled = sessionId && cancelledSessionId === sessionId;
+      if (!wasCancelled) {
+        const notes = lastRelevantNotesRef.current;
+        const transcript = lastLiveTranscriptRef.current;
         setMessages((prev) => [
           ...prev,
           {
@@ -669,12 +756,33 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
               sessionId,
               status: "processing",
             },
+            createdAt: nowIso(),
           },
         ]);
       }
+      lastLiveTranscriptRef.current = "";
+      lastRelevantNotesRef.current = [];
     }
     prevRecordingRef.current = isRecording;
-  }, [isRecording, relevantNotes, liveTranscript, recordingMode, activeSessionId]);
+  }, [isRecording, relevantNotes, liveTranscript, recordingMode, activeSessionId, cancelledSessionId]);
+
+  // Defensive cleanup: when AudioRecorder reports a cancellation,
+  // also REMOVE any meeting-summary card with that sessionId from
+  // the chat (belt-and-braces with the insertion gate above). The
+  // existing chat persist effect will then save the orphan-free
+  // state back to the server so the cancelled card doesn't reappear
+  // on the next chat-history reload.
+  useEffect(() => {
+    if (!cancelledSessionId) return;
+    setMessages((prev) => {
+      const filtered = prev.filter(
+        (m) =>
+          !(m.role === "meeting-summary" &&
+            m.meetingData?.sessionId === cancelledSessionId),
+      );
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [cancelledSessionId]);
 
   // Apply the session result (success or failure) to the matching card.
   useEffect(() => {
@@ -1008,14 +1116,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     // Keep focus so the user can immediately type another command.
     // See handleAsk below for why this is deferred past the render.
     requestAnimationFrame(() => inputRef.current?.focus());
-    setMessages((prev) => [...prev, { role: "user", content: `${cmd.command.usage.split(" ")[0]} ${cmd.args}`.trim() }]);
+    setMessages((prev) => [...prev, { role: "user", content: `${cmd.command.usage.split(" ")[0]} ${cmd.args}`.trim(), createdAt: nowIso() }]);
     try {
       const result: CommandResult = await cmd.command.execute(cmd.args, commandCtx);
       if (!result.silent) {
-        setMessages((prev) => [...prev, { role: "assistant", content: result.text, noteCards: result.noteCards }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: result.text, noteCards: result.noteCards, createdAt: nowIso() }]);
       }
     } catch {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Command failed." }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: "Command failed.", createdAt: nowIso() }]);
     }
     return true;
   }
@@ -1045,12 +1153,12 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
     // Snapshot history BEFORE appending the new user question; Claude's
     // server-side handler adds the current question as the final user
     // turn. Text-only rehydration per Phase A design.
-    const history = buildHistoryForClaude(messages);
+    const history = buildHistoryForAIAssistant(messages);
 
     setInput("");
     setAutocompleteItems([]);
     setHistoryIndex(null);
-    setMessages((prev) => [...prev, { role: "user", content: question }]);
+    setMessages((prev) => [...prev, { role: "user", content: question, createdAt: nowIso() }]);
     // Keep focus on the input so the user can type the next message
     // without reaching for the mouse. Deferred past the current
     // render cycle because `performAsk` immediately flips
@@ -1078,7 +1186,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
       return prev;
     });
     if (!question) return;
-    const history = buildHistoryForClaude(historyBase);
+    const history = buildHistoryForAIAssistant(historyBase);
     await performAsk(question, history);
   }
 
@@ -1091,7 +1199,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
 
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "", sources: [] },
+      { role: "assistant", content: "", sources: [], createdAt: nowIso() },
     ]);
 
     try {
@@ -1159,8 +1267,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 role: "assistant",
                 content: "",
                 confirmation: { pendings: [event.confirmation], status: "pending" },
+                createdAt: nowIso(),
               });
-              updated.push({ role: "assistant", content: "" });
+              updated.push({ role: "assistant", content: "", createdAt: nowIso() });
             }
           }
           return updated;
@@ -1196,6 +1305,7 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
             role: "assistant",
             content: "Something went wrong. Please try again.",
             failed: true,
+            createdAt: nowIso(),
           });
         }
         return updated;
@@ -1410,11 +1520,19 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         )}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {/* Live recording card — sticky at top */}
+      {/* Messages — `py-2 px-2` so non-recording cards have top
+          breathing room. The sticky recording card uses `-mt-2` to
+          cancel the parent's top padding and sit flush with the panel
+          header during recording. `space-y-2` between siblings keeps
+          the rest of the chat well-spaced. */}
+      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-2">
+        {/* Live recording card — sticky at panel top, flush with panel
+            left/right + top edges while recording. `-mx-2` cancels the
+            parent's horizontal padding so the card spans edge-to-edge;
+            `-mt-2` cancels the parent's top padding so the card is
+            flush with the header. */}
         {isRecording && (
-          <div className="sticky top-0 z-10 w-full rounded-lg bg-card border border-border p-3 animate-fade-in">
+          <div className="sticky top-0 z-10 -mx-2 -mt-2 bg-card border-b border-border p-3 animate-fade-in">
             <div className="flex items-center gap-1.5 mb-2">
               <span className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
@@ -1586,8 +1704,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
           </div>
         )}
         {messages.map((msg, i) => (
-          <div
-            key={i}
+          <div key={i} className="flex flex-col gap-0.5">
+          <ChatBubbleEnter
+            align={msg.role === "user" ? "right" : "left"}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             {msg.confirmation ? (
@@ -1629,7 +1748,9 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                       </div>
                     </div>
                     <div className="flex gap-1.5 mt-1.5">
-                      {msg.meetingData.sessionId && onAudioRetry && (
+                      {msg.meetingData.sessionId &&
+                        onAudioRetry &&
+                        (!canAudioRetry || canAudioRetry(msg.meetingData.sessionId)) && (
                         <button
                           onClick={() => handleRetryClick(msg.meetingData!.sessionId!)}
                           className="px-2 py-1 rounded-md border border-border hover:border-primary/50 text-[11px] text-foreground hover:bg-accent transition-colors cursor-pointer"
@@ -1959,6 +2080,14 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
                 })()}
               </div>
             )}
+          </ChatBubbleEnter>
+          {msg.createdAt && (
+            <div className={`flex px-1 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <span className="text-[10px] text-muted-foreground/60 select-none">
+                {formatChatTimestamp(msg.createdAt)}
+              </span>
+            </div>
+          )}
           </div>
         ))}
         {/* Inline "thinking" bubble — replaces the previous header
@@ -1994,13 +2123,13 @@ export function AIAssistantPanel({ onSelectNote, isOpen, isRecording, isSearchin
         {isRecording && hasTranscript && !isStreaming && (
           <button
             onClick={() => {
-              const history = buildHistoryForClaude(messages);
+              const history = buildHistoryForAIAssistant(messages);
               setInput("");
-              setMessages((prev) => [...prev, { role: "user", content: "Catch me up on this meeting" }]);
+              setMessages((prev) => [...prev, { role: "user", content: "Catch me up on this meeting", createdAt: nowIso() }]);
               setIsStreaming(true);
               const controller = new AbortController();
               abortRef.current = controller;
-              setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
+              setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [], createdAt: nowIso() }]);
               (async () => {
                 try {
                   for await (const event of askQuestion("Give me a concise summary of everything discussed so far in this meeting.", controller.signal, liveTranscript, undefined, history, autoApprove)) {

@@ -1,29 +1,46 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import type { Note } from "@derekentringer/ns-shared";
+import { type Note, stripFrontmatter } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
-import { spacing, borderRadius } from "@/theme";
+import { spacing } from "@/theme";
 import { stripMarkdown } from "@/lib/markdown";
 import { relativeTime } from "@/lib/time";
 
 interface DashboardNoteCardProps {
   note: Note;
   onPress: (noteId: string) => void;
+  /** Layout flavor:
+   *  - default: 220-wide horizontal-scroll card (legacy)
+   *  - compact: half-width tile inside the dashboard's 2-up grid
+   *  - hero:    full-width Resume Editing card matching web/desktop's
+   *             "hero" variant — shows more preview lines + tags */
+  variant?: "default" | "compact" | "hero";
+  /** Back-compat shim — earlier callers passed `compact` directly. */
   compact?: boolean;
   folderName?: string;
 }
 
-export function DashboardNoteCard({ note, onPress, compact, folderName }: DashboardNoteCardProps) {
+export function DashboardNoteCard({ note, onPress, variant, compact, folderName }: DashboardNoteCardProps) {
   const themeColors = useThemeColors();
-  const preview = stripMarkdown(note.content || "");
-  const maxTags = compact ? 2 : 3;
+  const effectiveVariant: "default" | "compact" | "hero" =
+    variant ?? (compact ? "compact" : "default");
+  const isHero = effectiveVariant === "hero";
+  const isCompact = effectiveVariant === "compact";
+  const preview = stripMarkdown(stripFrontmatter(note.content || ""));
+  const maxTags = isHero ? 4 : isCompact ? 2 : 3;
   const visibleTags = note.tags.slice(0, maxTags);
   const overflowCount = note.tags.length - maxTags;
+
+  const containerStyle = isHero
+    ? styles.heroCard
+    : isCompact
+      ? styles.tileCard
+      : styles.card;
 
   return (
     <Pressable
       style={[
-        compact ? styles.tileCard : styles.card,
+        containerStyle,
         {
           backgroundColor: themeColors.card,
           borderColor: themeColors.border,
@@ -34,7 +51,10 @@ export function DashboardNoteCard({ note, onPress, compact, folderName }: Dashbo
       accessibilityLabel={`Open note: ${note.title || "Untitled"}`}
     >
       <Text
-        style={[styles.title, { color: themeColors.foreground }]}
+        style={[
+          isHero ? styles.heroTitle : styles.title,
+          { color: themeColors.foreground },
+        ]}
         numberOfLines={1}
       >
         {note.title || "Untitled"}
@@ -43,7 +63,7 @@ export function DashboardNoteCard({ note, onPress, compact, folderName }: Dashbo
       {preview ? (
         <Text
           style={[styles.preview, { color: themeColors.muted }]}
-          numberOfLines={2}
+          numberOfLines={isHero ? 3 : 2}
         >
           {preview}
         </Text>
@@ -60,7 +80,7 @@ export function DashboardNoteCard({ note, onPress, compact, folderName }: Dashbo
               ]}
             >
               <Text
-                style={[styles.tagText, { color: themeColors.primary }]}
+                style={[styles.tagText, { color: themeColors.tagText }]}
                 numberOfLines={1}
               >
                 {tag}
@@ -74,7 +94,7 @@ export function DashboardNoteCard({ note, onPress, compact, folderName }: Dashbo
                 { backgroundColor: `${themeColors.primary}1A` },
               ]}
             >
-              <Text style={[styles.tagText, { color: themeColors.primary }]}>
+              <Text style={[styles.tagText, { color: themeColors.tagText }]}>
                 +{overflowCount}
               </Text>
             </View>
@@ -101,19 +121,27 @@ export function DashboardNoteCard({ note, onPress, compact, folderName }: Dashbo
 }
 
 const styles = StyleSheet.create({
+  // Desktop's DashboardNoteCard: `bg-card rounded-md border p-3` —
+  // 6px radius, 12px padding. Mobile mirrors that geometry.
   card: {
     width: 220,
-    borderRadius: borderRadius.lg,
+    borderRadius: 6,
     borderWidth: 1,
-    padding: spacing.md,
+    padding: 12,
     marginRight: spacing.sm,
   },
   tileCard: {
     flex: 1,
     minHeight: 120,
-    borderRadius: borderRadius.lg,
+    borderRadius: 6,
     borderWidth: 1,
-    padding: spacing.sm,
+    padding: 12,
+  },
+  heroCard: {
+    width: "100%",
+    borderRadius: 6,
+    borderWidth: 1,
+    padding: 12,
   },
   spacer: {
     flex: 1,
@@ -122,6 +150,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     marginBottom: 4,
+  },
+  heroTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 6,
   },
   preview: {
     fontSize: 12,

@@ -132,6 +132,15 @@
   }
 }
 
+/* Teams theme overrides the tag-pill text color to a soft near-
+   white so tag labels read against the faint purple pill background
+   (the default `text-primary` purple-on-purple is too low-contrast
+   in Teams). Non-Teams themes leave .ns-tag-pill alone — its color
+   comes from whatever `text-primary` resolves to in that theme. */
+[data-theme="teams"] .ns-tag-pill {
+  color: #dcdce0;
+}
+
 /* MS Teams dark theme — Fluent UI tokens (brandTeamsV21) */
 [data-theme="teams"] {
   --color-background: #242424;

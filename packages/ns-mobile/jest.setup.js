@@ -12,6 +12,25 @@ jest.mock("@react-native-community/netinfo", () => ({
   }),
 }));
 
+// Mock expo-file-system / expo-file-system/legacy — both load
+// expo-modules-core's EventEmitter which is unavailable under jsdom
+// jest. Audio-related tests override `uploadAsync` on a per-test
+// basis; this default just keeps the imports resolvable.
+jest.mock("expo-file-system", () => ({
+  __esModule: true,
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: false }),
+  uploadAsync: jest.fn(),
+  FileSystemUploadType: { MULTIPART: 1 },
+}));
+jest.mock("expo-file-system/legacy", () => ({
+  __esModule: true,
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
+  getInfoAsync: jest.fn().mockResolvedValue({ exists: false }),
+  uploadAsync: jest.fn(),
+  FileSystemUploadType: { MULTIPART: 1 },
+}));
+
 // Mock expo-secure-store
 jest.mock("expo-secure-store", () => ({
   getItemAsync: jest.fn().mockResolvedValue(null),
@@ -42,6 +61,14 @@ jest.mock("@react-navigation/native", () => ({
   }),
 }));
 
+// Mock @expo/vector-icons — its real import pulls in expo-font /
+// expo-modules-core which require a native EventEmitter that's
+// unavailable in jsdom. Tests don't render icons; a stub is enough.
+jest.mock("@expo/vector-icons/MaterialCommunityIcons", () => "MaterialCommunityIcons");
+jest.mock("@expo/vector-icons", () => ({
+  MaterialCommunityIcons: "MaterialCommunityIcons",
+}));
+
 // Mock react-native-reanimated
 jest.mock("react-native-reanimated", () => ({
   default: {
@@ -56,6 +83,19 @@ jest.mock("react-native-reanimated", () => ({
   withSpring: jest.fn(),
   withRepeat: jest.fn(),
   Easing: { linear: jest.fn() },
+}));
+
+// Mock expo-constants — loads expo-modules-core's EventEmitter
+// which is unavailable under jsdom jest. devHost.ts uses
+// Constants.expoGoConfig?.hostUri / expoConfig?.hostUri as a
+// fallback; both undefined in tests is fine since
+// NativeModules.SourceCode also returns the dev URL in real builds.
+jest.mock("expo-constants", () => ({
+  __esModule: true,
+  default: {
+    expoConfig: undefined,
+    expoGoConfig: undefined,
+  },
 }));
 
 // Suppress require cycle warnings

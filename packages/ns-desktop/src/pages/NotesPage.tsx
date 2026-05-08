@@ -116,6 +116,8 @@ import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSetting
 import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
 import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
+import { urlPreviewExtension } from "../editor/urlPreview.ts";
+import { fetchLinkPreview } from "../api/links.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { SyncIssuesDialog } from "../components/SyncIssuesDialog.tsx";
@@ -179,10 +181,10 @@ import {
   type LocalFileStatus,
 } from "../lib/localFileService.ts";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { ChangePasswordPage } from "./ChangePasswordPage.tsx";
 import { AudioRecorder, type AudioRecordingState, type AudioRecorderControl } from "../components/AudioRecorder.tsx";
@@ -384,115 +386,35 @@ export function NotesPage() {
   // Settings / Change Password / About
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>();
-  const [settingsInitialAction, setSettingsInitialAction] = useState<"whats-new" | "feedback" | undefined>();
+  const [settingsInitialAction, setSettingsInitialAction] = useState<"feedback" | undefined>();
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
 
   // Audio recording state
   const [recordingState, setRecordingState] = useState<AudioRecordingState | null>(null);
   const [recordTrigger, setRecordTrigger] = useState<{ mode: AudioMode; key: number } | null>(null);
-  // Phase 2: unified success/failure result for the AI assistant panel to
-  // match against a meeting-summary card by sessionId. Each new result
-  // increments the identity of the prop so the panel's effect re-fires for
-  // every outcome — even if an earlier fail lands on the same sessionId
-  // as a later retry success.
-  const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
-  const audioControlRef = useRef<AudioRecorderControl | null>(null);
-  // Phase 3: count of in-flight detached processing tasks. Drives the
-  // close-while-processing warning.
-  const [inFlightAudioCount, setInFlightAudioCount] = useState(0);
-  // Any audio work that would be lost on quit: active recording, the brief
-  // sync stop half (drain/flush/native release for meeting mode), or a
-  // detached processing task. Kept in a ref so the close-warning effect
-  // installs once on mount and reads the live value without tearing down.
-  const hasAudioWorkRef = useRef(false);
-  hasAudioWorkRef.current = recordingState !== null || inFlightAudioCount > 0;
-
-  // Set once the user has confirmed a quit-in-progress dialog. Any
-  // subsequent close-path event (onCloseRequested fired during Tauri's
-  // per-window cleanup after app.exit(0), beforeunload, etc.) must bail
-  // so the user isn't re-prompted for the same quit.
-  const quitApprovedRef = useRef(false);
-
-  // Sync the work flag to Rust so the native ExitRequested handler (which
-  // fires on macOS Cmd+Q — Cmd+Q bypasses window-level onCloseRequested
-  // entirely) can decide synchronously whether to prevent the exit.
+  // Tightly-scoped close-guard: ONLY fires while a recording is
+  // actively capturing audio. Post-stop server-side processing survives
+  // app exit, so once the upload has been accepted the user can close
+  // freely. Mirrors the web `beforeunload` guard. Confirms via Tauri's
+  // native dialog and re-issues the close on confirm.
   useEffect(() => {
-    invoke("set_audio_work_state", { hasWork: hasAudioWorkRef.current }).catch(() => {});
-  }, [recordingState, inFlightAudioCount]);
-
-  // Listen for app-quit-requested event emitted by Rust after it has
-  // called `api.prevent_exit()`. Show the confirmation dialog and, if the
-  // user confirms, invoke `quit_app` which calls `app.exit(0)` on the
-  // Rust side.
-  useEffect(() => {
+    if (!recordingState) return;
     let unlistenFn: (() => void) | null = null;
     let cancelled = false;
-    listen("app-quit-requested", async () => {
-      if (quitApprovedRef.current) return; // already approved; avoid re-prompt
-      const confirmed = await ask(
-        "A recording is in progress or still processing. " +
-          "Quitting now will discard it. Quit anyway?",
-        { title: "Recording in progress", kind: "warning" },
-      );
-      if (confirmed) {
-        quitApprovedRef.current = true;
-        await invoke("quit_app");
-      }
-    })
-      .then((unlisten) => {
-        if (cancelled) {
-          unlisten();
-        } else {
-          unlistenFn = unlisten;
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to listen for app-quit-requested:", err);
-      });
-    return () => {
-      cancelled = true;
-      if (unlistenFn) unlistenFn();
-    };
-  }, []);
-
-  useEffect(() => {
-    // Web / webview fallback — catches refresh, tab close, in-webview nav.
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (quitApprovedRef.current) return;
-      if (!hasAudioWorkRef.current) return;
-      e.preventDefault();
-      e.returnValue = ""; // Chrome/Edge require returnValue to be set.
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
-    // Tauri native window close — red X on all platforms + anything else
-    // that triggers a WM_CLOSE-style window close.
-    //
-    // Pattern: call preventDefault() SYNCHRONOUSLY before any await. Tauri
-    // does wait for the handler promise, but on some platforms the close
-    // races the dialog — preventing default first is the only reliable
-    // way to guarantee the close is halted. After the user confirms, we
-    // manually call win.close() (needs `core:window:allow-close` in
-    // capabilities). quitApprovedRef prevents a re-prompt if
-    // onCloseRequested fires again during Tauri's per-window cleanup
-    // after an app.exit(0) initiated by the app-quit-requested flow.
-    let unlistenFn: (() => void) | null = null;
-    let cancelled = false;
+    let confirmed = false;
     (async () => {
       try {
         const win = getCurrentWindow();
         const unlisten = await win.onCloseRequested(async (event) => {
-          if (quitApprovedRef.current) return;
-          if (!hasAudioWorkRef.current) return;
+          if (confirmed) return;
           event.preventDefault();
-          const confirmed = await ask(
-            "A recording is in progress or still processing. " +
-              "Quitting now will discard it. Quit anyway?",
+          const ok = await ask(
+            "A recording is in progress. Closing now will discard the audio you've captured. Close anyway?",
             { title: "Recording in progress", kind: "warning" },
           );
-          if (confirmed) {
-            quitApprovedRef.current = true;
+          if (ok) {
+            confirmed = true;
             await win.close();
           }
         });
@@ -502,16 +424,39 @@ export function NotesPage() {
           unlistenFn = unlisten;
         }
       } catch (err) {
-        console.error("Failed to install Tauri close-requested guard:", err);
+        console.error("Failed to install close-guard:", err);
       }
     })();
-
     return () => {
       cancelled = true;
-      window.removeEventListener("beforeunload", handleBeforeUnload);
       if (unlistenFn) unlistenFn();
     };
-  }, []);
+  }, [recordingState]);
+  // Phase 2: unified success/failure result for the AI assistant panel to
+  // match against a meeting-summary card by sessionId. Each new result
+  // increments the identity of the prop so the panel's effect re-fires for
+  // every outcome — even if an earlier fail lands on the same sessionId
+  // as a later retry success.
+  const [audioSessionResult, setAudioSessionResult] = useState<AudioSessionResult | null>(null);
+  const audioControlRef = useRef<AudioRecorderControl | null>(null);
+  // Phase H — last sessionId AudioRecorder cancelled. Forwarded to
+  // AIAssistantPanel so it can suppress the meeting card that the
+  // stop transition would otherwise insert (cancel produces no
+  // server-side job, so an orphan "processing" card would never resolve).
+  const [cancelledSessionId, setCancelledSessionId] = useState<string | null>(null);
+  // Phase H — sessions whose audio has been accepted by the server
+  // but whose transcription-job has not yet emitted a terminal SSE
+  // event. Mirrors ns-web's `pendingAudioJobsRef`.
+  const pendingAudioJobsRef = useRef<
+    Map<string, { jobId: string; capturedTranscript: string }>
+  >(new Map());
+  // Phase H — quit-guard plumbing removed. The server owns the
+  // post-stop pipeline (transcribe-jobs survive the app exiting), so
+  // the prior beforeunload + Tauri onCloseRequested + Rust ExitRequested
+  // dialogs are no longer needed. The Rust-side `set_audio_work_state`
+  // and `app-quit-requested` machinery still exists in src-tauri but is
+  // no-op'd from the JS side; cleaning up the Rust handlers is a
+  // follow-up.
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const [showGame, setShowGame] = useState(false);
 
@@ -761,18 +706,8 @@ export function NotesPage() {
     }
   }
 
-  function handleDashboardStartRecording() {
-    const recordBtn = document.querySelector<HTMLButtonElement>('[title^="Record audio"]');
-    if (recordBtn) {
-      recordBtn.click();
-    }
-  }
-
-  function handleDashboardImportFile() {
-    const importBtn = document.querySelector<HTMLButtonElement>('[title="Import"]');
-    if (importBtn) {
-      importBtn.click();
-    }
+  function handleDashboardStartRecording(mode: AudioMode) {
+    setRecordTrigger({ mode, key: Date.now() });
   }
 
   // --- Resizable panels ---
@@ -966,6 +901,45 @@ export function NotesPage() {
         discardRef.current = discard;
       },
       onChatChanged: () => setChatRefreshKey((k) => k + 1),
+      onTranscriptionJob: async (payload) => {
+        const pending = pendingAudioJobsRef.current.get(payload.sessionId);
+        if (payload.status === "completed" && payload.noteId) {
+          pendingAudioJobsRef.current.delete(payload.sessionId);
+          try {
+            // Fetch from the server, NOT from local SQLite — the server-
+            // emitted "transcription-job" SSE arrives before (or racy
+            // with) the "sync" pull that would land the note in local
+            // SQLite. fetchNoteById returns null in that race window
+            // and silently skips the auto-open. handleAudioNoteCreated
+            // will upsert into local SQLite itself, so subsequent reads
+            // pick it up.
+            const resp = await apiFetch(`/notes/${payload.noteId}`);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            const note = data.note as Note | undefined;
+            if (note) {
+              await handleAudioNoteCreatedRef.current(
+                note,
+                payload.sessionId,
+                pending?.capturedTranscript,
+              );
+            }
+          } catch {
+            handleAudioNoteFailedRef.current(
+              payload.sessionId,
+              "Note not found after processing",
+            );
+          }
+          return;
+        }
+        if (payload.status === "failed") {
+          pendingAudioJobsRef.current.delete(payload.sessionId);
+          handleAudioNoteFailedRef.current(
+            payload.sessionId,
+            payload.errorMessage ?? "Transcription failed",
+          );
+        }
+      },
     }).catch((err) => console.error("Failed to init sync engine:", err));
 
     // Initialize local file watchers
@@ -1663,55 +1637,49 @@ export function NotesPage() {
     }
   }
 
-  async function handleAudioNoteCreated(serverNote: Note, sessionId: string, capturedTranscript?: string) {
+  async function handleAudioNoteCreated(serverNote: Note, sessionId: string, _capturedTranscript?: string) {
     try {
-      // Pull this session's context from the session-keyed map. May be absent
-      // if the session predated the recording-state subscription (test paths)
-      // — default to empty.
       const ctx = sessionContextsRef.current.get(sessionId) ?? {
         liveTranscript: "",
         relevantNotes: [],
         mode: "meeting",
       };
 
+      // Phase H — server already wrote the transcript and structured
+      // content. Only the "Related Notes Referenced" tail needs a
+      // client-side PATCH because that depends on the local
+      // meetingContext from this device's recording session.
       let finalNote = serverNote;
       const surfacedNotes = ctx.relevantNotes;
-      const liveText = capturedTranscript ?? ctx.liveTranscript;
-      const hasRefs = surfacedNotes.length > 0;
-      const hasLiveTranscript = liveText.trim().length > 0;
 
-      if (hasRefs || hasLiveTranscript) {
-        const patchData: { content?: string; transcript?: string } = {};
-
-        if (hasRefs) {
-          const referencesSection = "\n\n## Related Notes Referenced\n" +
-            surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
-          patchData.content = (serverNote.content || "") + referencesSection;
-        }
-
-        if (hasLiveTranscript) {
-          patchData.transcript = liveText;
-        }
-
-        // PATCH the server note directly (note doesn't exist locally yet)
+      if (surfacedNotes.length > 0) {
+        const referencesSection = "\n\n## Related Notes Referenced\n" +
+          surfacedNotes.map((n) => `- [[${n.title}]]`).join("\n");
         try {
           const resp = await apiFetch(`/notes/${serverNote.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(patchData),
+            body: JSON.stringify({
+              content: (serverNote.content || "") + referencesSection,
+            }),
           });
           if (resp.ok) {
             const result = await resp.json();
             finalNote = result.note;
           }
         } catch {
-          // Non-fatal — use the note without extras
+          // Non-fatal — use the note without the references tail
         }
       }
 
-      // Now insert the final note (with wiki-links) into local SQLite
+      // Insert the final note into local SQLite. Dedupe in setNotes so
+      // a sync pull that landed the note before this handler doesn't
+      // produce a duplicate row in the in-memory list.
       await upsertNoteFromRemote(finalNote);
-      setNotes((prev) => [finalNote, ...prev]);
+      setNotes((prev) => {
+        const next = prev.filter((n) => n.id !== finalNote.id);
+        return [finalNote, ...next];
+      });
       openNoteAsTab(finalNote);
       await refreshSidebarData();
       loadNoteTitles();
@@ -1729,7 +1697,6 @@ export function NotesPage() {
       console.error("Failed to save audio note:", err);
       showError(`Failed to save audio note: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      // Drop the session context once we're done with it — success or error.
       sessionContextsRef.current.delete(sessionId);
     }
   }
@@ -1748,48 +1715,20 @@ export function NotesPage() {
   function handleAudioDiscard(sessionId: string) {
     audioControlRef.current?.discard(sessionId);
     sessionContextsRef.current.delete(sessionId);
+    pendingAudioJobsRef.current.delete(sessionId);
   }
 
-  async function handleDelete() {
+  // Phase H — live refs so the SSE effect (registered once at mount
+  // through initSyncEngine) can dispatch into the latest audio-note
+  // handlers without listing them as deps.
+  const handleAudioNoteCreatedRef = useRef(handleAudioNoteCreated);
+  const handleAudioNoteFailedRef = useRef(handleAudioNoteFailed);
+  handleAudioNoteCreatedRef.current = handleAudioNoteCreated;
+  handleAudioNoteFailedRef.current = handleAudioNoteFailed;
+
+  function handleDelete() {
     if (!selectedId) return;
-
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-
-    try {
-      // For locally managed files: move to OS trash + hard-delete
-      const selectedNote = notes.find((n) => n.id === selectedId);
-      if (selectedNote?.isLocalFile) {
-        const localPath = await getNoteLocalPath(selectedId);
-        if (localPath && await fileExists(localPath)) {
-          suppressPath(localPath, 2000);
-          await moveToTrash(localPath);
-        }
-        enqueueSyncAction("delete", selectedId, "note").catch(() => {});
-        await hardDeleteNote(selectedId);
-      } else {
-        await softDeleteNote(selectedId);
-        setTrashCount((c) => c + 1);
-      }
-
-      if (selectedId === previewTabId) setPreviewTabId(null);
-      setOpenTabs((prev) => prev.filter((id) => id !== selectedId));
-      tabNoteCacheRef.current.delete(selectedId);
-      setNotes((prev) => prev.filter((n) => n.id !== selectedId));
-      setFavoriteNotes((prev) => prev.filter((n) => n.id !== selectedId));
-      setSelectedId(null);
-      setTitle("");
-      setContent("");
-      setConfirmDelete(false);
-      await refreshSidebarData();
-      loadNoteTitles();
-      notifyLocalChange();
-    } catch (err) {
-      console.error("Failed to delete note:", err);
-      showError("Failed to delete note");
-    }
+    setConfirmDelete(true);
   }
 
   async function handleDeleteNote(noteId: string) {
@@ -3476,6 +3415,33 @@ export function NotesPage() {
     ];
   }, [aiSettings.masterAiEnabled, aiSettings.rewrite, aiSettings.completions, aiSettings.completionStyle, aiSettings.completionDebounceMs, aiSettings.continueWriting]);
 
+  // URL paste-to-preview (Phase E.4). The extension is registered
+  // once at editor mount; the `enabled()` getter reads the live
+  // setting via a ref so toggling the preference takes effect
+  // without rebuilding the editor.
+  const autoPreviewRef = useRef(editorSettings.autoPreviewPastedUrls);
+  autoPreviewRef.current = editorSettings.autoPreviewPastedUrls;
+  const [urlPreviewToast, setUrlPreviewToast] = useState<{
+    revert: () => void;
+  } | null>(null);
+  const urlPreviewExt = useMemo(
+    () =>
+      urlPreviewExtension({
+        enabled: () => autoPreviewRef.current,
+        fetch: fetchLinkPreview,
+        onPreviewInserted: ({ revert }) => {
+          setUrlPreviewToast({ revert });
+        },
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!urlPreviewToast) return;
+    const timer = setTimeout(() => setUrlPreviewToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [urlPreviewToast]);
+
   // Close Q&A panel when setting is disabled
   useEffect(() => {
     if (!aiSettings.qaAssistant) {
@@ -3695,6 +3661,8 @@ export function NotesPage() {
           folders={flatFolders}
           onFolderChange={(id) => setRecordingFolderId(id ?? null)}
           onStop={recordingState.onStop}
+          onCancel={recordingState.onCancel}
+          isMeetingCapture={recordingState.isMeetingCapture}
         />
       )}
     </div>
@@ -3868,7 +3836,7 @@ export function NotesPage() {
                                     <>
                                       <span className="text-[10px] text-muted-foreground">·</span>
                                       {note.tags.slice(0, 2).map((tag) => (
-                                        <span key={tag} className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
+                                        <span key={tag} className="ns-tag-pill text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]">{tag}</span>
                                       ))}
                                       {note.tags.length > 2 && (
                                         <span className="text-[10px] text-muted-foreground">+{note.tags.length - 2}</span>
@@ -4251,7 +4219,7 @@ export function NotesPage() {
                         {note.tags.slice(0, 2).map((tag) => (
                           <span
                             key={tag}
-                            className="text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]"
+                            className="ns-tag-pill text-[10px] px-1 py-0 rounded bg-primary/15 text-primary/70 truncate max-w-[60px]"
                           >
                             {tag}
                           </span>
@@ -4423,32 +4391,14 @@ export function NotesPage() {
                   </svg>
                 </button>
               )}
-              {confirmDelete ? (
-                <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-destructive">Move to Trash?</span>
-                  <button
-                    onClick={handleDelete}
-                    className="px-1.5 py-0.5 rounded bg-destructive text-foreground text-[11px] hover:bg-destructive-hover transition-colors cursor-pointer"
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="px-1.5 py-0.5 rounded border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    No
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={handleDelete}
-                  className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
-                  title="Move to Trash"
-                  aria-label="Move to Trash"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                </button>
-              )}
+              <button
+                onClick={handleDelete}
+                className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-accent transition-colors cursor-pointer"
+                title="Move to Trash"
+                aria-label="Move to Trash"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
             </div>
 
             {/* Breadcrumb + Title */}
@@ -4506,7 +4456,10 @@ export function NotesPage() {
                   if (e.key === "Enter") {
                     e.preventDefault();
                     handleSave();
-                    editorRef.current?.focus();
+                    // Jump past the hidden frontmatter so the cursor
+                    // lands on the first visible body line instead of
+                    // inside the YAML block (where it'd be invisible).
+                    editorRef.current?.focusBody();
                   }
                 }}
                 placeholder="Note title"
@@ -4614,6 +4567,19 @@ export function NotesPage() {
                   setConfirmDeleteSummary(false);
                 }}
                 onCancel={() => setConfirmDeleteSummary(false)}
+              />
+            )}
+            {confirmDelete && selectedId && (
+              <ConfirmDialog
+                title="Move to Trash"
+                message={selectedNote?.title || "Untitled"}
+                confirmLabel="Move to Trash"
+                onConfirm={() => {
+                  const id = selectedId;
+                  setConfirmDelete(false);
+                  void handleDeleteNote(id);
+                }}
+                onCancel={() => setConfirmDelete(false)}
               />
             )}
             {/* Tag input — shown when tags exist, manually opened, or generating */}
@@ -4757,7 +4723,7 @@ export function NotesPage() {
                       enableLivePreview={viewMode === "live"}
                       viewMode={viewMode}
                       hideFrontmatter={editorSettings.propertiesMode === "panel"}
-                      extensions={[wikiLinkExt, ...aiExtensions]}
+                      extensions={[wikiLinkExt, urlPreviewExt, ...aiExtensions]}
                       className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                       style={viewMode === "split" ? { width: splitResize.size } : undefined}
                     />
@@ -4799,8 +4765,8 @@ export function NotesPage() {
               onSelectNote={handleDashboardSelectNote}
               onCreateNote={handleCreate}
               onStartRecording={handleDashboardStartRecording}
-              onImportFile={handleDashboardImportFile}
               audioNotesEnabled={aiSettings.masterAiEnabled && aiSettings.audioNotes}
+              recorderState={recordingState?.state ?? "idle"}
             />
           </div>
         )}
@@ -4899,11 +4865,15 @@ export function NotesPage() {
                     relevantNotes={meetingContext.relevantNotes}
                     recordingMode={recordingState?.mode}
                     audioSessionResult={audioSessionResult}
+                    cancelledSessionId={cancelledSessionId ?? undefined}
                     activeNote={selectedNote ? { id: selectedNote.id, title: selectedNote.title, content } : null}
                     chatRefreshKey={chatRefreshKey}
                     activeSessionId={recordingState?.sessionId}
                     onAudioRetry={handleAudioRetry}
                     onAudioDiscard={handleAudioDiscard}
+                    canAudioRetry={(sessionId) =>
+                      audioControlRef.current?.hasSnapshot(sessionId) ?? false
+                    }
                     autoApprove={aiSettings.autoApprove}
                     focusNonce={aiFocusNonce}
                     onNoteContentRewritten={({ noteId, newContent }) => {
@@ -4923,6 +4893,8 @@ export function NotesPage() {
                       onSelectVersion={setSelectedVersion}
                       selectedVersionId={selectedVersion?.id}
                       refreshKey={versionRefreshKey}
+                      currentTitle={title}
+                      currentContent={content}
                     />
                   ) : drawerTab === "toc" && selectedId ? (
                     <TocPanel content={content} onHeadingClick={handleTocHeadingClick} />
@@ -5101,12 +5073,14 @@ export function NotesPage() {
         folderId={recordingFolderId ?? undefined}
         recordingSource={aiSettings.recordingSource}
         onRecordingSourceChange={(src) => updateAiSetting("recordingSource", src)}
-        onNoteCreated={handleAudioNoteCreated}
+        onJobAccepted={(sessionId, jobId, capturedTranscript) => {
+          pendingAudioJobsRef.current.set(sessionId, { jobId, capturedTranscript });
+        }}
+        onSessionCancelled={setCancelledSessionId}
         onNoteFailed={handleAudioNoteFailed}
         onError={showError}
         onRecordingStateChange={setRecordingState}
         controlRef={audioControlRef}
-        onInFlightCountChange={setInFlightAudioCount}
         onModeChange={(m) => updateAiSetting("audioMode", m)}
         triggerMode={recordTrigger?.mode}
         triggerKey={recordTrigger?.key}
@@ -5117,12 +5091,6 @@ export function NotesPage() {
     {showAbout && (
       <AboutDialog
         onClose={() => setShowAbout(false)}
-        onWhatsNew={() => {
-          setShowAbout(false);
-          setSettingsInitialSection("About");
-          setSettingsInitialAction("whats-new");
-          setShowSettings(true);
-        }}
         onFeedback={() => {
           setShowAbout(false);
           setSettingsInitialSection("About");
@@ -5162,6 +5130,32 @@ export function NotesPage() {
           });
         }}
       />
+    )}
+    {urlPreviewToast && (
+      <div
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
+        role="status"
+      >
+        <span className="text-sm text-foreground">Link preview added.</span>
+        <button
+          type="button"
+          className="cursor-pointer rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-contrast transition-colors hover:bg-primary-hover"
+          onClick={() => {
+            urlPreviewToast.revert();
+            setUrlPreviewToast(null);
+          }}
+        >
+          Show URL only
+        </button>
+        <button
+          type="button"
+          className="cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+          aria-label="Dismiss"
+          onClick={() => setUrlPreviewToast(null)}
+        >
+          ✕
+        </button>
+      </div>
     )}
     </div>
   );

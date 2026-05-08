@@ -100,20 +100,37 @@ describe("linkifyCitations", () => {
     expect(out).not.toContain("example.com[");
   });
 
-  it("returns stripped text when pool is empty", () => {
+  it("unwraps unknown brackets when pool is empty (regression: delete-three-notes)", () => {
+    // Confirmation-card flows (delete_note, etc.) don't emit
+    // `noteCards`, so the AI's bracketed titles had nothing to
+    // resolve against. Previously the strip wiped the inner text
+    // entirely, leaving sentences like "I've queued — , , and ."
+    // — now the inner text survives.
     const out = linkifyCitations("No [Unknown Note] here.", undefined, []);
-    expect(out).toBe("No here.");
+    expect(out).toBe("No Unknown Note here.");
   });
 
-  it("strips brackets pointing to titles not in pool", () => {
+  it("unwraps brackets pointing to titles not in pool — keeps inner text", () => {
     const out = linkifyCitations(
       "See [Some Unrelated Note] and Claude Code Use Cases.",
       undefined,
       pool,
     );
-    // The unknown bracket is stripped; the bare match still fires.
+    // The unknown bracket is unwrapped (inner text plain), the bare
+    // match still gets a clickable citation.
     expect(out).toContain(fullCite("Claude Code Use Cases", 1));
-    expect(out).not.toContain("Some Unrelated Note");
+    expect(out).toContain("Some Unrelated Note");
+  });
+
+  it("preserves bracketed titles in a delete-three-notes sentence", () => {
+    const out = linkifyCitations(
+      "I've queued up the deletion of all three notes — [Delete#1], [Delete#2], and [Delete#3].",
+      undefined,
+      [],
+    );
+    expect(out).toBe(
+      "I've queued up the deletion of all three notes — Delete#1, Delete#2, and Delete#3.",
+    );
   });
 
   it("enforces word boundaries so substring collisions don't match", () => {

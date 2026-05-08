@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo } from "react";
-import { View, Text, Pressable, FlatList, StyleSheet, Alert } from "react-native";
+import { View, Text, Pressable, FlatList, StyleSheet } from "react-native";
 import { BottomSheetModal, BottomSheetView, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { SyncRejection } from "@derekentringer/ns-shared";
 import useSyncStore from "@/store/syncStore";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
+import { useAppAlert } from "@/components/AppAlertProvider";
 
 interface Props {
   bottomSheetRef: React.RefObject<BottomSheetModal | null>;
@@ -28,6 +29,7 @@ function rejectionLabel(reason: SyncRejection["reason"]): string {
 
 export function SyncIssuesSheet({ bottomSheetRef }: Props) {
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
   const rejections = useSyncStore((s) => s.rejections);
   const { forcePush, discard } = useSyncStore((s) => s.rejectionActions);
   const clearRejections = useSyncStore((s) => s.clearRejections);
@@ -36,7 +38,7 @@ export function SyncIssuesSheet({ bottomSheetRef }: Props) {
 
   const handleForcePush = useCallback(
     (changeId: string) => {
-      Alert.alert(
+      showAlert(
         "Force Push",
         "This will overwrite the server version with your local changes. Continue?",
         [
@@ -56,12 +58,12 @@ export function SyncIssuesSheet({ bottomSheetRef }: Props) {
         ],
       );
     },
-    [forcePush, rejections.length, clearRejections, bottomSheetRef],
+    [forcePush, rejections.length, clearRejections, bottomSheetRef, showAlert],
   );
 
   const handleDiscard = useCallback(
     (changeId: string) => {
-      Alert.alert(
+      showAlert(
         "Discard Change",
         "This will discard your local change and use the server version. Continue?",
         [
@@ -80,12 +82,12 @@ export function SyncIssuesSheet({ bottomSheetRef }: Props) {
         ],
       );
     },
-    [discard, rejections.length, clearRejections, bottomSheetRef],
+    [discard, rejections.length, clearRejections, bottomSheetRef, showAlert],
   );
 
   const handleBulkForcePush = useCallback(() => {
     const allIds = rejections.map((r) => r.changeId);
-    Alert.alert(
+    showAlert(
       "Force Push All",
       `Force push all ${allIds.length} rejected changes?`,
       [
@@ -101,11 +103,11 @@ export function SyncIssuesSheet({ bottomSheetRef }: Props) {
         },
       ],
     );
-  }, [rejections, forcePush, clearRejections, bottomSheetRef]);
+  }, [rejections, forcePush, clearRejections, bottomSheetRef, showAlert]);
 
   const handleBulkDiscard = useCallback(() => {
     const allIds = rejections.map((r) => r.changeId);
-    Alert.alert(
+    showAlert(
       "Discard All",
       `Discard all ${allIds.length} rejected changes?`,
       [
@@ -121,7 +123,7 @@ export function SyncIssuesSheet({ bottomSheetRef }: Props) {
         },
       ],
     );
-  }, [rejections, discard, clearRejections, bottomSheetRef]);
+  }, [rejections, discard, clearRejections, bottomSheetRef, showAlert]);
 
   const renderItem = useCallback(
     ({ item }: { item: SyncRejection }) => (
@@ -172,13 +174,25 @@ export function SyncIssuesSheet({ bottomSheetRef }: Props) {
       backgroundStyle={{ backgroundColor: themeColors.background }}
       handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
       backdropComponent={(props) => (
-        <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} />
+        <BottomSheetBackdrop
+          {...props}
+          disappearsOnIndex={-1}
+          appearsOnIndex={0}
+          pressBehavior="close"
+        />
       )}
     >
       <BottomSheetView style={styles.container}>
-        <Text style={[styles.title, { color: themeColors.foreground }]}>
-          Sync Issues ({rejections.length})
-        </Text>
+        <View style={styles.header}>
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={20}
+            color={themeColors.primary}
+          />
+          <Text style={[styles.title, { color: themeColors.foreground }]}>
+            Sync Issues ({rejections.length})
+          </Text>
+        </View>
 
         {rejections.length > 1 ? (
           <View style={styles.bulkActions}>
@@ -215,10 +229,15 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: spacing.md,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     marginBottom: spacing.sm,
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: "600",
   },
   bulkActions: {
     flexDirection: "row",

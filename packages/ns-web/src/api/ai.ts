@@ -439,7 +439,7 @@ export async function fetchChatHistory(): Promise<ChatMessageData[]> {
 }
 
 export async function saveChatMessages(
-  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[],
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown; createdAt?: string }[],
 ): Promise<void> {
   await apiFetch("/ai/chat-history", {
     method: "POST",
@@ -454,7 +454,7 @@ export async function saveChatMessages(
  * refreshed (or the network blipped) at exactly the wrong moment.
  */
 export async function replaceChatMessages(
-  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[],
+  messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown; createdAt?: string }[],
 ): Promise<void> {
   await apiFetch("/ai/chat-history", {
     method: "PUT",

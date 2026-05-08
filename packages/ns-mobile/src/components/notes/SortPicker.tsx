@@ -1,6 +1,11 @@
 import React, { useCallback } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import {
+  BottomSheetModal,
+  BottomSheetView,
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { NoteSortField, SortOrder } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
@@ -39,11 +44,26 @@ export function SortPicker({
       snapPoints={["40%"]}
       backgroundStyle={{ backgroundColor: themeColors.background }}
       handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
+      backdropComponent={(props: BottomSheetBackdropProps) => (
+        <BottomSheetBackdrop
+          {...props}
+          disappearsOnIndex={-1}
+          appearsOnIndex={0}
+          pressBehavior="close"
+        />
+      )}
     >
       <BottomSheetView style={styles.content}>
-        <Text style={[styles.title, { color: themeColors.foreground }]}>
-          Sort By
-        </Text>
+        <View style={styles.header}>
+          <MaterialCommunityIcons
+            name="sort"
+            size={20}
+            color={themeColors.primary}
+          />
+          <Text style={[styles.title, { color: themeColors.foreground }]}>
+            Sort By
+          </Text>
+        </View>
 
         {SORT_FIELDS.map((field) => (
           <Pressable
@@ -99,11 +119,16 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: spacing.lg,
   },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
   title: {
     fontSize: 17,
     fontWeight: "600",
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
   },
   row: {
     flexDirection: "row",

@@ -14,7 +14,7 @@ import { transcribeAudio, transcribeAudioChunked } from "../services/whisperServ
 import { getNote, updateNote, createNote, findRelevantNotes, findMeetingContextNotes } from "../store/noteStore.js";
 import { listTags } from "../store/noteStore.js";
 import { toNote } from "../lib/mappers.js";
-import { getChatHistory, appendChatMessages, clearChatHistory, replaceChatMessages } from "../store/chatStore.js";
+import { getChatHistory, appendChatMessages, clearChatHistory, replaceChatMessages, reconcileOrphanMeetingCards } from "../store/chatStore.js";
 import type { AudioMode } from "@derekentringer/shared/ns";
 import { getImagesByNoteIds } from "../store/imageStore.js";
 import {
@@ -25,6 +25,20 @@ import {
 import { processAllPendingEmbeddings } from "../services/embeddingProcessor.js";
 import { getPrisma } from "../lib/prisma.js";
 import { generateEmbedding, generateQueryEmbedding } from "../services/embeddingService.js";
+import {
+  createOrReuseJob,
+  getJob,
+  getJobBySession,
+  listJobsSince,
+  deleteJob,
+  patchJob,
+  patchUploadTelemetry,
+  toPublic,
+  type TranscriptionJobMode,
+} from "../store/transcriptionJobStore.js";
+import { uploadAudio, deleteAudio, buildAudioR2Key } from "../services/r2Service.js";
+import { kickDispatcher } from "../services/transcriptionWorker.js";
+import { randomUUID } from "node:crypto";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -710,7 +724,18 @@ export default async function aiRoutes(fastify: FastifyInstance) {
           { sessionId, chunkIndex, fileSize: file.buffer.length, mimetype: file.mimetype },
           "Transcribing audio chunk",
         );
-        text = await transcribeAudio(file.buffer, file.filename);
+        // Use the chunked variant so an oversized single-chunk
+        // upload (mobile sends one big chunk for the whole
+        // recording at stop-time) gets split by the audio chunker
+        // before it hits Whisper's 25 MB / request cap. For small
+        // live chunks (~20s clips on web/desktop) the chunker is
+        // a no-op since `splitAudioIfNeeded` returns the buffer
+        // unchanged when it's under MAX_CHUNK_SIZE.
+        text = await transcribeAudioChunked(
+          file.buffer,
+          file.filename,
+          request.log,
+        );
       } catch (err) {
         request.log.error(err, "Chunk transcription failed");
         const message = err instanceof Error ? err.message : "Transcription failed";
@@ -934,11 +959,19 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // GET /ai/chat-history — fetch chat messages for the current user
+  // GET /ai/chat-history — fetch chat messages for the current user.
+  // Self-heal orphan "processing" meeting-summary cards (no matching
+  // transcription_jobs row, older than the grace window) on the way
+  // out, and fan out a `chat` SSE event to other connected devices
+  // when any orphan was actually rewritten so they refetch.
   fastify.get(
     "/chat-history",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const userId = request.user.sub;
+      const reconciled = await reconcileOrphanMeetingCards(userId);
+      if (reconciled > 0) {
+        fastify.sseHub.notifyChat(userId);
+      }
       const messages = await getChatHistory(userId);
       return reply.send({ messages });
     },
@@ -947,7 +980,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   // POST /ai/chat-history — append chat messages
   fastify.post<{
     Body: {
-      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[];
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown; createdAt?: string }[];
     };
   }>(
     "/chat-history",
@@ -973,6 +1006,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                   meetingData: {},
                   noteCards: {},
                   confirmation: {},
+                  createdAt: { type: "string", format: "date-time" },
                 },
               },
             },
@@ -994,7 +1028,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
   // could wipe history if the user refreshed between the two calls.
   fastify.put<{
     Body: {
-      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown }[];
+      messages: { role: string; content: string; sources?: unknown; meetingData?: unknown; noteCards?: unknown; confirmation?: unknown; createdAt?: string }[];
     };
   }>(
     "/chat-history",
@@ -1022,6 +1056,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
                   meetingData: {},
                   noteCards: {},
                   confirmation: {},
+                  createdAt: { type: "string", format: "date-time" },
                 },
               },
             },
@@ -1045,6 +1080,302 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       await clearChatHistory(userId);
       fastify.sseHub.notifyChat(userId);
       return reply.send({ ok: true });
+    },
+  );
+
+  // ─── Phase H — server-managed transcription jobs ─────────────
+  //
+  // POST  /ai/transcribe-jobs              create or reuse (Retry) a job
+  // GET   /ai/transcribe-jobs/:id          single job snapshot
+  // GET   /ai/transcribe-jobs?since=<iso>  recent jobs for hydration
+  // POST  /ai/transcribe-jobs/:id/retry    re-arm a failed job
+  // DELETE /ai/transcribe-jobs/:id         discard + drop R2 audio
+  //
+  // See docs/ns/mobile-parity-arch/phase-h-server-jobs.md.
+
+  // Hard cap on the audio-payload portion of the upload. The
+  // multipart body limit on the app is 500 MB; this stays under
+  // that to enforce the per-recording duration cap (6 hours of
+  // m4a at ~0.8 MB/min ≈ 288 MB; WAV is heavier — the cap covers
+  // both formats with margin). Larger uploads are rejected up
+  // front at the route layer.
+  const MAX_TRANSCRIBE_JOB_AUDIO_BYTES =
+    Number(process.env.TRANSCRIPTION_MAX_AUDIO_BYTES) || 400 * 1024 * 1024;
+
+  // POST /ai/transcribe-jobs — create or re-arm a job.
+  //
+  // Two upload modes:
+  //   1. multipart with `audio` file part + `sessionId` + `mode`
+  //      → server stores audio in R2, worker runs full pipeline.
+  //   2. multipart with `prebuiltTranscript` field + `sessionId`
+  //      + `mode` (no file)
+  //      → web/desktop fast path. Worker skips Whisper, runs
+  //        structuring + note creation only.
+  //
+  // Returns immediately with `{ jobId, sessionId }`. The actual
+  // transcribe / structure / note-create work runs async in the
+  // worker.
+  fastify.post(
+    "/transcribe-jobs",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const userId = request.user.sub;
+
+      let file:
+        | { buffer: Buffer; filename: string; mimetype: string }
+        | undefined;
+      let sessionId = "";
+      let mode = "";
+      let prebuiltTranscript = "";
+      let uploadDurationSeconds: number | undefined;
+      let uploadRetryCount: number | undefined;
+      let uploadBytesTransferred: number | undefined;
+
+      try {
+        const parts = request.parts();
+        for await (const part of parts) {
+          if (part.type === "field") {
+            const value = (part.value as string) || "";
+            if (part.fieldname === "sessionId") sessionId = value;
+            else if (part.fieldname === "mode") mode = value;
+            else if (part.fieldname === "prebuiltTranscript") prebuiltTranscript = value;
+            else if (part.fieldname === "uploadDurationSeconds") {
+              const n = parseInt(value, 10);
+              if (!isNaN(n)) uploadDurationSeconds = n;
+            }
+            else if (part.fieldname === "uploadRetryCount") {
+              const n = parseInt(value, 10);
+              if (!isNaN(n)) uploadRetryCount = n;
+            }
+            else if (part.fieldname === "uploadBytesTransferred") {
+              const n = parseInt(value, 10);
+              if (!isNaN(n)) uploadBytesTransferred = n;
+            }
+          } else if (part.type === "file" && part.fieldname === "audio") {
+            file = {
+              buffer: await part.toBuffer(),
+              filename: part.filename,
+              mimetype: part.mimetype,
+            };
+          }
+        }
+      } catch {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid multipart data",
+        });
+      }
+
+      if (!sessionId) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "sessionId is required",
+        });
+      }
+      if (!mode || !VALID_MODES.includes(mode as AudioMode)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: `mode must be one of: ${VALID_MODES.join(", ")}`,
+        });
+      }
+
+      const hasFile = !!file;
+      const hasTranscript = prebuiltTranscript.trim().length > 0;
+      if (!hasFile && !hasTranscript) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Either audio file or prebuiltTranscript is required",
+        });
+      }
+
+      // Audio path validation
+      if (hasFile && file) {
+        if (file.buffer.length > MAX_TRANSCRIBE_JOB_AUDIO_BYTES) {
+          return reply.status(413).send({
+            statusCode: 413,
+            error: "Payload Too Large",
+            message: `Audio exceeds ${(MAX_TRANSCRIBE_JOB_AUDIO_BYTES / 1024 / 1024).toFixed(0)} MB limit`,
+          });
+        }
+        if (!VALID_AUDIO_TYPES.has(file.mimetype)) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: `Unsupported audio type: ${file.mimetype}`,
+          });
+        }
+        if (!validateAudioMagicBytes(file.buffer, file.mimetype)) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: "Bad Request",
+            message: "File content does not match declared audio type",
+          });
+        }
+      }
+
+      // R2 key derives from sessionId (not jobId), so Retry on the
+      // same session reuses the same R2 object — no extra upload
+      // unless the client is genuinely re-recording. The (userId,
+      // sessionId) UNIQUE constraint guarantees the key is unique
+      // per user.
+      let audioR2Key: string | undefined;
+      if (hasFile && file) {
+        const ext = file.filename.split(".").pop()?.toLowerCase() || "bin";
+        audioR2Key = buildAudioR2Key(userId, sessionId, ext);
+        try {
+          await uploadAudio(file.buffer, audioR2Key, file.mimetype);
+        } catch (err) {
+          request.log.error(err, "R2 upload failed");
+          return reply.status(502).send({
+            statusCode: 502,
+            error: "Bad Gateway",
+            message: "Failed to upload audio to storage",
+          });
+        }
+      }
+
+      // Insert or upsert (Retry path)
+      const job = await createOrReuseJob({
+        userId,
+        sessionId,
+        mode: mode as TranscriptionJobMode,
+        audioR2Key,
+        audioMimeType: file?.mimetype,
+        audioSizeBytes: file?.buffer.length,
+        prebuiltTranscript: hasTranscript ? prebuiltTranscript : undefined,
+      });
+
+      // Telemetry (best-effort — older clients won't include these
+      // fields, that's fine)
+      if (
+        uploadDurationSeconds !== undefined ||
+        uploadRetryCount !== undefined ||
+        uploadBytesTransferred !== undefined
+      ) {
+        await patchUploadTelemetry(job.id, {
+          durationSeconds: uploadDurationSeconds,
+          retryCount: uploadRetryCount,
+          bytesTransferred: uploadBytesTransferred,
+        });
+      }
+
+      // Wake the worker — there's a new pending row to drain.
+      kickDispatcher();
+
+      return reply.send({
+        jobId: job.id,
+        sessionId: job.sessionId,
+        status: job.status,
+      });
+    },
+  );
+
+  // GET /ai/transcribe-jobs/:id — single job snapshot
+  fastify.get<{ Params: { id: string } }>(
+    "/transcribe-jobs/:id",
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const job = await getJob(userId, request.params.id);
+      if (!job) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: "Not Found",
+          message: "Job not found",
+        });
+      }
+      return reply.send(toPublic(job));
+    },
+  );
+
+  // GET /ai/transcribe-jobs?since=<iso> — list recent jobs
+  //
+  // Used by clients on launch / connectivity restore to reconcile
+  // any state changes that arrived while offline. The list is
+  // capped server-side at 100 entries so the response stays bounded.
+  fastify.get<{ Querystring: { since?: string } }>(
+    "/transcribe-jobs",
+    async (request, reply) => {
+      const userId = request.user.sub;
+      // Default `since` is 7 days ago — covers the failed-job
+      // retention window so all live rows are visible.
+      const since = request.query.since
+        ? new Date(request.query.since)
+        : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      if (Number.isNaN(since.getTime())) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Invalid `since` timestamp",
+        });
+      }
+      const jobs = await listJobsSince(userId, since);
+      return reply.send({ jobs: jobs.map(toPublic) });
+    },
+  );
+
+  // POST /ai/transcribe-jobs/:id/retry — re-arm a failed job.
+  //
+  // The client could also call POST /ai/transcribe-jobs again with
+  // the same sessionId, which produces the same upsert behavior;
+  // this endpoint exists for the case where the audio is still in
+  // R2 and the client doesn't need to re-upload.
+  fastify.post<{ Params: { id: string } }>(
+    "/transcribe-jobs/:id/retry",
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const job = await getJob(userId, request.params.id);
+      if (!job) {
+        return reply.status(404).send({
+          statusCode: 404,
+          error: "Not Found",
+          message: "Job not found",
+        });
+      }
+      if (job.status !== "failed") {
+        return reply.status(409).send({
+          statusCode: 409,
+          error: "Conflict",
+          message: `Cannot retry job in status: ${job.status}`,
+        });
+      }
+      // Re-arm as pending if there's audio to re-process; if it's
+      // a fast-path job with only a prebuilt transcript, jump
+      // straight back to structuring.
+      const nextStatus = job.transcript ? "structuring" : "pending";
+      const updated = await patchJob(job.id, {
+        status: nextStatus,
+        errorMessage: null,
+        completedAt: null,
+      });
+      kickDispatcher();
+      return reply.send(toPublic(updated));
+    },
+  );
+
+  // DELETE /ai/transcribe-jobs/:id — discard the job + drop R2 audio.
+  //
+  // Idempotent. Returns 204 even if the job doesn't exist (so
+  // client retries on a flaky connection don't 404 spuriously).
+  fastify.delete<{ Params: { id: string } }>(
+    "/transcribe-jobs/:id",
+    async (request, reply) => {
+      const userId = request.user.sub;
+      const job = await getJob(userId, request.params.id);
+      if (job?.audioR2Key) {
+        try {
+          await deleteAudio(job.audioR2Key);
+        } catch (err) {
+          // Non-fatal — the job row is the source of truth. A
+          // best-effort cleanup retry happens via the daily
+          // retention sweep if the row stays around.
+          request.log.warn({ err, audioR2Key: job.audioR2Key }, "R2 delete failed during DELETE /transcribe-jobs/:id");
+        }
+      }
+      await deleteJob(userId, request.params.id);
+      return reply.status(204).send();
     },
   );
 }

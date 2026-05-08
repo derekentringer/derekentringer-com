@@ -111,8 +111,8 @@ describe("VersionHistoryPanel", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("5m ago")).toBeInTheDocument();
-      expect(screen.getByText("2h ago")).toBeInTheDocument();
+      expect(screen.getByText("5 mins ago")).toBeInTheDocument();
+      expect(screen.getByText("2 hrs ago")).toBeInTheDocument();
     });
   });
 });

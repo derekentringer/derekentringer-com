@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 
 export type ThemeMode = "dark" | "light" | "system" | "teams";
-export type ViewModeDefault = "editor" | "split" | "preview";
+export type ViewModeDefault = "editor" | "live" | "split" | "preview";
 export type TabSizeOption = 2 | 4;
 export type CursorStyle = "line" | "block" | "underline";
 export type AccentColorPreset = "lime" | "blue" | "cyan" | "purple" | "orange" | "teal" | "pink" | "red" | "amber" | "black" | "white" | "custom";
@@ -60,11 +60,15 @@ export interface EditorSettings {
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
   versionIntervalMinutes: number;
+  /** When true, pasting a single URL into the editor auto-fetches
+   *  the page metadata (title / description / og:image) and replaces
+   *  the URL inline. Phase E.4. */
+  autoPreviewPastedUrls: boolean;
 }
 
 const STORAGE_KEY = "ns-editor-settings";
 
-const VALID_VIEW_MODES: ViewModeDefault[] = ["editor", "split", "preview"];
+const VALID_VIEW_MODES: ViewModeDefault[] = ["editor", "live", "split", "preview"];
 const VALID_THEMES: ThemeMode[] = ["dark", "light", "system", "teams"];
 const VALID_TAB_SIZES: TabSizeOption[] = [2, 4];
 const VALID_CURSOR_STYLES: CursorStyle[] = ["line", "block", "underline"];
@@ -85,6 +89,7 @@ const DEFAULT_SETTINGS: EditorSettings = {
   cursorStyle: "line",
   cursorBlink: true,
   versionIntervalMinutes: 0,
+  autoPreviewPastedUrls: true,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -128,6 +133,10 @@ function loadSettings(): EditorSettings {
       versionIntervalMinutes: typeof parsed.versionIntervalMinutes === "number"
         ? clamp(parsed.versionIntervalMinutes, 0, 60)
         : 0,
+      autoPreviewPastedUrls:
+        typeof parsed.autoPreviewPastedUrls === "boolean"
+          ? parsed.autoPreviewPastedUrls
+          : true,
     };
   } catch {
     return DEFAULT_SETTINGS;

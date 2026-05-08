@@ -4,11 +4,13 @@ import {
   Text,
   ScrollView,
   Pressable,
-  Alert,
+  Platform,
   StyleSheet,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import Markdown from "react-native-markdown-display";
+import { markdownRules } from "@/lib/markdownRules";
 import * as Haptics from "expo-haptics";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SettingsStackParamList } from "@/navigation/types";
@@ -24,6 +26,7 @@ type Props = NativeStackScreenProps<SettingsStackParamList, "TrashNoteDetail">;
 export function TrashNoteDetailScreen({ route, navigation }: Props) {
   const { note } = route.params;
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
 
   const { data: foldersData } = useFolders();
   const restoreNote = useRestoreNote();
@@ -39,7 +42,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
   }, [note.id, restoreNote, navigation]);
 
   const handlePermanentDelete = useCallback(() => {
-    Alert.alert(
+    showAlert(
       "Delete Permanently",
       `"${note.title || "Untitled"}" will be permanently deleted. This cannot be undone.`,
       [
@@ -55,7 +58,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
         },
       ],
     );
-  }, [note.id, note.title, permanentDelete, navigation]);
+  }, [note.id, note.title, permanentDelete, navigation, showAlert]);
 
   // Header actions
   useEffect(() => {
@@ -70,8 +73,9 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
           >
             <MaterialCommunityIcons
               name="restore"
-              size={22}
+              size={24}
               color={themeColors.success}
+              style={styles.headerIcon}
             />
           </Pressable>
           <Pressable
@@ -82,8 +86,9 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
           >
             <MaterialCommunityIcons
               name="delete-forever"
-              size={22}
+              size={24}
               color={themeColors.destructive}
+              style={styles.headerIcon}
             />
           </Pressable>
         </View>
@@ -196,7 +201,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
                   { backgroundColor: `${themeColors.primary}1A` },
                 ]}
               >
-                <Text style={[styles.tagText, { color: themeColors.primary }]}>
+                <Text style={[styles.tagText, { color: themeColors.tagText }]}>
                   {tag}
                 </Text>
               </View>
@@ -207,7 +212,7 @@ export function TrashNoteDetailScreen({ route, navigation }: Props) {
         {/* Content */}
         <View style={styles.content}>
           {note.content ? (
-            <Markdown style={mdStyles}>{note.content}</Markdown>
+            <Markdown style={mdStyles} rules={markdownRules}>{note.content}</Markdown>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>
               No content
@@ -227,13 +232,27 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     paddingBottom: spacing.xl,
   },
+  // Material Design 3 top-app-bar action item: 24 dp glyph
+  // centered inside a 48 dp touch target via 12 dp padding.
+  // The 12 dp internal padding on each button already produces
+  // the right visual separation, so the inter-button gap is 0.
+  // Source: https://m3.material.io/components/top-app-bar/specs
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    ...Platform.select({ ios: { gap: 0 }, default: { gap: 4 } }),
   },
   headerButton: {
-    padding: spacing.xs,
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
   deletedBanner: {
     flexDirection: "row",
