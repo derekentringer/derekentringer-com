@@ -549,6 +549,14 @@ export function SettingsPage({ onBack, onChangePassword, onSignOut, initialSecti
                 onChange={(v) => updateEditorSetting("cursorBlink", v)}
                 info="Animate the cursor with a blinking effect"
               />
+              <ToggleSwitch
+                label="Auto-preview pasted URLs"
+                checked={editorSettings.autoPreviewPastedUrls}
+                onChange={(v) =>
+                  updateEditorSetting("autoPreviewPastedUrls", v)
+                }
+                info="Pasting a single URL replaces it with the page title, description, and image"
+              />
             </SettingsGroup>
 
             <SettingsGroup>

@@ -116,6 +116,8 @@ import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSetting
 import { useAiSettings, type CompletionStyle, type AudioMode } from "../hooks/useAiSettings.ts";
 import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
+import { urlPreviewExtension } from "../editor/urlPreview.ts";
+import { fetchLinkPreview } from "../api/links.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
 import { SyncIssuesDialog } from "../components/SyncIssuesDialog.tsx";
@@ -3413,6 +3415,33 @@ export function NotesPage() {
     ];
   }, [aiSettings.masterAiEnabled, aiSettings.rewrite, aiSettings.completions, aiSettings.completionStyle, aiSettings.completionDebounceMs, aiSettings.continueWriting]);
 
+  // URL paste-to-preview (Phase E.4). The extension is registered
+  // once at editor mount; the `enabled()` getter reads the live
+  // setting via a ref so toggling the preference takes effect
+  // without rebuilding the editor.
+  const autoPreviewRef = useRef(editorSettings.autoPreviewPastedUrls);
+  autoPreviewRef.current = editorSettings.autoPreviewPastedUrls;
+  const [urlPreviewToast, setUrlPreviewToast] = useState<{
+    revert: () => void;
+  } | null>(null);
+  const urlPreviewExt = useMemo(
+    () =>
+      urlPreviewExtension({
+        enabled: () => autoPreviewRef.current,
+        fetch: fetchLinkPreview,
+        onPreviewInserted: ({ revert }) => {
+          setUrlPreviewToast({ revert });
+        },
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!urlPreviewToast) return;
+    const timer = setTimeout(() => setUrlPreviewToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [urlPreviewToast]);
+
   // Close Q&A panel when setting is disabled
   useEffect(() => {
     if (!aiSettings.qaAssistant) {
@@ -4694,7 +4723,7 @@ export function NotesPage() {
                       enableLivePreview={viewMode === "live"}
                       viewMode={viewMode}
                       hideFrontmatter={editorSettings.propertiesMode === "panel"}
-                      extensions={[wikiLinkExt, ...aiExtensions]}
+                      extensions={[wikiLinkExt, urlPreviewExt, ...aiExtensions]}
                       className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                       style={viewMode === "split" ? { width: splitResize.size } : undefined}
                     />
@@ -5101,6 +5130,32 @@ export function NotesPage() {
           });
         }}
       />
+    )}
+    {urlPreviewToast && (
+      <div
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
+        role="status"
+      >
+        <span className="text-sm text-foreground">Link preview added.</span>
+        <button
+          type="button"
+          className="cursor-pointer rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-contrast transition-colors hover:bg-primary-hover"
+          onClick={() => {
+            urlPreviewToast.revert();
+            setUrlPreviewToast(null);
+          }}
+        >
+          Show URL only
+        </button>
+        <button
+          type="button"
+          className="cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+          aria-label="Dismiss"
+          onClick={() => setUrlPreviewToast(null)}
+        >
+          ✕
+        </button>
+      </div>
     )}
     </div>
   );

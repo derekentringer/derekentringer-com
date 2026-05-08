@@ -24,6 +24,7 @@ describe("useEditorSettings", () => {
       customAccentColor: "#d4e157",
       cursorStyle: "line",
       cursorBlink: true,
+      autoPreviewPastedUrls: true,
     });
   });
 
@@ -63,6 +64,7 @@ describe("useEditorSettings", () => {
       customAccentColor: "#ff0000",
       cursorStyle: "block",
       cursorBlink: false,
+      autoPreviewPastedUrls: true,
     });
   });
 
@@ -114,6 +116,7 @@ describe("useEditorSettings", () => {
       customAccentColor: "#d4e157",
       cursorStyle: "line",
       cursorBlink: true,
+      autoPreviewPastedUrls: true,
     });
   });
 
@@ -136,6 +139,7 @@ describe("useEditorSettings", () => {
       customAccentColor: "#d4e157",
       cursorStyle: "line",
       cursorBlink: true,
+      autoPreviewPastedUrls: true,
     });
   });
 
@@ -161,6 +165,7 @@ describe("useEditorSettings", () => {
       customAccentColor: "#d4e157",
       cursorStyle: "line",
       cursorBlink: true,
+      autoPreviewPastedUrls: true,
     });
   });
 

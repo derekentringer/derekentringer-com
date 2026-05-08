@@ -70,7 +70,9 @@ import { useEditorSettings, resolveAccentColor } from "../hooks/useEditorSetting
 import { ghostTextExtension, continueWritingKeymap } from "../editor/ghostText.ts";
 import { rewriteExtension } from "../editor/rewriteMenu.ts";
 import { wikiLinkAutocomplete } from "../editor/wikiLinkComplete.ts";
+import { urlPreviewExtension } from "../editor/urlPreview.ts";
 import { fetchCompletion, summarizeNote, suggestTags as suggestTagsApi, rewriteText } from "../api/ai.ts";
+import { fetchLinkPreview } from "../api/links.ts";
 import { AudioRecorder, type AudioRecordingState, type AudioRecorderControl } from "../components/AudioRecorder.tsx";
 import type { AudioSessionResult } from "../components/AIAssistantPanel.tsx";
 import { RecordingBar } from "../components/RecordingBar.tsx";
@@ -1883,6 +1885,37 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
     [settings.masterAiEnabled, settings.rewrite, settings.completions, settings.completionStyle, settings.completionDebounceMs, settings.continueWriting],
   );
 
+  // URL paste-to-preview (Phase E.4). The extension is registered
+  // once at editor mount; the `enabled()` getter reads the live
+  // setting via a ref so toggling the preference takes effect
+  // without rebuilding the editor. The toast surfaces an undo
+  // affordance for the auto-replacement.
+  const autoPreviewRef = useRef(editorSettings.autoPreviewPastedUrls);
+  autoPreviewRef.current = editorSettings.autoPreviewPastedUrls;
+  const [urlPreviewToast, setUrlPreviewToast] = useState<{
+    revert: () => void;
+  } | null>(null);
+  const urlPreviewExt = useMemo(
+    () =>
+      urlPreviewExtension({
+        enabled: () => autoPreviewRef.current,
+        fetch: fetchLinkPreview,
+        onPreviewInserted: ({ revert }) => {
+          setUrlPreviewToast({ revert });
+        },
+      }),
+    [],
+  );
+
+  // Auto-dismiss the URL preview toast after a few seconds so it
+  // doesn't linger across edits. 6s gives enough time to read the
+  // banner and hit Undo without becoming permanent UI clutter.
+  useEffect(() => {
+    if (!urlPreviewToast) return;
+    const timer = setTimeout(() => setUrlPreviewToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [urlPreviewToast]);
+
   // Wiki-link title map for preview rendering
   const wikiLinkTitleMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -3199,7 +3232,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
                   enableLivePreview={viewMode === "live"}
                   viewMode={viewMode}
                   hideFrontmatter={editorSettings.propertiesMode === "panel"}
-                  extensions={[wikiLinkExt, ...aiExtensions]}
+                  extensions={[wikiLinkExt, urlPreviewExt, ...aiExtensions]}
                   className={`${viewMode === "split" ? "shrink-0" : "flex-1"} overflow-auto`}
                   style={viewMode === "split" ? { width: splitResize.size } : undefined}
                 />
@@ -3550,6 +3583,32 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
           });
         }}
       />
+    )}
+    {urlPreviewToast && (
+      <div
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg"
+        role="status"
+      >
+        <span className="text-sm text-foreground">Link preview added.</span>
+        <button
+          type="button"
+          className="cursor-pointer rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-contrast transition-colors hover:bg-primary-hover"
+          onClick={() => {
+            urlPreviewToast.revert();
+            setUrlPreviewToast(null);
+          }}
+        >
+          Show URL only
+        </button>
+        <button
+          type="button"
+          className="cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+          aria-label="Dismiss"
+          onClick={() => setUrlPreviewToast(null)}
+        >
+          ✕
+        </button>
+      </div>
     )}
     </div>
   );
