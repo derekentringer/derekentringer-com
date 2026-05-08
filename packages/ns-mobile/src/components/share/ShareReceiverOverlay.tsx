@@ -508,47 +508,6 @@ export function ShareReceiverOverlay() {
               accessibilityLabel="Note title"
             />
           </View>
-          <View
-            style={[
-              styles.titleRow,
-              { borderBottomColor: themeColors.border },
-            ]}
-          >
-            <Text style={[styles.titleLabel, { color: themeColors.muted }]}>
-              Folder
-            </Text>
-            <Pressable
-              onPress={handleOpenFolderPicker}
-              accessibilityRole="button"
-              accessibilityLabel={`Folder: ${selectedFolderName}. Tap to change.`}
-              style={({ pressed }) => [
-                styles.folderTrigger,
-                pressed && { opacity: 0.6 },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name={
-                  selectedFolderId ? "folder-outline" : "folder-off-outline"
-                }
-                size={16}
-                color={themeColors.muted}
-              />
-              <Text
-                style={[
-                  styles.folderTriggerText,
-                  { color: themeColors.foreground },
-                ]}
-                numberOfLines={1}
-              >
-                {selectedFolderName}
-              </Text>
-              <MaterialCommunityIcons
-                name="chevron-down"
-                size={16}
-                color={themeColors.muted}
-              />
-            </Pressable>
-          </View>
           <View style={styles.contentLabelRow}>
             <Text
               style={[styles.titleLabel, { color: themeColors.muted }]}
@@ -677,6 +636,46 @@ export function ShareReceiverOverlay() {
               )
             ) : null}
           </ScrollView>
+
+          <View
+            style={[
+              styles.folderRow,
+              { borderTopColor: themeColors.border },
+            ]}
+          >
+            <Text style={[styles.titleLabel, { color: themeColors.muted }]}>
+              Folder
+            </Text>
+            <Pressable
+              onPress={handleOpenFolderPicker}
+              accessibilityRole="button"
+              accessibilityLabel={`Folder: ${selectedFolderName}. Tap to change.`}
+              style={({ pressed }) => [
+                styles.folderTrigger,
+                pressed && { opacity: 0.6 },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="folder-outline"
+                size={16}
+                color={themeColors.muted}
+              />
+              <Text
+                style={[
+                  styles.folderTriggerText,
+                  { color: themeColors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {selectedFolderName}
+              </Text>
+              <MaterialCommunityIcons
+                name="chevron-down"
+                size={16}
+                color={themeColors.muted}
+              />
+            </Pressable>
+          </View>
 
           {showEnrichedPreview ? (
             <View
@@ -853,6 +852,13 @@ const styles = StyleSheet.create({
   titleInput: {
     fontSize: 14,
     padding: 0,
+  },
+  folderRow: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    borderTopWidth: 1,
+    gap: 4,
   },
   folderTrigger: {
     flexDirection: "row",
