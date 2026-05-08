@@ -15,8 +15,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useShareIntentContext } from "expo-share-intent";
-import type { LinkPreview, Note } from "@derekentringer/ns-shared";
+import type {
+  FolderInfo,
+  LinkPreview,
+  Note,
+} from "@derekentringer/ns-shared";
 import { useCreateNote, useUpdateNote } from "@/hooks/useNotes";
+import { useFolders } from "@/hooks/useFolders";
+import { FolderPicker } from "@/components/notes/FolderPicker";
 import { useThemeColors } from "@/theme/colors";
 import { borderRadius, spacing } from "@/theme";
 import { appendShareContent } from "@/lib/appendShareContent";
@@ -49,6 +55,11 @@ import { AppendTargetSheet } from "./AppendTargetSheet";
  * note, and patches the content; Append-to uploads scoped to the
  * picked target note and appends the same markdown after the
  * Phase E.3 separator/timestamp.
+ *
+ * Phase E.6 adds a folder picker so a Save-new can route the share
+ * directly into a chosen folder (e.g. a "Reading List" or "Inbox")
+ * rather than landing as Unfiled. Append-to ignores the picker
+ * since the target note already lives wherever it lives.
  */
 type PreviewState = "idle" | "loading" | "loaded" | "failed";
 
@@ -58,6 +69,26 @@ interface ImageShare {
   filename: string;
 }
 
+// Walk the folder tree (parent → children) looking for the id, and
+// return the matching folder's name. Returns null when the id isn't
+// found — the caller falls back to "Unfiled" in that case. Recursion
+// is bounded by the tree depth, which the rest of the app already
+// limits sensibly.
+function findFolderName(
+  folders: FolderInfo[],
+  id: string | undefined,
+): string | null {
+  if (!id) return null;
+  for (const folder of folders) {
+    if (folder.id === id) return folder.name;
+    if (folder.children?.length) {
+      const child = findFolderName(folder.children, id);
+      if (child) return child;
+    }
+  }
+  return null;
+}
+
 export function ShareReceiverOverlay() {
   const ctx = useShareIntentContext();
   const themeColors = useThemeColors();
@@ -65,10 +96,19 @@ export function ShareReceiverOverlay() {
   const createNote = useCreateNote();
   const updateNote = useUpdateNote();
   const appendSheetRef = useRef<BottomSheetModal>(null);
+  const folderSheetRef = useRef<BottomSheetModal>(null);
   const [pending, setPending] = useState(false);
   const [previewState, setPreviewState] = useState<PreviewState>("idle");
   const [linkPreview, setLinkPreview] = useState<LinkPreview | null>(null);
   const [enrichmentEnabled, setEnrichmentEnabled] = useState(true);
+  // The destination folder for Save-new. `undefined` means the note
+  // lands in Unfiled (the same place every receiver save went prior
+  // to E.6). Append-to ignores this — the picked target's existing
+  // folder is preserved.
+  const [selectedFolderId, setSelectedFolderId] = useState<
+    string | undefined
+  >(undefined);
+  const { data: foldersData } = useFolders();
   // The title field is editable. We derive a default from the share
   // intent (`saveTitle` below) and seed `editableTitle` with it,
   // but stop overwriting once the user has typed — otherwise their
@@ -203,6 +243,7 @@ export function ShareReceiverOverlay() {
         const note = await createNote.mutateAsync({
           title: titleToSave,
           content: "",
+          folderId: selectedFolderId,
         });
         const { r2Url } = await uploadSharedImage({
           sourceUri: imageShare.uri,
@@ -218,6 +259,7 @@ export function ShareReceiverOverlay() {
       await createNote.mutateAsync({
         title: titleToSave,
         content: buildSaveBody(true),
+        folderId: selectedFolderId,
       });
       dismiss();
     } catch {
@@ -230,6 +272,7 @@ export function ShareReceiverOverlay() {
     updateNote,
     editableTitle,
     saveTitle,
+    selectedFolderId,
     buildSaveBody,
     dismiss,
   ]);
@@ -238,6 +281,29 @@ export function ShareReceiverOverlay() {
     if (pending) return;
     appendSheetRef.current?.present();
   }, [pending]);
+
+  const handleOpenFolderPicker = useCallback(() => {
+    if (pending) return;
+    Keyboard.dismiss();
+    folderSheetRef.current?.present();
+  }, [pending]);
+
+  const handleFolderSelect = useCallback(
+    (folderId: string | undefined) => {
+      // FolderPicker's "Unfiled" entry has the sentinel id "unfiled";
+      // normalize it back to `undefined` so it round-trips through
+      // createNote correctly (Unfiled = no folder).
+      setSelectedFolderId(folderId === "unfiled" ? undefined : folderId);
+    },
+    [],
+  );
+
+  const selectedFolderName = useMemo(() => {
+    return (
+      findFolderName(foldersData?.folders ?? [], selectedFolderId) ??
+      "Unfiled"
+    );
+  }, [foldersData?.folders, selectedFolderId]);
 
   const handleAppendToNote = useCallback(
     async (target: Note) => {
@@ -301,6 +367,7 @@ export function ShareReceiverOverlay() {
     setEnrichmentEnabled(true);
     setEditableTitle("");
     setEditableBodyText("");
+    setSelectedFolderId(undefined);
     userEditedTitleRef.current = false;
     userEditedBodyRef.current = false;
   }, [visible]);
@@ -440,6 +507,47 @@ export function ShareReceiverOverlay() {
               blurOnSubmit
               accessibilityLabel="Note title"
             />
+          </View>
+          <View
+            style={[
+              styles.titleRow,
+              { borderBottomColor: themeColors.border },
+            ]}
+          >
+            <Text style={[styles.titleLabel, { color: themeColors.muted }]}>
+              Folder
+            </Text>
+            <Pressable
+              onPress={handleOpenFolderPicker}
+              accessibilityRole="button"
+              accessibilityLabel={`Folder: ${selectedFolderName}. Tap to change.`}
+              style={({ pressed }) => [
+                styles.folderTrigger,
+                pressed && { opacity: 0.6 },
+              ]}
+            >
+              <MaterialCommunityIcons
+                name={
+                  selectedFolderId ? "folder-outline" : "folder-off-outline"
+                }
+                size={16}
+                color={themeColors.muted}
+              />
+              <Text
+                style={[
+                  styles.folderTriggerText,
+                  { color: themeColors.foreground },
+                ]}
+                numberOfLines={1}
+              >
+                {selectedFolderName}
+              </Text>
+              <MaterialCommunityIcons
+                name="chevron-down"
+                size={16}
+                color={themeColors.muted}
+              />
+            </Pressable>
           </View>
           <View style={styles.contentLabelRow}>
             <Text
@@ -689,6 +797,13 @@ export function ShareReceiverOverlay() {
         bottomSheetRef={appendSheetRef}
         onSelectNote={handleAppendToNote}
       />
+      <FolderPicker
+        bottomSheetRef={folderSheetRef}
+        folders={foldersData?.folders ?? []}
+        selectedFolderId={selectedFolderId ?? "unfiled"}
+        onSelect={handleFolderSelect}
+        mode="assign"
+      />
     </View>
   );
 }
@@ -738,6 +853,16 @@ const styles = StyleSheet.create({
   titleInput: {
     fontSize: 14,
     padding: 0,
+  },
+  folderTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: 2,
+  },
+  folderTriggerText: {
+    fontSize: 14,
+    flex: 1,
   },
   contentLabelRow: {
     paddingHorizontal: spacing.md,
