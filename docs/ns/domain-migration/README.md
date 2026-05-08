@@ -38,6 +38,7 @@ Icons stay the same — the only branding change is the name.
 - **Repo structure**: single monorepo at `<github-org>/notate` containing all 5 packages ✅
 - **NPM workspace scope**: `@notate/*` (workspace-internal; no npm publish required) ✅
 - **GitHub org**: PixelPerfect Studios LLC. Repo: `notate`. ✅
+- **Bundle identifier** (desktop + mobile): `md.notate.app` ✅
 - **Existing data**: pre-launch, single user (the developer). Carry the database forward as a "developer migration" — no public-coordination cost since there are no public users yet. ✅
 - **WebAuthn passkeys**: developer-only re-registration; one-time effort during the cutover, no user comms needed.
 
