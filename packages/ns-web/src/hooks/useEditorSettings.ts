@@ -60,6 +60,10 @@ export interface EditorSettings {
   customAccentColor: string;
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
+  /** When true, pasting a single URL into the editor auto-fetches
+   *  the page metadata (title / description / og:image) and replaces
+   *  the URL inline. Phase E.4. */
+  autoPreviewPastedUrls: boolean;
 }
 
 const STORAGE_KEY = "ns-editor-settings";
@@ -83,6 +87,7 @@ const DEFAULT_SETTINGS: EditorSettings = {
   customAccentColor: "#d4e157",
   cursorStyle: "line",
   cursorBlink: true,
+  autoPreviewPastedUrls: true,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -122,6 +127,10 @@ function loadSettings(): EditorSettings {
         ? parsed.cursorStyle
         : "line",
       cursorBlink: typeof parsed.cursorBlink === "boolean" ? parsed.cursorBlink : true,
+      autoPreviewPastedUrls:
+        typeof parsed.autoPreviewPastedUrls === "boolean"
+          ? parsed.autoPreviewPastedUrls
+          : true,
     };
   } catch {
     return DEFAULT_SETTINGS;

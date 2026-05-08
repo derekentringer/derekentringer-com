@@ -671,6 +671,7 @@ export function SettingsPage() {
               <ToggleSwitch label="Line Numbers" checked={editorSettings.showLineNumbers} onChange={(v) => updateEditorSetting("showLineNumbers", v)} info="Show line numbers in the editor" />
               <ToggleSwitch label="Word Wrap" checked={editorSettings.wordWrap} onChange={(v) => updateEditorSetting("wordWrap", v)} info="Wrap long lines instead of horizontal scrolling" />
               <ToggleSwitch label="Cursor Blink" checked={editorSettings.cursorBlink} onChange={(v) => updateEditorSetting("cursorBlink", v)} info="Animate the cursor with a blinking effect" />
+              <ToggleSwitch label="Auto-preview pasted URLs" checked={editorSettings.autoPreviewPastedUrls} onChange={(v) => updateEditorSetting("autoPreviewPastedUrls", v)} info="Pasting a single URL replaces it with the page title, description, and image" />
             </SettingsGroup>
 
             <SettingsGroup>

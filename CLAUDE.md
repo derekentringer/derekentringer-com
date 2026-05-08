@@ -219,6 +219,7 @@ packages/
 - `src/components/MarkdownEditor.tsx` — CodeMirror 6 editor with live preview compartment, table auto-format, minimal-diff value sync
 - `src/components/ResizeDivider.tsx` — Draggable divider for resizable sidebar panels
 - `src/editor/livePreview.ts` — Obsidian-style live preview: inline markdown rendering, rendered HTML table widget with click-to-edit, ARIA-accessible checkbox/bullet/table widgets, CSS variable theming
+- `src/editor/urlPreview.ts` — Phase E.4 paste-to-preview: when the user pastes a single URL into the editor and `editorSettings.autoPreviewPastedUrls` is on, fetch metadata via `/links/preview` and replace the URL inline with a structured `**title** / description / image / URL` block. A position-tracking `StateField` maps the inserted range through subsequent edits so the "Show URL only" undo (surfaced as a toast in `NotesPage`) reverts the *current* range rather than a stale one. Disabling the toggle in Settings → Editor short-circuits the listener.
 - `src/editor/tableAutoFormat.ts` — Auto-format table column spacing on cursor leave
 - `src/lib/sourceMap.ts` — Maps clicked DOM elements in preview to source line numbers (headings, paragraphs, code blocks, tables, lists, blockquotes, images, HRs)
 - `src/lib/remarkWikiLink.ts` — Remark plugin for `[[wiki-link]]` syntax with `#wiki:` URL scheme for react-markdown v10 compatibility
