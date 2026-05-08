@@ -1,8 +1,18 @@
 # 07 — Audio Recording & Transcription
 
-**Status:** Not Started
+**Status:** Complete (Phase C shipped on `develop-ns-mobile-parity`; transcription pipeline migrated to server-managed jobs in Phase H — see [10 — Server-Managed Transcription Jobs](./10-server-managed-transcription-jobs.md))
 **Phase:** 3 — AI & Audio
 **Priority:** Medium
+**Architecture plan:** [`docs/ns/mobile-parity-arch/phase-c-audio.md`](../../../mobile-parity-arch/phase-c-audio.md)
+
+## Shipped state
+
+- **Phase C.1.1**: recording shell built on `expo-audio`, mic-only on mobile (system audio capture is desktop-only).
+- **Phase C.1.2**: chunked Whisper transcription with live-transcript display, server-side mode-aware Claude structuring → structured note generation.
+- **Mic-only notice + Mic Capture badge** on mobile: one-time modal explaining the mobile-vs-desktop audio capture limitation, plus a persistent badge on the recording bar so the source is always visible.
+- **Phase H integration**: stop-time transcription was moved to server-managed jobs (see doc 10) so the pipeline survives app quit and works cross-device.
+
+The original plan content below is preserved as historical reference for what the phase was scoped to deliver.
 
 ## Summary
 

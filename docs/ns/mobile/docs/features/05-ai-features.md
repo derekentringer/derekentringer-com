@@ -1,8 +1,16 @@
 # 05 — AI Features
 
-**Status:** Not Started
+**Status:** Complete (Phases A.1–A.6 + B.1–B.2 shipped on `develop-ns-mobile-parity`)
 **Phase:** 3 — AI
 **Priority:** Medium
+**Architecture plan:** [`docs/ns/mobile-parity-arch/phase-a-ai-chat.md`](../../../mobile-parity-arch/phase-a-ai-chat.md), [`docs/ns/mobile-parity-arch/phase-b-inline-ai.md`](../../../mobile-parity-arch/phase-b-inline-ai.md)
+
+## Shipped state
+
+- **Phase A — AI Assistant Chat**: streaming Claude responses, tool use (22 tools), slash commands, citation pills, confirmation cards for destructive actions, cross-device chat persistence + SSE refetch, settings + auto-approve.
+- **Phase B — Inline AI editor actions**: AI Generate Summary + AI Suggest Tags surfaced via the markdown toolbar, summary/tag card parity with web/desktop. Continue Writing / AI Rewrite were *not* ported to mobile (no CodeMirror — mobile uses native `TextInput`).
+
+The original plan content below is preserved as historical reference for what the phase was scoped to deliver.
 
 ## Summary
 
