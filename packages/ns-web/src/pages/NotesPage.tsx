@@ -3592,7 +3592,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         <span className="text-sm text-foreground">Link preview added.</span>
         <button
           type="button"
-          className="cursor-pointer rounded-md border border-border bg-input px-3 py-1 text-xs font-semibold text-foreground hover:bg-primary hover:text-primary-foreground"
+          className="cursor-pointer rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-contrast transition-colors hover:bg-primary-hover"
           onClick={() => {
             urlPreviewToast.revert();
             setUrlPreviewToast(null);
@@ -3602,7 +3602,7 @@ export function NotesPage({ initialView }: { initialView?: "trash" } = {}) {
         </button>
         <button
           type="button"
-          className="cursor-pointer rounded-md p-1 text-muted-foreground hover:text-foreground"
+          className="cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Dismiss"
           onClick={() => setUrlPreviewToast(null)}
         >
