@@ -60,6 +60,10 @@ export interface EditorSettings {
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
   versionIntervalMinutes: number;
+  /** When true, pasting a single URL into the editor auto-fetches
+   *  the page metadata (title / description / og:image) and replaces
+   *  the URL inline. Phase E.4. */
+  autoPreviewPastedUrls: boolean;
 }
 
 const STORAGE_KEY = "ns-editor-settings";
@@ -85,6 +89,7 @@ const DEFAULT_SETTINGS: EditorSettings = {
   cursorStyle: "line",
   cursorBlink: true,
   versionIntervalMinutes: 0,
+  autoPreviewPastedUrls: true,
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -128,6 +133,10 @@ function loadSettings(): EditorSettings {
       versionIntervalMinutes: typeof parsed.versionIntervalMinutes === "number"
         ? clamp(parsed.versionIntervalMinutes, 0, 60)
         : 0,
+      autoPreviewPastedUrls:
+        typeof parsed.autoPreviewPastedUrls === "boolean"
+          ? parsed.autoPreviewPastedUrls
+          : true,
     };
   } catch {
     return DEFAULT_SETTINGS;
