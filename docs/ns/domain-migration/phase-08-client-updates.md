@@ -23,7 +23,7 @@ This is the most user-visible breaking-change phase. Bundle ID changes mean ever
 
 ### A. Desktop builds (`packages/desktop`)
 
-- [ ] Confirm `tauri.conf.json` has the new bundle id (`md.notate.app` or whatever Phase 0 D-decides)
+- [ ] Confirm `tauri.conf.json` has the new bundle id `md.notate.app` (per Phase 0 D.8)
 - [ ] Update `npm run tauri:build:prod` to bake `VITE_API_URL=https://api.notate.md`
 - [ ] Update `npm run tauri:build:prod:win` to same
 - [ ] Tag the first Notate release: `v3.0.0` (or whatever bump represents "major rebrand")
@@ -35,7 +35,7 @@ This is the most user-visible breaking-change phase. Bundle ID changes mean ever
 
 ### B. Mobile builds (`packages/mobile`)
 
-- [ ] Confirm `app.json` has the new bundle id and Android package
+- [ ] Confirm `app.json` has `expo.ios.bundleIdentifier` = `md.notate.app` and `expo.android.package` = `md.notate.app` (per Phase 0 D.8)
 - [ ] **Run `npx expo prebuild --platform android --clean`** to regenerate the Android manifest with the new package id
 - [ ] **Run `npx expo prebuild --platform ios --clean`** to regenerate the iOS Xcode project with the new bundle id
 - [ ] Update `devHost.ts`'s `PROD_API_URL` to `https://api.notate.md`
