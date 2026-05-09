@@ -5,12 +5,26 @@ export type NotesStackParamList = {
   NotesList: undefined;
   NoteDetail: { noteId: string };
   NoteEditor: { noteId?: string };
+  NoteDiff: { noteId: string; versionId: string };
+  Recording: { mode?: "meeting" | "lecture" | "memo" | "verbatim" } | undefined;
 };
 
 export type DashboardStackParamList = {
   DashboardHome: undefined;
   NoteDetail: { noteId: string };
   NoteEditor: { noteId?: string };
+  NoteDiff: { noteId: string; versionId: string };
+  /** Optional `mode` skips the in-screen picker and starts that
+   *  recording mode immediately. Used by the Quick Actions buttons
+   *  on the Dashboard. */
+  Recording: { mode?: "meeting" | "lecture" | "memo" | "verbatim" } | undefined;
+};
+
+export type AiStackParamList = {
+  AiHome: undefined;
+  NoteDetail: { noteId: string };
+  NoteEditor: { noteId?: string };
+  NoteDiff: { noteId: string; versionId: string };
 };
 
 export type SettingsStackParamList = {
@@ -20,11 +34,13 @@ export type SettingsStackParamList = {
   Security: undefined;
   TotpSetup: undefined;
   About: undefined;
+  ChangePassword: undefined;
+  TwoFactorAuth: undefined;
 };
 
 export type MainTabParamList = {
   Dashboard: NavigatorScreenParams<DashboardStackParamList>;
   Notes: NavigatorScreenParams<NotesStackParamList>;
-  AI: undefined;
+  AI: NavigatorScreenParams<AiStackParamList>;
   Settings: NavigatorScreenParams<SettingsStackParamList>;
 };

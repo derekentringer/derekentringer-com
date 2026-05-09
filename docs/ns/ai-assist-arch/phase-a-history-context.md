@@ -1,6 +1,6 @@
 # Phase A — Conversation Continuity
 
-**Status**: ✅ merged into `develop-ai-assist` (PR #469)
+**Status**: 🔷 shipped (originally PR #469 → `develop-ai-assist`; long-lived branch later merged to `develop`)
 **Branch**: `feat/ai-assist-phase-a` (deleted post-merge)
 **Depends on**: none
 **Blocks**: meaningful use of Phase B (follow-up questions) and Phase C (referring back to prior actions)

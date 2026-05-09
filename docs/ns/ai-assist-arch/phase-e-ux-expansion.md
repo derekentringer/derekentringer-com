@@ -1,9 +1,7 @@
 # Phase E — UX Expansion
 
-**Status**: 🟢 in progress (E.1/E.2/E.4 merged; E.3/E.5 in `feat/ai-assist-phase-e-extras`)
-**Branches**:
-- `feat/ai-assist-phase-e` — E.1, E.2, E.4 (merged)
-- `feat/ai-assist-phase-e-extras` — E.3, E.5
+**Status**: 🔷 shipped (E.1–E.5 all complete; E.3.3 menu-button alternative deferred; E.6 conversation branching not committed)
+**History**: Originally landed via `feat/ai-assist-phase-e` (E.1, E.2, E.4) and `feat/ai-assist-phase-e-extras` (E.3, E.5) into `develop-ai-assist`; both phase branches and the long-lived branch were deleted post-merge.
 
 **Depends on**: A (conversation continuity makes the "retry" action meaningful); B (broader capability makes the "thinking" indicator more informative)
 **Blocks**: nothing

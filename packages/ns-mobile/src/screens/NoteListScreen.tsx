@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from "react";
+import React, { useState, useCallback, useRef, useMemo, useLayoutEffect } from "react";
 import {
   View,
   TextInput,
@@ -6,6 +6,7 @@ import {
   RefreshControl,
   Pressable,
   Text,
+  Platform,
   StyleSheet,
 } from "react-native";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -27,11 +28,25 @@ import { SortPicker } from "@/components/notes/SortPicker";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ErrorCard } from "@/components/common/ErrorCard";
+import {
+  SpeedDialFab,
+  type SpeedDialAction,
+} from "@/components/SpeedDialFab";
+import useAiSettingsStore from "@/store/aiSettingsStore";
+import useDashboardSettingsStore from "@/store/dashboardSettingsStore";
+import type { AudioMode } from "@/api/ai";
 
 type Props = NativeStackScreenProps<NotesStackParamList, "NotesList">;
 
 export function NoteListScreen({ navigation }: Props) {
   const themeColors = useThemeColors();
+
+  const masterAiEnabled = useAiSettingsStore((s) => s.masterAiEnabled);
+  const audioNotesEnabled = useAiSettingsStore((s) => s.audioNotes);
+  const recordingShortcutsEnabled = masterAiEnabled && audioNotesEnabled;
+  const speedDialEnabled = useDashboardSettingsStore(
+    (s) => s.speedDialEnabled,
+  );
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -90,6 +105,51 @@ export function NoteListScreen({ navigation }: Props) {
     [navigation],
   );
 
+  const handleNewNote = useCallback(() => {
+    navigation.navigate("NoteEditor", {});
+  }, [navigation]);
+
+  const handleStartRecording = useCallback(
+    (mode: AudioMode) => {
+      navigation.navigate("Recording", { mode });
+    },
+    [navigation],
+  );
+
+  // Same speed-dial gating as the Dashboard: expand into New Note +
+  // four recording modes only when the user has the speed-dial
+  // setting on AND audio recording features available.
+  const speedDialActions: SpeedDialAction[] =
+    speedDialEnabled && recordingShortcutsEnabled
+      ? [
+          { key: "newNote", label: "New Note", icon: "plus", onPress: handleNewNote },
+          {
+            key: "meeting",
+            label: "Meeting",
+            icon: "account-group-outline",
+            onPress: () => handleStartRecording("meeting"),
+          },
+          {
+            key: "lecture",
+            label: "Lecture",
+            icon: "school-outline",
+            onPress: () => handleStartRecording("lecture"),
+          },
+          {
+            key: "memo",
+            label: "Memo",
+            icon: "microphone-outline",
+            onPress: () => handleStartRecording("memo"),
+          },
+          {
+            key: "verbatim",
+            label: "Verbatim",
+            icon: "format-quote-close",
+            onPress: () => handleStartRecording("verbatim"),
+          },
+        ]
+      : [];
+
   const handleToggleTag = useCallback((tagName: string) => {
     setSelectedTags((prev) =>
       prev.includes(tagName)
@@ -106,6 +166,63 @@ export function NoteListScreen({ navigation }: Props) {
   );
 
   const hasActiveFilters = !!folderId || selectedTags.length > 0;
+
+  // Mount Sort / Folder / Tags as compact icon buttons in the
+  // navigator header, right-aligned next to the "Notes" title.
+  // Tints flip to `primary` when the corresponding filter is
+  // active. Tap clears the body filter row entirely; the user
+  // adjusts everything from inside the bottom-sheet pickers.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={styles.headerRow}>
+          <Pressable
+            onPress={() => sortSheetRef.current?.present()}
+            accessibilityRole="button"
+            accessibilityLabel="Sort"
+            style={styles.headerIconBtn}
+          >
+            <MaterialCommunityIcons
+              name="sort"
+              size={24}
+              color={themeColors.foreground}
+              style={styles.headerIcon}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => folderSheetRef.current?.present()}
+            accessibilityRole="button"
+            accessibilityLabel="Folder"
+            style={styles.headerIconBtn}
+          >
+            <MaterialCommunityIcons
+              name="folder-outline"
+              size={24}
+              color={folderId ? themeColors.primary : themeColors.foreground}
+              style={styles.headerIcon}
+            />
+          </Pressable>
+          <Pressable
+            onPress={() => tagSheetRef.current?.present()}
+            accessibilityRole="button"
+            accessibilityLabel="Tags"
+            style={styles.headerIconBtn}
+          >
+            <MaterialCommunityIcons
+              name="tag-outline"
+              size={24}
+              color={
+                selectedTags.length > 0
+                  ? themeColors.primary
+                  : themeColors.foreground
+              }
+              style={styles.headerIcon}
+            />
+          </Pressable>
+        </View>
+      ),
+    });
+  }, [navigation, folderId, selectedTags.length, themeColors]);
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
@@ -150,93 +267,6 @@ export function NoteListScreen({ navigation }: Props) {
             </Pressable>
           ) : null}
         </View>
-      </View>
-
-      {/* Filter bar */}
-      <View style={styles.filterRow}>
-        <Pressable
-          style={[
-            styles.filterButton,
-            { borderColor: themeColors.border },
-            folderId && { borderColor: themeColors.primary },
-          ]}
-          onPress={() => folderSheetRef.current?.present()}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="folder-outline"
-            size={16}
-            color={folderId ? themeColors.primary : themeColors.muted}
-          />
-          <Text
-            style={[
-              styles.filterLabel,
-              { color: folderId ? themeColors.primary : themeColors.muted },
-            ]}
-          >
-            Folder
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[
-            styles.filterButton,
-            { borderColor: themeColors.border },
-            selectedTags.length > 0 && { borderColor: themeColors.primary },
-          ]}
-          onPress={() => tagSheetRef.current?.present()}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="tag-outline"
-            size={16}
-            color={
-              selectedTags.length > 0 ? themeColors.primary : themeColors.muted
-            }
-          />
-          <Text
-            style={[
-              styles.filterLabel,
-              {
-                color:
-                  selectedTags.length > 0
-                    ? themeColors.primary
-                    : themeColors.muted,
-              },
-            ]}
-          >
-            Tags{selectedTags.length > 0 ? ` (${selectedTags.length})` : ""}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.filterButton, { borderColor: themeColors.border }]}
-          onPress={() => sortSheetRef.current?.present()}
-          accessibilityRole="button"
-        >
-          <MaterialCommunityIcons
-            name="sort"
-            size={16}
-            color={themeColors.muted}
-          />
-          <Text style={[styles.filterLabel, { color: themeColors.muted }]}>
-            Sort
-          </Text>
-        </Pressable>
-
-        {hasActiveFilters ? (
-          <Pressable
-            onPress={() => {
-              setFolderId(undefined);
-              setSelectedTags([]);
-            }}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.clearFilters, { color: themeColors.primary }]}>
-              Clear
-            </Text>
-          </Pressable>
-        ) : null}
       </View>
 
       {/* Selected tags chips */}
@@ -298,15 +328,14 @@ export function NoteListScreen({ navigation }: Props) {
         />
       )}
 
-      {/* FAB */}
-      <Pressable
-        style={[styles.fab, { backgroundColor: themeColors.primary }]}
-        onPress={() => navigation.navigate("NoteEditor", {})}
-        accessibilityRole="button"
-        accessibilityLabel="Create new note"
-      >
-        <MaterialCommunityIcons name="plus" size={28} color="#000" />
-      </Pressable>
+      {/* FAB. Same speed-dial behavior as the Dashboard: when the
+          user enables speed-dial and audio recording is available,
+          tap "+" expands New Note + the four recording modes;
+          otherwise it's a plain "+" that creates a note. */}
+      <SpeedDialFab
+        primary={{ label: "New Note", icon: "plus", onPress: handleNewNote }}
+        actions={speedDialActions}
+      />
 
       {/* Bottom sheets */}
       <FolderPicker
@@ -362,6 +391,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
+  },
+  // Material Design 3 top-app-bar action item: 24 dp glyph
+  // centered inside a 48 dp touch target via 12 dp padding.
+  // The 12 dp internal padding on each button already produces
+  // the right visual separation, so the inter-button gap is 0.
+  // Source: https://m3.material.io/components/top-app-bar/specs
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    ...Platform.select({ ios: { gap: 0 }, default: { gap: 4 } }),
+  },
+  headerIconBtn: {
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
   filterButton: {
     flexDirection: "row",

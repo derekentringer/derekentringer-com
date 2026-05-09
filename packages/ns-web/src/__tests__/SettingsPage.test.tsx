@@ -89,7 +89,7 @@ describe("SettingsPage", () => {
   it("renders default view mode radio group", async () => {
     renderSettingsPage();
     await clickTab("Editor");
-    expect(screen.getByRole("radiogroup", { name: "Default view mode" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Default Editor View Mode" })).toBeInTheDocument();
     expect(screen.getByLabelText("Editor")).toBeInTheDocument();
     expect(screen.getByLabelText("Split")).toBeInTheDocument();
     expect(screen.getByLabelText("Preview")).toBeInTheDocument();
@@ -98,20 +98,20 @@ describe("SettingsPage", () => {
   it("renders line numbers and word wrap toggles", async () => {
     renderSettingsPage();
     await clickTab("Editor");
-    expect(screen.getByText("Line numbers")).toBeInTheDocument();
-    expect(screen.getByText("Word wrap")).toBeInTheDocument();
+    expect(screen.getByText("Line Numbers")).toBeInTheDocument();
+    expect(screen.getByText("Word Wrap")).toBeInTheDocument();
   });
 
   it("renders auto-save delay select", async () => {
     renderSettingsPage();
     await clickTab("Editor");
-    expect(screen.getByLabelText("Auto-save delay")).toBeInTheDocument();
+    expect(screen.getByLabelText("Note Auto-Save Delay")).toBeInTheDocument();
   });
 
   it("renders tab size radio group", async () => {
     renderSettingsPage();
     await clickTab("Editor");
-    expect(screen.getByRole("radiogroup", { name: "Tab size" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Tab Size" })).toBeInTheDocument();
     expect(screen.getByLabelText("2 spaces")).toBeInTheDocument();
     expect(screen.getByLabelText("4 spaces")).toBeInTheDocument();
   });
@@ -127,7 +127,7 @@ describe("SettingsPage", () => {
   it("changing auto-save delay persists to localStorage", async () => {
     renderSettingsPage();
     await clickTab("Editor");
-    const select = screen.getByLabelText("Auto-save delay");
+    const select = screen.getByLabelText("Note Auto-Save Delay");
     await userEvent.selectOptions(select, "2000");
     const stored = JSON.parse(localStorage.getItem("ns-editor-settings")!);
     expect(stored.autoSaveDelay).toBe(2000);
@@ -145,14 +145,14 @@ describe("SettingsPage", () => {
 
   it("renders font size select", () => {
     renderSettingsPage();
-    expect(screen.getByLabelText("Editor font size")).toBeInTheDocument();
+    expect(screen.getByLabelText("Editor Font Size")).toBeInTheDocument();
   });
 
   it("renders accent color swatches", () => {
     renderSettingsPage();
-    expect(screen.getByRole("radiogroup", { name: "Accent color" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Accent Color" })).toBeInTheDocument();
     const swatches = screen.getAllByRole("radio").filter(
-      (el) => el.closest("[aria-label='Accent color']"),
+      (el) => el.closest("[aria-label='Accent Color']"),
     );
     expect(swatches.length).toBe(11);
   });
@@ -177,20 +177,20 @@ describe("SettingsPage", () => {
   it("renders master AI toggle", async () => {
     renderSettingsPage();
     await clickTab("AI Features");
-    expect(screen.getByText("Enable AI features")).toBeInTheDocument();
+    expect(screen.getByText("AI Features", { selector: "span" })).toBeInTheDocument();
   });
 
   it("renders eight individual AI toggle switches", async () => {
     renderSettingsPage();
     await clickTab("AI Features");
-    expect(screen.getByText("Inline completions")).toBeInTheDocument();
-    expect(screen.getByText("Continue writing")).toBeInTheDocument();
+    expect(screen.getByText("AI Assistant Inline Completions")).toBeInTheDocument();
+    expect(screen.getByText("Continue Writing")).toBeInTheDocument();
     expect(screen.getByText("Summarize")).toBeInTheDocument();
-    expect(screen.getByText("Auto-tag suggestions")).toBeInTheDocument();
-    expect(screen.getByText("Select-and-rewrite")).toBeInTheDocument();
-    expect(screen.getByText("Semantic search")).toBeInTheDocument();
-    expect(screen.getByText("Audio notes")).toBeInTheDocument();
-    expect(screen.getByText("AI assistant chat")).toBeInTheDocument();
+    expect(screen.getByText("Auto-Tag Suggestions")).toBeInTheDocument();
+    expect(screen.getByText("Select-and-Rewrite")).toBeInTheDocument();
+    expect(screen.getByText("Semantic Search")).toBeInTheDocument();
+    expect(screen.getByText("Audio Notes")).toBeInTheDocument();
+    expect(screen.getByText("AI Assistant Chat")).toBeInTheDocument();
   });
 
   it("master AI defaults to on", async () => {
@@ -260,8 +260,8 @@ describe("SettingsPage", () => {
     await userEvent.click(switches[1]);
 
     expect(screen.getByRole("radiogroup", { name: "Completion style" })).toBeInTheDocument();
-    // Note: "Continue writing" label exists both as a toggle and as a radio option
-    expect(screen.getByLabelText("Markdown assist")).toBeInTheDocument();
+    // Note: "Continue Writing" label exists both as a toggle and as a radio option
+    expect(screen.getByLabelText("Markdown Assist")).toBeInTheDocument();
     expect(screen.getByLabelText("Brief")).toBeInTheDocument();
   });
 
@@ -277,7 +277,7 @@ describe("SettingsPage", () => {
     );
     renderSettingsPage();
     await clickTab("AI Features");
-    expect(screen.getByLabelText("Completion delay")).toBeInTheDocument();
+    expect(screen.getByLabelText("Completion Delay")).toBeInTheDocument();
   });
 
   it("hides style radio group when completions disabled", async () => {
@@ -300,9 +300,9 @@ describe("SettingsPage", () => {
   it("renders offline cache section", async () => {
     renderSettingsPage();
     await clickTab("Offline Cache");
-    expect(screen.getByText("Cached notes")).toBeInTheDocument();
-    expect(screen.getByText("Last synced")).toBeInTheDocument();
-    expect(screen.getByLabelText("Max cached notes")).toBeInTheDocument();
+    expect(screen.getByText("Cached Notes Count")).toBeInTheDocument();
+    expect(screen.getByText("Last Synced")).toBeInTheDocument();
+    expect(screen.getByLabelText("Max Cached Notes")).toBeInTheDocument();
   });
 
   it("renders clear cache button", async () => {

@@ -59,6 +59,17 @@ export function useFavorites() {
   });
 }
 
+/** All non-deleted notes, lightweight projection for `[[wiki-link]]`
+ *  resolution in markdown previews. Cached with a stable key so
+ *  multiple previews on screen share the same fetch. */
+export function useAllNotesForWikiLinks() {
+  return useQuery({
+    queryKey: ["notes", "all-for-wiki"],
+    queryFn: () => getAllNotes({}),
+    staleTime: 60_000,
+  });
+}
+
 export function useCreateNote() {
   const queryClient = useQueryClient();
   return useMutation({

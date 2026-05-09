@@ -21,6 +21,7 @@ import {
   writeTombstone,
 } from "../store/syncStore.js";
 import { resolveRootIsLocalFile } from "../store/noteStore.js";
+import { captureVersion } from "../store/versionStore.js";
 import { getPrisma } from "../lib/prisma.js";
 import { toNote } from "../lib/mappers.js";
 import type {
@@ -76,11 +77,16 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
   // POST /sync/push
   app.post<{ Body: SyncPushRequest }>("/push", async (request, reply) => {
     const userId = request.user.sub;
-    const { deviceId, changes } = request.body;
+    const { deviceId, changes, origin } = request.body;
 
     if (!deviceId || !Array.isArray(changes)) {
       return reply.status(400).send({ error: "Invalid request" });
     }
+
+    // Sanitize the origin tag — only accept the three known clients
+    // so a bad payload can't write garbage into version history.
+    const captureOrigin =
+      origin === "mobile" || origin === "desktop" ? origin : "web";
 
     const prisma = getPrisma();
     let applied = 0;
@@ -97,7 +103,7 @@ const syncRoutes: FastifyPluginAsync = async (app) => {
       try {
         const result = await prisma.$transaction(async (tx) => {
           if (change.type === "note") {
-            return await applyNoteChange(tx, userId, change);
+            return await applyNoteChange(tx, userId, change, captureOrigin);
           }
           if (change.type === "folder") {
             return await applyFolderChange(tx, userId, change);
@@ -350,6 +356,7 @@ async function applyNoteChange(
   prisma: PrismaLike,
   userId: string,
   change: SyncChange,
+  origin: string,
 ): Promise<ApplyResult> {
   const noteData = change.data as Note | null;
 
@@ -420,6 +427,23 @@ async function applyNoteChange(
         throw err;
       }
     }
+    // Capture a version when title or content actually changed. Mirrors
+    // the REST `PATCH /notes/:id` path so version history is populated
+    // for sync-push clients (mobile, desktop's offline writes) the same
+    // way it is for the web app's REST writes.
+    if (
+      existing.title !== noteData.title ||
+      existing.content !== noteData.content
+    ) {
+      captureVersion(
+        change.id,
+        noteData.title,
+        noteData.content ?? "",
+        origin,
+      ).catch((err) => {
+        console.error("Failed to capture version on sync push:", err);
+      });
+    }
     return "applied";
   } else {
     // Create new note
@@ -465,6 +489,17 @@ async function applyNoteChange(
         throw err;
       }
     }
+    // Capture an initial version for newly-created notes so sync-push
+    // clients (mobile, desktop) get the same first-version snapshot
+    // that REST `createNote` produces for the web app.
+    captureVersion(
+      change.id,
+      noteData.title,
+      noteData.content ?? "",
+      origin,
+    ).catch((err) => {
+      console.error("Failed to capture initial version on sync push:", err);
+    });
     return "applied";
   }
 }

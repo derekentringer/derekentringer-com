@@ -2,6 +2,7 @@ import * as Crypto from "expo-crypto";
 import NetInfo from "@react-native-community/netinfo";
 import { AppState, type AppStateStatus } from "react-native";
 import { tokenManager, tokenStorage } from "@/services/api";
+import useSyncStore from "@/store/syncStore";
 import {
   readSyncQueue,
   removeSyncQueueEntries,
@@ -39,6 +40,25 @@ export interface SyncEngineCallbacks {
     forcePush: (changeIds: string[]) => Promise<void>,
     discard: (changeIds: string[]) => Promise<void>,
   ) => void;
+  /** Phase A.5.1 — fires when the server's SSE stream emits a
+   *  `chat` event, signaling another device wrote to the user's
+   *  chat history. The AiScreen reacts by re-running
+   *  `fetchChatHistory` (the in-flight write guard prevents the
+   *  echo loop). */
+  onChatChanged?: () => void;
+  /** Phase H — fires on `event: transcription-job` SSE messages.
+   *  Payload is the job's terminal-status delta
+   *  (`completed` / `failed`). The recordingResultStore patches
+   *  the matching summary by jobId so the meeting card flips
+   *  from `transcribing` to its terminal state. */
+  onTranscriptionJob?: (payload: {
+    jobId: string;
+    sessionId: string;
+    status: string;
+    noteId?: string;
+    noteTitle?: string;
+    errorMessage?: string;
+  }) => void;
 }
 
 // ─── Constants ─────────────────────────────────────────────
@@ -68,6 +88,10 @@ let deviceId: string | null = null;
 let statusCallback: SyncEngineCallbacks["onStatusChange"] | null = null;
 let dataChangedCallback: SyncEngineCallbacks["onDataChanged"] | null = null;
 let syncRejectionsCallback: SyncEngineCallbacks["onSyncRejections"] | null = null;
+let chatChangedCallback: SyncEngineCallbacks["onChatChanged"] | null = null;
+let transcriptionJobCallback:
+  | SyncEngineCallbacks["onTranscriptionJob"]
+  | null = null;
 
 // SSE state
 let sseXhr: XMLHttpRequest | null = null;
@@ -141,6 +165,8 @@ export async function initSyncEngine(
   statusCallback = callbacks.onStatusChange;
   dataChangedCallback = callbacks.onDataChanged;
   syncRejectionsCallback = callbacks.onSyncRejections ?? null;
+  chatChangedCallback = callbacks.onChatChanged ?? null;
+  transcriptionJobCallback = callbacks.onTranscriptionJob ?? null;
 
   await getOrCreateDeviceId();
 
@@ -148,6 +174,15 @@ export async function initSyncEngine(
   netInfoUnsubscribe = NetInfo.addEventListener((state) => {
     const wasOnline = isOnline;
     isOnline = !!state.isConnected && !!state.isInternetReachable;
+    // Mirror the connection class onto the store so wifi-only
+    // features (image upload queue) can react without subscribing
+    // to NetInfo themselves.
+    const store = useSyncStore.getState();
+    if (state.type === "wifi") store.setConnectionType("wifi");
+    else if (state.type === "cellular") store.setConnectionType("cellular");
+    else if (state.type === "none") store.setConnectionType("none");
+    else if (state.type === "unknown") store.setConnectionType("unknown");
+    else store.setConnectionType("other");
 
     if (!isOnline) {
       setStatus("offline");
@@ -206,6 +241,8 @@ export function destroySyncEngine(): void {
   statusCallback = null;
   dataChangedCallback = null;
   syncRejectionsCallback = null;
+  chatChangedCallback = null;
+  transcriptionJobCallback = null;
   syncInProgress = false;
   deviceId = null;
   backoffMs = 1000;
@@ -239,6 +276,13 @@ function handleAppStateChange(nextState: AppStateStatus) {
     if (isOnline) {
       triggerSync();
       connectSse();
+      // Catch up on any `chat` SSE events that fired while the app
+      // was backgrounded — without this, server-side reconciles
+      // (e.g. orphan-card sweep flipping a stuck "processing" card
+      // to "failed") never reach AiScreen because the bump fires
+      // through the SSE listener that was paused. Mirrors the
+      // `triggerSync()` catch-up for regular sync.
+      chatChangedCallback?.();
     }
   } else if (nextState === "background" || nextState === "inactive") {
     disconnectSse();
@@ -305,8 +349,37 @@ async function connectSse(): Promise<void> {
         if (line.startsWith("event: ")) {
           currentEvent = line.slice(7).trim();
         } else if (line.startsWith("data: ")) {
+          const dataPayload = line.slice(6);
           if (currentEvent === "sync") {
             triggerSync();
+          } else if (currentEvent === "chat") {
+            chatChangedCallback?.();
+          } else if (currentEvent === "transcription-job") {
+            // Phase H — terminal-status notification for a server
+            // transcription job. Payload is JSON
+            // `{ jobId, sessionId, status, noteId?, errorMessage? }`.
+            // Best-effort parse — malformed payloads are ignored
+            // since clients will reconcile via the GET endpoint
+            // on next launch.
+            try {
+              const parsed = JSON.parse(dataPayload) as {
+                jobId: string;
+                sessionId: string;
+                status: string;
+                noteId?: string;
+                noteTitle?: string;
+                errorMessage?: string;
+              };
+              transcriptionJobCallback?.(parsed);
+              // Server creates the Note row directly; nudge the
+              // sync engine so the device pulls the new note row
+              // shortly after the SSE event.
+              if (parsed.status === "completed") {
+                triggerSync();
+              }
+            } catch {
+              /* malformed event payload — ignore */
+            }
           }
           currentEvent = "";
         } else if (line === "") {
@@ -417,7 +490,7 @@ async function pushChanges(id: string): Promise<void> {
     return order(a) - order(b);
   });
 
-  const payload: SyncPushRequest = { deviceId: id, changes };
+  const payload: SyncPushRequest = { deviceId: id, changes, origin: "mobile" };
 
   const response = await apiFetch("/sync/push", {
     method: "POST",
@@ -498,7 +571,7 @@ export async function forcePushChanges(deviceIdOverride: string, changeIds: stri
     });
   }
 
-  const payload: SyncPushRequest = { deviceId: id, changes };
+  const payload: SyncPushRequest = { deviceId: id, changes, origin: "mobile" };
   const response = await apiFetch("/sync/push", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -623,7 +696,19 @@ async function pullChanges(id: string): Promise<void> {
 
 async function applyNoteChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
-    await softDeleteNoteFromRemote(change.id, change.timestamp);
+    // The server includes full note data in delete-action pull
+    // payloads. Upserting (instead of `UPDATE … WHERE id = ?`)
+    // ensures we INSERT the row as soft-deleted when mobile never
+    // saw the create — e.g. another device created + deleted the
+    // note in the same session. Without this the trash count
+    // silently undercounts vs desktop. Fall back to the legacy
+    // UPDATE-only path if no data is attached.
+    const noteData = change.data as Note | null;
+    if (noteData) {
+      await upsertNoteFromRemote(noteData);
+    } else {
+      await softDeleteNoteFromRemote(change.id, change.timestamp);
+    }
     return;
   }
 
@@ -634,7 +719,15 @@ async function applyNoteChange(change: SyncChange): Promise<void> {
 
 async function applyFolderChange(change: SyncChange): Promise<void> {
   if (change.action === "delete") {
-    await softDeleteFolderFromRemote(change.id, change.timestamp);
+    // Same rationale as applyNoteChange — INSERT as soft-deleted
+    // when the folder was created+deleted before this device
+    // pulled, so folder-derived state stays in sync.
+    const folderData = change.data as FolderSyncData | null;
+    if (folderData) {
+      await upsertFolderFromRemote(folderData);
+    } else {
+      await softDeleteFolderFromRemote(change.id, change.timestamp);
+    }
     return;
   }
 

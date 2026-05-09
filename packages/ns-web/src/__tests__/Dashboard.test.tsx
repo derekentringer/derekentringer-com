@@ -55,7 +55,6 @@ describe("Dashboard", () => {
     onSelectNote: vi.fn(),
     onCreateNote: vi.fn(),
     onStartRecording: vi.fn(),
-    onImportFile: vi.fn(),
     audioNotesEnabled: true,
   };
 
@@ -92,18 +91,19 @@ describe("Dashboard", () => {
     expect(defaultProps.onCreateNote).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onStartRecording when Record quick action clicked", async () => {
+  it("calls onStartRecording('meeting') when Meeting quick action clicked", async () => {
     mockFetchDashboardData.mockResolvedValue(fullDashboardData);
 
     render(<Dashboard {...defaultProps} />);
 
     await waitFor(() => {
-      expect(screen.getByText("New Recording")).toBeInTheDocument();
+      expect(screen.getByText("Meeting")).toBeInTheDocument();
     });
 
-    await userEvent.click(screen.getByText("New Recording"));
+    await userEvent.click(screen.getByText("Meeting"));
 
     expect(defaultProps.onStartRecording).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onStartRecording).toHaveBeenCalledWith("meeting");
   });
 
   it("calls onSelectNote with noteId when a note card is clicked", async () => {
@@ -161,17 +161,79 @@ describe("Dashboard", () => {
     expect(skeleton).toBeInTheDocument();
   });
 
-  it("calls onImportFile when Import File quick action clicked", async () => {
+  it("does not render the Import File quick action", async () => {
     mockFetchDashboardData.mockResolvedValue(fullDashboardData);
 
     render(<Dashboard {...defaultProps} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Import File")).toBeInTheDocument();
+      expect(screen.getByText("Quick Actions")).toBeInTheDocument();
     });
 
-    await userEvent.click(screen.getByText("Import File"));
-
-    expect(defaultProps.onImportFile).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Import File")).not.toBeInTheDocument();
   });
+
+  it("orders Quick Actions as New Note, then mode-specific recording tiles", async () => {
+    mockFetchDashboardData.mockResolvedValue(fullDashboardData);
+
+    render(<Dashboard {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Meeting")).toBeInTheDocument();
+    });
+
+    const newNote = screen.getByText("New Note");
+    const meeting = screen.getByText("Meeting");
+    const lecture = screen.getByText("Lecture");
+    const memo = screen.getByText("Memo");
+    const verbatim = screen.getByText("Verbatim");
+    expect(newNote.compareDocumentPosition(meeting)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(meeting.compareDocumentPosition(lecture)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(lecture.compareDocumentPosition(memo)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(memo.compareDocumentPosition(verbatim)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("hides recording quick actions when audioNotesEnabled is false", async () => {
+    mockFetchDashboardData.mockResolvedValue(fullDashboardData);
+
+    render(<Dashboard {...defaultProps} audioNotesEnabled={false} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("New Note")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("Meeting")).not.toBeInTheDocument();
+    expect(screen.queryByText("Lecture")).not.toBeInTheDocument();
+    expect(screen.queryByText("Memo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verbatim")).not.toBeInTheDocument();
+  });
+
+  it("calls onStartRecording with the matching mode for each tile", async () => {
+    mockFetchDashboardData.mockResolvedValue(fullDashboardData);
+
+    render(<Dashboard {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Meeting")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Meeting"));
+    await userEvent.click(screen.getByText("Lecture"));
+    await userEvent.click(screen.getByText("Memo"));
+    await userEvent.click(screen.getByText("Verbatim"));
+
+    expect(defaultProps.onStartRecording).toHaveBeenNthCalledWith(1, "meeting");
+    expect(defaultProps.onStartRecording).toHaveBeenNthCalledWith(2, "lecture");
+    expect(defaultProps.onStartRecording).toHaveBeenNthCalledWith(3, "memo");
+    expect(defaultProps.onStartRecording).toHaveBeenNthCalledWith(4, "verbatim");
+  });
+
 });

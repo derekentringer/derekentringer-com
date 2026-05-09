@@ -32,6 +32,8 @@ export interface MockPrisma {
   syncCursor: MockModel;
   refreshToken: MockModel;
   entityTombstone: MockModel;
+  chatMessage: MockModel;
+  transcriptionJob: MockModel;
   $disconnect: Mock;
   $transaction: Mock;
   $queryRawUnsafe: Mock;
@@ -70,6 +72,8 @@ export function createMockPrisma(): MockPrisma {
     syncCursor: createMockModel(),
     refreshToken: createMockModel(),
     entityTombstone: createMockModel(),
+    chatMessage: createMockModel(),
+    transcriptionJob: createMockModel(),
     $disconnect: vi.fn(),
     $transaction: vi.fn(),
     $queryRawUnsafe: vi.fn(),

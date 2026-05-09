@@ -5,21 +5,37 @@ import {
   TextInput,
   ScrollView,
   Pressable,
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
 } from "react-native";
+import { useAppAlert } from "@/components/AppAlertProvider";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import Markdown from "react-native-markdown-display";
+import Markdown, { MarkdownIt } from "react-native-markdown-display";
+import { markdownRules } from "@/lib/markdownRules";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { NotesStackParamList } from "@/navigation/types";
 import { useThemeColors } from "@/theme/colors";
 import { spacing, borderRadius } from "@/theme";
 import { formatCreatedDate, formatModifiedDate } from "@/lib/time";
-import { useNote, useDeleteNote, useUpdateNote } from "@/hooks/useNotes";
+import {
+  useNote,
+  useDeleteNote,
+  useUpdateNote,
+  useAllNotesForWikiLinks,
+} from "@/hooks/useNotes";
+import {
+  resolveWikiLinks,
+  parseWikiLinkUrl,
+  parseBrokenWikiLinkUrl,
+} from "@/lib/resolveWikiLinks";
+import {
+  markTasks,
+  toggleTask,
+  parseTaskUrl,
+} from "@/lib/toggleTask";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import useSyncStore from "@/store/syncStore";
 import { useFolders } from "@/hooks/useFolders";
@@ -27,6 +43,20 @@ import { useTags } from "@/hooks/useTags";
 import { FolderPicker } from "@/components/notes/FolderPicker";
 import { MarkdownToolbar } from "@/components/notes/MarkdownToolbar";
 import { TagInput } from "@/components/notes/TagInput";
+import { type AiActionKey } from "@/components/notes/AiActionsSheet";
+import {
+  ImagePickerSheet,
+  type ImagePickerSource,
+} from "@/components/notes/ImagePickerSheet";
+import { SummaryBanner } from "@/components/notes/SummaryBanner";
+import {
+  summarizeNote as apiSummarizeNote,
+  suggestTags as apiSuggestTags,
+} from "@/api/ai";
+import { uploadImage } from "@/api/images";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import useAiSettingsStore from "@/store/aiSettingsStore";
 import { SkeletonCard } from "@/components/common/SkeletonLoader";
 import {
   toggleBold,
@@ -39,32 +69,141 @@ import {
   insertQuote,
 } from "@/lib/editorActions";
 import { findFolderName } from "@/lib/folders";
+import {
+  parseFrontmatter,
+  serializeFrontmatter,
+  stripFrontmatter,
+} from "@derekentringer/ns-shared";
+import useEditorSettingsStore from "@/store/editorSettingsStore";
+
+// MarkdownIt instance with `linkify: true` so bare URLs in body
+// text become tappable in the preview. Module-scope so the
+// Markdown component's memoization stays stable across renders.
+const mdParser = MarkdownIt({ typographer: true, linkify: true });
 
 type Props = NativeStackScreenProps<NotesStackParamList, "NoteEditor">;
 
 export function NoteEditorScreen({ route, navigation }: Props) {
   const initialNoteId = route.params?.noteId;
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
 
   const [noteId, setNoteId] = useState(initialNoteId);
   const [title, setTitle] = useState("");
+  // `content` is always the full note text including the YAML
+  // frontmatter block (if any). The TextInput renders either the
+  // full content (source mode) or just the body (panel mode); on
+  // edit we recombine the new body with the original frontmatter
+  // so the YAML round-trips even when hidden.
   const [content, setContent] = useState("");
   const [folderId, setFolderId] = useState<string | undefined>(undefined);
   const [folderName, setFolderName] = useState<string | undefined>(undefined);
   const [tags, setTags] = useState<string[]>([]);
+  const [summary, setSummary] = useState<string | null>(null);
   const [isPreview, setIsPreview] = useState(false);
   const [isLoaded, setIsLoaded] = useState(!initialNoteId);
+  const [aiBusyKey, setAiBusyKey] = useState<AiActionKey | null>(null);
+  const [showOverflow, setShowOverflow] = useState(false);
 
   const contentRef = useRef<TextInput>(null);
   const selectionRef = useRef({ start: 0, end: 0 });
   const folderSheetRef = useRef<BottomSheetModal>(null);
+  const imageSheetRef = useRef<BottomSheetModal>(null);
+  // Tracks whether the content TextInput was focused when the
+  // image-picker sheet was opened. If yes and the user dismisses
+  // the sheet without picking, refocus so the keyboard slides
+  // back up where they left off.
+  const editorWasFocusedRef = useRef(false);
+  // Set to `true` on the picker-flow path (`handleImagePick`) so
+  // the sheet's onDismiss can tell apart "user picked an image
+  // → sheet closes → don't refocus, the picker is taking over"
+  // from "user tapped the backdrop → refocus the editor".
+  const pickInProgressRef = useRef(false);
+  const editorScrollRef = useRef<ScrollView>(null);
+  const previewScrollRef = useRef<ScrollView>(null);
+  // Show the scroll-to-top FAB once the user is past ~200px of
+  // scroll. Tracked separately for editor + preview so each scroll
+  // view's FAB matches its own offset.
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const SCROLL_TOP_THRESHOLD = 200;
+  // Manual sticky-toolbar machinery. RN's `stickyHeaderIndices`
+  // breaks Pressable touch handling on Android with the new arch
+  // (taps in the pinned toolbar simply don't fire). Instead we
+  // track the toolbar's original Y position via `onLayout` and
+  // the scroll position via `onScroll`; when scrollY passes the
+  // toolbar's top, we render a SECOND copy as an absolutely-
+  // positioned overlay floating at the top of the editor. The
+  // overlay isn't a sticky-header child, so its Pressables fire
+  // normally.
+  const [toolbarY, setToolbarY] = useState<number | null>(null);
+  const [showStickyToolbar, setShowStickyToolbar] = useState(false);
+  const [imagePickerBusy, setImagePickerBusy] =
+    useState<ImagePickerSource | null>(null);
+  const connectionType = useSyncStore((s) => s.connectionType);
+  const imageUploadsWifiOnly = useAiSettingsStore(
+    (s) => s.imageUploadsWifiOnly,
+  );
 
   const { data: noteData, isLoading } = useNote(noteId ?? "");
   const deleteNoteMutation = useDeleteNote();
   const updateNoteMutation = useUpdateNote();
   const { data: foldersData } = useFolders();
+  // Title → noteId map for `[[wiki-link]]` resolution in preview.
+  const { data: allNotes } = useAllNotesForWikiLinks();
+  const titleToIdMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of allNotes ?? []) {
+      if (n.deletedAt) continue;
+      if (n.title) map.set(n.title.toLowerCase(), n.id);
+    }
+    return map;
+  }, [allNotes]);
+  const handleLinkPress = useCallback(
+    (url: string) => {
+      const wikiNoteId = parseWikiLinkUrl(url);
+      if (wikiNoteId) {
+        navigation.push("NoteDetail", { noteId: wikiNoteId });
+        return false;
+      }
+      const brokenTitle = parseBrokenWikiLinkUrl(url);
+      if (brokenTitle) {
+        showAlert(
+          "Note not found",
+          `No note titled "${brokenTitle}" exists.`,
+        );
+        return false;
+      }
+      const task = parseTaskUrl(url);
+      if (task) {
+        // Toggle against the local `content` state (which already
+        // includes any unsaved edits). The auto-save hook then
+        // picks up the change like any other edit.
+        setContent((prev) => toggleTask(prev, task.taskIndex));
+        return false;
+      }
+      return true;
+    },
+    [navigation, showAlert],
+  );
   const { data: tagsData } = useTags();
   const isOnline = useSyncStore((s) => s.isOnline);
+  const propertiesMode = useEditorSettingsStore((s) => s.propertiesMode);
+  const togglePropertiesMode = useEditorSettingsStore(
+    (s) => s.togglePropertiesMode,
+  );
+  const editorFontSize = useEditorSettingsStore((s) => s.editorFontSize);
+
+  // Parsed view of the current content. `body` is what the user
+  // sees in panel mode; `rawYaml`/`metadata`/`unknownFields` are
+  // what we re-attach when they edit. Recomputed when `content`
+  // changes.
+  const parsed = useMemo(() => parseFrontmatter(content), [content]);
+  const hasFrontmatter = parsed.rawYaml.trim().length > 0;
+  const displayValue =
+    propertiesMode === "panel" && hasFrontmatter
+      ? stripFrontmatter(content)
+      : content;
+
 
   const { save, flush, isSaving, isSaved, error } = useAutoSave({
     noteId,
@@ -81,9 +220,19 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       setFolderId(noteData.folderId ?? undefined);
       setFolderName(noteData.folder ?? undefined);
       setTags(noteData.tags || []);
+      setSummary(noteData.summary ?? null);
       setIsLoaded(true);
     }
   }, [noteData, isLoaded]);
+
+  // Keep the local summary mirror in sync if the note's summary
+  // changes from outside this screen (e.g. AI Assistant chat ran
+  // /summarize on this note from another device).
+  useEffect(() => {
+    if (isLoaded && noteData) {
+      setSummary(noteData.summary ?? null);
+    }
+  }, [isLoaded, noteData?.summary]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save on title/content changes
   useEffect(() => {
@@ -101,7 +250,11 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   // Header options
   useEffect(() => {
     navigation.setOptions({
-      title: noteId ? "Edit Note" : "New Note",
+      title: noteId
+        ? isPreview
+          ? "Edit Note - Preview"
+          : "Edit Note"
+        : "New Note",
       headerRight: () => (
         <View style={styles.headerRight}>
           <Pressable
@@ -112,24 +265,24 @@ export function NoteEditorScreen({ route, navigation }: Props) {
           >
             <MaterialCommunityIcons
               name={isPreview ? "pencil" : "eye"}
-              size={22}
+              size={24}
               color={themeColors.foreground}
+              style={styles.headerIcon}
             />
           </Pressable>
-          {noteId ? (
-            <Pressable
-              onPress={handleDelete}
-              accessibilityRole="button"
-              accessibilityLabel="Delete note"
-              style={styles.headerButton}
-            >
-              <MaterialCommunityIcons
-                name="trash-can-outline"
-                size={22}
-                color={themeColors.destructive}
-              />
-            </Pressable>
-          ) : null}
+          <Pressable
+            onPress={() => setShowOverflow((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel="More options"
+            style={styles.headerButton}
+          >
+            <MaterialCommunityIcons
+              name="dots-vertical"
+              size={24}
+              color={themeColors.foreground}
+              style={styles.headerIcon}
+            />
+          </Pressable>
         </View>
       ),
     });
@@ -144,7 +297,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
   }, [navigation, flush]);
 
   const handleDelete = useCallback(() => {
-    Alert.alert("Move to Trash", "Move this note to Trash?", [
+    showAlert("Move to Trash", title.trim() || "Untitled", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Move to Trash",
@@ -157,7 +310,7 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         },
       },
     ]);
-  }, [noteId, deleteNoteMutation, navigation]);
+  }, [noteId, title, deleteNoteMutation, navigation, showAlert]);
 
   const handleFolderSelect = useCallback(
     (selectedFolderId: string | undefined) => {
@@ -226,8 +379,20 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       const fn = actions[action];
       if (!fn) return;
 
-      const result = fn(content, start, end);
-      setContent(result.text);
+      // In panel mode the TextInput's selection is relative to the
+      // visible body, not the full content (which has frontmatter
+      // prepended). Operate on `displayValue`, then re-serialize
+      // body + original frontmatter so the YAML round-trips.
+      const result = fn(displayValue, start, end);
+      const nextContent =
+        propertiesMode === "panel" && hasFrontmatter
+          ? serializeFrontmatter(
+              parsed.metadata,
+              result.text,
+              parsed.unknownFields,
+            )
+          : result.text;
+      setContent(nextContent);
       selectionRef.current = result.selection;
 
       // Re-focus and set selection after state update
@@ -238,15 +403,288 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         contentRef.current?.focus();
       }, 50);
     },
-    [content],
+    [displayValue, propertiesMode, hasFrontmatter, parsed],
   );
+
+  // Phase B.1: generate AI summary for the current note. Saves
+  // the in-flight content first (so the API sees the freshest
+  // text), calls /ai/summarize, persists the resulting summary
+  // via the existing useUpdateNote mutation. Mirrors web's
+  // handleSummarize in NotesPage.
+  const handleAiSummarize = useCallback(async () => {
+    if (!noteId || aiBusyKey) return;
+    setAiBusyKey("summarize");
+    try {
+      // Await the local save so the latest content lands in
+      // SQLite before the AI request — fire-and-forget would
+      // race with /ai/summarize reading from the server-synced
+      // copy.
+      await flush();
+      const result = await apiSummarizeNote(noteId);
+      setSummary(result);
+      await updateNoteMutation.mutateAsync({
+        id: noteId,
+        data: { summary: result },
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to generate summary.";
+      showAlert("AI Summary", message);
+    } finally {
+      setAiBusyKey(null);
+    }
+  }, [noteId, aiBusyKey, flush, updateNoteMutation, showAlert]);
+
+  // Phase B.2: ask the API for tag suggestions for the current
+  // note, dedupe against the existing tag list, and persist the
+  // merged set. Mirrors desktop's handleSuggestTags — no
+  // confirmation UI; user can remove unwanted suggestions via the
+  // chip X buttons afterward.
+  const handleAiSuggestTags = useCallback(async () => {
+    if (!noteId || aiBusyKey) return;
+    setAiBusyKey("tags");
+    try {
+      // Await the local save so the latest content lands in
+      // SQLite before the AI request goes out — fire-and-forget
+      // would race with /ai/tags reading from the server-synced
+      // copy.
+      await flush();
+      const suggested = await apiSuggestTags(noteId);
+      if (suggested.length === 0) {
+        showAlert(
+          "AI Tags",
+          "No tag suggestions returned. Try writing more content first.",
+        );
+        return;
+      }
+      const merged = Array.from(new Set([...tags, ...suggested]));
+      if (merged.length === tags.length) {
+        showAlert(
+          "AI Tags",
+          "Suggested tags are already on this note.",
+        );
+        return;
+      }
+      setTags(merged);
+      await updateNoteMutation.mutateAsync({
+        id: noteId,
+        data: { tags: merged },
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to suggest tags.";
+      showAlert("AI Tags", message);
+    } finally {
+      setAiBusyKey(null);
+    }
+  }, [noteId, aiBusyKey, flush, tags, updateNoteMutation, showAlert]);
+
+  // Phase D — pick an image from the camera roll or take a new one,
+  // resize via expo-image-manipulator, upload to R2 via the existing
+  // /images/upload endpoint, and insert a markdown image reference
+  // at the cursor. D.1 happy path only — D.2 will add the offline
+  // queue + cache layer.
+  const insertImageMarkdownAtCursor = useCallback(
+    (url: string, altText: string) => {
+      const { start, end } = selectionRef.current;
+      const snippet = `![${altText}](${url})`;
+      const before = displayValue.slice(0, start);
+      const after = displayValue.slice(end);
+      // Ensure newline padding — markdown image refs render as a
+      // block element when surrounded by blank lines, which is the
+      // common "image on its own line" intent.
+      const needsLeading = before.length > 0 && !before.endsWith("\n");
+      const needsTrailing = after.length > 0 && !after.startsWith("\n");
+      const inserted =
+        (needsLeading ? "\n" : "") + snippet + (needsTrailing ? "\n" : "");
+      const nextBody = before + inserted + after;
+      const nextContent =
+        propertiesMode === "panel" && hasFrontmatter
+          ? serializeFrontmatter(parsed.metadata, nextBody, parsed.unknownFields)
+          : nextBody;
+      setContent(nextContent);
+      const newPos = start + inserted.length;
+      selectionRef.current = { start: newPos, end: newPos };
+      setTimeout(() => {
+        contentRef.current?.setNativeProps({
+          selection: { start: newPos, end: newPos },
+        });
+      }, 50);
+    },
+    [displayValue, propertiesMode, hasFrontmatter, parsed],
+  );
+
+  const handleImagePick = useCallback(
+    async (source: ImagePickerSource) => {
+      if (imagePickerBusy) return;
+      // Mark the pick path so the sheet's onDismiss skips
+      // refocusing the editor — the camera / library picker is
+      // about to take over the screen.
+      pickInProgressRef.current = true;
+      setImagePickerBusy(source);
+      try {
+        // Note must exist server-side before we can attach an
+        // image to it. Flush any pending edits first so the
+        // server sees the freshest copy + the note ID is allocated.
+        await flush();
+        if (!noteId) {
+          showAlert("Image", "Please add some content first so the note is saved.");
+          return;
+        }
+
+        // Permissions
+        const perm =
+          source === "camera"
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          showAlert(
+            source === "camera" ? "Camera permission needed" : "Photo library permission needed",
+            "Please enable access in Settings to attach images to your notes.",
+          );
+          return;
+        }
+
+        // Launch picker. `mediaTypes: ["images"]` excludes video.
+        const result =
+          source === "camera"
+            ? await ImagePicker.launchCameraAsync({
+                mediaTypes: ["images"],
+                quality: 1,
+              })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                quality: 1,
+              });
+        if (result.canceled || result.assets.length === 0) return;
+        const asset = result.assets[0];
+
+        // Resize + recompress to JPEG. Long-edge cap of 2048 keeps
+        // a 12MP photo under 1MB and protects RN from OOM mid-
+        // base64 on the server analyzeImage path.
+        const manipulated = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          [{ resize: { width: 2048 } }],
+          { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+        );
+
+        // Wi-Fi-only check. When ON and we're on cellular, queue
+        // the upload (D.2 will land the persistent queue; for D.1
+        // we surface a one-line notice and skip the upload).
+        const isWifi = connectionType === "wifi";
+        if (imageUploadsWifiOnly && !isWifi) {
+          showAlert(
+            "Wi-Fi only",
+            "This image will upload when you're back on Wi-Fi.",
+          );
+          // TODO(D.2): persist to pending_uploads and insert a
+          // local placeholder URL at the cursor.
+          return;
+        }
+
+        const uploaded = await uploadImage({
+          uri: manipulated.uri,
+          noteId,
+          mimeType: "image/jpeg",
+        });
+
+        insertImageMarkdownAtCursor(uploaded.r2Url, "");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Image upload failed.";
+        showAlert("Image", message);
+      } finally {
+        setImagePickerBusy(null);
+      }
+    },
+    [
+      imagePickerBusy,
+      flush,
+      noteId,
+      connectionType,
+      imageUploadsWifiOnly,
+      insertImageMarkdownAtCursor,
+      showAlert,
+    ],
+  );
+
+  const handleAiSummaryDelete = useCallback(() => {
+    if (!noteId) return;
+    showAlert(
+      "Delete Summary",
+      "Delete this AI summary? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setSummary(null);
+            updateNoteMutation.mutate({
+              id: noteId,
+              data: { summary: null },
+            });
+          },
+        },
+      ],
+    );
+  }, [noteId, updateNoteMutation, showAlert]);
 
   const mdStyles = useMemo(
     () => ({
-      body: { color: themeColors.foreground, fontSize: 15, lineHeight: 22 },
-      heading1: { color: themeColors.foreground, fontSize: 24, fontWeight: "700" as const, marginBottom: 8 },
-      heading2: { color: themeColors.foreground, fontSize: 20, fontWeight: "600" as const, marginBottom: 6 },
-      heading3: { color: themeColors.foreground, fontSize: 17, fontWeight: "600" as const, marginBottom: 4 },
+      body: {
+        color: themeColors.foreground,
+        fontSize: editorFontSize,
+        lineHeight: Math.round(editorFontSize * 1.5),
+      },
+      // Heading parity with ns-web's `.markdown-preview h{1..3}` —
+      // primary color on h1/h2, top margin so headings don't
+      // collide with the prior paragraph. Mirrors NoteDetailScreen.
+      heading1: {
+        color: themeColors.primary,
+        fontSize: 26,
+        lineHeight: 34,
+        fontWeight: "700" as const,
+        marginTop: 16,
+        marginBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: themeColors.border,
+        paddingBottom: 12,
+      },
+      heading2: {
+        color: themeColors.primary,
+        fontSize: 21,
+        fontWeight: "700" as const,
+        marginTop: 16,
+        marginBottom: 6,
+      },
+      heading3: {
+        color: themeColors.foreground,
+        fontSize: 17,
+        fontWeight: "600" as const,
+        marginTop: 12,
+        marginBottom: 4,
+      },
+      heading4: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
+        marginBottom: 4,
+      },
+      heading5: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
+        marginBottom: 4,
+      },
+      heading6: {
+        color: themeColors.foreground,
+        fontSize: 15,
+        fontWeight: "600" as const,
+        marginTop: 10,
+        marginBottom: 4,
+      },
       code_inline: {
         backgroundColor: themeColors.card,
         color: themeColors.primary,
@@ -263,9 +701,24 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         paddingVertical: 4,
       },
       link: { color: themeColors.primary },
-      hr: { backgroundColor: themeColors.border },
+      // Custom key consumed by markdownRules.link for `#wiki-broken:`
+      // URLs (mirrors web's `.wiki-link-broken` muted style).
+      link_wiki_broken: { color: themeColors.muted },
+      // Empty task checkbox glyph — muted color to differentiate
+      // from a checked box (which uses the lime primary).
+      link_task_empty: { color: themeColors.muted },
+      // Mirrors NoteDetailScreen: explicit height + margins so the
+      // hr renders as a visible 1px rule with breathing room above
+      // and below (web's `.markdown-preview hr`: 1px border +
+      // 1.5em margin).
+      hr: {
+        backgroundColor: themeColors.border,
+        height: 1,
+        marginTop: 24,
+        marginBottom: 24,
+      },
     }),
-    [themeColors],
+    [themeColors, editorFontSize],
   );
 
   if (initialNoteId && isLoading) {
@@ -285,26 +738,40 @@ export function NoteEditorScreen({ route, navigation }: Props) {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
     >
-      {/* Status line */}
-      <View style={styles.statusBar}>
-        <Text style={[styles.statusText, { color: isSaving ? themeColors.muted : error ? themeColors.error : themeColors.muted }]}>
-          {isSaving ? "Saving..." : error ? "Save failed" : isOnline ? "Saved" : "Saved locally"}
-          {noteData ? ` · Created ${formatCreatedDate(noteData.createdAt)} · Modified ${formatModifiedDate(noteData.updatedAt)}` : ""}
-        </Text>
-      </View>
-
       {isPreview ? (
         <ScrollView
+          ref={previewScrollRef}
           style={styles.previewScroll}
           contentContainerStyle={styles.previewContent}
+          onScroll={(e) =>
+            setShowScrollTop(
+              e.nativeEvent.contentOffset.y > SCROLL_TOP_THRESHOLD,
+            )
+          }
+          scrollEventThrottle={64}
         >
+          {/* Status line — scrolls with the content (was previously
+              pinned above the ScrollView). */}
+          <View style={styles.statusBar}>
+            <Text style={[styles.statusText, { color: isSaving ? themeColors.muted : error ? themeColors.error : themeColors.muted }]}>
+              {isSaving ? "Saving..." : error ? "Save failed" : isOnline ? "Saved" : "Saved locally"}
+              {noteData ? ` · Created ${formatCreatedDate(noteData.createdAt)} · Modified ${formatModifiedDate(noteData.updatedAt)}` : ""}
+            </Text>
+          </View>
           {title ? (
             <Text style={[styles.previewTitle, { color: themeColors.foreground }]}>
               {title}
             </Text>
           ) : null}
           {content ? (
-            <Markdown style={mdStyles}>{content}</Markdown>
+            <Markdown
+              style={mdStyles}
+              rules={markdownRules}
+              onLinkPress={handleLinkPress}
+              markdownit={mdParser}
+            >
+              {markTasks(resolveWikiLinks(stripFrontmatter(content), titleToIdMap))}
+            </Markdown>
           ) : (
             <Text style={[styles.emptyContent, { color: themeColors.muted }]}>
               No content
@@ -313,10 +780,27 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         </ScrollView>
       ) : (
         <ScrollView
+          ref={editorScrollRef}
           style={styles.editorScroll}
           contentContainerStyle={styles.editorContent}
           keyboardShouldPersistTaps="handled"
+          // No `stickyHeaderIndices` here — see manual-sticky
+          // machinery in state above. We sync an absolutely-
+          // positioned toolbar overlay to scrollY instead.
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            setShowScrollTop(y > SCROLL_TOP_THRESHOLD);
+            if (toolbarY !== null) setShowStickyToolbar(y >= toolbarY);
+          }}
+          scrollEventThrottle={64}
         >
+          {/* Status line (index 0) — scrolls with the content. */}
+          <View style={styles.statusBar}>
+            <Text style={[styles.statusText, { color: isSaving ? themeColors.muted : error ? themeColors.error : themeColors.muted }]}>
+              {isSaving ? "Saving..." : error ? "Save failed" : isOnline ? "Saved" : "Saved locally"}
+              {noteData ? ` · Created ${formatCreatedDate(noteData.createdAt)} · Modified ${formatModifiedDate(noteData.updatedAt)}` : ""}
+            </Text>
+          </View>
           {/* Title */}
           <TextInput
             style={[styles.titleInput, { color: themeColors.foreground }]}
@@ -330,7 +814,8 @@ export function NoteEditorScreen({ route, navigation }: Props) {
             blurOnSubmit={false}
           />
 
-          {/* Folder + Tags row */}
+          {/* Folder + Summary + Tags row — matches web/desktop
+              order: folder picker, AI summary banner, then tags. */}
           <View style={styles.metaSection}>
             <Pressable
               style={[styles.folderButton, { borderColor: themeColors.border }]}
@@ -349,11 +834,16 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               <Text
                 style={[
                   styles.folderButtonText,
-                  { color: folderName ? themeColors.foreground : themeColors.muted },
+                  // "Unfiled" is the real bucket the note lives in
+                  // when no folder is set — the same label web/
+                  // desktop use. Treat it as a regular foreground
+                  // label rather than the muted "No folder"
+                  // placeholder we used to show.
+                  { color: themeColors.foreground },
                 ]}
                 numberOfLines={1}
               >
-                {folderName || "No folder"}
+                {folderName || "Unfiled"}
               </Text>
               <MaterialCommunityIcons
                 name="chevron-down"
@@ -362,27 +852,84 @@ export function NoteEditorScreen({ route, navigation }: Props) {
               />
             </Pressable>
 
+            <SummaryBanner
+              summary={summary}
+              onDelete={handleAiSummaryDelete}
+              isLoading={aiBusyKey === "summarize"}
+            />
+
             <TagInput
               tags={tags}
               allTags={tagsData?.tags ?? []}
               onAddTag={handleAddTag}
               onRemoveTag={handleRemoveTag}
+              isLoading={aiBusyKey === "tags"}
             />
           </View>
 
-          {/* Toolbar (full-width) */}
-          <View style={styles.toolbarWrapper}>
-            <MarkdownToolbar onAction={handleToolbarAction} />
+          {/* Toolbar (full-width). Sparkle/AI button is hidden
+              until Continue Writing / AI Rewrite (Phase B.3/B.4)
+              land — Summarize + Suggest Tags moved to the header
+              overflow menu. */}
+          <View
+            style={styles.toolbarWrapper}
+            onLayout={(e) => {
+              // Layout y is relative to the ScrollView's content,
+              // so it matches the scroll offset directly.
+              setToolbarY(e.nativeEvent.layout.y);
+            }}
+          >
+            <MarkdownToolbar
+              onAction={handleToolbarAction}
+              onImagePress={() => {
+                // Match FolderPicker's pattern exactly — that one
+                // works reliably from this screen. Anything fancier
+                // (refs / RAF / conditional dismiss) was breaking
+                // the present() call.
+                editorWasFocusedRef.current =
+                  contentRef.current?.isFocused() ?? false;
+                pickInProgressRef.current = false;
+                Keyboard.dismiss();
+                imageSheetRef.current?.present();
+              }}
+            />
           </View>
 
-          {/* Content */}
+          {/* Content. When propertiesMode === "panel" and the note
+              has frontmatter, the TextInput shows the body only; on
+              edit we re-serialize body + the original frontmatter
+              so the YAML round-trips through saves. In source mode
+              the TextInput shows the full note including the YAML
+              block, matching web's `</>` toggle. */}
           <TextInput
             ref={contentRef}
-            style={[styles.contentInput, { color: themeColors.foreground }]}
+            style={[
+              styles.contentInput,
+              {
+                color: themeColors.foreground,
+                fontSize: editorFontSize,
+                // Keep the visual line-height ratio constant — desktop
+                // editor uses ~1.5×; mirror that so vertical rhythm
+                // stays usable across the whole 10–24px range.
+                lineHeight: Math.round(editorFontSize * 1.5),
+              },
+            ]}
             placeholder="Start writing..."
             placeholderTextColor={themeColors.muted}
-            value={content}
-            onChangeText={setContent}
+            value={displayValue}
+            onChangeText={(next) => {
+              if (propertiesMode === "panel" && hasFrontmatter) {
+                setContent(
+                  serializeFrontmatter(
+                    parsed.metadata,
+                    next,
+                    parsed.unknownFields,
+                  ),
+                );
+              } else {
+                setContent(next);
+              }
+            }}
             multiline
             textAlignVertical="top"
             scrollEnabled={false}
@@ -393,13 +940,230 @@ export function NoteEditorScreen({ route, navigation }: Props) {
         </ScrollView>
       )}
 
-      {/* Folder picker */}
+      {/* Folder picker — "assign" mode hides the All Notes entry
+          since a note can't live in that virtual bucket; only
+          Unfiled + real folders are valid targets here. A note
+          with no folderId is "Unfiled", so we coerce undefined
+          → "unfiled" so the picker highlights that row as
+          selected (the FolderPicker's Unfiled entry has id
+          "unfiled"). */}
       <FolderPicker
         bottomSheetRef={folderSheetRef}
         folders={foldersData?.folders ?? []}
-        selectedFolderId={folderId}
+        selectedFolderId={folderId ?? "unfiled"}
         onSelect={handleFolderSelect}
+        mode="assign"
       />
+
+      <ImagePickerSheet
+        bottomSheetRef={imageSheetRef}
+        onPick={handleImagePick}
+        busyKey={imagePickerBusy}
+        onDismiss={() => {
+          // Sheet closed without picking — restore the keyboard
+          // so the user lands back where they were typing. Skip
+          // when a pick is in flight (the picker is taking over).
+          if (pickInProgressRef.current) return;
+          if (editorWasFocusedRef.current) {
+            setTimeout(() => contentRef.current?.focus(), 50);
+          }
+        }}
+      />
+
+      {/* Manual sticky toolbar overlay — only mounted while the
+          editor is in non-preview mode AND the user has scrolled
+          past the in-scroll toolbar's original position. Renders a
+          second MarkdownToolbar instance pinned to the top of the
+          editor area (below the navigator header) with the same
+          callbacks as the in-scroll toolbar. Avoids the Pressable-
+          inside-stickyHeader touch bug on the new arch. */}
+      {!isPreview && showStickyToolbar ? (
+        <View style={styles.stickyToolbarOverlay} pointerEvents="box-none">
+          {/* Use `stickyToolbarInner` instead of `toolbarWrapper` so
+              the overlay copy doesn't inherit the in-scroll
+              toolbar's `marginTop: spacing.sm`. The overlay should
+              sit flush against the top of the editor's content
+              area (just below the navigator header). */}
+          <View style={styles.stickyToolbarInner}>
+            <MarkdownToolbar
+              onAction={handleToolbarAction}
+              onImagePress={() => {
+                editorWasFocusedRef.current =
+                  contentRef.current?.isFocused() ?? false;
+                pickInProgressRef.current = false;
+                Keyboard.dismiss();
+                imageSheetRef.current?.present();
+              }}
+            />
+          </View>
+        </View>
+      ) : null}
+
+      {/* Scroll-to-top FAB — appears once the active ScrollView is
+          past ~200px. Tapping scrolls back to top of the active
+          (editor or preview) ScrollView. */}
+      {showScrollTop ? (
+        <Pressable
+          onPress={() => {
+            const ref = isPreview ? previewScrollRef : editorScrollRef;
+            ref.current?.scrollTo({ y: 0, animated: true });
+          }}
+          style={[
+            styles.scrollTopFab,
+            {
+              backgroundColor: themeColors.card,
+              borderColor: themeColors.border,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Scroll to top"
+        >
+          <MaterialCommunityIcons
+            name="chevron-up"
+            size={24}
+            color={themeColors.foreground}
+          />
+        </Pressable>
+      ) : null}
+
+      {/* Header overflow menu — AI actions, frontmatter toggle
+          (edit mode only) + delete. Mirrors NoteDetailScreen's
+          pattern. */}
+      {showOverflow ? (
+        <Pressable
+          style={styles.overflowBackdrop}
+          onPress={() => setShowOverflow(false)}
+        >
+          <View
+            style={[
+              styles.overflowMenu,
+              {
+                backgroundColor: themeColors.card,
+                borderColor: themeColors.border,
+              },
+            ]}
+          >
+            {noteId && !isPreview ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  if (aiBusyKey) return;
+                  setShowOverflow(false);
+                  handleAiSummarize();
+                }}
+                disabled={!!aiBusyKey}
+                accessibilityRole="button"
+                accessibilityState={{
+                  busy: aiBusyKey === "summarize",
+                  disabled: !!aiBusyKey,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="text-box-outline"
+                  size={20}
+                  color={themeColors.primary}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                    !!aiBusyKey && { opacity: 0.5 },
+                  ]}
+                >
+                  {aiBusyKey === "summarize"
+                    ? "Generating Summary…"
+                    : "Generate Summary"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {noteId && !isPreview ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  if (aiBusyKey) return;
+                  setShowOverflow(false);
+                  handleAiSuggestTags();
+                }}
+                disabled={!!aiBusyKey}
+                accessibilityRole="button"
+                accessibilityState={{
+                  busy: aiBusyKey === "tags",
+                  disabled: !!aiBusyKey,
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="tag-multiple-outline"
+                  size={20}
+                  color={themeColors.primary}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                    !!aiBusyKey && { opacity: 0.5 },
+                  ]}
+                >
+                  {aiBusyKey === "tags" ? "Suggesting Tags…" : "Suggest Tags"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {!isPreview ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  setShowOverflow(false);
+                  togglePropertiesMode();
+                }}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name="code-tags"
+                  size={20}
+                  color={
+                    propertiesMode === "source"
+                      ? themeColors.primary
+                      : themeColors.foreground
+                  }
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.foreground },
+                  ]}
+                >
+                  {propertiesMode === "source"
+                    ? "Hide Frontmatter"
+                    : "Show Frontmatter"}
+                </Text>
+              </Pressable>
+            ) : null}
+            {noteId ? (
+              <Pressable
+                style={styles.overflowItem}
+                onPress={() => {
+                  setShowOverflow(false);
+                  handleDelete();
+                }}
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons
+                  name="trash-can-outline"
+                  size={20}
+                  color={themeColors.destructive}
+                />
+                <Text
+                  style={[
+                    styles.overflowText,
+                    { color: themeColors.destructive },
+                  ]}
+                >
+                  Move to Trash
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </Pressable>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -411,17 +1175,35 @@ const styles = StyleSheet.create({
   loadingContainer: {
     padding: spacing.md,
   },
+  // Material Design 3 top-app-bar action item: 24 dp glyph
+  // centered inside a 48 dp touch target via 12 dp padding.
+  // The 12 dp internal padding on each button already produces
+  // the right visual separation, so the inter-button gap is 0.
+  // Source: https://m3.material.io/components/top-app-bar/specs
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    ...Platform.select({ ios: { gap: 0 }, default: { gap: 4 } }),
   },
   headerButton: {
-    padding: spacing.xs,
+    ...Platform.select({
+      ios: { width: 44, height: 44 },
+      default: { width: 48, height: 48 },
+    }),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerIcon: {
+    lineHeight: 24,
+    ...Platform.select({ ios: { transform: [{ translateY: -4 }] } }),
   },
   statusBar: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
+    // No paddingHorizontal — the parent ScrollView's
+    // `editorContent` / `previewContent` style already adds
+    // `paddingHorizontal: spacing.md`. Adding it again here when
+    // we moved the status line INTO the scroll caused a doubled
+    // left inset versus the title / toolbar / content below.
+    paddingBottom: spacing.xs,
     minHeight: 20,
   },
   statusText: {
@@ -431,7 +1213,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   editorContent: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
   },
   titleInput: {
@@ -441,8 +1224,42 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   toolbarWrapper: {
+    marginTop: spacing.sm,
     marginHorizontal: -spacing.md,
     marginBottom: spacing.sm,
+  },
+  stickyToolbarOverlay: {
+    // Sits directly under the navigator header. The KeyboardAvoidingView
+    // is the parent; absolute positioning relative to it stacks the
+    // overlay above the scroll content without intercepting touches
+    // outside the toolbar (pointerEvents="box-none" on the wrapper).
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    elevation: 4,
+  },
+  stickyToolbarInner: {
+    // Mirrors `toolbarWrapper` but without the marginTop / marginBottom
+    // — the overlay sits flush at the top of the screen content.
+    marginHorizontal: 0,
+  },
+  scrollTopFab: {
+    position: "absolute",
+    right: spacing.md,
+    bottom: spacing.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   contentInput: {
     fontSize: 15,
@@ -452,7 +1269,6 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   metaSection: {
-    marginBottom: spacing.sm,
     gap: spacing.sm,
   },
   folderButton: {
@@ -473,7 +1289,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   previewContent: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
   },
   previewTitle: {
@@ -484,5 +1301,34 @@ const styles = StyleSheet.create({
   emptyContent: {
     fontSize: 15,
     fontStyle: "italic",
+  },
+  overflowBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+  },
+  overflowMenu: {
+    position: "absolute",
+    top: 4,
+    right: spacing.md,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: 4,
+    minWidth: 200,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    zIndex: 11,
+  },
+  overflowItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    gap: spacing.sm,
+  },
+  overflowText: {
+    fontSize: 15,
   },
 });

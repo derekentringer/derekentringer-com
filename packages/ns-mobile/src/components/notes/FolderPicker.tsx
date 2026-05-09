@@ -4,12 +4,17 @@ import {
   Text,
   Pressable,
   FlatList,
-  Alert,
   Modal,
   TextInput,
   StyleSheet,
 } from "react-native";
-import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import { useAppAlert } from "@/components/AppAlertProvider";
+import {
+  BottomSheetModal,
+  BottomSheetView,
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import * as Haptics from "expo-haptics";
 import type { FolderInfo } from "@derekentringer/ns-shared";
@@ -26,6 +31,13 @@ interface FolderPickerProps {
   folders: FolderInfo[];
   selectedFolderId: string | undefined;
   onSelect: (folderId: string | undefined) => void;
+  /** "filter" (default): list-screen filtering UX — both "All
+   *  Notes" and "Unfiled" appear as system entries.
+   *  "assign": editor folder-assignment UX — only "Unfiled" is
+   *  available since "All Notes" isn't a real bucket a note can
+   *  live in. Mirrors web/desktop where the editor's folder
+   *  dropdown lists Unfiled + real folders, no All Notes. */
+  mode?: "filter" | "assign";
 }
 
 interface FlatFolder {
@@ -302,8 +314,10 @@ export function FolderPicker({
   folders,
   selectedFolderId,
   onSelect,
+  mode = "filter",
 }: FolderPickerProps) {
   const themeColors = useThemeColors();
+  const showAlert = useAppAlert();
   const createFolder = useCreateFolder();
   const renameFolder = useRenameFolder();
   const deleteFolder = useDeleteFolder();
@@ -333,8 +347,10 @@ export function FolderPicker({
       count: 0,
       isSystem: true,
     };
-    return [allNotes, unfiled, ...flattenFolderTree(folders)];
-  }, [folders]);
+    const systemEntries =
+      mode === "assign" ? [unfiled] : [allNotes, unfiled];
+    return [...systemEntries, ...flattenFolderTree(folders)];
+  }, [folders, mode]);
 
   const handleSelect = useCallback(
     (folderId: string | undefined) => {
@@ -400,7 +416,7 @@ export function FolderPicker({
   const handleDeleteFromMenu = useCallback(() => {
     const item = actionMenu.item;
     if (!item?.id) return;
-    Alert.alert(
+    showAlert(
       "Delete Folder",
       `Delete "${item.name}"? Notes will be moved to the parent folder.`,
       [
@@ -425,7 +441,7 @@ export function FolderPicker({
         },
       ],
     );
-  }, [actionMenu.item, deleteFolder]);
+  }, [actionMenu.item, deleteFolder, showAlert]);
 
   const renderItem = useCallback(
     ({ item }: { item: FlatFolder }) => {
@@ -487,12 +503,27 @@ export function FolderPicker({
         snapPoints={["50%", "80%"]}
         backgroundStyle={{ backgroundColor: themeColors.background }}
         handleIndicatorStyle={{ backgroundColor: themeColors.muted }}
+        backdropComponent={(props: BottomSheetBackdropProps) => (
+          <BottomSheetBackdrop
+            {...props}
+            disappearsOnIndex={-1}
+            appearsOnIndex={0}
+            pressBehavior="close"
+          />
+        )}
       >
         <BottomSheetView style={styles.content}>
           <View style={styles.header}>
-            <Text style={[styles.title, { color: themeColors.foreground }]}>
-              Folder
-            </Text>
+            <View style={styles.titleRow}>
+              <MaterialCommunityIcons
+                name="folder-outline"
+                size={20}
+                color={themeColors.primary}
+              />
+              <Text style={[styles.title, { color: themeColors.foreground }]}>
+                Folder
+              </Text>
+            </View>
             <Pressable
               style={[styles.newFolderButton, { backgroundColor: `${themeColors.primary}1A` }]}
               onPress={handleCreateFolder}
@@ -543,6 +574,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
   title: {
     fontSize: 17,

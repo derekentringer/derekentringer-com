@@ -3,9 +3,10 @@ import { useState, useRef, useEffect } from "react";
 interface ImportButtonProps {
   onImportFiles: (files: FileList) => void;
   onImportDirectory: (files: FileList) => void;
+  disabled?: boolean;
 }
 
-export function ImportButton({ onImportFiles, onImportDirectory }: ImportButtonProps) {
+export function ImportButton({ onImportFiles, onImportDirectory, disabled }: ImportButtonProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -26,7 +27,8 @@ export function ImportButton({ onImportFiles, onImportDirectory }: ImportButtonP
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+        disabled={disabled}
+        className={`flex items-center justify-center w-7 h-7 rounded text-muted-foreground transition-colors ${disabled ? "opacity-40 cursor-not-allowed" : "hover:text-foreground hover:bg-accent cursor-pointer"}`}
         title="Import"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

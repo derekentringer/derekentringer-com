@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   serializeChatHistory,
   trimHistoryToBudget,
-  buildHistoryForClaude,
+  buildHistoryForAIAssistant,
 } from "../lib/chatHistory.js";
 
 describe("chatHistory — serializeChatHistory", () => {
@@ -124,13 +124,13 @@ describe("chatHistory — trimHistoryToBudget", () => {
   });
 });
 
-describe("chatHistory — buildHistoryForClaude", () => {
+describe("chatHistory — buildHistoryForAIAssistant", () => {
   it("applies turn limit before char budget", () => {
     const many = Array.from({ length: 60 }, (_, i) => ({
       role: i % 2 === 0 ? "user" : "assistant",
       content: `turn ${i}`,
     }));
-    const result = buildHistoryForClaude(many, { maxTurns: 10, maxChars: 1_000_000 });
+    const result = buildHistoryForAIAssistant(many, { maxTurns: 10, maxChars: 1_000_000 });
     expect(result).toHaveLength(10);
     // Most recent are preserved
     expect(result[result.length - 1].content).toBe("turn 59");
@@ -138,6 +138,6 @@ describe("chatHistory — buildHistoryForClaude", () => {
   });
 
   it("returns empty for empty input", () => {
-    expect(buildHistoryForClaude([])).toEqual([]);
+    expect(buildHistoryForAIAssistant([])).toEqual([]);
   });
 });

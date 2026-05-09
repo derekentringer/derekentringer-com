@@ -185,6 +185,10 @@ export interface SyncCursor {
 export interface SyncPushRequest {
   deviceId: string;
   changes: SyncChange[];
+  /** Which client is pushing — used to tag the originating platform
+   *  on captured note versions ("web" / "mobile" / "desktop"). When
+   *  omitted, the server falls back to "web". */
+  origin?: string;
 }
 
 export interface SyncPullRequest {
@@ -300,4 +304,19 @@ export interface NoteVersion {
 export interface NoteVersionListResponse {
   versions: NoteVersion[];
   total: number;
+}
+
+/**
+ * Returned by `GET /links/preview?url=`. Used by the mobile share-
+ * sheet receiver, the web/desktop "paste a URL into a note" flow,
+ * and any other surface that wants to enrich a bare URL with its
+ * title / description / hero image. `imageUrl` points at our R2
+ * CDN (the og:image is re-uploaded server-side), not the publisher.
+ * Any field can be `null` if the upstream page didn't provide it.
+ */
+export interface LinkPreview {
+  url: string;
+  title: string | null;
+  description: string | null;
+  imageUrl: string | null;
 }

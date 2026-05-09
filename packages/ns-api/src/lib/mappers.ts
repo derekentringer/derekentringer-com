@@ -44,7 +44,7 @@ export function toNoteVersion(row: PrismaNoteVersion): NoteVersion {
     noteId: row.noteId,
     title: row.title,
     content: row.content,
-    origin: "web",
+    origin: row.origin,
     createdAt: row.createdAt.toISOString(),
   };
 }

@@ -56,6 +56,14 @@ export function Ribbon({
   onSettings,
   onSignOut,
 }: RibbonProps) {
+  // Disable destructive nav (Settings, Trash, Import) and the record-
+  // mode buttons whenever a recording is active. Switching between
+  // these mid-recording on desktop unmounts NotesPage (Settings does an
+  // early return) and kills the AudioRecorder. The 4 record-mode
+  // buttons used to render only when idle — switching to render+
+  // disabled keeps the ribbon layout stable instead of re-flowing.
+  const recordingActive = recorderState !== "idle";
+  const disabledClass = "opacity-40 cursor-not-allowed";
   return (
     <nav className="w-10 bg-sidebar border-r border-border flex flex-col items-center py-2 shrink-0" aria-label="Ribbon actions">
       {/* Top actions */}
@@ -68,11 +76,12 @@ export function Ribbon({
         >
           +
         </button>
-        {showAudio && onRecord && recorderState === "idle" && (
+        {showAudio && onRecord && (
           <>
             <button
               onClick={() => onRecord("meeting")}
-              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+              disabled={recordingActive}
+              className={`flex items-center justify-center w-7 h-7 rounded text-muted-foreground transition-colors ${recordingActive ? disabledClass : "hover:text-foreground hover:bg-accent cursor-pointer"}`}
               title="Record & Transcribe Meeting (System)"
               aria-label="Record & Transcribe Meeting (System)"
             >
@@ -85,7 +94,8 @@ export function Ribbon({
             </button>
             <button
               onClick={() => onRecord("lecture")}
-              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+              disabled={recordingActive}
+              className={`flex items-center justify-center w-7 h-7 rounded text-muted-foreground transition-colors ${recordingActive ? disabledClass : "hover:text-foreground hover:bg-accent cursor-pointer"}`}
               title="Record & Transcribe Lecture (System)"
               aria-label="Record & Transcribe Lecture (System)"
             >
@@ -96,7 +106,8 @@ export function Ribbon({
             </button>
             <button
               onClick={() => onRecord("memo")}
-              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+              disabled={recordingActive}
+              className={`flex items-center justify-center w-7 h-7 rounded text-muted-foreground transition-colors ${recordingActive ? disabledClass : "hover:text-foreground hover:bg-accent cursor-pointer"}`}
               title="Capture & Transcribe Memo"
               aria-label="Capture & Transcribe Memo"
             >
@@ -109,7 +120,8 @@ export function Ribbon({
             </button>
             <button
               onClick={() => onRecord("verbatim")}
-              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+              disabled={recordingActive}
+              className={`flex items-center justify-center w-7 h-7 rounded text-muted-foreground transition-colors ${recordingActive ? disabledClass : "hover:text-foreground hover:bg-accent cursor-pointer"}`}
               title="Record & Transcribe Verbatim"
               aria-label="Record & Transcribe Verbatim"
             >
@@ -133,7 +145,8 @@ export function Ribbon({
         {showTrash && (
           <button
             onClick={onTrash}
-            className="relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+            disabled={recordingActive}
+            className={`relative flex items-center justify-center w-7 h-7 rounded text-muted-foreground transition-colors ${recordingActive ? disabledClass : "hover:text-foreground hover:bg-accent cursor-pointer"}`}
             title="Trash"
             aria-label={`Trash${trashCount > 0 ? ` (${trashCount})` : ""}`}
           >
@@ -150,6 +163,7 @@ export function Ribbon({
             onImportFiles={onImportFiles}
             onImportDirectory={onImportDirectory}
             onImportDirectoryPath={onImportDirectoryPath}
+            disabled={recordingActive}
           />
         )}
         {onGame && (
@@ -169,7 +183,8 @@ export function Ribbon({
         )}
         <button
           onClick={onSettings}
-          className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+          disabled={recordingActive}
+          className={`flex items-center justify-center w-7 h-7 rounded text-muted-foreground transition-colors ${recordingActive ? disabledClass : "hover:text-foreground hover:bg-accent cursor-pointer"}`}
           title="Settings"
           aria-label="Settings"
         >

@@ -22,7 +22,7 @@ describe("ChangePasswordPage", () => {
   it("renders the form with NoteSync header", () => {
     renderPage();
     expect(screen.getByText("NoteSync")).toBeInTheDocument();
-    expect(screen.getByText("Change your password")).toBeInTheDocument();
+    expect(screen.getByText("Change Your Password")).toBeInTheDocument();
   });
 
   it("renders all three password inputs", () => {

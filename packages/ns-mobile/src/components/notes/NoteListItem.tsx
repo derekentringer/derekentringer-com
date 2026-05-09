@@ -1,8 +1,8 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import type { Note } from "@derekentringer/ns-shared";
+import { type Note, stripFrontmatter } from "@derekentringer/ns-shared";
 import { useThemeColors } from "@/theme/colors";
-import { spacing, borderRadius } from "@/theme";
+import { spacing } from "@/theme";
 import { stripMarkdown } from "@/lib/markdown";
 import { relativeTime } from "@/lib/time";
 
@@ -13,7 +13,7 @@ interface NoteListItemProps {
 
 export function NoteListItem({ note, onPress }: NoteListItemProps) {
   const themeColors = useThemeColors();
-  const preview = stripMarkdown(note.content || "").slice(0, 120);
+  const preview = stripMarkdown(stripFrontmatter(note.content || "")).slice(0, 120);
   const maxTags = 3;
   const visibleTags = note.tags.slice(0, maxTags);
   const overflowCount = note.tags.length - maxTags;
@@ -80,7 +80,7 @@ export function NoteListItem({ note, onPress }: NoteListItemProps) {
                 ]}
               >
                 <Text
-                  style={[styles.tagText, { color: themeColors.primary }]}
+                  style={[styles.tagText, { color: themeColors.tagText }]}
                   numberOfLines={1}
                 >
                   {tag}
@@ -94,7 +94,7 @@ export function NoteListItem({ note, onPress }: NoteListItemProps) {
                   { backgroundColor: `${themeColors.primary}1A` },
                 ]}
               >
-                <Text style={[styles.tagText, { color: themeColors.primary }]}>
+                <Text style={[styles.tagText, { color: themeColors.tagText }]}>
                   +{overflowCount}
                 </Text>
               </View>
@@ -107,10 +107,13 @@ export function NoteListItem({ note, onPress }: NoteListItemProps) {
 }
 
 const styles = StyleSheet.create({
+  // Card geometry matches desktop's note-list rows: 6px radius
+  // (`rounded-md`) + 12px padding (`p-3`). Mobile keeps the
+  // outer margins so cards sit as a list of stacked tiles.
   container: {
-    borderRadius: borderRadius.lg,
+    borderRadius: 6,
     borderWidth: 1,
-    padding: spacing.md,
+    padding: 12,
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
@@ -140,7 +143,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   folderBadge: {
-    borderRadius: borderRadius.sm,
+    borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
     maxWidth: 120,

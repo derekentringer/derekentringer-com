@@ -208,6 +208,14 @@
 - [x] Default recording source changed to meeting mode — Greyed out when unsupported
 - [x] Transcription mode removed from Settings — Ribbon buttons are the primary UI for mode selection
 
+### URL Paste-to-Preview (Phase E.4)
+
+- [x] **Paste-to-preview URL enrichment** (`src/editor/urlPreview.ts`) — Pasting a single URL into the CodeMirror editor auto-fetches `/links/preview` and replaces the URL inline with a structured `**title** / description / ![og:image] / url` block. Behavior gated by **Settings → Editor → Auto-preview pasted URLs** (default on); read live via a ref so flipping the toggle takes effect on the next paste with no editor rebuild. A `StateField` tracks the inserted range and maps positions through every subsequent transaction (`from: assoc 1`, `to: assoc -1`) so the "Show URL only" undo toast at the bottom-right reverts the *current* range, not stale positions, even after the user types around the inserted block. Empty-metadata previews (sites that block scrapers, paywalls) are silently skipped — the bare URL stays put, no toast. Same shape mirrored from `ns-web`. 23 new tests across `linkPreviewMarkdown.test.ts` (helpers) + `urlPreview.test.ts` (extension integration via headless `EditorView`).
+
+### Server-Managed Transcription Jobs (Phase H)
+
+- [x] **Transcription pipeline migration** — Desktop's recording stop flow now uploads the audio chunk to `/ai/transcription-jobs` and lets a server-side worker handle Whisper transcription, Claude structuring, and Note creation; client observes status via SSE `event: transcription-job`. Survives client quit and works cross-device. Architecture details in [`docs/ns/mobile-parity-arch/phase-h-server-jobs.md`](../../../mobile-parity-arch/phase-h-server-jobs.md).
+
 ### Phase 12: Advanced Local File Management — High Priority
 
 - [~] [26 — Frontmatter Support](feature_planning/26-frontmatter-support.md) — YAML frontmatter as source of truth for note metadata (title, tags, dates, description, favorite); database columns become a read cache; shared parser/serializer in ns-shared; migration injects frontmatter into existing notes; unknown fields preserved on round-trip for Obsidian/Jekyll compatibility. **Phases 1–4 complete** (parser, API integration, desktop integration, migration). Phase 5 (Properties panel) in progress.

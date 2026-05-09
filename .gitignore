@@ -23,3 +23,4 @@ android/
 google-services.json
 GoogleService-Info.plist
 slate.json
+packages/ns-mobile/src/buildInfo.ts

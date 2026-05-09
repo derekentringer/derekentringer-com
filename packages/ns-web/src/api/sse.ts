@@ -1,4 +1,5 @@
 import { getAccessToken, refreshAccessToken, tokenManager } from "./client.ts";
+import type { TranscriptionJobSseEvent } from "./transcriptionJobs.ts";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3004";
 
@@ -13,6 +14,7 @@ export function connectSseStream(
   onError?: () => void,
   onConnect?: () => void,
   onChatEvent?: () => void,
+  onTranscriptionJobEvent?: (payload: TranscriptionJobSseEvent) => void,
 ): SseConnection {
   const deviceId = crypto.randomUUID();
   let abortController: AbortController | null = null;
@@ -139,10 +141,20 @@ export function connectSseStream(
           if (line.startsWith("event: ")) {
             currentEvent = line.slice(7).trim();
           } else if (line.startsWith("data: ")) {
+            const data = line.slice(6);
             if (currentEvent === "sync") {
               onEvent();
             } else if (currentEvent === "chat") {
               onChatEvent?.();
+            } else if (currentEvent === "transcription-job") {
+              if (onTranscriptionJobEvent) {
+                try {
+                  const payload = JSON.parse(data) as TranscriptionJobSseEvent;
+                  onTranscriptionJobEvent(payload);
+                } catch {
+                  /* ignore malformed payloads */
+                }
+              }
             }
             currentEvent = "";
           } else if (line === "") {

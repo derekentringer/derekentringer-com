@@ -49,3 +49,15 @@ export function diffLines(oldText: string, newText: string): DiffLine[] {
 
   return result.reverse();
 }
+
+/** Counts lines added vs removed in a diff. Useful for compact "+N
+ *  -M" summaries on the version-history list. */
+export function diffStats(diff: DiffLine[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of diff) {
+    if (line.type === "added") added++;
+    else if (line.type === "removed") removed++;
+  }
+  return { added, removed };
+}

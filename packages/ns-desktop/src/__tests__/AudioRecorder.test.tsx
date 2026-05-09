@@ -3,7 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { AudioRecorder } from "../components/AudioRecorder.tsx";
 
 vi.mock("../api/ai.ts", () => ({
-  transcribeAudio: vi.fn(),
+  transcribeChunk: vi.fn(),
+}));
+
+vi.mock("../api/transcriptionJobs.ts", () => ({
+  createTranscriptionJobWithAudio: vi.fn(),
+  createTranscriptionJobWithTranscript: vi.fn(),
+  retryTranscriptionJob: vi.fn(),
+  deleteTranscriptionJob: vi.fn(),
 }));
 
 const mockInvoke = vi.fn();
@@ -37,7 +44,7 @@ describe("AudioRecorder", () => {
         defaultMode="memo"
         recordingSource="microphone"
         onRecordingSourceChange={vi.fn()}
-        onNoteCreated={vi.fn()}
+        onJobAccepted={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -51,7 +58,7 @@ describe("AudioRecorder", () => {
         defaultMode="memo"
         recordingSource="microphone"
         onRecordingSourceChange={vi.fn()}
-        onNoteCreated={vi.fn()}
+        onJobAccepted={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -81,7 +88,7 @@ describe("AudioRecorder", () => {
         defaultMode="memo"
         recordingSource="microphone"
         onRecordingSourceChange={vi.fn()}
-        onNoteCreated={vi.fn()}
+        onJobAccepted={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -117,7 +124,7 @@ describe("AudioRecorder", () => {
         defaultMode="memo"
         recordingSource="microphone"
         onRecordingSourceChange={vi.fn()}
-        onNoteCreated={vi.fn()}
+        onJobAccepted={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -132,7 +139,7 @@ describe("AudioRecorder", () => {
         defaultMode="memo"
         recordingSource="microphone"
         onRecordingSourceChange={vi.fn()}
-        onNoteCreated={vi.fn()}
+        onJobAccepted={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -167,7 +174,7 @@ describe("AudioRecorder", () => {
         defaultMode="memo"
         recordingSource="meeting"
         onRecordingSourceChange={vi.fn()}
-        onNoteCreated={vi.fn()}
+        onJobAccepted={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -203,7 +210,7 @@ describe("AudioRecorder", () => {
         defaultMode="memo"
         recordingSource="meeting"
         onRecordingSourceChange={vi.fn()}
-        onNoteCreated={vi.fn()}
+        onJobAccepted={vi.fn()}
         onError={vi.fn()}
       />,
     );

@@ -8,31 +8,40 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useQueryClient } from "@tanstack/react-query";
 import useAuthStore from "@/store/authStore";
 import useSyncStore from "@/store/syncStore";
+import useAiSettingsStore from "@/store/aiSettingsStore";
+import useEditorSettingsStore from "@/store/editorSettingsStore";
+import useDashboardSettingsStore from "@/store/dashboardSettingsStore";
 import { LoginScreen } from "@/screens/LoginScreen";
 import { DashboardScreen } from "@/screens/DashboardScreen";
 import { NoteDetailScreen } from "@/screens/NoteDetailScreen";
 import { NoteEditorScreen } from "@/screens/NoteEditorScreen";
+import { NoteDiffScreen } from "@/screens/NoteDiffScreen";
 import { NotesScreen } from "@/screens/NotesScreen";
 import { AiScreen } from "@/screens/AiScreen";
 import { SettingsScreen } from "@/screens/SettingsScreen";
 import { TrashScreen } from "@/screens/TrashScreen";
 import { TrashNoteDetailScreen } from "@/screens/TrashNoteDetailScreen";
+import { ChangePasswordScreen } from "@/screens/ChangePasswordScreen";
+import { TwoFactorAuthScreen } from "@/screens/TwoFactorAuthScreen";
+import { RecordingScreen } from "@/screens/RecordingScreen";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
+import { ShareReceiverOverlay } from "@/components/share/ShareReceiverOverlay";
 import { useThemeColors } from "@/theme/colors";
 import { colors } from "@/theme";
 import { initDatabase } from "@/lib/database";
 import { initSyncEngine, destroySyncEngine } from "@/lib/syncEngine";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { tokenStorage } from "@/services/api";
-import type { DashboardStackParamList, SettingsStackParamList } from "./types";
+import type { AiStackParamList, DashboardStackParamList, SettingsStackParamList } from "./types";
 
-const API_BASE_URL = __DEV__
-  ? "http://localhost:3004"
-  : "https://ns-api.derekentringer.com";
+import { getApiBaseUrl } from "@/lib/devHost";
+
+const API_BASE_URL = getApiBaseUrl();
 
 const AuthStack = createNativeStackNavigator();
 const MainTab = createBottomTabNavigator();
 const DashboardStack = createNativeStackNavigator<DashboardStackParamList>();
+const AiStack = createNativeStackNavigator<AiStackParamList>();
 const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
 
 function AuthNavigator() {
@@ -69,7 +78,52 @@ function DashboardNavigator() {
         component={NoteEditorScreen}
         options={{ title: "Editor" }}
       />
+      <DashboardStack.Screen
+        name="NoteDiff"
+        component={NoteDiffScreen}
+        options={{ title: "Compare Version" }}
+      />
+      <DashboardStack.Screen
+        name="Recording"
+        component={RecordingScreen}
+        options={{ title: "New Recording" }}
+      />
     </DashboardStack.Navigator>
+  );
+}
+
+function AiNavigator() {
+  const themeColors = useThemeColors();
+
+  return (
+    <AiStack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: themeColors.background },
+        headerTintColor: themeColors.foreground,
+        headerShadowVisible: false,
+      }}
+    >
+      <AiStack.Screen
+        name="AiHome"
+        component={AiScreen}
+        options={{ title: "AI Assistant" }}
+      />
+      <AiStack.Screen
+        name="NoteDetail"
+        component={NoteDetailScreen}
+        options={{ title: "" }}
+      />
+      <AiStack.Screen
+        name="NoteEditor"
+        component={NoteEditorScreen}
+        options={{ title: "Editor" }}
+      />
+      <AiStack.Screen
+        name="NoteDiff"
+        component={NoteDiffScreen}
+        options={{ title: "Compare Version" }}
+      />
+    </AiStack.Navigator>
   );
 }
 
@@ -98,6 +152,16 @@ function SettingsNavigator() {
         name="TrashNoteDetail"
         component={TrashNoteDetailScreen}
         options={{ title: "" }}
+      />
+      <SettingsStack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={{ title: "Change Password" }}
+      />
+      <SettingsStack.Screen
+        name="TwoFactorAuth"
+        component={TwoFactorAuthScreen}
+        options={{ title: "Two-Factor Authentication" }}
       />
     </SettingsStack.Navigator>
   );
@@ -136,13 +200,10 @@ function MainTabNavigator() {
       />
       <MainTab.Screen
         name="AI"
-        component={AiScreen}
+        component={AiNavigator}
         options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: themeColors.background },
-          headerTintColor: themeColors.foreground,
           tabBarIcon: ({ color, size }) => (
-            <MaterialCommunityIcons name="robot" color={color} size={size} />
+            <MaterialCommunityIcons name="message-outline" color={color} size={size} />
           ),
         }}
       />
@@ -175,6 +236,17 @@ function AuthenticatedApp() {
     syncInitialized.current = true;
 
     (async () => {
+      // Hydrate the AI settings store from AsyncStorage so the
+      // AiScreen reads the user's persisted auto-approve flags
+      // before its first askQuestion call.
+      void useAiSettingsStore.getState().hydrate();
+      // Hydrate editor settings (frontmatter show/hide toggle) so
+      // the editor opens in the user's last-chosen mode.
+      void useEditorSettingsStore.getState().hydrate();
+      // Hydrate dashboard settings (speed-dial FAB + Quick Actions
+      // visibility) so the dashboard renders in the user's last-
+      // chosen layout on first paint.
+      void useDashboardSettingsStore.getState().hydrate();
       // Initialize local database first — must complete before any queries fire
       await initDatabase();
       // Phase A.0: normalize any drifted folder isLocalFile flag to match its
@@ -200,6 +272,21 @@ function AuthenticatedApp() {
           onSyncRejections: (rejections, forcePush, discard) => {
             syncSetRejections(rejections, forcePush, discard);
           },
+          onChatChanged: () => {
+            // Phase A.5.1: another device wrote to the user's chat
+            // history; nudge AiScreen to re-run fetchChatHistory.
+            useSyncStore.getState().bumpChatRefresh();
+          },
+          onTranscriptionJob: (payload) => {
+            // Phase H — server emitted a terminal-status update
+            // for a transcription job. Patch the matching local
+            // summary so the meeting card flips out of its
+            // "transcribing" state.
+            const { applyTranscriptionJobEvent } = require(
+              "@/store/recordingResultStore",
+            ) as typeof import("@/store/recordingResultStore");
+            applyTranscriptionJobEvent(payload);
+          },
         },
       );
     })();
@@ -224,6 +311,11 @@ function AuthenticatedApp() {
       <View style={{ flex: 1, marginTop: isOnline ? 0 : -insets.top }}>
         <MainTabNavigator />
       </View>
+      {/* Phase E.1 — share-sheet receiver. Mounts inside the
+          authenticated tree so a share intent only opens the
+          receiver when the user is actually signed in; pre-auth
+          shares fall through and the user sees the login screen. */}
+      <ShareReceiverOverlay />
     </View>
   );
 }

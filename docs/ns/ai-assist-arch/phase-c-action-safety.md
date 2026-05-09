@@ -1,6 +1,6 @@
 # Phase C — Action Safety
 
-**Status**: ✅ merged into `develop-ai-assist` (PR #471)
+**Status**: 🔷 shipped (originally PR #471 → `develop-ai-assist`; long-lived branch later merged to `develop`)
 **Branch**: `feat/ai-assist-phase-c` (deleted post-merge)
 **Depends on**: A (nice-to-have for conversational confirmation flow); D.1 (token logging) recommended to observe cost of confirmation round-trips
 **Blocks**: responsible shipping of any future Claude-driven bulk operations
