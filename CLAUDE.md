@@ -278,6 +278,7 @@ packages/
 - Sideload-only distribution (APK for Android, ad-hoc IPA for iOS)
 - Android-focused (push notifications on iOS excluded due to paid Apple Developer account requirement)
 - **Side-by-side prod / dev installs**: `app.config.ts` is a dynamic Expo config keyed on `APP_VARIANT`. `APP_VARIANT=dev npx expo run:android` (or `ios`) installs as `com.derekentringer.notesync.dev` with display name `NoteSync (Dev)` — coexists with the prod-identifier install. Default (no env var) is the prod identifier. After flipping `APP_VARIANT` for the first time on a given platform, run `APP_VARIANT=dev npx expo prebuild --platform <p> --clean` once so the native project regenerates with the new identifier baked into `AndroidManifest`/`Info.plist`/the share-extension target.
+- **Build-time API URL override**: `devHost.ts` checks `process.env.EXPO_PUBLIC_API_URL` first (Metro inlines `EXPO_PUBLIC_*` env vars into the bundle at build time). Set it during a Release-config build to produce a standalone dev install that hits localhost (or staging, or anything else) without needing `__DEV__=true`/Metro running at launch. Example for Android: `APP_VARIANT=dev EXPO_PUBLIC_API_URL=http://localhost:3004 npx expo run:android --variant release`. For iOS, `localhost` on the iPhone is the iPhone itself — use the Mac's LAN IP instead (`http://192.168.0.119:3004`); re-bake when the network changes. When the env var is unset, the existing `__DEV__` logic + dynamic Metro-host detection applies.
 
 ### Finance Mobile (`packages/fin-mobile/`)
 
