@@ -62,7 +62,7 @@ Match Phase 0 D.3 decision. If `@notate/*`:
 
 - [ ] Write a fresh `CLAUDE.md` covering only the Notate stack — drop the `derekentringer-com` portfolio sections, the fin-* sections, the NoteSync history references
 - [ ] Preserve relevant operational notes: dev-server startup, release flow, build commands, Railway deployment specifics
-- [ ] Update domain references throughout (`notate.md`, `api.notate.md`, `images.notate.md`)
+- [ ] Update domain references throughout (`notate.md`, `api.notate.md`, `img.notate.md`)
 
 ### E. Re-anchor docs
 

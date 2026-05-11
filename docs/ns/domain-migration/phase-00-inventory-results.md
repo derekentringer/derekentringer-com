@@ -48,7 +48,7 @@ These all change as a block. Map:
 |-----|-----|
 | `ns.derekentringer.com` | `notate.md` |
 | `ns-api.derekentringer.com` | `api.notate.md` |
-| `notesync-images.derekentringer.com` | `images.notate.md` |
+| `notesync-images.derekentringer.com` | `img.notate.md` |
 
 Locations:
 
@@ -156,25 +156,100 @@ The Rust crate name change cascades to the built binary path in `target/release/
 
 ## Service-account inventory (Phase 0 § I.3)
 
-To be filled in by hand — these aren't grep-able. Skeleton:
+For each service, captures the **current** (NoteSync, derekentringer-com) state and the **target** (Notate) state. Filled in as we walk through each one.
 
-| Service | Account | Resources | Notes |
-|---------|---------|-----------|-------|
-| Railway | `derekentringer` | `ns-api`, `ns-web`, Postgres plugin | Migrating per Phase 1 |
-| Cloudflare | `derekentringer` | `derekentringer.com` zone, `ns.derekentringer.com` DNS, R2 `notesync-images` bucket, public domain `notesync-images.derekentringer.com` | New `notate.md` zone in Phase 1 |
-| Resend | `derekentringer` | Sender domain, templates | New Notate domain in Phase 1 |
-| Anthropic | (TBD — check) | API key | Keep or rotate per Phase 1 |
-| OpenAI | (TBD — check) | Whisper API key | Keep or rotate per Phase 1 |
-| Voyage AI | (TBD — check) | Embeddings API key | Keep or rotate per Phase 1 |
-| GoDaddy | `derekentringer` | `derekentringer.com` registrar | Old domain stays; 301 redirect plan in Phase 7 |
-| Notate registrar | (TBD — check who owns `notate.md`) | `notate.md` | Confirm + move DNS to Cloudflare in Phase 1 |
+### Railway
+
+| | Current (NoteSync) | Target (Notate) |
+|---|---|---|
+| Account | Personal (`derekentringer`) | **New, Notate-specific** — to be created in Phase 1 |
+| Services | `ns-api`, `ns-web`, Postgres plugin | None yet — fresh slate |
+| Subscription | Shared with derekentringer-com (fin-api, fin-web, web, api) | Separate subscription, billed independently |
+| Custom domains | `ns.derekentringer.com` (web), `ns-api.derekentringer.com` (api) | None yet — `notate.md` apex + `api.notate.md` added in Phase 7 |
+| Status | ✅ inventoried | 🟡 awaiting account creation (Phase 1 § "Railway") |
+
+### Cloudflare
+
+| | Current (NoteSync) | Target (Notate) |
+|---|---|---|
+| Account | Personal (same Cloudflare account, no migration needed) | **Same account**, new `notate.md` zone added alongside the existing `derekentringer.com` zone |
+| Zones | `derekentringer.com` (with `ns.` + `ns-api.` + `notesync-images.` subdomain DNS records) | `notate.md` (apex + `api.` + `images.` subdomains added in Phase 7) |
+| R2 bucket | `notesync-images` | **New bucket `notate-images`** under the same Cloudflare account |
+| Bulk Redirects (old → new) | n/a | **None planned** — old `ns.derekentringer.com` / `notesync-images.derekentringer.com` will simply stop resolving after Phase 9. Existing image markdown URLs in notes will 404. Developer will fix broken image refs by hand as encountered. |
+| Status | ✅ inventoried | 🟡 new zone + R2 bucket added in Phase 1 / Phase 7 |
+
+### Domain registrars
+
+| Domain | Registrar | DNS managed by |
+|--------|-----------|----------------|
+| `derekentringer.com` | GoDaddy | Cloudflare (existing) |
+| `notate.md` | nic.md (Moldovan TLD registrar) | Cloudflare (per above) |
+
+Notate's domain stays at nic.md (the .md TLD requires a Moldova-registered registrar). DNS is delegated to Cloudflare nameservers — same management pattern as `derekentringer.com`.
+
+### Migration-plan impact: redirect strategy
+
+The original Phase 7 § F + Phase 10 § D specified Cloudflare Bulk Redirects from the old `ns.derekentringer.com` URLs to `notate.md`. Per the decision above, **those redirects are not planned**. Pre-launch single-user posture means the cost of broken old URLs is just "developer hits a broken image and re-uploads." When Phase 7 / 10 doc work resumes, simplify the redirect tasks to "delete old DNS records" only.
+
+### Resend
+
+| | Current (NoteSync) | Target (Notate) |
+|---|---|---|
+| Account | Shared with derekentringer-com personal account | **New, Notate-specific** Resend account |
+| Sender domain | **Not yet configured** — current `ns-api` likely uses Resend's default sandbox sender for password-reset emails | New sender on `notate.md` (DKIM/SPF/DMARC records added to Cloudflare in Phase 1) |
+| Plan | Free tier | Free tier (3 k emails/month — plenty for pre-launch single-user) |
+| Templates | None live | Re-created with Notate branding |
+| Status | ✅ inventoried | 🟡 new account + domain verification in Phase 1 |
+
+> Note: since the current sender domain was never set up, there are no live email-template assets to migrate — Phase 1 starts the Notate Resend setup from scratch with a properly verified `notate.md` sender.
+
+### Anthropic
+
+| | Current (NoteSync) | Target (Notate) |
+|---|---|---|
+| Account | Shared with derekentringer-com personal account | **New, Notate-specific** Anthropic console account |
+| Billing | Existing personal account | Notate-specific billing, separate from derekentringer-com |
+| API key | Existing key in old `ns-api` env | **New key** generated under the new account; old key not migrated |
+| Model | `claude-sonnet-4-6` (per `CLAUDE_MODEL` env default) | Same — model setting carries over verbatim |
+| Status | ✅ inventoried | 🟡 new account + key provisioning in Phase 1 |
+
+### OpenAI → Groq (Whisper provider swap)
+
+Notate is swapping the transcription provider entirely as part of the migration. No OpenAI account at all in the new stack.
+
+| | Current (NoteSync) | Target (Notate) |
+|---|---|---|
+| Provider | OpenAI Whisper API (`WHISPER_PROVIDER=openai`, default) | **Groq** (`WHISPER_PROVIDER=groq`) |
+| Account | Shared with derekentringer-com personal OpenAI account | **New Groq account**, Notate-specific |
+| Model | `whisper-1` | `whisper-large-v3-turbo` (Groq's default) |
+| Cost | ~$0.006/min | ~6.7× cheaper than OpenAI |
+| API key env | `OPENAI_API_KEY` | `WHISPER_API_KEY` (set to Groq key) or `GROQ_API_KEY` (the service falls back to this if `WHISPER_API_KEY` is unset) |
+| URL env | `WHISPER_API_URL` defaults to `https://api.openai.com/v1/audio/transcriptions` | Auto-set to `https://api.groq.com/openai/v1/audio/transcriptions` when `WHISPER_PROVIDER=groq` |
+| Status | ✅ inventoried | 🟡 new Groq account + key in Phase 1; remove `OPENAI_API_KEY` from new ns-api env entirely |
+
+> **Carry-forward**: `whisperService.ts` is already provider-agnostic — supports `openai`, `groq`, or `custom` via `WHISPER_PROVIDER` config. Swapping is an env-var flip, not a code change, so Notate can switch back to OpenAI (or to a self-hosted whisper.cpp endpoint via `custom`) at any time by:
+>
+> 1. Provisioning a key with the new provider
+> 2. Setting `WHISPER_PROVIDER`, `WHISPER_API_KEY` (and `WHISPER_API_URL` + `WHISPER_MODEL` if `custom`)
+> 3. Redeploying — no rebuild needed
+>
+> Default for Notate launch is Groq; the env-var seam stays in place for future flexibility.
+
+### Voyage AI
+
+| | Current (NoteSync) | Target (Notate) |
+|---|---|---|
+| Account | Shared with derekentringer-com personal account | **New, Notate-specific** Voyage AI account |
+| Use | Embeddings for pgvector semantic search | Same — continue using Voyage |
+| API key | `VOYAGE_API_KEY` in old ns-api env | New key under the new account |
+| Status | ✅ inventoried | 🟡 new account + key in Phase 1 |
 
 ## Production-data inventory (Phase 0 § I.5)
 
 | Resource | Size | Migration plan |
 |----------|------|----------------|
-| Postgres (ns-api) | TBD (`SELECT pg_database_size('postgres');`) | `pg_dump` / `pg_restore` per Phase 5 |
-| R2 `notesync-images` | TBD (`aws s3 ls --summarize`) | `aws s3 sync` per Phase 5 |
+| Postgres (ns-api) | **~1.13 GB** (Railway backup size) | `pg_dump` / `pg_restore` per Phase 5; a single-pass dump+restore is fine at this size — no chunking or downtime window beyond the few minutes the dump takes |
+| R2 `notesync-images` | **~16 MB** | `aws s3 sync notesync-images → notate-images` per Phase 5; trivially small, completes in seconds |
 | Active users | **1** (developer) | Pre-launch, no public coordination needed |
 
 ## Documentation references (Phase 0 § I.4)
@@ -198,6 +273,6 @@ Picking these out so they don't get missed during Phase 2's mechanical rewrite:
 
 - [x] All four `git grep` passes from Phase 0 § I.1 completed
 - [x] Bundle-ID inventory (§ I.2) captured
-- [ ] Service-account inventory (§ I.3) — table skeleton in place; fill in manually before Phase 1
+- [x] Service-account inventory (§ I.3) — all services captured (Railway, Cloudflare, Resend, Anthropic, OpenAI→Groq, Voyage AI)
 - [x] Documentation references (§ I.4) — captured at the summary level; deeper sweep deferred to Phase 2 § G
-- [ ] Production-data inventory (§ I.5) — placeholder; fill in by querying the production DB + R2 console before Phase 5
+- [x] Production-data inventory (§ I.5) — Postgres ~1.13 GB, R2 ~16 MB; small enough for single-pass dump/restore + sync

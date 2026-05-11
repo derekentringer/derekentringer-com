@@ -95,7 +95,7 @@ Every hardcoded `ns.derekentringer.com` / `ns-api.derekentringer.com` reference:
 - [ ] `packages/web/.env.production` — `VITE_API_URL`
 - [ ] `packages/desktop/package.json` build scripts — `VITE_API_URL` baked into Tauri builds (per CLAUDE.md, this is set explicitly via `cross-env` in every `tauri:build*` script — must update every script)
 - [ ] `packages/mobile/src/lib/devHost.ts` — `PROD_API_URL` constant
-- [ ] R2 public URL: `notesync-images.derekentringer.com` → `images.notate.md`
+- [ ] R2 public URL: `notesync-images.derekentringer.com` → `img.notate.md`
 - [ ] Email links (handled by Phase 1's Resend setup + an `APP_URL` env override)
 
 ### G. Documentation

@@ -49,7 +49,7 @@ This is the riskiest phase. Run through the entire procedure on staging first, t
 ### Step 4 — DNS flip (target: 5 minutes; propagation 5–15 minutes)
 
 - [ ] In Cloudflare, switch `ns.derekentringer.com` from the old Railway target to "redirect-only" (Cloudflare Bulk Redirects activated, no Railway traffic)
-- [ ] Confirm `notate.md` (apex), `api.notate.md`, `images.notate.md` resolve from multiple regions (`dnschecker.org`)
+- [ ] Confirm `notate.md` (apex), `api.notate.md`, `img.notate.md` resolve from multiple regions (`dnschecker.org`)
 - [ ] Activate the Cloudflare Bulk Redirects ruleset (Phase 7 § F)
 - [ ] Test `https://ns.derekentringer.com/notes/some-id` 301s to `https://notate.md/notes/some-id`
 

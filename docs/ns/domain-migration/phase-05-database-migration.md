@@ -97,7 +97,7 @@ The R2 image bucket (`notesync-images`) holds every uploaded image referenced by
 - [ ] **Update markdown content** — every `![](https://notesync-images.derekentringer.com/...)` in user notes still points to the old domain
 - [ ] Two ways to handle the URL update:
   1. **301 redirect** old domain to new domain via Cloudflare — markdown stays as-is; old URLs forward forever
-  2. **Database rewrite** — UPDATE Notes SET content = REPLACE(content, 'notesync-images.derekentringer.com', 'images.notate.md')
+  2. **Database rewrite** — UPDATE Notes SET content = REPLACE(content, 'notesync-images.derekentringer.com', 'img.notate.md')
 
 > **Recommendation**: do *both*. Database rewrite cleans up new content; 301 redirect catches the long tail of cached HTML, search engines, and any missed references.
 
