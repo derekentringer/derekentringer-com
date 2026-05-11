@@ -80,12 +80,12 @@ Per inventory I.1, every visible "NoteSync" string changes:
 
 ### E. Bundle identifiers
 
-Per Phase 0 D.8: the new identifier is **`md.notate.app`** across all three platforms.
+Per Phase 0 D.8 / D.9: the new identifiers are **`md.notate.app`** (prod) and **`md.notate.app.dev`** (dev variant for side-by-side installs).
 
-- [ ] `packages/desktop/src-tauri/tauri.conf.json` → `bundle.identifier`: `com.derekentringer.notesync` → `md.notate.app`
-- [ ] `packages/mobile/app.json` → `expo.ios.bundleIdentifier`: `com.derekentringer.notesync` → `md.notate.app`
-- [ ] `packages/mobile/app.json` → `expo.android.package`: `com.derekentringer.notesync` → `md.notate.app`
-- [ ] **Critical**: bundle ID changes are non-reversible for existing app installs. Existing TestFlight / sideload installs on the old ID become orphaned (a "different app" from the OS's perspective). Pre-launch single-user posture means the developer just reinstalls once on each device — no user comms layer required.
+- [ ] `packages/desktop/src-tauri/tauri.conf.json` → base identifier: `com.derekentringer.notesync` → `md.notate.app`
+- [ ] `packages/desktop/src-tauri/tauri.dev.conf.json` → dev-override identifier: `com.derekentringer.notesync.dev` → `md.notate.app.dev`
+- [ ] `packages/mobile/app.config.ts` → both prod (`md.notate.app`) and dev (`md.notate.app.dev`) branches updated
+- [ ] **Critical**: bundle ID changes are non-reversible for existing app installs. Existing TestFlight / sideload installs on the old ID become orphaned. Pre-launch single-user posture means the developer just reinstalls both variants once on each device — no user comms layer required.
 
 ### F. URL constants
 
