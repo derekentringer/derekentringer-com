@@ -97,6 +97,21 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           },
         },
       ],
+      // Android Release builds block cleartext HTTP (API 28+) by
+      // default, which makes the dev-variant `EXPO_PUBLIC_API_URL=
+      // http://localhost:3004` round-trip silently fail. Only the
+      // dev variant flips this on; prod stays HTTPS-only. iOS has
+      // the equivalent allowance via `NSAllowsLocalNetworking` in
+      // the Info.plist above, which is broad enough that no per-
+      // variant toggle is needed there.
+      ...(isDev
+        ? [
+            [
+              "expo-build-properties",
+              { android: { usesCleartextTraffic: true } },
+            ] as unknown as ExpoConfig["plugins"] extends (infer P)[] ? P : never,
+          ]
+        : []),
     ],
   };
 };
