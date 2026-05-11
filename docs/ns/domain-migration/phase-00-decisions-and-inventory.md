@@ -17,7 +17,8 @@ This phase is mostly thinking + spreadsheets, not code. Spend the time here so P
 | D.5 | GitHub | Org: **PixelPerfect Studios LLC**. Repo: **`notate`** |
 | D.6 | WebAuthn passkeys | **N/A** — developer re-registers once, no user comms needed |
 | D.7 | Shared package strategy | **Copy + prune**; inline `ns-shared` content into `@notate/shared` |
-| D.8 | Bundle identifier | **`md.notate.app`** (reverse-DNS of `notate.md` with an `.app` label suffix) |
+| D.8 | Bundle identifier (prod) | **`md.notate.app`** (reverse-DNS of `notate.md` with an `.app` label suffix) |
+| D.9 | Bundle identifier (dev) | **`md.notate.app.dev`** — appended `.dev` so prod and dev variants install side-by-side on the same device |
 
 ## Decisions to lock in
 
@@ -144,10 +145,10 @@ Goal: produce a comprehensive list so Phase 2 has a checklist instead of a disco
 
 ### I.2 — Bundle identifiers
 
-- [ ] `packages/ns-desktop/src-tauri/tauri.conf.json` → `bundle.identifier`: `com.derekentringer.notesync` → **`md.notate.app`**
-- [ ] `packages/ns-mobile/app.json` → `expo.ios.bundleIdentifier`: `com.derekentringer.notesync` → **`md.notate.app`**
-- [ ] `packages/ns-mobile/app.json` → `expo.android.package`: `com.derekentringer.notesync` → **`md.notate.app`**
-- [x] Decided: **`md.notate.app`**. The `.app` segment is a label, not a TLD reference; both Apple and Google accept this format. Domain-ownership questions during App Store review (if Notate ever publishes) are satisfied because the org owns `notate.md`.
+- [ ] `packages/desktop/src-tauri/tauri.conf.json` → base identifier: `com.derekentringer.notesync` → **`md.notate.app`** (prod)
+- [ ] `packages/desktop/src-tauri/tauri.dev.conf.json` → dev-override identifier: `com.derekentringer.notesync.dev` → **`md.notate.app.dev`**
+- [ ] `packages/mobile/app.config.ts` → derive `bundleIdentifier`/`package` from `APP_VARIANT`: prod → **`md.notate.app`**, dev → **`md.notate.app.dev`**
+- [x] Decided: **`md.notate.app`** for prod / **`md.notate.app.dev`** for the dev variant. The `.app` segment is a label, not a TLD reference; both Apple and Google accept this format. Domain-ownership questions during App Store review (if Notate publishes later) are satisfied because the org owns `notate.md`.
 
 ### I.3 — Service account inventory
 
