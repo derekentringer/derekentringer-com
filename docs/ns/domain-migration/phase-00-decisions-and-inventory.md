@@ -93,7 +93,7 @@ The Postgres database under the current `ns-api` Railway service holds all produ
 
 - [x] Decided: org = PixelPerfect Studios LLC; repo = `notate`
 - [x] Confirmed the GitHub org slug: `PixelPerfect-Studios-LLC`
-- [ ] Confirm visibility setting at creation time (private until launch is fine; flip public per Phase 10 § H later)
+- [x] Confirmed visibility: **private indefinitely** (Notate is a paid product; no plan to open-source). Per Phase 10 § H.
 
 ### D.6 — WebAuthn passkey strategy
 
