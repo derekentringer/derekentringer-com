@@ -1,98 +1,79 @@
 # Phase 7 — Domain, DNS, SSL
 
-**Status**: 🟡 Not started
-**Depends on**: Phase 1 (Cloudflare zone), Phase 6 (staging subdomains validated)
-**Blocks**: Phase 9 (cutover)
-**Goal**: configure the production DNS records for `notate.md` (apex + `api` + `images` subdomains) and the redirect plan for the old `ns.derekentringer.com` URLs. By the end of this phase, the new domain is *ready* to receive traffic, but the actual flip happens during Phase 9.
+**Status**: ✅ Complete. All four Notate domains (`notate.md`, `api.notate.md`, `img.notate.md`, `www.notate.md`) are live with valid SSL. The new domain is fully receiving traffic — there's no traffic to "flip" later (single-user pre-launch, no existing public users).
 
-This phase is mostly DNS + SSL coordination. The risk is in TTL planning — drop TTLs *before* the cutover so the flip propagates fast.
+**Live endpoints**:
+- web: https://notate.md → 200
+- api: https://api.notate.md/health → 200 `{"status":"ok"}`
+- images: https://img.notate.md (R2 bucket, set up in Phase 1 § R2)
+- www: https://www.notate.md → 301 → notate.md (Cloudflare Redirect Rule)
 
 ## Tasks
 
 ### A. Apex + www
 
-- [ ] In Cloudflare, add an A or CNAME record for `notate.md` pointing to the Railway-provided target for the `web` service (Railway gives you a CNAME target like `xxx.up.railway.app`)
-- [ ] Configure Cloudflare proxying (orange cloud) — this gives free SSL + DDoS + caching
-- [ ] Add `www.notate.md` as either a redirect to `notate.md` (Cloudflare Page Rules / Bulk Redirects) or a CNAME to the same target
+- [x] Cloudflare CNAME for `notate.md` (apex) → Railway target for `web` service (proxy off during Railway SSL validation, then flipped to **orange cloud / proxied** for caching + DDoS once green)
+- [x] `www.notate.md` handled via Cloudflare **Redirect Rule** (template: "Redirect from WWW to root") — 301s `https://www.notate.md/<path>` → `https://notate.md/<path>` with query string preserved. `www` CNAME on orange cloud (Cloudflare proxy required for the redirect rule to fire).
 
 ### B. API subdomain
 
-- [ ] Add CNAME for `api.notate.md` → Railway target for the `api` service
-- [ ] Cloudflare proxy: **off** (gray cloud) for the API. The api uses SSE; Cloudflare's proxy can buffer SSE frames and break long-lived connections. Direct DNS through to Railway is what the existing setup does for `ns-api.derekentringer.com`. Verify against current behavior.
+- [x] Cloudflare CNAME for `api.notate.md` → Railway target for `api` service
+- [x] **Gray cloud / DNS-only** (permanent) — Cloudflare's proxy can buffer SSE frames and break long-lived connections; api must be direct-to-Railway
 
 ### C. R2 image subdomain
 
-- [ ] In Cloudflare, add a CNAME for `img.notate.md` → R2 public endpoint
-- [ ] In R2 settings, link the bucket `notate-images` to the custom domain `img.notate.md`
-- [ ] Verify SSL provisions (R2 issues a cert via Cloudflare)
-- [ ] Test image fetch via curl: `curl -I https://img.notate.md/<known-key>` should return 200
+- [x] **Done in Phase 1 § R2** — `img.notate.md` bound to the `notate-images` R2 bucket via Connect Domain. SSL cert auto-issued by Cloudflare. `curl -I https://img.notate.md/` returns `HTTP/2 404 server: cloudflare` (404 expected for a missing key; the response proves the domain is live).
 
 ### D. Email DNS records
 
-Resend's DKIM / SPF / DMARC records were added in Phase 1. Re-verify here:
+- [x] **Done in Phase 1 § Resend** — DKIM / SPF / DMARC TXT records in Cloudflare; `notate.md` is a verified sending domain in Resend.
 
-- [ ] DKIM TXT records in Cloudflare match what Resend's dashboard shows
-- [ ] SPF record includes Resend's sender IP range
-- [ ] DMARC policy: `p=none` for first 30 days (monitoring), then tighten to `quarantine` once delivery is stable
+### E. ~~TTL drop~~ — skipped
 
-### E. TTL drop (the day before cutover)
+Single-user pre-launch; no public users to insulate from propagation delay. Default Cloudflare TTLs are fine.
 
-DNS TTLs control how long resolvers cache records. To make the cutover propagate fast, drop TTLs ahead of time:
+### F. ~~Old-domain redirect plan~~ — skipped
 
-- [ ] 24h before cutover: drop TTL on every existing `ns.derekentringer.com` and `ns-api.derekentringer.com` record from default (often 1h or 24h) to **300 seconds**
-- [ ] Wait for the previous TTL period to expire so resolvers pick up the new shorter TTL
-- [ ] At cutover (Phase 9): records flip with the 300s window
+Phase 0 + Phase 5 decisions: no 301 redirects from old domains. The only old-domain references in flight are image URLs embedded in note content, which are rewritten in-place during Phase 9 cutover (Phase 5 § D SQL). Old domains will simply stop resolving when Phase 10 retires the old Railway services.
 
-This applies to the old domain (which we're redirecting away from). Set Cloudflare TTLs on the new `notate.md` records to whatever default you want (1h is fine).
+### G. DNS dry run
 
-### F. Old-domain redirect plan
+External `dig` confirms:
 
-After cutover, every old URL should 301 to the new equivalent so bookmarks, email links, and search results don't break.
+- `api.notate.md` → CNAME `k6yg9ms1.up.railway.app` → A `66.33.22.58` (Railway direct)
+- `notate.md` → A `104.21.63.230`, `172.67.172.149` (Cloudflare proxy)
+- SSL valid on all four endpoints (Let's Encrypt for Railway-backed; Cloudflare Universal SSL for R2)
 
-| Old | New |
-|-----|-----|
-| `https://ns.derekentringer.com/` | `https://notate.md/` |
-| `https://ns.derekentringer.com/notes/<id>` | `https://notate.md/notes/<id>` |
-| `https://ns-api.derekentringer.com/*` | `https://api.notate.md/*` |
-| `https://notesync-images.derekentringer.com/*` | `https://img.notate.md/*` |
+Smoke tests run from CLI:
 
-Two implementation paths:
-
-1. **Cloudflare Bulk Redirects** — declarative rules in Cloudflare's dashboard. Cheapest, no infrastructure overhead.
-2. **Keep the old Railway services running** with a small redirect handler — more flexible (e.g., capture analytics on redirect hits) but costs $5/mo.
-
-> **Recommendation**: Cloudflare Bulk Redirects. Free, fast, and there's nothing the old Railway services need to do that a 301 can't.
-
-- [ ] In Cloudflare, create a Bulk Redirects list named `notesync-to-notate`
-- [ ] Add rules:
-  - [ ] `ns.derekentringer.com/*` → `notate.md/$1` (301, preserve query string)
-  - [ ] `ns-api.derekentringer.com/*` → `api.notate.md/$1` (301)
-  - [ ] `notesync-images.derekentringer.com/*` → `img.notate.md/$1` (301)
-- [ ] Activate the redirect ruleset *immediately after* the cutover DNS flip
-
-### G. Pre-cutover DNS dry run
-
-- [ ] Use `dig`, `nslookup`, and a public DNS checker (e.g., dnschecker.org) to confirm:
-  - [ ] `notate.md` and `api.notate.md` resolve to the new Railway endpoints from multiple geo regions
-  - [ ] `img.notate.md` resolves to R2
-  - [ ] Old domains still resolve to old Railway endpoints (cutover hasn't happened yet)
-- [ ] Verify SSL certs are issued + valid on every new endpoint
+| Endpoint | Result |
+|---|---|
+| `https://api.notate.md/health` | 200 `{"status":"ok"}` |
+| `https://notate.md/` | 200; bundle baked with `https://api.notate.md` |
+| `OPTIONS /auth/login` from `notate.md` origin | 204 + `access-control-allow-origin: https://notate.md` |
+| `https://www.notate.md/` | 301 → `https://notate.md/` |
+| `https://img.notate.md/` | 404 (expected; no key requested) — `server: cloudflare` |
 
 ## Verification gates
 
-- [ ] All four new endpoints (`notate.md`, `api.notate.md`, `img.notate.md`, plus `staging.notate.md`) resolve and serve over HTTPS
-- [ ] Bulk Redirects rules are *staged but not yet active*
-- [ ] TTL drop on old records has been live for >24h before cutover
+- [x] All four endpoints (`notate.md`, `api.notate.md`, `img.notate.md`, `www.notate.md`) resolve and serve over HTTPS
+- [x] CORS + cross-origin requests work end-to-end (web ↔ api)
+- [x] www → apex redirect fires
 
 ## Done criteria
 
-- [ ] DNS records ready
-- [ ] SSL valid
-- [ ] Redirect rules drafted, ready to activate
-- [ ] TTL drop in place
+- [x] DNS records live
+- [x] SSL valid on all four endpoints
+- [x] env vars (`CORS_ORIGIN`, `APP_URL`, `VITE_API_URL`) flipped from `*.up.railway.app` refs to explicit `notate.md` / `api.notate.md` constants; web redeployed so the new `VITE_API_URL` is baked into the bundle
 
 ## What does NOT happen here
 
-- No actual cutover (Phase 9)
-- No client app rebuilds (Phase 8)
-- No database changes (Phase 5)
+- No production data migration (Phase 9 — `pg_dump`/`pg_restore` + R2 sync + URL rewrite)
+- No client app rebuilds with the new URLs (Phase 8)
+
+> **Gotchas captured during execution**:
+>
+> 1. **Cloudflare proxy blocks Railway's SSL validation**. Initial Let's Encrypt HTTP-01 challenge fails if the apex CNAME is on orange cloud during validation. Sequence: gray cloud → wait for Railway green → flip to orange.
+> 2. **Cloudflare Redirect Rule needs proxied DNS to fire**. Adding a redirect rule for `www.notate.md` won't do anything if the `www` CNAME is on gray cloud — Cloudflare's edge only applies rules to requests that hit its proxy.
+> 3. **Railway custom-domain SSL state polls infrequently**. "Submitting certificate signing request" can sit for 5+ minutes even after DNS resolves correctly; just wait it out before assuming something's wrong.
+> 4. **`VITE_API_URL` is build-time, not runtime**. Updating it on Railway requires a redeploy of `web` to bake the new value into the bundle. The bundle JS file hash changes (e.g., `index-Cdd35qsu.js` → `index-B-PyWjYo.js`) when the value changes.
