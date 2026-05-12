@@ -11,7 +11,7 @@ This phase is mostly thinking + spreadsheets, not code. Spend the time here so P
 | ID | Decision | Resolution |
 |----|----------|------------|
 | D.1 | Package naming | **Drop the `ns-` prefix** → `web`, `api`, `desktop`, `mobile`, `shared` |
-| D.2 | Repo structure | **Monorepo** at `<pixelperfect-studios-org>/notate` with all 5 packages |
+| D.2 | Repo structure | **Monorepo** at `PixelPerfect-Studios-LLC/notate` with all 5 packages |
 | D.3 | NPM workspace scope | **`@notate/*`** (workspace-internal only; no npm publish) |
 | D.4 | Existing data | **Carry over** — single dev user, simple `pg_dump`/`pg_restore` |
 | D.5 | GitHub | Org: **PixelPerfect Studios LLC**. Repo: **`notate`** |
@@ -89,10 +89,10 @@ The Postgres database under the current `ns-api` Railway service holds all produ
 
 ### D.5 — GitHub org name
 
-**Decision**: ✅ **PixelPerfect Studios LLC** is the org. Repo name: **`notate`**.
+**Decision**: ✅ **PixelPerfect Studios LLC** is the org. Repo name: **`notate`**. URL slug: **`PixelPerfect-Studios-LLC`**. Repo URL: https://github.com/PixelPerfect-Studios-LLC/notate
 
 - [x] Decided: org = PixelPerfect Studios LLC; repo = `notate`
-- [ ] Confirm the GitHub org slug (URL handle — likely `pixelperfect-studios` or similar without spaces)
+- [x] Confirmed the GitHub org slug: `PixelPerfect-Studios-LLC`
 - [ ] Confirm visibility setting at creation time (private until launch is fine; flip public per Phase 10 § H later)
 
 ### D.6 — WebAuthn passkey strategy

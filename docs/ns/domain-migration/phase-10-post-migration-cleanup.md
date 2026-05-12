@@ -84,6 +84,20 @@ If Phase 0 D.5 had the new `notate` repo as private:
 - [ ] Update the post-cutover banner to a permanent "Welcome to Notate" or remove entirely
 - [ ] Post any post-mortem learnings on a public blog if open-sourcing
 
+### J. Store launch & signing setup (post-stability milestone)
+
+Per Phase 1 § Mobile/Desktop signing, all paid signing/distribution accounts were deferred until after migration + the 30-day stability period in § A. Once the new stack has been exercised end-to-end against real-world usage and we're confident in production behavior, this is the milestone to invest in store distribution.
+
+Detailed plan deferred until ready to execute — the items below are a placeholder skeleton:
+
+- [ ] **Apple Developer Program** ($99/yr) — enroll the Notate / PixelPerfect Studios LLC entity; generates the certs needed for macOS notarization, iOS App Store, and TestFlight.
+- [ ] **macOS notarization** — replace `APPLE_SIGNING_IDENTITY=-` with real Developer ID Application cert; update `tauri:build:prod` to run `notarytool submit` + staple after build. Result: no Gatekeeper warning on first launch.
+- [ ] **iOS App Store submission** — generate distribution provisioning profile, build via `expo build:ios` with the new bundle ID, submit via TestFlight first, then App Store review.
+- [ ] **Google Play Console** ($25 one-time) — register the LLC, generate Play upload key, build signed AAB via `expo build:android`, submit for review (closed testing track first, then production).
+- [ ] **Windows code signing** (~$200/yr or EV cert at ~$400/yr) — only worthwhile if Notate gains non-personal users. Skip unless distribution demand justifies it.
+- [ ] **Update CLAUDE.md / BUILD.md** — replace "ad-hoc / sideload-only" notes with the signed-distribution flow once the certs are in place.
+- [ ] **Communicate** — new download links for store versions; sideload paths continue to work for users who want them.
+
 ## Verification gates
 
 - [ ] 30-day post-cutover stability period elapsed without rollback
