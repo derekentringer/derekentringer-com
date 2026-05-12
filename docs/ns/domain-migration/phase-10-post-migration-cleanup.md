@@ -71,12 +71,13 @@ After confirming all images are in the new bucket and the old domain redirects a
 
 ### H. Repository visibility
 
-If Phase 0 D.5 had the new `notate` repo as private:
+**Decision (Phase 4)**: Notate is a paid product, so the repo stays **private** indefinitely. No post-launch flip to public.
 
-- [ ] Decide whether to make it public now (open-source the project)
-- [ ] If public: review for any committed secrets via `git-secrets` / `truffleHog`; if any found, rotate those credentials *and* rewrite git history before flipping to public
-- [ ] Add a public `README.md` covering project overview, setup, contributing
-- [ ] Add a `LICENSE` file (MIT / AGPL / Sustainable Use License — separate decision)
+Knock-on effects of staying private on a GitHub free org plan:
+
+- [x] Repo visibility remains private — confirmed
+- [ ] Branch protection rules — **not available** on private repos under the free plan. Either accept self-discipline (only merge green PRs) or upgrade to GitHub Team ($4/user/mo) to unlock protection. Decision currently: self-discipline.
+- [ ] If at some point a public-facing landing page / marketing site is needed, that lives separately (e.g., notate.md served by Railway via `packages/web`), not as the GitHub repo's public face.
 
 ### I. Communicate the all-clear
 

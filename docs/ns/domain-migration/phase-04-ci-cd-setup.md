@@ -1,6 +1,6 @@
 # Phase 4 — CI/CD + Tooling Parity
 
-**Status**: 🟡 Not started
+**Status**: ✅ Complete (CI green on first PR against the new Notate repo — https://github.com/PixelPerfect-Studios-LLC/notate/pull/1). Branch protection deferred (private repo on free plan; relying on self-discipline per the user — Notate is a paid product so the repo stays private indefinitely).
 **Depends on**: Phase 3 (new repo populated)
 **Blocks**: Phase 6 (deploys gated on CI green)
 **Goal**: bring the new `notate` repo's CI/CD up to parity with the existing `derekentringer-com` setup, scoped to the Notate stack. Type-check + tests on every PR, build verification, dependency hygiene.
@@ -11,57 +11,49 @@ This phase is mostly copy-and-adjust from the existing `.github/workflows/` and 
 
 ### A. GitHub Actions
 
-The current `derekentringer-com` workflow at `.github/workflows/ci.yml` runs `type-check` + `build` on PRs and pushes to `main`. Mirror that for `notate`:
-
-- [ ] Create `.github/workflows/ci.yml` with jobs:
-  - [ ] `install` — checkout, setup-node 20.x, `npm ci`
-  - [ ] `type-check` — `npx turbo run type-check`
-  - [ ] `test` — `npx turbo run test`
-  - [ ] `build` — `npx turbo run build`
-- [ ] Configure caching (`actions/cache` for `node_modules` + Turborepo cache)
-- [ ] Trigger on: PRs to `develop` and `main`, pushes to `main`
-- [ ] Branch protection on `main`: require CI green before merge
+- [x] `.github/workflows/ci.yml` carried over from Phase 2 — single `build` job runs `npm ci` → `npm audit` → `type-check` → `build` → `lint` → `test`
+- [x] `actions/setup-node@v4` with `cache: npm` provides the npm cache (no separate `actions/cache` step needed)
+- [x] Triggers on PRs *and* pushes to `main` + `develop` (matches the derekentringer-com pattern)
+- [ ] Branch protection on `main` — **deferred**. GitHub Free orgs can't apply branch protection rules to private repos (API returns "Upgrade to GitHub Pro or make this repository public to enable this feature"). Notate stays private per Phase 10 § H; relying on self-discipline (no merging red PRs). Revisit if the org upgrades to Team plan.
 
 ### B. Dependabot / Renovate (optional)
 
-- [ ] Decide whether to enable automated dep updates (defer if not active on `derekentringer-com` today)
+- [x] **Deferred** — not active in derekentringer-com today; same default carries over.
 
 ### C. Turborepo cache
 
-- [ ] Existing `turbo.json` carries over from Phase 3 — confirm cache invalidation rules still make sense
-- [ ] Optional: hook up Vercel Remote Cache for shared CI cache (free tier OK for small team)
+- [x] `turbo.json` carried over from Phase 3 — unchanged, path-relative config still valid
+- [ ] Vercel Remote Cache — **deferred** (single-developer; local cache + CI's npm cache are sufficient)
 
 ### D. Pre-commit hooks (if any)
 
-- [ ] Check `derekentringer-com` for husky / lint-staged config; mirror if present
+- [x] No husky / lint-staged in derekentringer-com (`grep husky package.json` is empty, no `.husky/` dir). Nothing to mirror.
 
 ### E. Release tooling
 
-The `npm run release` script at the `derekentringer-com` root handles ns-web `package.json` bumps + git tag + main→develop sync. It needs adapting:
-
-- [ ] Copy `scripts/release.sh` (or whatever filename) to the new repo
-- [ ] Update package paths from `packages/ns-web` to `packages/web`
-- [ ] Update tag-prefix conventions if any (currently `v<semver>`)
-- [ ] Confirm the `predev` Tauri version-sync hook still works in the new layout (`packages/desktop/scripts/...`)
+- [x] `scripts/release.mjs` carried over in Phase 2 § A; brand/path seds rewrote `packages/ns-web` → `packages/web`, log messages updated. No leftover `ns-` / `notesync` refs (`grep -nE 'ns-|notesync|derekentringer' scripts/release.mjs` is empty).
+- [x] Tag prefix unchanged (`v<semver>`).
+- [x] Desktop `predev` / `tauri:version-sync*` hooks reference `packages/desktop/scripts/...` — paths regenerate from the renamed dir name.
 
 ### F. Local environment
 
-- [ ] Update `packages/api/.env.example` with new domain defaults (`CORS_ORIGIN=http://localhost:3005,http://localhost:3006,tauri://localhost,https://tauri.localhost,http://tauri.localhost`)
-- [ ] Update mobile `devHost.ts` `PROD_API_URL` (per Phase 2 task F, but verify here once more)
-- [ ] Document the local setup in the new `CLAUDE.md` (kill ports, start servers in order)
+- [x] `packages/api/.env.example` rebuilt to enumerate every env var `config.ts` actually reads — see https://github.com/PixelPerfect-Studios-LLC/notate/pull/1
+- [x] `CORS_ORIGIN` default includes all Tauri origins (`tauri://localhost`, `https://tauri.localhost`, `http://tauri.localhost` for Windows)
+- [x] Mobile `devHost.ts` `PROD_API_URL` updated in Phase 2 § F
+- [x] Local setup documented in the new `CLAUDE.md` (kill-ports invocation + start-server order)
 
 ## Verification gates
 
-- [ ] First PR opened against the new repo's `develop` triggers CI and goes green
-- [ ] CI badge in repo `README.md` (optional)
-- [ ] Local dev workflow matches the existing one — `npx turbo run dev` from the root brings up api + web; `npm run dev` from the desktop package launches Tauri; `npx expo run:android` builds mobile
+- [x] First PR opened against the new repo's `develop` triggered CI and went green — https://github.com/PixelPerfect-Studios-LLC/notate/pull/1, merged
+- [ ] CI badge in repo `README.md` — **deferred** (private repo; badge would 404 for anyone without access)
+- [x] Local dev workflow matches the existing one — `npx turbo run dev` from root brings up api :3004 + web :3005; `npm run dev` from `packages/desktop` launches Tauri; `npx expo run:android` from `packages/mobile` builds mobile. All documented in the new `CLAUDE.md`.
 
 ## Done criteria
 
-- [ ] CI workflow is green on a sample PR
-- [ ] Branch protection enforced on `main`
-- [ ] Release script smoke-tested (in dry-run / branch sandbox if possible)
-- [ ] Dev environment instructions tested by a fresh clone
+- [x] CI workflow is green on a sample PR
+- [ ] Branch protection enforced on `main` — **deferred**; private repo on GitHub Free org can't apply protection rules. Self-discipline (no merging red PRs) is the practice. See § A.
+- [ ] Release script smoke-tested — **deferred** to Phase 6 (the first real release happens after deploy)
+- [ ] Dev environment instructions tested by a fresh clone — **deferred** to Phase 6 (real on-the-ground verification happens when we deploy + run local dev against the new prod URL)
 
 ## What does NOT happen here
 
