@@ -11,13 +11,15 @@ This phase is the highest-risk piece of the migration. Plan it carefully.
 
 ### Schema parity check (executed during Phase 5 prep)
 
-- [ ] Apply all migrations to the new (empty) Railway Postgres using `prisma migrate deploy` from `packages/api/` in the notate clone — schema state matches old prod at cutover time
+- [x] Applied all 31 migrations to the new (empty) Railway Postgres via `railway run bash -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" npx prisma migrate deploy'` from `packages/api/` in the notate clone. Schema state now matches old prod at this moment in time; any further migrations between now and cutover need to be re-applied before the dump.
 - [ ] Take a production backup just before the real cutover — Railway Postgres has automated backups, but a manual `pg_dump` is cheap insurance
 
 ### pgvector + extensions
 
-- [ ] Confirm `pgvector` extension is available on the new Railway Postgres (`CREATE EXTENSION IF NOT EXISTS vector;` runs as part of migration 20260304000000_add_embeddings if not already present)
-- [ ] `unaccent` may also be needed for FTS — verify after schema parity
+- [x] `pgvector` v0.8.2 confirmed installed on the new Railway Postgres (auto-created by migration 20260304000000_add_embeddings).
+- [x] Confirmed no other extensions referenced by schema: `grep "EXTENSION" prisma/migrations/**/*.sql` shows only `CREATE EXTENSION IF NOT EXISTS vector;` — no `unaccent` or `pg_trgm` needed.
+
+> **Railway gotcha (captured during prep)**: `railway run` injects the `DATABASE_URL` from the linked service — which for Postgres is the *internal* hostname `postgres.railway.internal:5432`, only reachable from inside Railway. For local CLI access (Prisma, `psql`), override with `DATABASE_URL="$DATABASE_PUBLIC_URL"` inside the run, or use `psql "$DATABASE_PUBLIC_URL"` directly. The `DATABASE_URL` env var the deployed api service will see is the internal one — that's correct for service-to-service communication.
 
 ## Migration approach options
 
