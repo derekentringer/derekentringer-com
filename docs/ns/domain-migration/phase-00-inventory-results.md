@@ -175,7 +175,7 @@ For each service, captures the **current** (NoteSync, derekentringer-com) state 
 | Account | Personal (same Cloudflare account, no migration needed) | **Same account**, new `notate.md` zone added alongside the existing `derekentringer.com` zone |
 | Zones | `derekentringer.com` (with `ns.` + `ns-api.` + `notesync-images.` subdomain DNS records) | `notate.md` (apex + `api.` + `images.` subdomains added in Phase 7) |
 | R2 bucket | `notesync-images` | **New bucket `notate-images`** under the same Cloudflare account |
-| Bulk Redirects (old → new) | n/a | **None planned** — old `ns.derekentringer.com` / `notesync-images.derekentringer.com` will simply stop resolving after Phase 9. Existing image markdown URLs in notes will 404. Developer will fix broken image refs by hand as encountered. |
+| Bulk Redirects (old → new) | n/a | **None planned** — old `ns.derekentringer.com` / `notesync-images.derekentringer.com` will simply stop resolving after Phase 9. **Image content is preserved instead by Phase 5 § D**: `aws s3 sync notesync-images → notate-images` + Postgres URL rewrite from `notesync-images.derekentringer.com` → `img.notate.md`, so no image refs are lost. No redirect layer needed because the DB itself is mutated. |
 | Status | ✅ inventoried | 🟡 new zone + R2 bucket added in Phase 1 / Phase 7 |
 
 ### Domain registrars
@@ -217,23 +217,23 @@ The original Phase 7 § F + Phase 10 § D specified Cloudflare Bulk Redirects fr
 
 Notate is swapping the transcription provider entirely as part of the migration. No OpenAI account at all in the new stack.
 
-| | Current (NoteSync) | Target (Notate) |
-|---|---|---|
-| Provider | OpenAI Whisper API (`WHISPER_PROVIDER=openai`, default) | **Groq** (`WHISPER_PROVIDER=groq`) |
-| Account | Shared with derekentringer-com personal OpenAI account | **New Groq account**, Notate-specific |
-| Model | `whisper-1` | `whisper-large-v3-turbo` (Groq's default) |
-| Cost | ~$0.006/min | ~6.7× cheaper than OpenAI |
-| API key env | `OPENAI_API_KEY` | `WHISPER_API_KEY` (set to Groq key) or `GROQ_API_KEY` (the service falls back to this if `WHISPER_API_KEY` is unset) |
-| URL env | `WHISPER_API_URL` defaults to `https://api.openai.com/v1/audio/transcriptions` | Auto-set to `https://api.groq.com/openai/v1/audio/transcriptions` when `WHISPER_PROVIDER=groq` |
-| Status | ✅ inventoried | 🟡 new Groq account + key in Phase 1; remove `OPENAI_API_KEY` from new ns-api env entirely |
+| | Current (NoteSync) | Target (Notate) — launch | Target (Notate) — post-Groq-reopen |
+|---|---|---|---|
+| Provider | OpenAI Whisper API (`WHISPER_PROVIDER=openai`, default) | **OpenAI** (`WHISPER_PROVIDER=openai`) — Groq is not accepting new dev API keys at this time | Flip to **Groq** (`WHISPER_PROVIDER=groq`) when accounts reopen |
+| Account | Shared with derekentringer-com personal OpenAI account | **New Notate-specific OpenAI account** (active) + **new Groq account** (provisioned, awaiting API access) | Same Groq account, key already captured |
+| Model | `whisper-1` | `whisper-1` (OpenAI default) | `whisper-large-v3-turbo` (Groq default) |
+| Cost | ~$0.006/min | ~$0.006/min | ~6.7× cheaper than OpenAI |
+| API key env | `OPENAI_API_KEY` | `OPENAI_API_KEY=<new Notate key>` | `WHISPER_API_KEY=<groq key>` or `GROQ_API_KEY=<groq key>`; remove `OPENAI_API_KEY` from env |
+| URL env | `WHISPER_API_URL` defaults to `https://api.openai.com/v1/audio/transcriptions` | Same — auto-resolved from `WHISPER_PROVIDER=openai` | Auto-resolves to `https://api.groq.com/openai/v1/audio/transcriptions` when `WHISPER_PROVIDER=groq` |
+| Status | ✅ inventoried | ✅ both keys captured | 🟡 awaiting Groq dev-account reopen |
 
-> **Carry-forward**: `whisperService.ts` is already provider-agnostic — supports `openai`, `groq`, or `custom` via `WHISPER_PROVIDER` config. Swapping is an env-var flip, not a code change, so Notate can switch back to OpenAI (or to a self-hosted whisper.cpp endpoint via `custom`) at any time by:
+> **Carry-forward**: `whisperService.ts` is already provider-agnostic — supports `openai`, `groq`, or `custom` via `WHISPER_PROVIDER` config. Swapping is an env-var flip, not a code change, so Notate can switch providers at any time by:
 >
 > 1. Provisioning a key with the new provider
 > 2. Setting `WHISPER_PROVIDER`, `WHISPER_API_KEY` (and `WHISPER_API_URL` + `WHISPER_MODEL` if `custom`)
 > 3. Redeploying — no rebuild needed
 >
-> Default for Notate launch is Groq; the env-var seam stays in place for future flexibility.
+> Default for Notate launch is **OpenAI** (Groq is not accepting new dev API keys at this time). When Groq reopens, the flip is one env-var change + the Phase 2 § I `config.ts` cleanup deferred to that cutover.
 
 ### Voyage AI
 

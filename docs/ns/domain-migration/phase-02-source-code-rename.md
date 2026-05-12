@@ -108,6 +108,34 @@ Every hardcoded `ns.derekentringer.com` / `ns-api.derekentringer.com` reference:
 - [ ] Search for "notesync" / "NoteSync" in fixture files (`*.test.ts`, `__tests__/`, `e2e/`, etc.)
 - [ ] Update any snapshot tests that contain old branding text
 
+### I. Provider cleanup — deferred to Groq cutover
+
+Per Phase 1 § OpenAI/Whisper, Notate launches on **OpenAI Whisper** (Groq is not accepting new dev API keys at this time). So during Phase 2 / Phase 6, we keep `OPENAI_API_KEY` in `packages/api/src/config.ts`'s `required` array and on the prod env — it's actively used.
+
+When Groq reopens dev accounts, run this cleanup as part of the provider swap (separate small PR, not part of the migration):
+
+- [ ] Set `WHISPER_PROVIDER=groq` + `WHISPER_API_KEY=<groq key>` on the prod env (the key is already captured in the secrets vault from Phase 1).
+- [ ] Remove `OPENAI_API_KEY` from the `required` array in `packages/api/src/config.ts` (lines ~12–24) so the boot-time check stops demanding it.
+- [ ] Remove the `openaiApiKey: process.env.OPENAI_API_KEY || ""` field from the returned config object (`grep -r openaiApiKey src/` returns zero hits, so this is safe).
+- [ ] Optionally simplify the `whisperApiUrl` / `whisperApiKey` / `whisperModel` ternaries — keep the OpenAI branches if you want the env-var seam to allow one-flip *back* to OpenAI for testing; remove them if you want minimal config.
+- [ ] Delete `OPENAI_API_KEY` from the prod env on Railway after deploy + confirm transcription works on Groq.
+
+### J. Voyage model env-var seam
+
+`packages/api/src/services/embeddingService.ts` (post-rename) currently hardcodes the embedding model:
+
+```ts
+const VOYAGE_MODEL = "voyage-3-lite";
+```
+
+Convert to an env-driven seam matching the `CLAUDE_MODEL` / `WHISPER_MODEL` pattern so future model swaps don't require a code deploy:
+
+- [ ] Change to `const VOYAGE_MODEL = process.env.VOYAGE_MODEL || "voyage-3-lite";`
+- [ ] Add `voyageModel` to `Config` interface and to the returned config object in `packages/api/src/config.ts`, reading `process.env.VOYAGE_MODEL || "voyage-3-lite"`.
+- [ ] Update `embeddingService.ts` to read from `getConfig().voyageModel` instead of the local const (so all model references route through one source).
+- [ ] Update the test in `packages/api/src/__tests__/embeddingService.test.ts:37` — it currently expects `"voyage-3-lite"` literally; either keep it asserting the default or make it env-driven too.
+- [ ] **Critical**: do NOT actually change the model at deploy time. Vector dimensions differ between Voyage models, and existing embeddings in the migrated Postgres are tied to `voyage-3-lite`. Any model swap would require re-embedding every note. The env var is *capability*, not an active change.
+
 ## Verification gates
 
 Before merging `develop-notate-rename` to a Phase 3 staging area, all of the following must pass on the renamed branch:
@@ -121,7 +149,7 @@ Before merging `develop-notate-rename` to a Phase 3 staging area, all of the fol
 
 ## Done criteria
 
-- [ ] Every checkbox in A–H above is checked
+- [ ] Every checkbox in A–J above is checked
 - [ ] All four verification gates pass
 - [ ] No `git grep -i "notesync"` hits remain in any package source (only allowed: historical mentions in archive docs / changelog entries)
 - [ ] No `git grep "@derekentringer/"` hits remain in renamed packages
