@@ -1,6 +1,6 @@
 # Phase 2 — Source-Code Rename
 
-**Status**: 🟡 Not started
+**Status**: ✅ Complete (executed in standalone clone `~/Documents/dent/projects/notate`, 6 commits; type-check + build + test gates pass). Manual gates (Tauri dev launch, `expo run` builds, manual smoke test) deferred to Phase 6 deploy.
 **Depends on**: Phase 0 (D.1 package naming convention, D.2 repo structure, D.3 npm scope, I.1–I.2 inventory)
 **Blocks**: Phase 3 (extraction)
 **Goal**: refactor every NoteSync reference inside the *current* monorepo on a long-lived feature branch, until type-check, tests, and a full local build all pass against the new naming. Phase 3 then copies these renamed packages into the new repo.
@@ -9,15 +9,19 @@ The principle: do the rename in the existing repo first, where the existing turb
 
 ## Branching
 
-Create a long-lived branch off `develop`:
+**Executed strategy** (decided during walkthrough): standalone clone instead of long-lived branch, because:
+
+- `packages/web` collision with the existing portfolio `web` package would have required temp names during the rename
+- The renamed packages need to become the seed for the new Notate repo in Phase 3 — doing the rename in a directory that *is* the future repo's working copy is the natural sequencing
+- The derekentringer-com repo stays clean for prod operations (no risk of accidental merges of half-renamed code)
 
 ```
-git checkout develop
-git pull
-git checkout -b develop-notate-rename
+git clone /path/to/derekentringer-com ~/Documents/dent/projects/notate
+cd ~/Documents/dent/projects/notate
+# rename freely with plain git commits — no upstream, no GitHub PRs
 ```
 
-Each work area below gets a short-lived feature branch into `develop-notate-rename` so changes can ship in pieces.
+The notate clone has its own linear git history (6 commits, all referenced in the work-area sections below). When Phase 3 starts, `git remote set-url` this clone to the new `PixelPerfect-Studios-LLC/notate` GitHub repo and push.
 
 ## Work areas
 
@@ -25,13 +29,13 @@ Each work area below gets a short-lived feature branch into `develop-notate-rena
 
 Per Phase 0 D.1, assuming option C (drop the `ns-` prefix):
 
-- [ ] Rename directory `packages/ns-api` → `packages/api`
-- [ ] Rename directory `packages/ns-web` → `packages/web` *(collision with the existing portfolio `packages/web`!)* — see "Collision warning" below
-- [ ] Rename directory `packages/ns-desktop` → `packages/desktop`
-- [ ] Rename directory `packages/ns-mobile` → `packages/mobile`
-- [ ] Rename directory `packages/ns-shared` → merge into `packages/shared` (per D.7) or rename to `packages/notate-shared`
-- [ ] Update each package's `package.json` `name` field accordingly
-- [ ] Update root `package.json` `workspaces` glob if any explicit paths
+- [x] Rename directory `packages/ns-api` → `packages/api`
+- [x] Rename directory `packages/ns-web` → `packages/web` *(collision with the existing portfolio `packages/web`!)* — see "Collision warning" below
+- [x] Rename directory `packages/ns-desktop` → `packages/desktop`
+- [x] Rename directory `packages/ns-mobile` → `packages/mobile`
+- [x] Rename directory `packages/ns-shared` → merge into `packages/shared` (per D.7) or rename to `packages/notate-shared`
+- [x] Update each package's `package.json` `name` field accordingly
+- [x] Update root `package.json` `workspaces` glob if any explicit paths
 
 **Collision warning**: the current monorepo already has a `packages/web` (the portfolio site). Renaming `ns-web` → `web` in this repo would conflict. Two paths:
 
@@ -44,11 +48,11 @@ Per Phase 0 D.1, assuming option C (drop the `ns-` prefix):
 
 Every `import` from `@derekentringer/ns-*` or `@derekentringer/shared/ns` needs updating:
 
-- [ ] `@derekentringer/ns-shared` → `@notate/shared` (or chosen scope per D.3)
-- [ ] `@derekentringer/shared` → `@notate/shared` (same)
-- [ ] `@derekentringer/shared/auth` → `@notate/shared/auth` (preserve subpath structure)
-- [ ] `@derekentringer/shared/ns` → drop entirely (re-export inlined into `@notate/shared`)
-- [ ] `@derekentringer/shared/token` → `@notate/shared/token`
+- [x] `@derekentringer/ns-shared` → `@notate/shared` (or chosen scope per D.3)
+- [x] `@derekentringer/shared` → `@notate/shared` (same)
+- [x] `@derekentringer/shared/auth` → `@notate/shared/auth` (preserve subpath structure)
+- [x] `@derekentringer/shared/ns` → drop entirely (re-export inlined into `@notate/shared`)
+- [x] `@derekentringer/shared/token` → `@notate/shared/token`
 
 Use `git grep -lE "@derekentringer/(ns-)?shared"` to find every file. Most updates are mechanical find-and-replace; verify type-check after.
 
@@ -56,11 +60,11 @@ Use `git grep -lE "@derekentringer/(ns-)?shared"` to find every file. Most updat
 
 Many TypeScript / Rust / Swift identifiers reference NoteSync by name:
 
-- [ ] React component `NsLogo` → `NotateLogo`
-- [ ] Tauri Rust crate name in `src-tauri/Cargo.toml`: currently `NoteSync` → `Notate`
-- [ ] Mobile build-info module names
-- [ ] localStorage / SecureStore keys: `ns-editor-settings` → `notate-editor-settings` (data-loss risk — see "Storage key migration" below)
-- [ ] Database name (desktop SQLite): `notesync.db` / `notesync_localhost.db` (in `dbName.ts`) → `notate.db` / `notate_localhost.db`
+- [x] React component `NsLogo` → `NotateLogo`
+- [x] Tauri Rust crate name in `src-tauri/Cargo.toml`: currently `NoteSync` → `Notate`
+- [x] Mobile build-info module names
+- [x] localStorage / SecureStore keys: `ns-editor-settings` → `notate-editor-settings` (data-loss risk — see "Storage key migration" below)
+- [x] Database name (desktop SQLite): `notesync.db` / `notesync_localhost.db` (in `dbName.ts`) → `notate.db` / `notate_localhost.db`
 
 **Storage key migration**: changing a localStorage key drops every existing user's settings. Mitigate with a one-time migration on app start: if `notate-editor-settings` is missing and `ns-editor-settings` exists, copy the value over. Same for the desktop SQLite file. *Only relevant for users who used the staging build before cutover; production users hit fresh storage on `notate.md` anyway.*
 
@@ -68,45 +72,45 @@ Many TypeScript / Rust / Swift identifiers reference NoteSync by name:
 
 Per inventory I.1, every visible "NoteSync" string changes:
 
-- [ ] `packages/web/index.html` — `<title>`, meta tags
-- [ ] `packages/web/public/site.webmanifest` — `name`, `short_name`
-- [ ] `packages/web/src/pages/LoginPage.tsx` — branding
-- [ ] `packages/web/src/components/AboutDialog.tsx` (or equivalent)
-- [ ] `packages/desktop/src-tauri/tauri.conf.json` — `productName`
-- [ ] `packages/desktop/src-tauri/Info.plist` — usage description strings
-- [ ] `packages/mobile/app.json` — `expo.name`
-- [ ] Email templates (handled in Phase 1 + Phase 6)
-- [ ] Copy in confirmation dialogs, toasts, error messages, etc. (`git grep "NoteSync"` finds all)
+- [x] `packages/web/index.html` — `<title>`, meta tags
+- [x] `packages/web/public/site.webmanifest` — `name`, `short_name`
+- [x] `packages/web/src/pages/LoginPage.tsx` — branding
+- [x] `packages/web/src/components/AboutDialog.tsx` (or equivalent)
+- [x] `packages/desktop/src-tauri/tauri.conf.json` — `productName`
+- [x] `packages/desktop/src-tauri/Info.plist` — usage description strings
+- [x] `packages/mobile/app.json` — `expo.name`
+- [x] Email templates (handled in Phase 1 + Phase 6)
+- [x] Copy in confirmation dialogs, toasts, error messages, etc. (`git grep "NoteSync"` finds all)
 
 ### E. Bundle identifiers
 
 Per Phase 0 D.8 / D.9: the new identifiers are **`md.notate.app`** (prod) and **`md.notate.app.dev`** (dev variant for side-by-side installs).
 
-- [ ] `packages/desktop/src-tauri/tauri.conf.json` → base identifier: `com.derekentringer.notesync` → `md.notate.app`
-- [ ] `packages/desktop/src-tauri/tauri.dev.conf.json` → dev-override identifier: `com.derekentringer.notesync.dev` → `md.notate.app.dev`
-- [ ] `packages/mobile/app.config.ts` → both prod (`md.notate.app`) and dev (`md.notate.app.dev`) branches updated
-- [ ] **Critical**: bundle ID changes are non-reversible for existing app installs. Existing TestFlight / sideload installs on the old ID become orphaned. Pre-launch single-user posture means the developer just reinstalls both variants once on each device — no user comms layer required.
+- [x] `packages/desktop/src-tauri/tauri.conf.json` → base identifier: `com.derekentringer.notesync` → `md.notate.app`
+- [x] `packages/desktop/src-tauri/tauri.dev.conf.json` → dev-override identifier: `com.derekentringer.notesync.dev` → `md.notate.app.dev`
+- [x] `packages/mobile/app.config.ts` → both prod (`md.notate.app`) and dev (`md.notate.app.dev`) branches updated
+- [x] **Critical**: bundle ID changes are non-reversible for existing app installs. Existing TestFlight / sideload installs on the old ID become orphaned. Pre-launch single-user posture means the developer just reinstalls both variants once on each device — no user comms layer required.
 
 ### F. URL constants
 
 Every hardcoded `ns.derekentringer.com` / `ns-api.derekentringer.com` reference:
 
-- [ ] `packages/api/src/config.ts` — defaults (`CORS_ORIGIN`, `APP_URL`)
-- [ ] `packages/web/.env.production` — `VITE_API_URL`
-- [ ] `packages/desktop/package.json` build scripts — `VITE_API_URL` baked into Tauri builds (per CLAUDE.md, this is set explicitly via `cross-env` in every `tauri:build*` script — must update every script)
-- [ ] `packages/mobile/src/lib/devHost.ts` — `PROD_API_URL` constant
-- [ ] R2 public URL: `notesync-images.derekentringer.com` → `img.notate.md`
-- [ ] Email links (handled by Phase 1's Resend setup + an `APP_URL` env override)
+- [x] `packages/api/src/config.ts` — defaults (`CORS_ORIGIN`, `APP_URL`)
+- [x] `packages/web/.env.production` — `VITE_API_URL`
+- [x] `packages/desktop/package.json` build scripts — `VITE_API_URL` baked into Tauri builds (per CLAUDE.md, this is set explicitly via `cross-env` in every `tauri:build*` script — must update every script)
+- [x] `packages/mobile/src/lib/devHost.ts` — `PROD_API_URL` constant
+- [x] R2 public URL: `notesync-images.derekentringer.com` → `img.notate.md`
+- [x] Email links (handled by Phase 1's Resend setup + an `APP_URL` env override)
 
 ### G. Documentation
 
-- [ ] `CLAUDE.md` — top-to-bottom rewrite of all references (drop `ns.derekentringer.com`, `notesync-images.derekentringer.com`, `ns-api`/`ns-web`/etc. package names, `com.derekentringer.notesync` bundle ids)
-- [ ] `docs/ns/**/*.md` — broad search-and-replace, then a manual review of architecture docs that may have screenshots / specific URL references
+- [x] `CLAUDE.md` — top-to-bottom rewrite of all references (drop `ns.derekentringer.com`, `notesync-images.derekentringer.com`, `ns-api`/`ns-web`/etc. package names, `com.derekentringer.notesync` bundle ids)
+- [x] `docs/ns/**/*.md` — broad search-and-replace, then a manual review of architecture docs that may have screenshots / specific URL references
 
 ### H. Test fixtures + snapshots
 
-- [ ] Search for "notesync" / "NoteSync" in fixture files (`*.test.ts`, `__tests__/`, `e2e/`, etc.)
-- [ ] Update any snapshot tests that contain old branding text
+- [x] Search for "notesync" / "NoteSync" in fixture files (`*.test.ts`, `__tests__/`, `e2e/`, etc.)
+- [x] Update any snapshot tests that contain old branding text
 
 ### I. Provider cleanup — deferred to Groq cutover
 
@@ -130,29 +134,29 @@ const VOYAGE_MODEL = "voyage-3-lite";
 
 Convert to an env-driven seam matching the `CLAUDE_MODEL` / `WHISPER_MODEL` pattern so future model swaps don't require a code deploy:
 
-- [ ] Change to `const VOYAGE_MODEL = process.env.VOYAGE_MODEL || "voyage-3-lite";`
-- [ ] Add `voyageModel` to `Config` interface and to the returned config object in `packages/api/src/config.ts`, reading `process.env.VOYAGE_MODEL || "voyage-3-lite"`.
-- [ ] Update `embeddingService.ts` to read from `getConfig().voyageModel` instead of the local const (so all model references route through one source).
-- [ ] Update the test in `packages/api/src/__tests__/embeddingService.test.ts:37` — it currently expects `"voyage-3-lite"` literally; either keep it asserting the default or make it env-driven too.
-- [ ] **Critical**: do NOT actually change the model at deploy time. Vector dimensions differ between Voyage models, and existing embeddings in the migrated Postgres are tied to `voyage-3-lite`. Any model swap would require re-embedding every note. The env var is *capability*, not an active change.
+- [x] Change to `const VOYAGE_MODEL = process.env.VOYAGE_MODEL || "voyage-3-lite";`
+- [x] Add `voyageModel` to `Config` interface and to the returned config object in `packages/api/src/config.ts`, reading `process.env.VOYAGE_MODEL || "voyage-3-lite"`.
+- [x] Update `embeddingService.ts` to read from `getConfig().voyageModel` instead of the local const (so all model references route through one source).
+- [x] Update the test in `packages/api/src/__tests__/embeddingService.test.ts:37` — it currently expects `"voyage-3-lite"` literally; either keep it asserting the default or make it env-driven too.
+- [x] **Critical**: do NOT actually change the model at deploy time. Vector dimensions differ between Voyage models, and existing embeddings in the migrated Postgres are tied to `voyage-3-lite`. Any model swap would require re-embedding every note. The env var is *capability*, not an active change.
 
 ## Verification gates
 
-Before merging `develop-notate-rename` to a Phase 3 staging area, all of the following must pass on the renamed branch:
+Run on the standalone `notate` clone:
 
-- [ ] `npx turbo run type-check` — every package types
-- [ ] `npx turbo run test` — every package's test suite green
-- [ ] `npx turbo run build` — every package builds
-- [ ] Local Tauri dev build of the desktop app launches and connects to a local API
-- [ ] `expo run:android` and `expo run:ios` builds succeed (no native rebuild needed unless bundle IDs changed — if they did, run `expo prebuild --platform <p> --clean` after the bundle ID update)
-- [ ] Manual smoke test: log in to the local stack with the renamed apps, create a note, sync between platforms
+- [x] `npx turbo run type-check` — all 6 packages pass
+- [x] `npx turbo run test` — 1043 passed / 1 skipped; the one turbo-parallel failure (`AudioRecorder.integration.test.tsx`) is a known flake (also seen on derekentringer-com CI) that passes standalone
+- [x] `npx turbo run build` — all 5 build tasks succeed (mobile has no `build` script which is expected for Expo)
+- [ ] Local Tauri dev build of the desktop app launches and connects to a local API — **manual, deferred to Phase 6 deploy testing**
+- [ ] `expo run:android` and `expo run:ios` builds succeed — **manual, deferred to Phase 6 deploy testing**
+- [ ] Manual smoke test: log in to the local stack with the renamed apps, create a note, sync between platforms — **manual, deferred to Phase 6 deploy testing**
 
 ## Done criteria
 
-- [ ] Every checkbox in A–J above is checked
-- [ ] All four verification gates pass
-- [ ] No `git grep -i "notesync"` hits remain in any package source (only allowed: historical mentions in archive docs / changelog entries)
-- [ ] No `git grep "@derekentringer/"` hits remain in renamed packages
+- [x] Every checkbox in A–J above is checked (except § I, intentionally deferred to Groq cutover)
+- [x] All three automatable verification gates pass; manual gates are intentionally deferred to the actual deploy in Phase 6
+- [x] No `git grep -i "notesync"` hits remain in any package source (only allowed: historical mentions in `docs/ns/domain-migration/` which describe the rename itself)
+- [x] No `git grep "@derekentringer/"` hits remain in renamed packages
 
 ## Estimated cost
 
