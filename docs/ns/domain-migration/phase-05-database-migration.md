@@ -92,14 +92,25 @@ Postgres sequences need bumping post-restore:
 
 The R2 image bucket (`notesync-images`) holds every uploaded image referenced by markdown URLs in the Note content. Per Phase 1, copy strategy:
 
-- [ ] `aws s3 sync s3://notesync-images s3://notate-images` (using R2's S3-compatible API)
-- [ ] Verify object count + total bytes match
-- [ ] **Update markdown content** — every `![](https://notesync-images.derekentringer.com/...)` in user notes still points to the old domain
-- [ ] Two ways to handle the URL update:
-  1. **301 redirect** old domain to new domain via Cloudflare — markdown stays as-is; old URLs forward forever
-  2. **Database rewrite** — UPDATE Notes SET content = REPLACE(content, 'notesync-images.derekentringer.com', 'img.notate.md')
+- [ ] `aws s3 sync s3://notesync-images s3://notate-images` (using R2's S3-compatible API; ~16 MB per Phase 0 § I.5, completes in seconds)
+- [ ] Verify object count + total bytes match between buckets
+- [ ] **Database URL rewrite** — old image URLs reference `notesync-images.derekentringer.com`; the new bucket is served from `img.notate.md`. Two tables need updating:
 
-> **Recommendation**: do *both*. Database rewrite cleans up new content; 301 redirect catches the long tail of cached HTML, search engines, and any missed references.
+  ```sql
+  -- Markdown bodies with embedded image references
+  UPDATE notes
+    SET content = REPLACE(content, 'notesync-images.derekentringer.com', 'img.notate.md')
+    WHERE content LIKE '%notesync-images.derekentringer.com%';
+
+  -- Canonical image record URLs (Image.r2Url field)
+  UPDATE images
+    SET "r2Url" = REPLACE("r2Url", 'notesync-images.derekentringer.com', 'img.notate.md')
+    WHERE "r2Url" LIKE '%notesync-images.derekentringer.com%';
+  ```
+
+- [ ] Run on the *new* Postgres after the dump+restore in § A/B — operating on the migrated copy avoids mutating the old prod DB.
+
+> **Decision (Phase 1)**: rewrite-only, no 301 redirect. Single-user system, no SEO / cached-HTML tail to worry about. Once both tables are mutated, the old `notesync-images.derekentringer.com` DNS can be left to expire at cutover.
 
 ## Verification gates
 
@@ -107,7 +118,7 @@ The R2 image bucket (`notesync-images`) holds every uploaded image referenced by
 - [ ] Sample 10 random users — their note list, folder tree, tags match exactly between old and new
 - [ ] Sync cursors are present (otherwise next sync will full-scan)
 - [ ] R2 bucket parity: `aws s3 ls --recursive` count match
-- [ ] No image URL in any Note content references the old domain (after rewrite + redirect both apply)
+- [ ] No image URL in any Note content **or** `images.r2Url` row references the old domain after the rewrite
 
 ## Rollback plan
 
