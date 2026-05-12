@@ -37,7 +37,7 @@ For the `api` service, mirror the existing `ns-api` env (per `CLAUDE.md` § Note
 - [ ] `APP_URL=https://notate.md`
 - [ ] `RP_ID=notate.md` (WebAuthn — Phase 0 D.6 callout)
 - [ ] `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME=notate-images`
-- [ ] `R2_PUBLIC_URL=https://images.notate.md`
+- [ ] `R2_PUBLIC_URL=https://img.notate.md`
 - [ ] `ANTHROPIC_API_KEY`
 - [ ] `VOYAGE_API_KEY`
 - [ ] `CLAUDE_MODEL=claude-sonnet-4-6` (or current production value)
@@ -60,7 +60,7 @@ With Phase 5's dry-run database loaded, run end-to-end:
 - [ ] Open `https://staging.notate.md` in a fresh browser profile (no cached cookies)
 - [ ] Log in with a known production user (the dry-run DB carries them over)
 - [ ] Verify note list loads (check sync engine SSE in the browser dev tools)
-- [ ] Open a note with embedded images — verify images load from `images.notate.md`
+- [ ] Open a note with embedded images — verify images load from `img.notate.md`
 - [ ] Create a new note, edit, verify it persists across reloads
 - [ ] Test sync: open the same account on a second browser, verify new note appears
 - [ ] Test password reset email — confirm Resend sends from `notate.md`

@@ -22,10 +22,10 @@ This phase is mostly DNS + SSL coordination. The risk is in TTL planning — dro
 
 ### C. R2 image subdomain
 
-- [ ] In Cloudflare, add a CNAME for `images.notate.md` → R2 public endpoint
-- [ ] In R2 settings, link the bucket `notate-images` to the custom domain `images.notate.md`
+- [ ] In Cloudflare, add a CNAME for `img.notate.md` → R2 public endpoint
+- [ ] In R2 settings, link the bucket `notate-images` to the custom domain `img.notate.md`
 - [ ] Verify SSL provisions (R2 issues a cert via Cloudflare)
-- [ ] Test image fetch via curl: `curl -I https://images.notate.md/<known-key>` should return 200
+- [ ] Test image fetch via curl: `curl -I https://img.notate.md/<known-key>` should return 200
 
 ### D. Email DNS records
 
@@ -54,7 +54,7 @@ After cutover, every old URL should 301 to the new equivalent so bookmarks, emai
 | `https://ns.derekentringer.com/` | `https://notate.md/` |
 | `https://ns.derekentringer.com/notes/<id>` | `https://notate.md/notes/<id>` |
 | `https://ns-api.derekentringer.com/*` | `https://api.notate.md/*` |
-| `https://notesync-images.derekentringer.com/*` | `https://images.notate.md/*` |
+| `https://notesync-images.derekentringer.com/*` | `https://img.notate.md/*` |
 
 Two implementation paths:
 
@@ -67,20 +67,20 @@ Two implementation paths:
 - [ ] Add rules:
   - [ ] `ns.derekentringer.com/*` → `notate.md/$1` (301, preserve query string)
   - [ ] `ns-api.derekentringer.com/*` → `api.notate.md/$1` (301)
-  - [ ] `notesync-images.derekentringer.com/*` → `images.notate.md/$1` (301)
+  - [ ] `notesync-images.derekentringer.com/*` → `img.notate.md/$1` (301)
 - [ ] Activate the redirect ruleset *immediately after* the cutover DNS flip
 
 ### G. Pre-cutover DNS dry run
 
 - [ ] Use `dig`, `nslookup`, and a public DNS checker (e.g., dnschecker.org) to confirm:
   - [ ] `notate.md` and `api.notate.md` resolve to the new Railway endpoints from multiple geo regions
-  - [ ] `images.notate.md` resolves to R2
+  - [ ] `img.notate.md` resolves to R2
   - [ ] Old domains still resolve to old Railway endpoints (cutover hasn't happened yet)
 - [ ] Verify SSL certs are issued + valid on every new endpoint
 
 ## Verification gates
 
-- [ ] All four new endpoints (`notate.md`, `api.notate.md`, `images.notate.md`, plus `staging.notate.md`) resolve and serve over HTTPS
+- [ ] All four new endpoints (`notate.md`, `api.notate.md`, `img.notate.md`, plus `staging.notate.md`) resolve and serve over HTTPS
 - [ ] Bulk Redirects rules are *staged but not yet active*
 - [ ] TTL drop on old records has been live for >24h before cutover
 

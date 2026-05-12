@@ -36,7 +36,7 @@ The principle: at the end of Phase 1, the new Railway / Cloudflare / R2 / Anthro
 
 - [ ] Create new R2 bucket — naming per the new convention (e.g. `notate-images`)
 - [ ] Generate R2 API token (account ID, access key, secret) — these become `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` in the new ns-api env
-- [ ] Set up R2 public custom domain (e.g. `images.notate.md`) — DNS pointed in Phase 7
+- [ ] Set up R2 public custom domain (e.g. `img.notate.md`) — DNS pointed in Phase 7
 - [ ] Decide whether to **copy** the existing `notesync-images` bucket contents (preserves all current image links in notes) or **start fresh** and accept some 404s on old images
 
 > **Hard recommendation**: copy. Existing notes contain `![](https://notesync-images.derekentringer.com/...)` markdown references that would 404 forever otherwise. The R2 copy is a one-time `aws s3 sync` + a 301 redirect strategy.
