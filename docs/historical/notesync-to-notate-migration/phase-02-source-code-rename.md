@@ -155,7 +155,7 @@ Run on the standalone `notate` clone:
 
 - [x] Every checkbox in A–J above is checked (except § I, intentionally deferred to Groq cutover)
 - [x] All three automatable verification gates pass; manual gates are intentionally deferred to the actual deploy in Phase 6
-- [x] No `git grep -i "notesync"` hits remain in any package source (only allowed: historical mentions in `docs/ns/domain-migration/` which describe the rename itself)
+- [x] No `git grep -i "notesync"` hits remain in any package source (only allowed: historical mentions in `docs/historical/notesync-to-notate-migration/` which describe the rename itself, plus the `packages/ns-*/ARCHIVED.md` redirect stubs)
 - [x] No `git grep "@derekentringer/"` hits remain in renamed packages
 
 ## Estimated cost

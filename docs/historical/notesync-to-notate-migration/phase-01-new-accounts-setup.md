@@ -1,6 +1,6 @@
 # Phase 1 — New Accounts & Infrastructure Setup
 
-**Status**: ✅ Complete (walkthrough finished; see § Done criteria)
+**Status**: 🔷 Shipped (2026-05-12)
 **Depends on**: Phase 0 (D.5 GitHub org name, D.4 user-data decision)
 **Blocks**: Phase 6 (service deployment), Phase 7 (DNS)
 **Goal**: Stand up every external service account the new Notate stack will need, in parallel with the existing production environment. Nothing in this phase touches users — it's all setup work that can happen at any pace.
