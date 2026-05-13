@@ -11,13 +11,14 @@ This phase is mostly thinking + spreadsheets, not code. Spend the time here so P
 | ID | Decision | Resolution |
 |----|----------|------------|
 | D.1 | Package naming | **Drop the `ns-` prefix** → `web`, `api`, `desktop`, `mobile`, `shared` |
-| D.2 | Repo structure | **Monorepo** at `<pixelperfect-studios-org>/notate` with all 5 packages |
+| D.2 | Repo structure | **Monorepo** at `PixelPerfect-Studios-LLC/notate` with all 5 packages |
 | D.3 | NPM workspace scope | **`@notate/*`** (workspace-internal only; no npm publish) |
 | D.4 | Existing data | **Carry over** — single dev user, simple `pg_dump`/`pg_restore` |
 | D.5 | GitHub | Org: **PixelPerfect Studios LLC**. Repo: **`notate`** |
 | D.6 | WebAuthn passkeys | **N/A** — developer re-registers once, no user comms needed |
 | D.7 | Shared package strategy | **Copy + prune**; inline `ns-shared` content into `@notate/shared` |
-| D.8 | Bundle identifier | **`md.notate.app`** (reverse-DNS of `notate.md` with an `.app` label suffix) |
+| D.8 | Bundle identifier (prod) | **`md.notate.app`** (reverse-DNS of `notate.md` with an `.app` label suffix) |
+| D.9 | Bundle identifier (dev) | **`md.notate.app.dev`** — appended `.dev` so prod and dev variants install side-by-side on the same device |
 
 ## Decisions to lock in
 
@@ -88,11 +89,11 @@ The Postgres database under the current `ns-api` Railway service holds all produ
 
 ### D.5 — GitHub org name
 
-**Decision**: ✅ **PixelPerfect Studios LLC** is the org. Repo name: **`notate`**.
+**Decision**: ✅ **PixelPerfect Studios LLC** is the org. Repo name: **`notate`**. URL slug: **`PixelPerfect-Studios-LLC`**. Repo URL: https://github.com/PixelPerfect-Studios-LLC/notate
 
 - [x] Decided: org = PixelPerfect Studios LLC; repo = `notate`
-- [ ] Confirm the GitHub org slug (URL handle — likely `pixelperfect-studios` or similar without spaces)
-- [ ] Confirm visibility setting at creation time (private until launch is fine; flip public per Phase 10 § H later)
+- [x] Confirmed the GitHub org slug: `PixelPerfect-Studios-LLC`
+- [x] Confirmed visibility: **private indefinitely** (Notate is a paid product; no plan to open-source). Per Phase 10 § H.
 
 ### D.6 — WebAuthn passkey strategy
 
@@ -144,10 +145,10 @@ Goal: produce a comprehensive list so Phase 2 has a checklist instead of a disco
 
 ### I.2 — Bundle identifiers
 
-- [ ] `packages/ns-desktop/src-tauri/tauri.conf.json` → `bundle.identifier`: `com.derekentringer.notesync` → **`md.notate.app`**
-- [ ] `packages/ns-mobile/app.json` → `expo.ios.bundleIdentifier`: `com.derekentringer.notesync` → **`md.notate.app`**
-- [ ] `packages/ns-mobile/app.json` → `expo.android.package`: `com.derekentringer.notesync` → **`md.notate.app`**
-- [x] Decided: **`md.notate.app`**. The `.app` segment is a label, not a TLD reference; both Apple and Google accept this format. Domain-ownership questions during App Store review (if Notate ever publishes) are satisfied because the org owns `notate.md`.
+- [ ] `packages/desktop/src-tauri/tauri.conf.json` → base identifier: `com.derekentringer.notesync` → **`md.notate.app`** (prod)
+- [ ] `packages/desktop/src-tauri/tauri.dev.conf.json` → dev-override identifier: `com.derekentringer.notesync.dev` → **`md.notate.app.dev`**
+- [ ] `packages/mobile/app.config.ts` → derive `bundleIdentifier`/`package` from `APP_VARIANT`: prod → **`md.notate.app`**, dev → **`md.notate.app.dev`**
+- [x] Decided: **`md.notate.app`** for prod / **`md.notate.app.dev`** for the dev variant. The `.app` segment is a label, not a TLD reference; both Apple and Google accept this format. Domain-ownership questions during App Store review (if Notate publishes later) are satisfied because the org owns `notate.md`.
 
 ### I.3 — Service account inventory
 

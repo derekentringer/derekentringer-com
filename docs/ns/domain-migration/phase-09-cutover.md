@@ -1,132 +1,88 @@
 # Phase 9 — Cutover
 
-**Status**: 🟡 Not started
+**Status**: ✅ Complete. Data + R2 migrated from old prod to new Notate. Manual browser smoke test against `https://notate.md` confirmed the migrated data is intact. Single-user pre-launch reality reduced the planned ~2-hour cutover window to ~5 minutes of actual work.
 **Depends on**: Phase 5 (DB migration plan validated), Phase 6 (services running on staging), Phase 7 (DNS staged), Phase 8 (clients ready)
 **Blocks**: Phase 10 (cleanup)
 **Goal**: execute the production cutover. Freeze writes on the old stack, drain in-flight requests, do the final database dump+restore, flip DNS, activate redirects, and announce to users. The whole window is targeted at <2 hours.
 
 This is the riskiest phase. Run through the entire procedure on staging first, then execute live with a written-down checklist next to you.
 
-## Pre-cutover checklist (T-7 days)
+## What actually ran (single-user reality)
 
-- [ ] Phase 0–8 complete and verified
-- [ ] Cutover window scheduled (recommend Sunday 06:00 local — lowest active-user count)
-- [ ] Tester email sent (Phase 8 § E)
-- [ ] In-app banner deployed to the existing `ns-web` 7 days ahead: "NoteSync is becoming Notate. Migrating to notate.md on [date]. After cutover, please re-add your passkeys."
-- [ ] Email blast to all registered users (Resend campaign on the *old* APP_URL) with the same announcement
-- [ ] DNS TTLs dropped to 300s on every old-domain record (Phase 7 § E)
-- [ ] Cutover-day runbook printed / pinned
+Skipped vs. doc:
+- ❌ User comms (T-7 email, in-app banner, tester announcements) — only user is the developer
+- ❌ DNS TTL drop (Phase 7 already pointed `notate.md` at the new infra; nothing to "flip")
+- ❌ "Read-only mode" middleware on old api — just stopped using the old NoteSync clients
+- ❌ Cloudflare Bulk Redirects activation — Phase 0 / 5 decisions: no redirects; DB URL rewrite handles the only old refs
+- ❌ Post-cutover banner / blog / Twitter announcements — no audience
 
-## T-1 day
+Actually executed (~5 minutes):
 
-- [ ] Final dry-run dump+restore on the dry-run DB; confirm row counts + smoke test (Phase 5 § A)
-- [ ] Confirm staging is still green
-- [ ] Confirm new app builds (Phase 8) are downloadable from the public download page
-- [ ] Triple-check the DNS records ready to flip in Cloudflare (don't activate yet)
+### Step 1 — Capture old prod DB URL
 
-## T-0 (cutover window)
+- [x] Pulled `DATABASE_PUBLIC_URL` from old derekentringer-com Railway Postgres
+- [x] Wrote to `/tmp/old_db_url` via `pbpaste` (no chat-leak of credentials)
 
-### Step 1 — Announce + freeze (target: 5 minutes)
+### Step 2 — Dump + restore
 
-- [ ] Post the "downtime starting" banner on the existing `ns-web`
-- [ ] Set the existing `ns-api` to **read-only** mode (toggle the env flag or middleware that returns 503 on POST/PATCH/DELETE)
-- [ ] Wait 60–120 seconds for any in-flight writes to drain
+- [x] `pg_dump --format=custom --no-owner --no-acl --no-privileges` → `/tmp/notesync-final.dump` (1.8 MB; the 1.13 GB Phase 0 number was Railway's backup size with WAL + indexes)
+- [x] `pg_restore --clean --if-exists --no-owner --no-acl --no-privileges` into the new Notate Postgres (schema-parity prep from Phase 5 meant `--clean --if-exists` could safely drop and recreate)
+- [x] Row counts match exactly: 144 notes, 67 folders, 29 images, 1 user, 200 note_versions, 143 of 144 notes with `vector`-typed embeddings (1 short note without an embedding job run)
 
-### Step 2 — Final dump + restore (target: 30–60 minutes depending on DB size)
+### Step 3 — URL rewrite (Phase 5 § D)
 
-- [ ] `pg_dump` the old Postgres → custom-format dump
-- [ ] `pg_restore` into the new Postgres
-- [ ] Run sequence resets (Phase 5 § C)
-- [ ] Run the markdown image-URL rewrite (Phase 5 § D)
-- [ ] Verify row counts match across every table
-- [ ] Verify spot-check users: their notes list / folder tree / tags / image refs match exactly between old and new
+```sql
+UPDATE notes SET content = REPLACE(content, 'notesync-images.derekentringer.com', 'img.notate.md')
+  WHERE content LIKE '%notesync-images.derekentringer.com%';   -- 4 rows updated
 
-### Step 3 — R2 final sync (target: 5–10 minutes)
+UPDATE images SET "r2Url" = REPLACE("r2Url", 'notesync-images.derekentringer.com', 'img.notate.md')
+  WHERE "r2Url" LIKE '%notesync-images.derekentringer.com%';   -- 29 rows updated
+```
 
-- [ ] `aws s3 sync s3://notesync-images s3://notate-images` one more time to catch any uploads from the past dry-run-to-cutover gap
-- [ ] Verify object count parity
+- [x] 4 note bodies + 29 image rows rewritten
+- [x] Zero `notesync-images.derekentringer.com` references remain on the new DB
 
-### Step 4 — DNS flip (target: 5 minutes; propagation 5–15 minutes)
+### Step 4 — R2 bucket sync
 
-- [ ] In Cloudflare, switch `ns.derekentringer.com` from the old Railway target to "redirect-only" (Cloudflare Bulk Redirects activated, no Railway traffic)
-- [ ] Confirm `notate.md` (apex), `api.notate.md`, `images.notate.md` resolve from multiple regions (`dnschecker.org`)
-- [ ] Activate the Cloudflare Bulk Redirects ruleset (Phase 7 § F)
-- [ ] Test `https://ns.derekentringer.com/notes/some-id` 301s to `https://notate.md/notes/some-id`
+- [x] Created temporary R2 API token scoped to both `notesync-images` (read) + `notate-images` (write); 24h TTL
+- [x] `aws s3 sync s3://notesync-images s3://notate-images --endpoint-url <r2> --profile r2-migration`
+- [x] 24 objects, 19.1 MiB synced
+- [x] Both buckets show 24 objects post-sync
+- [x] `curl -sI https://img.notate.md/<key>` → 200 image/png (image fetch via custom domain works end-to-end)
+- [x] Temporary R2 token revoked after sync
 
-### Step 5 — Smoke test (target: 10 minutes)
+### Step 5 — Manual smoke test
 
-Quick functional pass against the live new domain:
+Done by the developer in a browser at `https://notate.md`:
 
-- [ ] `https://notate.md` loads, login works
-- [ ] Sign in with a known production user, see their real notes
-- [ ] Create a new note, sync it across platforms (using the new mobile / desktop builds from Phase 8)
-- [ ] Image upload + display
-- [ ] Audio recording + transcription job
-- [ ] Email password reset (verify Resend sends from `notate.md`)
-- [ ] WebAuthn re-registration flow on a fresh browser (expected to fail at first, then succeed after re-register)
+- [x] Login with existing credentials → success
+- [x] Notes list + folder tree intact
+- [x] Embedded images render via `img.notate.md`
+- [x] Sync engine connects (SSE)
 
-### Step 6 — Announce + lift the freeze (target: 5 minutes)
+## Total time
 
-- [ ] Update the in-app banner from "downtime in progress" to "Welcome to Notate! [details]"
-- [ ] Post on Twitter / blog / wherever the user community hangs out
-- [ ] Re-enable writes on the *new* api (it was already write-enabled — the old api stays read-only forever as a redirect zombie)
+~5 minutes of CLI work + ~2 minutes browser smoke test = **7 minutes total**. The doc's ~60–105 minute window was scoped for a public-user cutover with comms, DNS flip, redirect activation, multi-region propagation waits — none of which applied to single-user Notate.
 
-## Total target window
+## Rollback (would-have-been)
 
-- Step 1: 5 min
-- Step 2: 30–60 min
-- Step 3: 10 min
-- Step 4: 15 min
-- Step 5: 10 min
-- Step 6: 5 min
+Not triggered. Worth noting that the old prod DB + old R2 bucket were never modified by the cutover — `pg_dump` is read-only, `aws s3 sync` from old → new doesn't touch the source. If verification had failed:
 
-**Worst case: ~105 minutes. Realistic: ~60 minutes.**
-
-## Rollback procedure
-
-Trigger if step 2's row-count check fails, or step 5 finds a critical regression:
-
-- [ ] Re-enable writes on the old `ns-api` (lift the read-only flag)
-- [ ] Revert the DNS records (Cloudflare flip back to old Railway target)
-- [ ] Deactivate the Bulk Redirects ruleset
-- [ ] Take the new `notate.md` services offline (don't accept writes against a partial-restore DB)
-- [ ] Email users: "Migration aborted, NoteSync remains live, we'll reschedule"
-- [ ] Investigate root cause without time pressure
-- [ ] Schedule next attempt 1–2 weeks out
-
-The old DB is untouched throughout (we only dump from it; we don't modify it). Rollback is "don't keep going forward" — there's nothing destructive to undo.
-
-## Communication templates
-
-### Pre-cutover email (T-7 days)
-
-> **NoteSync is becoming Notate.**
->
-> On [date] at [time], we're moving the app from `ns.derekentringer.com` to `notate.md`. Same app, same data, new name + domain.
->
-> **Downtime**: roughly 1 hour during the migration window. The web app will be read-only briefly.
->
-> **What you need to do**:
-> 1. After the migration, sign in once with your password on `notate.md`.
-> 2. Re-add your passkey from the security settings page (passkeys are tied to a domain, so they don't carry over).
-> 3. Download the new mobile / desktop apps from `notate.md/download`.
->
-> Old links and bookmarks redirect automatically. Your data is unchanged.
-
-### Post-cutover banner
-
-> **You're now on Notate.** All your notes carried over. Don't forget to re-add your passkey under Settings → Security.
+- Old `ns-api` would have continued serving on old domain (Phase 7 didn't change old DNS)
+- New `notate.md` could be cleared (drop schema, re-apply migrations, re-run cutover)
+- No user impact (single user; just don't use the new domain until fixed)
 
 ## Verification gates
 
-- [ ] Step 5 smoke tests all pass
-- [ ] No 5xx errors on `api.notate.md` in the first 30 minutes post-cutover
-- [ ] Sample 10 random users reach out / log in successfully
-- [ ] Old domain redirects work end-to-end
-- [ ] WebAuthn re-registration works for at least one test user
+- [x] Step 5 smoke tests pass (user-confirmed in browser)
+- [x] Row count parity exact across all tables
+- [x] No `notesync-images.derekentringer.com` references remain on new DB
+- [x] R2 bucket counts match
+- [x] Image fetch via `https://img.notate.md/<key>` returns 200
 
 ## Done criteria
 
-- [ ] Cutover window closes with all gates green
-- [ ] Old `ns-*` Railway services are read-only (or already shut down)
-- [ ] Phase 10 unblocked
+- [x] Data migrated, URLs rewritten, R2 buckets in sync
+- [x] User-confirmed smoke test on `https://notate.md`
+- [x] Phase 10 unblocked
+- [ ] Old `ns-*` Railway services remain online (deferred to Phase 10 § C "Old Railway services" teardown after a stability soak)
