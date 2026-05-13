@@ -1,5 +1,11 @@
 # NoteSync → Notate Migration
 
+> **🔷 Migration complete — cutover 2026-05-12, doc finalization 2026-05-13.**
+>
+> Phases 0–9 shipped. Production NoteSync now runs at `notate.md` (PixelPerfect Studios LLC) out of the [`PixelPerfect-Studios-LLC/notate`](https://github.com/PixelPerfect-Studios-LLC/notate) repo. Phase 10 (post-migration cleanup) is partially done: §G doc finalization complete; §§A–F old-infrastructure teardown deferred until the 30-day stability window elapses (~2026-06-11); §J store launch + signing handled separately by the project owner.
+>
+> Active NoteSync/Notate development happens in the `notate` repo only. The `derekentringer-com` repo retains the historical `ns-*` packages for audit/reference and receives no further releases. These migration docs live in `docs/historical/notesync-to-notate-migration/` in both repos as the preserved audit trail.
+
 A multi-phase plan for renaming **NoteSync** to **Notate** and moving the four NS packages out of the `derekentringer-com` monorepo into a dedicated `notate` repo on a new GitHub org, with the production stack rehosted on `notate.md` under fresh service accounts.
 
 This plan **only** covers the four NoteSync packages (`ns-api`, `ns-web`, `ns-desktop`, `ns-mobile`) plus whatever portion of `packages/shared` they need. The `fin-*` packages and the root `web` / `api` portfolio remain on `derekentringer.com`.

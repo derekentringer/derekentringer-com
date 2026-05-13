@@ -1,6 +1,6 @@
 # Phase 0 — Decisions & Inventory
 
-**Status**: 🟠 In progress (decisions D.1–D.5 + D.7 resolved; D.6 N/A for single-user; inventory passes pending)
+**Status**: 🔷 Shipped (2026-05-12 — all decisions resolved, inventory captured in `phase-00-inventory-results.md`)
 **Blocks**: every other phase
 **Goal**: lock in the cross-cutting decisions that shape the entire migration, and produce a complete inventory of every NoteSync reference in the codebase + infrastructure so nothing is missed during the rename.
 

@@ -1,0 +1,16 @@
+# Archived — moved to Notate
+
+This package was the **NoteSync mobile app** (`@derekentringer/ns-mobile`, React Native + Expo). On 2026-05-12 the NoteSync product was rebranded to **Notate** and the four `ns-*` packages were extracted out of this monorepo into a dedicated repository under PixelPerfect Studios LLC.
+
+**Active development now lives at:** [https://github.com/PixelPerfect-Studios-LLC/notate](https://github.com/PixelPerfect-Studios-LLC/notate) (`packages/mobile/`)
+
+The new Android package / iOS bundle identifier is `md.notate.app` (prod) / `md.notate.app.dev` (dev variant), set via the dynamic `app.config.ts` keyed on `APP_VARIANT`.
+
+This snapshot is retained in `derekentringer-com` only as a historical audit reference. It receives no further:
+
+- Bug fixes
+- Feature work
+- Releases / tags / builds
+- Store submissions
+
+The migration audit trail lives in `docs/historical/notesync-to-notate-migration/` at the repo root.
