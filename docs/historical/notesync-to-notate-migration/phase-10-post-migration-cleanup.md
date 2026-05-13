@@ -1,6 +1,6 @@
 # Phase 10 — Post-Migration Cleanup
 
-**Status**: 🟡 Not started
+**Status**: 🟠 In progress (§B + §G shipped 2026-05-13: CLAUDE.md NoteSync sections dropped, ARCHIVED.md stubs in each ns-* package, docs moved to historical/; §§A + C–F old-infrastructure teardown deferred to ~2026-06-11 after the 30-day stability window; §H repo-visibility is N/A — Notate stays private; §J store launch + signing handled separately by the project owner)
 **Depends on**: Phase 9 (cutover succeeded, no rollback)
 **Blocks**: nothing
 **Goal**: tear down the old NoteSync infrastructure once enough time has passed to confirm the new stack is stable, archive code that's no longer needed, and update tracking docs to reflect the migration is done.
@@ -20,16 +20,14 @@ This phase is unhurried. Wait at least **30 days** post-cutover before deleting 
 
 The `ns-*` packages still exist in `derekentringer/derekentringer-com` even though they're no longer deployed. Decide how to handle:
 
-- [ ] **Option A**: keep them in place as historical reference. Mark each `package.json` with `"private": true`, add a top-level `ARCHIVED.md` pointing readers to the new repo. Costs nothing, preserves git history in-place.
-- [ ] **Option B**: delete the packages entirely from `derekentringer-com`. Keep history accessible via the git tag from before deletion. Cleaner but loses convenient browsability.
+- [x] **Option A chosen 2026-05-13**: keep them in place as historical reference. Mark each `package.json` with `"private": true`, add a top-level `ARCHIVED.md` pointing readers to the new repo. Costs nothing, preserves git history in-place.
+- [N/A] **Option B**: delete the packages entirely from `derekentringer-com`. Keep history accessible via the git tag from before deletion. Cleaner but loses convenient browsability.
 
-> **Recommendation**: Option A. Disk and storage are free; navigation friction is real.
+Option A execution (shipped 2026-05-13):
 
-If Option A:
-
-- [ ] Add `packages/ns-api/ARCHIVED.md`, `ns-web/ARCHIVED.md`, etc. with redirects to the `notate` repo
-- [ ] Open a PR removing the NS workspace globs from root `package.json` (if not already done as part of the rename)
-- [ ] Update `CLAUDE.md` in `derekentringer-com` to drop the NoteSync sections (these references shouldn't apply to this repo anymore)
+- [x] Add `packages/ns-api/ARCHIVED.md`, `ns-web/ARCHIVED.md`, `ns-desktop/ARCHIVED.md`, `ns-mobile/ARCHIVED.md` with redirects to the `notate` repo
+- [N/A] Open a PR removing the NS workspace globs from root `package.json` — kept the packages workspace-globbed so they still install as a snapshot; deletion is Option B territory
+- [x] Update `CLAUDE.md` in `derekentringer-com` to drop the NoteSync sections (these references shouldn't apply to this repo anymore)
 
 ### C. Old Railway services
 
@@ -64,10 +62,10 @@ After confirming all images are in the new bucket and the old domain redirects a
 
 ### G. Documentation final-state update
 
-- [ ] Update `docs/ns/domain-migration/README.md` with a "Migration complete on [date]" status block at the top
-- [ ] Mark every phase doc 🔷 Shipped
-- [ ] Move the entire `domain-migration/` directory to `docs/historical/notesync-to-notate-migration/` in the new `notate` repo (preserves the audit trail; keeps the live docs tree clean)
-- [ ] Update `docs/PROGRESS.md` (in the new repo) to reflect that the migration is complete, not part of active development
+- [x] Update `README.md` with a "Migration complete on [date]" status block at the top — done 2026-05-13 in both repos
+- [x] Mark every phase doc 🔷 Shipped — done 2026-05-13 in both repos
+- [x] Move the entire `domain-migration/` directory to `docs/historical/notesync-to-notate-migration/` in both repos (preserves the audit trail; keeps the live docs tree clean) — done 2026-05-13
+- [N/A] Update `docs/PROGRESS.md` (in the new repo) to reflect that the migration is complete, not part of active development — no top-level PROGRESS.md exists in the notate repo; the per-product PROGRESS.md files under `docs/<product>/docs/PROGRESS.md` track product features, not the migration itself
 
 ### H. Repository visibility
 

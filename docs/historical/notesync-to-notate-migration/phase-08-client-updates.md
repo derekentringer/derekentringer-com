@@ -1,6 +1,6 @@
 # Phase 8 — Client App Updates
 
-**Status**: 🟡 Not started
+**Status**: 🔷 Shipped (2026-05-13 — Android prod/dev + iOS prod/dev built and installed; Windows deferred to project owner's Windows machine; store launches deferred per Phase 10 §J)
 **Depends on**: Phase 6 (api production-ready), Phase 7 (DNS staged)
 **Blocks**: Phase 9 (cutover — clients need to be ready before users hit the new domain)
 **Goal**: produce signed (or sideload-signed) builds of the desktop and mobile apps that point at `api.notate.md`, with new bundle identifiers, ready to distribute to test users immediately after cutover.
