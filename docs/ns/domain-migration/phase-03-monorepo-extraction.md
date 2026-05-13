@@ -1,6 +1,6 @@
 # Phase 3 — Monorepo Extraction
 
-**Status**: 🟡 Not started
+**Status**: ✅ Complete (pushed to https://github.com/PixelPerfect-Studios-LLC/notate as a single squashed initial commit; default branch set to `develop`)
 **Depends on**: Phase 1 (GitHub repo created), Phase 2 (rename verified)
 **Blocks**: Phase 4 (CI), Phase 6 (deploy)
 **Goal**: lift the four renamed NS packages plus their share of `packages/shared` out of the local fork and into the new `notate` repo, with a clean root-level `package.json` / `turbo.json` / `tsconfig.json` and zero references back to the old monorepo.
@@ -9,9 +9,9 @@ This phase is fundamentally a `cp -r` exercise wrapped in workspace + tooling ad
 
 ## Pre-extraction checklist
 
-- [ ] Phase 2's `develop-notate-rename` branch passes all four verification gates
-- [ ] Phase 1's empty `notate` repo exists on GitHub with `main` + `develop` branches
-- [ ] Decide whether to preserve git history (`git filter-repo` to extract subtrees) or start fresh (`git init` in the new repo)
+- [x] Phase 2's `develop-notate-rename` branch passes all four verification gates
+- [x] Phase 1's empty `notate` repo exists on GitHub with `main` + `develop` branches
+- [x] Decide whether to preserve git history (`git filter-repo` to extract subtrees) or start fresh (`git init` in the new repo)
 
 > **Recommendation**: start fresh. Preserving history across a cross-repo move adds a lot of complexity for limited value on a personal project. The renamed monorepo can stay as a tag for archival reference if needed.
 
@@ -19,78 +19,80 @@ This phase is fundamentally a `cp -r` exercise wrapped in workspace + tooling ad
 
 ### A. Bootstrap the new repo
 
-- [ ] `git clone` the empty `notate` repo locally
-- [ ] Copy from the renamed monorepo into the new repo:
-  - [ ] `packages/api/`
-  - [ ] `packages/web/`
-  - [ ] `packages/desktop/`
-  - [ ] `packages/mobile/`
-  - [ ] `packages/shared/` (with the prune below applied)
-- [ ] Copy root config:
-  - [ ] `package.json` — strip workspaces glob to just `packages/*`, drop scripts that referenced `fin-*` / portfolio packages, drop unrelated dev-deps
-  - [ ] `turbo.json` — keep as-is (its config is path-relative)
-  - [ ] `tsconfig.json` (or `tsconfig.base.json`) — keep
-  - [ ] `.gitignore` — keep
-  - [ ] `.eslintrc` / `eslint.config.*` — keep
-  - [ ] `.prettierrc` (if any) — keep
-- [ ] Drop `CLAUDE.md` from the root (the new repo gets a fresh, scoped `CLAUDE.md` covering only the Notate stack — see task D below)
-- [ ] Remove the `.github/` workflows for portfolio-only jobs; keep / rewrite the NS-relevant ones (Phase 4 covers this)
+**Strategy executed**: skipped the "clone empty repo + copy files in" model in favor of "rename the existing clone in place, then orphan-commit + repoint origin to the new GitHub repo." Cleaner because the post-Phase-2 clone is already the desired state.
+
+- [x] `git clone` the empty `notate` repo locally — *N/A*: amended approach, kept the Phase-2 clone and force-pushed
+- [x] Copy from the renamed monorepo into the new repo:
+  - [x] `packages/api/` — already in place from Phase 2
+  - [x] `packages/web/` — already in place from Phase 2
+  - [x] `packages/desktop/` — already in place from Phase 2
+  - [x] `packages/mobile/` — already in place from Phase 2
+  - [x] `packages/shared/` — pruned per § B below
+- [x] Copy root config:
+  - [x] `package.json` — name flipped to `notate`; workspaces glob is `packages/*`; no fin-* scripts present
+  - [x] `turbo.json` — unchanged
+  - [x] `tsconfig.base.json` — unchanged
+  - [x] `.gitignore` — buildInfo path updated for renamed mobile dir
+  - [x] `eslint.config.*` — unchanged
+  - [x] `.prettierrc` — N/A (not present)
+- [x] Drop `CLAUDE.md` from the root — replaced via rewrite (functionally equivalent to drop + add)
+- [x] Remove the `.github/` workflows for portfolio-only jobs — `ci.yml` simplified to `main` + `develop` triggers; no portfolio-specific jobs existed to remove
 
 ### B. Shared package prune
 
 Per Phase 0 D.7, the new `packages/shared` should drop:
 
-- [ ] `src/auth/pinVerify.ts` (and the `./auth/pinVerify` export entry)
-- [ ] `src/finance/` directory (and the `./finance` export entry)
-- [ ] `src/ns/` directory (re-exports from `ns-shared`) — instead, **inline** the contents of `packages/ns-shared/` into `packages/shared/src/ns/types.ts` directly, then drop the `./ns` subpath entirely so consumers import from `@notate/shared` at the top level
+- [x] `src/auth/pinVerify.ts` (and the `./auth/pinVerify` export entry)
+- [x] `src/finance/` directory (and the `./finance` export entry)
+- [x] `src/ns/` directory (re-exports from `ns-shared`) — instead, **inline** the contents of `packages/ns-shared/` into `packages/shared/src/ns/types.ts` directly, then drop the `./ns` subpath entirely so consumers import from `@notate/shared` at the top level
 
 After the prune, verify:
 
-- [ ] `packages/shared/package.json` `exports` map matches what's actually present
-- [ ] No package imports a removed subpath
-- [ ] `tsc --noEmit` clean from the shared package outward
+- [x] `packages/shared/package.json` `exports` map matches what's actually present
+- [x] No package imports a removed subpath
+- [x] `tsc --noEmit` clean from the shared package outward
 
 ### C. Workspace-internal package names
 
 Match Phase 0 D.3 decision. If `@notate/*`:
 
-- [ ] Each package's `package.json` `name` field becomes `@notate/api`, `@notate/web`, `@notate/desktop`, `@notate/mobile`, `@notate/shared`
-- [ ] Update all internal `dependencies` / `devDependencies` references between workspace packages
-- [ ] If the npm scope `@notate` is unavailable, fall back to `@notate-app/*` or another scope from Phase 0
+- [x] Each package's `package.json` `name` field becomes `@notate/api`, `@notate/web`, `@notate/desktop`, `@notate/mobile`, `@notate/shared`
+- [x] Update all internal `dependencies` / `devDependencies` references between workspace packages
+- [x] If the npm scope `@notate` is unavailable, fall back to `@notate-app/*` or another scope from Phase 0
 
 ### D. New root-level `CLAUDE.md`
 
-- [ ] Write a fresh `CLAUDE.md` covering only the Notate stack — drop the `derekentringer-com` portfolio sections, the fin-* sections, the NoteSync history references
-- [ ] Preserve relevant operational notes: dev-server startup, release flow, build commands, Railway deployment specifics
-- [ ] Update domain references throughout (`notate.md`, `api.notate.md`, `img.notate.md`)
+- [x] Write a fresh `CLAUDE.md` covering only the Notate stack — drop the `derekentringer-com` portfolio sections, the fin-* sections, the NoteSync history references
+- [x] Preserve relevant operational notes: dev-server startup, release flow, build commands, Railway deployment specifics
+- [x] Update domain references throughout (`notate.md`, `api.notate.md`, `img.notate.md`)
 
 ### E. Re-anchor docs
 
-- [ ] Copy `docs/ns/` → `docs/` in the new repo (drop the `ns/` namespace since it's the only product)
-- [ ] Update internal cross-references in docs (`../web/docs/...` paths shift)
-- [ ] Update the `domain-migration/` directory itself with a "this migration is complete" status block once Phase 9 finishes — the doc set lives on as historical record
+- [x] Copy `docs/ns/` → `docs/` in the new repo (drop the `ns/` namespace since it's the only product)
+- [x] Update internal cross-references in docs (`../web/docs/...` paths shift)
+- [ ] Update the `domain-migration/` directory itself with a "this migration is complete" status block once Phase 9 finishes — the doc set lives on as historical record (**deferred to Phase 9**)
 
 ### F. Initial commit + push
 
-- [ ] `git add . && git commit -m "Initial commit: Notate, extracted from derekentringer-com monorepo"`
-- [ ] `git push origin main`
-- [ ] Create the `develop` branch and set it as the default
-- [ ] All future Phase 4+ work happens on feature branches into `develop`
+- [x] `git checkout --orphan` + single squashed commit `Initial commit: Notate, extracted from derekentringer-com monorepo` (authored as `Derek Entringer <derek@notate.md>` after per-repo identity flip)
+- [x] `git push origin main` (force-push to replace GitHub's auto-init README stub)
+- [x] Create the `develop` branch and set it as the default — both branches point at the same initial commit
+- [ ] All future Phase 4+ work happens on feature branches into `develop` (work-in-progress)
 
 ## Verification gates
 
-- [ ] `npm install` from the new repo root succeeds
-- [ ] `npx turbo run type-check` passes
-- [ ] `npx turbo run test` passes
-- [ ] `npx turbo run build` passes
-- [ ] Desktop app builds locally (`packages/desktop && npm run tauri:build`)
-- [ ] Mobile app builds locally (`packages/mobile && npx expo run:android`)
+- [x] `npm install` from the new repo root succeeds
+- [x] `npx turbo run type-check` passes (6/6 packages)
+- [x] `npx turbo run test` passes (1043/1044, same `AudioRecorder.integration.test.tsx` flake seen elsewhere in this codebase; standalone re-run clean)
+- [x] `npx turbo run build` passes (5/5 build tasks)
+- [ ] Desktop app builds locally (`packages/desktop && npm run tauri:build`) — **manual, deferred to Phase 6**
+- [ ] Mobile app builds locally (`packages/mobile && npx expo run:android`) — **manual, deferred to Phase 6**
 
 ## Done criteria
 
-- [ ] All A–F tasks complete
-- [ ] All verification gates green
-- [ ] The new repo's CI (Phase 4) is the only remaining gate before deploy is possible
+- [x] All A–F tasks complete (Phase-9 historical-status block in § E + ongoing-work bullet in § F are intentionally tracked separately)
+- [x] All automatable verification gates green (`type-check`, `test`, `build`); manual gates (Tauri / expo builds) deferred to Phase 6
+- [x] The new repo's CI (Phase 4) is the only remaining gate before deploy is possible
 
 ## What does NOT happen in this phase
 
