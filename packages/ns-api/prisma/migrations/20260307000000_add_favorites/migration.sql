@@ -1,2 +1,0 @@
-ALTER TABLE "notes" ADD COLUMN "favorite" BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE "folders" ADD COLUMN "favorite" BOOLEAN NOT NULL DEFAULT false;

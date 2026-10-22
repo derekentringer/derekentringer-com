@@ -1,6 +1,5 @@
 node_modules/
 dist/
-generated/
 .turbo/
 .vite/
 .env
@@ -9,18 +8,3 @@ generated/
 *.log
 .DS_Store
 .claude/
-
-# Tauri
-src-tauri/target/
-src-tauri/gen/
-
-# React Native / Expo
-.expo/
-ios/
-android/
-*.jks
-*.keystore
-google-services.json
-GoogleService-Info.plist
-slate.json
-packages/ns-mobile/src/buildInfo.ts
