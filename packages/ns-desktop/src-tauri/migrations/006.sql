@@ -1,1 +1,0 @@
-ALTER TABLE folders ADD COLUMN deleted_at TEXT DEFAULT NULL;

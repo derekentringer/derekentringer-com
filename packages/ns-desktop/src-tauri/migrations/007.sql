@@ -1,1 +1,0 @@
-ALTER TABLE notes ADD COLUMN favorite_sort_order INTEGER NOT NULL DEFAULT 0;
